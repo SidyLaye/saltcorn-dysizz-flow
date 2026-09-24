@@ -84897,8 +84897,8 @@ var require_templates = __commonJS({
           st("verrou", "dzf_verrou", { action: "prendre", nom: "file-%%file%%", duree: 300, sortie: "verrou" }, { next_step: 'verrou ? "prendre" : ""' }),
           st("prendre", "dzf_file_prendre", { file: "%%file%%", nombre: "%%nombre%%", sortie: "travaux" }),
           st("traiter", "dzf_pour_chaque", { liste: "{{travaux}}", workflow: "%%workflow%%", variable: "travail", en_parallele: 4, sortie: "boucle" }, { only_if: "travaux.length > 0" }),
-          st("reussis", "dzf_file_terminer", { travaux: "{{boucle.reussis}}", resultat: "r\xE9ussi" }, { only_if: "boucle && boucle.reussis.length > 0" }),
-          st("echecs", "dzf_file_terminer", { travaux: "{{boucle.echecs}}", resultat: "erreur" }, { only_if: "boucle && boucle.echecs.length > 0" }),
+          st("reussis", "dzf_file_terminer", { travaux: "{{boucle.reussis}}", resultat: "r\xE9ussi" }, { only_if: "travaux.length > 0 && boucle.reussis.length > 0" }),
+          st("echecs", "dzf_file_terminer", { travaux: "{{boucle.echecs}}", resultat: "erreur" }, { only_if: "travaux.length > 0 && boucle.echecs.length > 0" }),
           st("liberer", "dzf_verrou", { action: "lib\xE9rer", nom: "file-%%file%%", sortie: "verrou" })
         )
       }
