@@ -1,7 +1,7 @@
 /* Blocs « Réseau » : appeler une API, lire des flux RSS / YouTube. */
 "use strict";
 const { asList, pool } = require("../engine");
-const { parseFeed, resolveYoutube, youtubeFeed, httpGet } = require("../lib/feeds");
+const { parseFeed, resolveYoutube, youtubeFeed, httpGet, pageImage } = require("../lib/feeds");
 
 const secret = async (api, name) => { const v = await api.secret(name); if (name && !v) throw Object.assign(new Error(`secret ${name} introuvable (variable d'environnement ou coffre)`), { permanent: true }); return v; };
 
@@ -50,6 +50,25 @@ module.exports = [
       }
       if (!last.ok && p.erreur_si_pas_ok !== false) throw new Error(`HTTP ${last.status} ${typeof last.data === "string" ? last.data.slice(0, 200) : JSON.stringify(last.data).slice(0, 200)}`);
       return last;
+    },
+  },
+  {
+    name: "dzf_images_articles", label: "Articles : trouver une image", category: "Réseau", icon: "far fa-image", output: "articles", timeout: 120,
+    description: "Pour chaque élément sans image (ex. articles d'un flux RSS), lit sa page et prend l'image de partage (og:image, twitter:image…). En parallèle, avec une limite, sans bloquer si une page ne répond pas.",
+    params: [
+      { name: "liste", label: "Éléments", required: true, help: "Ex. {{nouveaux}}" },
+      { name: "champ_url", label: "Champ du lien", default: "url" }, { name: "champ_image", label: "Champ de l'image", default: "image" },
+      { name: "max", label: "Pages lues au maximum", type: "int", default: 40, help: "Les autres gardent leur image vide" },
+      { name: "en_parallele", label: "En même temps", type: "int", default: 6 }, { name: "delai_s", label: "Abandon d'une page après (s)", type: "int", default: 8 },
+    ],
+    run: async (p) => {
+      const list = asList(p.liste).map((x) => ({ ...x }));
+      const todo = list.filter((x) => x && !x[p.champ_image || "image"] && /^https?:/i.test(String(x[p.champ_url || "url"] || ""))).slice(0, Math.max(0, +p.max || 40));
+      await pool(todo, Math.min(16, +p.en_parallele || 6), async (x) => {
+        const u = x[p.champ_url || "url"];
+        try { x[p.champ_image || "image"] = pageImage(await httpGet(u, { timeout: (+p.delai_s || 8) * 1000, headers: { Accept: "text/html,*/*;q=0.5" } }), u); } catch (e) { /* page muette : pas d'image */ }
+      });
+      return list;
     },
   },
   {

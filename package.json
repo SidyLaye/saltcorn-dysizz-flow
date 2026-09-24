@@ -1,6 +1,6 @@
 {
   "name": "dysizz-flow",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "description": "Blocs workflow pour Saltcorn (comme les nœuds n8n) : tables, transformations, API, RSS, IMAP, mail, notifications, Telegram, WhatsApp, IA, Redis, verrous… Réglables sans code ou en code, atelier pour créer ses blocs, modèles de workflows prêts à installer.",
   "main": "index.js",
   "author": "Sidy Laye",

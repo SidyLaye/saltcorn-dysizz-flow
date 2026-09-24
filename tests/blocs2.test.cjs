@@ -74,3 +74,16 @@ const run = (n, p, ctx = {}) => B(n).run(p, ctx, api);
 
   console.log("blocs 2.0 ok");
 })().catch((e) => { console.error(e); process.exit(1); });
+
+/* surveillance avancée : scénario d'API (fetch simulé) */
+(async () => {
+  const B2 = (n) => require("../src/blocks").BLOCKS.find((b) => b.name === n);
+  const oldFetch = global.fetch;
+  global.fetch = async (url, o) => ({ status: url.includes("login") ? 200 : 200, ok: true, text: async () => (url.includes("login") ? '{"token":"abc"}' : JSON.stringify({ status: "ok", auth: (o.headers || {}).Authorization || "", n: 3 })) });
+  const r = await B2("dzf_api_scenario").run({ etapes: [{ nom: "login", url: "https://x/login", corps: { u: 1 } }, { nom: "me", url: "https://x/me", entetes: { Authorization: "Bearer {{login.token}}" }, attendu: { statut: 200, verifs: [{ chemin: "status", egal: "ok" }, { chemin: "auth", contient: "abc" }, { chemin: "n", max: 5 }] } }] }, {}, { secret: async () => "" });
+  assert(r.ok, "scénario ok : " + JSON.stringify(r));
+  const r2 = await B2("dzf_api_scenario").run({ etapes: [{ nom: "me", url: "https://x/me", attendu: { verifs: [{ chemin: "n", max: 1 }] } }] }, {}, { secret: async () => "" });
+  assert(!r2.ok && /n :/.test(r2.raison), "vérif ratée signalée");
+  global.fetch = oldFetch;
+  console.log("surveillance+ ok");
+})().catch((e) => { console.error(e); process.exit(1); });

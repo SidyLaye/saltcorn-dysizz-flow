@@ -88,4 +88,16 @@ const resolveYoutube = async (handleOrUrl) => {
 };
 const youtubeFeed = (id) => `https://www.youtube.com/feeds/videos.xml?channel_id=${id}`;
 
-module.exports = { parseFeed, resolveYoutube, youtubeFeed, httpGet, UA };
+/* image d'illustration d'une page : og:image, twitter:image, <link rel=image_src>, puis 1re grande image */
+const pageImage = (html, base) => {
+  const h = String(html || "").slice(0, 300000);
+  const meta = (re) => { const m = re.exec(h); return m ? m[1] : ""; };
+  let u = meta(/<meta[^>]+(?:property|name)=["'](?:og:image(?::secure_url)?|twitter:image(?::src)?)["'][^>]*content=["']([^"']+)["']/i)
+    || meta(/<meta[^>]+content=["']([^"']+)["'][^>]*(?:property|name)=["'](?:og:image|twitter:image)["']/i)
+    || meta(/<link[^>]+rel=["']image_src["'][^>]*href=["']([^"']+)["']/i);
+  if (!u) { const m = /<img[^>]+src=["']([^"']+\.(?:jpe?g|png|webp)(?:\?[^"']*)?)["']/i.exec(h); u = m ? m[1] : ""; }
+  if (!u) return "";
+  try { return safeUrl(new URL(u.replace(/&amp;/g, "&"), base).href); } catch (e) { return ""; }
+};
+
+module.exports = { pageImage, parseFeed, resolveYoutube, youtubeFeed, httpGet, UA };

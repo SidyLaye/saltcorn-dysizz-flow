@@ -1,4 +1,4 @@
-/* dysizz-flow 2.1.0 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.2.0 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.1.0" : "dev";
+    var VERSION2 = true ? "2.2.0" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -2970,7 +2970,25 @@ var require_feeds = __commonJS({
       return m[1];
     };
     var youtubeFeed = (id) => `https://www.youtube.com/feeds/videos.xml?channel_id=${id}`;
-    module2.exports = { parseFeed, resolveYoutube, youtubeFeed, httpGet, UA };
+    var pageImage = (html, base) => {
+      const h = String(html || "").slice(0, 3e5);
+      const meta = (re) => {
+        const m = re.exec(h);
+        return m ? m[1] : "";
+      };
+      let u = meta(/<meta[^>]+(?:property|name)=["'](?:og:image(?::secure_url)?|twitter:image(?::src)?)["'][^>]*content=["']([^"']+)["']/i) || meta(/<meta[^>]+content=["']([^"']+)["'][^>]*(?:property|name)=["'](?:og:image|twitter:image)["']/i) || meta(/<link[^>]+rel=["']image_src["'][^>]*href=["']([^"']+)["']/i);
+      if (!u) {
+        const m = /<img[^>]+src=["']([^"']+\.(?:jpe?g|png|webp)(?:\?[^"']*)?)["']/i.exec(h);
+        u = m ? m[1] : "";
+      }
+      if (!u) return "";
+      try {
+        return safeUrl(new URL(u.replace(/&amp;/g, "&"), base).href);
+      } catch (e) {
+        return "";
+      }
+    };
+    module2.exports = { pageImage, parseFeed, resolveYoutube, youtubeFeed, httpGet, UA };
   }
 });
 
@@ -2979,7 +2997,7 @@ var require_reseau = __commonJS({
   "src/blocks/reseau.js"(exports2, module2) {
     "use strict";
     var { asList, pool } = require_engine();
-    var { parseFeed, resolveYoutube, youtubeFeed, httpGet } = require_feeds();
+    var { parseFeed, resolveYoutube, youtubeFeed, httpGet, pageImage } = require_feeds();
     var secret = async (api, name) => {
       const v = await api.secret(name);
       if (name && !v) throw Object.assign(new Error(`secret ${name} introuvable (variable d'environnement ou coffre)`), { permanent: true });
@@ -3047,6 +3065,35 @@ var require_reseau = __commonJS({
           }
           if (!last.ok && p.erreur_si_pas_ok !== false) throw new Error(`HTTP ${last.status} ${typeof last.data === "string" ? last.data.slice(0, 200) : JSON.stringify(last.data).slice(0, 200)}`);
           return last;
+        }
+      },
+      {
+        name: "dzf_images_articles",
+        label: "Articles : trouver une image",
+        category: "R\xE9seau",
+        icon: "far fa-image",
+        output: "articles",
+        timeout: 120,
+        description: "Pour chaque \xE9l\xE9ment sans image (ex. articles d'un flux RSS), lit sa page et prend l'image de partage (og:image, twitter:image\u2026). En parall\xE8le, avec une limite, sans bloquer si une page ne r\xE9pond pas.",
+        params: [
+          { name: "liste", label: "\xC9l\xE9ments", required: true, help: "Ex. {{nouveaux}}" },
+          { name: "champ_url", label: "Champ du lien", default: "url" },
+          { name: "champ_image", label: "Champ de l'image", default: "image" },
+          { name: "max", label: "Pages lues au maximum", type: "int", default: 40, help: "Les autres gardent leur image vide" },
+          { name: "en_parallele", label: "En m\xEAme temps", type: "int", default: 6 },
+          { name: "delai_s", label: "Abandon d'une page apr\xE8s (s)", type: "int", default: 8 }
+        ],
+        run: async (p) => {
+          const list = asList(p.liste).map((x) => ({ ...x }));
+          const todo = list.filter((x) => x && !x[p.champ_image || "image"] && /^https?:/i.test(String(x[p.champ_url || "url"] || ""))).slice(0, Math.max(0, +p.max || 40));
+          await pool(todo, Math.min(16, +p.en_parallele || 6), async (x) => {
+            const u = x[p.champ_url || "url"];
+            try {
+              x[p.champ_image || "image"] = pageImage(await httpGet(u, { timeout: (+p.delai_s || 8) * 1e3, headers: { Accept: "text/html,*/*;q=0.5" } }), u);
+            } catch (e) {
+            }
+          });
+          return list;
         }
       },
       {
@@ -82789,6 +82836,159 @@ var require_services = __commonJS({
   }
 });
 
+// src/blocks/emplois.js
+var require_emplois = __commonJS({
+  "src/blocks/emplois.js"(exports2, module2) {
+    "use strict";
+    var { plain, safeUrl } = require_core();
+    var { asList, pool } = require_engine();
+    var { parseFeed, httpGet } = require_feeds();
+    var UA = { "User-Agent": "Mozilla/5.0 (dysizz-flow; veille emploi)", Accept: "application/json" };
+    var getJSON = async (url, opt = {}) => {
+      const ctl = new AbortController();
+      const t = setTimeout(() => ctl.abort(), opt.timeout || 2e4);
+      try {
+        const r = await fetch(url, { ...opt, headers: { ...UA, ...opt.headers || {} }, signal: ctl.signal });
+        const txt = await r.text();
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return JSON.parse(txt);
+      } catch (e) {
+        throw new Error(e.name === "AbortError" ? "d\xE9lai d\xE9pass\xE9" : e.message);
+      } finally {
+        clearTimeout(t);
+      }
+    };
+    var norm = (s) => String(s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+    var words = (s) => String(s || "").split(",").map((x) => norm(x).trim()).filter(Boolean);
+    var matches = (txt, kws) => !kws.length || kws.some((k) => k.split(/\s+/).every((w) => norm(txt).includes(w)));
+    var ALL_OK = /(france|europe|emea|worldwide|anywhere|remote|monde|partout|cet|utc\+[0-2]\b|utc ?[+-]1\b)/i;
+    var offer = (o) => ({
+      ref: String(o.ref).slice(0, 200),
+      titre: plain(o.titre, 300),
+      entreprise: plain(o.entreprise || "", 200),
+      lieu: plain(o.lieu || "", 200),
+      contrat: plain(o.contrat || "", 120),
+      salaire: plain(o.salaire || "", 200),
+      experience: plain(o.experience || "", 200),
+      date: o.date || null,
+      url: safeUrl(o.url),
+      description: plain(o.description || "", 8e3),
+      source: o.source,
+      logo: safeUrl(o.logo || ""),
+      teletravail: !!o.teletravail
+    });
+    var SOURCES = {
+      france_travail: { label: "France Travail", key: true, run: async (q, api) => {
+        const ft = require_services().find((b) => b.name === "dzf_france_travail");
+        const list = await ft.run({ variable_id: "FT_CLIENT_ID", variable_secret: "FT_CLIENT_SECRET", mots_cles: q.mots_cles, departement: q.departement, commune: q.commune, rayon_km: q.rayon_km, contrat: q.contrat, alternance: q.alternance, depuis_jours: q.depuis_jours }, {}, api);
+        return list.map((o) => ({ ...o, ref: `ft:${o.ref}` }));
+      } },
+      adzuna: { label: "Adzuna", key: true, run: async (q, api) => {
+        const id = await api.secret("ADZUNA_APP_ID"), key = await api.secret("ADZUNA_APP_KEY");
+        if (!id || !key) throw Object.assign(new Error("cl\xE9s ADZUNA_APP_ID / ADZUNA_APP_KEY absentes"), { skip: true });
+        const u = new URLSearchParams({ app_id: id, app_key: key, results_per_page: "50", what_or: q.kws.join(" "), max_days_old: String(q.depuis_jours || 7), sort_by: "date", "content-type": "application/json" });
+        if (q.lieu) u.set("where", q.lieu);
+        const j = await getJSON(`https://api.adzuna.com/v1/api/jobs/fr/search/1?${u}`);
+        return (j.results || []).map((o) => ({ ref: `adzuna:${o.id}`, titre: o.title, entreprise: (o.company || {}).display_name, lieu: (o.location || {}).display_name, contrat: [o.contract_type, o.contract_time].filter(Boolean).join(" "), salaire: o.salary_min ? `${Math.round(o.salary_min)}\u2013${Math.round(o.salary_max || o.salary_min)} \u20AC` : "", date: o.created, url: o.redirect_url, description: o.description, source: "Adzuna" }));
+      } },
+      jooble: { label: "Jooble", key: true, run: async (q, api) => {
+        const key = await api.secret("JOOBLE_KEY");
+        if (!key) throw Object.assign(new Error("cl\xE9 JOOBLE_KEY absente"), { skip: true });
+        const j = await getJSON(`https://fr.jooble.org/api/${encodeURIComponent(key)}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ keywords: q.kws.join(" "), location: q.lieu || "France", page: 1 }) });
+        return (j.jobs || []).map((o) => ({ ref: `jooble:${o.id || o.link}`, titre: o.title, entreprise: o.company, lieu: o.location, contrat: o.type, salaire: o.salary, date: o.updated, url: o.link, description: o.snippet, source: `Jooble${o.source ? " \xB7 " + o.source : ""}` }));
+      } },
+      arbeitnow: { label: "Arbeitnow (Europe)", run: async (q) => {
+        const j = await getJSON(`https://www.arbeitnow.com/api/job-board-api${q.teletravail ? "?remote=true" : ""}`);
+        return (j.data || []).map((o) => ({ ref: `arbeitnow:${o.slug}`, titre: o.title, entreprise: o.company_name, lieu: o.location, contrat: (o.job_types || []).join(", "), date: o.created_at ? new Date(o.created_at * 1e3).toISOString() : null, url: o.url, description: `${(o.tags || []).join(", ")} ${o.description || ""}`, source: "Arbeitnow", teletravail: !!o.remote })).filter((o) => q.teletravail ? o.teletravail : /france|paris|lyon|remote/i.test(o.lieu));
+      } },
+      remotive: { label: "Remotive (t\xE9l\xE9travail)", run: async (q) => {
+        const j = await getJSON(`https://remotive.com/api/remote-jobs?search=${encodeURIComponent(q.kws[0] || "")}&limit=100`);
+        return (j.jobs || []).map((o) => ({ ref: `remotive:${o.id}`, titre: o.title, entreprise: o.company_name, lieu: o.candidate_required_location, contrat: o.job_type, salaire: o.salary, date: o.publication_date, url: o.url, description: o.description, source: "Remotive", logo: o.company_logo, teletravail: true }));
+      } },
+      remoteok: { label: "RemoteOK (t\xE9l\xE9travail)", run: async () => {
+        const j = await getJSON("https://remoteok.com/api");
+        return (Array.isArray(j) ? j : []).filter((o) => o && o.id && o.position).map((o) => ({ ref: `remoteok:${o.id}`, titre: o.position, entreprise: o.company, lieu: o.location || "T\xE9l\xE9travail", salaire: o.salary_min ? `${o.salary_min}\u2013${o.salary_max} $` : "", date: o.date, url: o.url || o.apply_url, description: `${(o.tags || []).join(", ")} ${o.description || ""}`, source: "RemoteOK", logo: o.company_logo || o.logo, teletravail: true }));
+      } },
+      jobicy: { label: "Jobicy (t\xE9l\xE9travail)", run: async (q) => {
+        const u = new URLSearchParams({ count: "100" });
+        if (q.kws[0]) u.set("tag", q.kws[0]);
+        const j = await getJSON(`https://jobicy.com/api/v2/remote-jobs?${u}`);
+        return (j.jobs || []).map((o) => ({ ref: `jobicy:${o.id}`, titre: o.jobTitle, entreprise: o.companyName, lieu: o.jobGeo, contrat: [].concat(o.jobType || []).join(", "), salaire: o.annualSalaryMin ? `${o.annualSalaryMin}\u2013${o.annualSalaryMax} ${o.salaryCurrency || ""}` : "", date: o.pubDate, url: o.url, description: `${o.jobIndustry || ""} ${o.jobExcerpt || o.jobDescription || ""}`, source: "Jobicy", logo: o.companyLogo, teletravail: true }));
+      } },
+      himalayas: { label: "Himalayas (t\xE9l\xE9travail)", run: async () => {
+        const j = await getJSON("https://himalayas.app/jobs/api?limit=100");
+        return (j.jobs || []).map((o) => ({ ref: `himalayas:${o.guid || o.applicationLink}`, titre: o.title, entreprise: o.companyName, lieu: [].concat(o.locationRestrictions || []).join(", ") || "Monde", contrat: o.employmentType, salaire: o.minSalary ? `${o.minSalary}\u2013${o.maxSalary} ${o.currency || ""}` : "", date: o.pubDate ? new Date(o.pubDate * (o.pubDate < 1e12 ? 1e3 : 1)).toISOString() : null, url: o.applicationLink, description: `${(o.categories || []).join(", ")} ${o.excerpt || o.description || ""}`, source: "Himalayas", logo: o.companyLogo, teletravail: true }));
+      } },
+      rss: { label: "Flux RSS d'offres", run: async (q) => {
+        const out = [];
+        for (const u of asList(q.flux_rss).flatMap((x) => String(x).split(/[\s,]+/)).filter((x) => /^https?:/.test(x))) {
+          const items = parseFeed(await httpGet(u, { timeout: 15e3 }));
+          for (const it of items) out.push({ ref: `rss:${it.url}`, titre: it.titre, entreprise: it.auteur, lieu: "", date: it.date, url: it.url, description: it.resume, source: new URL(u).hostname.replace(/^www\./, "") });
+        }
+        return out;
+      } }
+    };
+    module2.exports = [{
+      name: "dzf_emplois",
+      label: "Emploi : chercher dans plusieurs sources",
+      category: "Services",
+      icon: "fas fa-briefcase",
+      output: "offres",
+      timeout: 240,
+      description: "Cherche des offres dans plusieurs sources \xE0 la fois (France Travail, Adzuna, Jooble, Arbeitnow, Remotive, RemoteOK, Jobicy, Himalayas, flux RSS), filtre par mots-cl\xE9s, lieu, t\xE9l\xE9travail et date, et renvoie une liste propre et sans doublon. Les sources en panne sont list\xE9es dans <sortie>_sources.",
+      params: [
+        { name: "sources", label: "Sources", default: "france_travail,adzuna,jooble,arbeitnow,remotive,jobicy,himalayas,remoteok", help: `S\xE9par\xE9es par des virgules : ${Object.entries(SOURCES).map(([k, v]) => `${k} (${v.label}${v.key ? ", cl\xE9" : ""})`).join(", ")}` },
+        { name: "mots_cles", label: "Mots-cl\xE9s", required: true, help: "S\xE9par\xE9s par des virgules : une offre doit contenir au moins un des mots-cl\xE9s (tous ses mots)" },
+        { name: "departement", label: "D\xE9partement(s) (France Travail)" },
+        { name: "lieu", label: "Ville ou r\xE9gion (Adzuna, Jooble)", help: "Ex. Paris, \xCEle-de-France" },
+        { name: "commune", label: "Code commune INSEE (France Travail)" },
+        { name: "rayon_km", label: "Rayon km (France Travail)", type: "int" },
+        { name: "contrat", label: "Contrat (France Travail : CDI, CDD\u2026)" },
+        { name: "alternance", label: "Alternance seulement", type: "bool" },
+        { name: "teletravail", label: "T\xE9l\xE9travail seulement", type: "bool" },
+        { name: "depuis_jours", label: "Publi\xE9es depuis (jours)", type: "int", default: 7 },
+        { name: "flux_rss", label: "Flux RSS d'offres (si source rss)", help: "Une ou plusieurs adresses" },
+        { name: "max", label: "Offres max", type: "int", default: 300 }
+      ],
+      run: async (p, ctx, api) => {
+        const q = { ...p, kws: words(p.mots_cles), lieu: String(p.lieu || "").trim() };
+        const wanted = String(p.sources || "").split(",").map((s) => s.trim()).filter((s) => SOURCES[s]);
+        const since = Date.now() - (+p.depuis_jours || 7) * 864e5;
+        const bilan = [];
+        const lists = await pool(wanted, 4, async (s) => {
+          const t0 = Date.now();
+          try {
+            let l = (await SOURCES[s].run(q, api)).map(offer).filter((o) => o.titre && o.url);
+            if (s !== "france_travail" && s !== "adzuna" && s !== "jooble") {
+              l = l.filter((o) => matches(`${o.titre} ${o.description}`, q.kws));
+              if (!p.teletravail) l = l.filter((o) => !o.teletravail || ALL_OK.test(o.lieu));
+              if (p.alternance) l = l.filter((o) => /altern|apprenti|work.?study|stage|intern/i.test(`${o.titre} ${o.contrat} ${o.description.slice(0, 400)}`));
+            }
+            l = l.filter((o) => !o.date || new Date(o.date).getTime() >= since);
+            bilan.push({ source: s, ok: true, offres: l.length, ms: Date.now() - t0 });
+            return l;
+          } catch (e) {
+            bilan.push({ source: s, ok: false, ignoree: !!e.skip, erreur: e.message, ms: Date.now() - t0 });
+            return [];
+          }
+        });
+        const seen = /* @__PURE__ */ new Set();
+        const out = [];
+        for (const o of lists.flat().sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0))) {
+          const k2 = norm(`${o.titre}|${o.entreprise}`).replace(/[^a-z0-9|]/g, "");
+          if (seen.has(k2)) continue;
+          seen.add(k2);
+          out.push(o);
+          if (out.length >= (+p.max || 300)) break;
+        }
+        const k = api.out || "offres";
+        return { __merge: { [k]: out, [`${k}_sources`]: bilan } };
+      }
+    }];
+    module2.exports.SOURCES = SOURCES;
+  }
+});
+
 // src/blocks/securite.js
 var require_securite = __commonJS({
   "src/blocks/securite.js"(exports2, module2) {
@@ -83642,6 +83842,299 @@ var require_controle = __commonJS({
       }
     ];
     module2.exports.kv = kv;
+  }
+});
+
+// src/blocks/surveillance_plus.js
+var require_surveillance_plus = __commonJS({
+  "src/blocks/surveillance_plus.js"(exports2, module2) {
+    "use strict";
+    var dns = require("dns").promises;
+    var crypto = require("crypto");
+    var { getPath, deep } = require_engine();
+    var { plain } = require_core();
+    var now = () => Number(process.hrtime.bigint() / 1000000n);
+    var kv = () => require_controle().kv;
+    var fetchT = async (url, opt = {}, ms = 15e3) => {
+      const ctl = new AbortController();
+      const t = setTimeout(() => ctl.abort(), ms);
+      try {
+        return await fetch(url, { ...opt, signal: ctl.signal });
+      } catch (e) {
+        throw new Error(e.name === "AbortError" ? `d\xE9lai d\xE9pass\xE9 (${Math.round(ms / 1e3)} s)` : e.message);
+      } finally {
+        clearTimeout(t);
+      }
+    };
+    var check = (val, a) => {
+      if (a.existe !== void 0) return (val !== void 0 && val !== null) === !!a.existe;
+      if (a.egal !== void 0) return JSON.stringify(val) === JSON.stringify(a.egal) || String(val) === String(a.egal);
+      if (a.contient !== void 0) return String(typeof val === "object" ? JSON.stringify(val) : val).includes(String(a.contient));
+      if (a.regex !== void 0) return new RegExp(a.regex).test(String(val));
+      if (a.max !== void 0) return Number(val) <= Number(a.max);
+      if (a.min !== void 0) return Number(val) >= Number(a.min);
+      return true;
+    };
+    module2.exports = [
+      {
+        name: "dzf_api_scenario",
+        label: "Surveillance : sc\xE9nario d'API",
+        category: "Surveillance",
+        icon: "fas fa-route",
+        output: "scenario",
+        timeout: 120,
+        description: "Encha\xEEne plusieurs appels HTTP comme un vrai utilisateur (connexion \u2192 action \u2192 v\xE9rification), avec des v\xE9rifications sur le code, le temps et le contenu JSON, et des valeurs reprises d'un appel \xE0 l'autre ({{login.token}}).",
+        params: [
+          { name: "etapes", label: "\xC9tapes (JSON)", type: "json", raw: true, required: true, default: '[{"nom":"sante","url":"https://exemple.fr/api/health","attendu":{"statut":200,"max_ms":1500,"verifs":[{"chemin":"status","egal":"ok"}]}}]', help: "Chaque \xE9tape : nom, url, methode, entetes, corps, attendu {statut, max_ms, verifs:[{chemin, egal|contient|existe|regex|min|max}]}. Les r\xE9ponses sont r\xE9utilisables : {{nom_etape.champ}}" },
+          { name: "secret_entete", label: "Secret ajout\xE9 en Authorization (facultatif)", help: "Nom d'un secret du coffre ; envoy\xE9 en \xAB Bearer \u2026 \xBB" }
+        ],
+        run: async (p, ctx, api) => {
+          let steps = p.etapes;
+          if (typeof steps === "string") steps = JSON.parse(steps);
+          const auth = p.secret_entete ? await api.secret(p.secret_entete) : "";
+          const vars = { ...ctx };
+          const res = [];
+          const t0 = now();
+          for (const s of steps || []) {
+            const e = deep(s, vars);
+            const a = e.attendu || {};
+            const t1 = now();
+            let r, body, json = null, err = "";
+            try {
+              r = await fetchT(e.url, { method: e.methode || (e.corps ? "POST" : "GET"), headers: { "User-Agent": "dysizz-flow-monitor/2", ...e.corps && typeof e.corps === "object" ? { "Content-Type": "application/json" } : {}, ...auth ? { Authorization: `Bearer ${auth}` } : {}, ...e.entetes || {} }, body: e.corps ? typeof e.corps === "object" ? JSON.stringify(e.corps) : String(e.corps) : void 0 }, (a.delai_s || 15) * 1e3);
+              body = await r.text();
+              try {
+                json = JSON.parse(body);
+              } catch (x) {
+                json = null;
+              }
+            } catch (x) {
+              err = x.message;
+            }
+            const ms = now() - t1;
+            const fails = [];
+            if (err) fails.push(err);
+            else {
+              if (a.statut && r.status !== +a.statut) fails.push(`code ${r.status} au lieu de ${a.statut}`);
+              if (!a.statut && r.status >= 400) fails.push(`code ${r.status}`);
+              if (a.max_ms && ms > +a.max_ms) fails.push(`${ms} ms > ${a.max_ms} ms`);
+              if (a.contient && !String(body).includes(a.contient)) fails.push(`texte \xAB ${a.contient} \xBB absent`);
+              for (const v of a.verifs || []) if (!check(getPath(json, v.chemin), v)) fails.push(`${v.chemin} : ${JSON.stringify(getPath(json, v.chemin))} ne va pas`);
+            }
+            vars[e.nom || `etape${res.length + 1}`] = json !== null ? json : body;
+            res.push({ nom: e.nom, url: e.url, statut: r ? r.status : 0, ms, ok: !fails.length, raison: fails.join(" ; ") });
+            if (fails.length && e.stop !== false) break;
+          }
+          const bad = res.find((x) => !x.ok);
+          return { ok: !bad, etat: bad ? "panne" : "ok", ms: now() - t0, raison: bad ? `${bad.nom || "\xE9tape"} : ${bad.raison}` : "", etapes: res };
+        }
+      },
+      {
+        name: "dzf_domaine_expiration",
+        label: "Surveillance : expiration du nom de domaine",
+        category: "Surveillance",
+        icon: "fas fa-globe",
+        output: "domaine",
+        timeout: 30,
+        description: "Lit la date d'expiration d'un nom de domaine (protocole RDAP, successeur de WHOIS) et le bureau d'enregistrement. Un domaine qui expire, c'est tout qui tombe : site, mails\u2026",
+        params: [{ name: "domaine", label: "Domaine", required: true, help: "Ex. ambs-agency.com" }, { name: "alerte_jours", label: "Attention en dessous de (jours)", type: "int", default: 30 }],
+        run: async (p) => {
+          const d = String(p.domaine).replace(/^https?:\/\//, "").replace(/\/.*$/, "").replace(/^www\./, "").trim().toLowerCase();
+          const r = await fetchT(`https://rdap.org/domain/${encodeURIComponent(d)}`, { headers: { Accept: "application/rdap+json, application/json" }, redirect: "follow" }, 2e4);
+          if (!r.ok) throw new Error(`RDAP : HTTP ${r.status}`);
+          const j = await r.json();
+          const ev = (name) => ((j.events || []).find((e) => e.eventAction === name) || {}).eventDate || null;
+          const exp = ev("expiration");
+          const reg = (j.entities || []).find((e) => (e.roles || []).includes("registrar")) || {};
+          const regName = ((reg.vcardArray || [])[1] || []).find((x) => x[0] === "fn");
+          const jours = exp ? Math.floor((new Date(exp) - Date.now()) / 864e5) : null;
+          return { domaine: d, expiration: exp, jours_restants: jours, cree_le: ev("registration"), registrar: regName ? regName[3] : "", statuts: j.status || [], etat: jours === null ? "inconnu" : jours < 0 ? "panne" : jours <= (+p.alerte_jours || 30) ? "lent" : "ok" };
+        }
+      },
+      {
+        name: "dzf_liste_noire",
+        label: "S\xE9curit\xE9 : IP ou domaine sur liste noire ?",
+        category: "S\xE9curit\xE9",
+        icon: "fas fa-ban",
+        output: "liste_noire",
+        timeout: 40,
+        description: "V\xE9rifie si l'adresse IP d'un serveur (ou d'un domaine) est sur les listes noires anti-spam (Spamhaus, SpamCop, Barracuda\u2026). Si oui, tes mails finissent en spam.",
+        params: [{ name: "cible", label: "IP ou domaine", required: true }, { name: "listes", label: "Listes (DNSBL)", default: "zen.spamhaus.org,bl.spamcop.net,b.barracudacentral.org,dnsbl.sorbs.net,psbl.surriel.com" }],
+        run: async (p) => {
+          let ip = String(p.cible).trim().replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+          if (!/^\d+\.\d+\.\d+\.\d+$/.test(ip)) ip = (await dns.resolve4(ip))[0];
+          const rev = ip.split(".").reverse().join(".");
+          const listes = String(p.listes).split(",").map((s) => s.trim()).filter(Boolean);
+          const res = await Promise.all(listes.map(async (l) => {
+            try {
+              const a = await dns.resolve4(`${rev}.${l}`);
+              return { liste: l, liste_noire: !a.some((x) => /^127\.255\./.test(x)), code: a.join(",") };
+            } catch (e) {
+              return { liste: l, liste_noire: false, code: e.code === "ENOTFOUND" || e.code === "ENODATA" ? "" : e.code };
+            }
+          }));
+          const hits = res.filter((x) => x.liste_noire);
+          return { ip, sur_liste: hits.map((x) => x.liste), details: res, etat: hits.length ? "panne" : "ok", raison: hits.length ? `list\xE9e sur ${hits.map((x) => x.liste).join(", ")}` : "" };
+        }
+      },
+      {
+        name: "dzf_contenu_change",
+        label: "Surveillance : la page a-t-elle chang\xE9 ?",
+        category: "Surveillance",
+        icon: "fas fa-not-equal",
+        output: "changement",
+        timeout: 60,
+        description: "Lit une page (ou une partie entre deux rep\xE8res) et dit si son texte a chang\xE9 depuis la derni\xE8re fois : prix, CGU, offre d'emploi, d\xE9figuration de ton site\u2026 Garde une empreinte, pas la page.",
+        params: [
+          { name: "url", label: "Adresse", required: true },
+          { name: "debut", label: "Rep\xE8re de d\xE9but (facultatif)", help: "Texte \xE0 partir duquel comparer" },
+          { name: "fin", label: "Rep\xE8re de fin (facultatif)" },
+          { name: "ignorer", label: "Ignorer (regex, facultatif)", help: "Ex. \\d{2}:\\d{2} pour ignorer les heures" }
+        ],
+        run: async (p) => {
+          const r = await fetchT(p.url, { headers: { "User-Agent": "Mozilla/5.0 (dysizz-flow)" }, redirect: "follow" }, 2e4);
+          let t = plain(await r.text());
+          if (p.debut) {
+            const i = t.indexOf(p.debut);
+            if (i >= 0) t = t.slice(i);
+          }
+          if (p.fin) {
+            const i = t.indexOf(p.fin);
+            if (i >= 0) t = t.slice(0, i + p.fin.length);
+          }
+          if (p.ignorer) t = t.replace(new RegExp(p.ignorer, "g"), "");
+          t = t.replace(/\s+/g, " ").trim();
+          const h = crypto.createHash("sha256").update(t).digest("hex");
+          const k = `dzf:page:${crypto.createHash("sha1").update(`${p.url}|${p.debut}|${p.fin}`).digest("hex")}`;
+          const prev = await kv().get(k);
+          await kv().set(k, { h, extrait: t.slice(0, 2e3), quand: Date.now() }, 400 * 86400);
+          const change = !!(prev && prev.h !== h);
+          let apercu = "";
+          if (change) {
+            let i = 0;
+            while (i < prev.extrait.length && prev.extrait[i] === t[i]) i++;
+            apercu = `\u2026${t.slice(Math.max(0, i - 60), i + 140)}\u2026`;
+          }
+          return { change, premiere_fois: !prev, statut: r.status, longueur: t.length, apercu, etat: change ? "lent" : "ok", raison: change ? "contenu modifi\xE9" : "" };
+        }
+      },
+      {
+        name: "dzf_dns_changement",
+        label: "Surveillance : le DNS a-t-il chang\xE9 ?",
+        category: "Surveillance",
+        icon: "fas fa-exchange-alt",
+        output: "dns_change",
+        timeout: 30,
+        description: "Compare les enregistrements DNS d'un domaine (A, AAAA, MX, NS, TXT, CNAME) avec la derni\xE8re lecture. Un changement que tu n'as pas fait peut \xEAtre un d\xE9tournement.",
+        params: [{ name: "domaine", label: "Domaine", required: true }, { name: "types", label: "Types", default: "A,AAAA,MX,NS,TXT" }],
+        run: async (p) => {
+          const d = String(p.domaine).replace(/^https?:\/\//, "").replace(/\/.*$/, "").trim();
+          const cur = {};
+          for (const t of String(p.types).split(",").map((s) => s.trim().toUpperCase()).filter(Boolean)) {
+            try {
+              cur[t] = (await dns.resolve(d, t)).map((x) => typeof x === "object" ? Array.isArray(x) ? x.join("") : x.exchange ? `${x.priority} ${x.exchange}` : JSON.stringify(x) : x).sort();
+            } catch (e) {
+              cur[t] = [];
+            }
+          }
+          const k = `dzf:dns:${d}`;
+          const prev = await kv().get(k);
+          await kv().set(k, cur, 400 * 86400);
+          const diffs = prev ? Object.keys(cur).filter((t) => JSON.stringify(prev[t] || []) !== JSON.stringify(cur[t])).map((t) => `${t} : ${(prev[t] || []).join(", ") || "\u2205"} \u2192 ${cur[t].join(", ") || "\u2205"}`) : [];
+          return { domaine: d, enregistrements: cur, change: diffs.length > 0, differences: diffs, etat: diffs.length ? "lent" : "ok", raison: diffs.join(" ; ") };
+        }
+      },
+      {
+        name: "dzf_prometheus",
+        label: "M\xE9triques : lire Prometheus",
+        category: "Logs & m\xE9triques",
+        icon: "fas fa-fire",
+        output: "prometheus",
+        timeout: 30,
+        description: "Pose une requ\xEAte PromQL \xE0 Prometheus (ou VictoriaMetrics), ou lit directement une page /metrics, et compare la valeur \xE0 un seuil. Pour surveiller CPU, m\xE9moire, files, erreurs 5xx de n'importe quel service.",
+        params: [
+          { name: "url", label: "Adresse", required: true, help: "Prometheus : http://prometheus:9090 \u2014 ou une page /metrics : http://service:9100/metrics" },
+          { name: "requete", label: "Requ\xEAte PromQL ou nom de m\xE9trique", required: true, help: 'Ex. 100 - avg(rate(node_cpu_seconds_total{mode="idle"}[5m]))*100 \u2014 ou pour /metrics : node_load1' },
+          { name: "max", label: "Alerte au-dessus de", type: "number" },
+          { name: "min", label: "Alerte en dessous de", type: "number" },
+          { name: "secret_auth", label: "Secret user:motdepasse (facultatif)" }
+        ],
+        run: async (p, ctx, api) => {
+          const headers = {};
+          if (p.secret_auth) headers.Authorization = `Basic ${Buffer.from(await api.secret(p.secret_auth) || "").toString("base64")}`;
+          let v;
+          if (/\/metrics\/?$/.test(p.url)) {
+            const txt = await (await fetchT(p.url, { headers })).text();
+            const line = txt.split("\n").find((l) => !l.startsWith("#") && (l.startsWith(`${p.requete} `) || l.startsWith(`${p.requete}{`)));
+            if (!line) throw new Error(`m\xE9trique ${p.requete} absente`);
+            v = Number(line.trim().split(/\s+/).pop());
+          } else {
+            const r = await fetchT(`${String(p.url).replace(/\/$/, "")}/api/v1/query?query=${encodeURIComponent(p.requete)}`, { headers });
+            const j = await r.json();
+            if (j.status !== "success") throw new Error(`Prometheus : ${j.error || r.status}`);
+            const res = j.data.result || [];
+            v = res.length ? Number((res[0].value || [])[1]) : null;
+          }
+          const over = p.max !== void 0 && p.max !== "" && v > +p.max, under = p.min !== void 0 && p.min !== "" && v < +p.min;
+          return { valeur: v, etat: over || under ? "panne" : "ok", raison: over ? `${v} > ${p.max}` : under ? `${v} < ${p.min}` : "" };
+        }
+      },
+      {
+        name: "dzf_note_securite",
+        label: "S\xE9curit\xE9 : note globale d'un site",
+        category: "S\xE9curit\xE9",
+        icon: "fas fa-user-shield",
+        output: "note",
+        timeout: 150,
+        description: "Audit rapide d'un site, not\xE9 de A \xE0 F : en-t\xEAtes de s\xE9curit\xE9, certificat TLS, ports ouverts inattendus, SPF / DMARC du domaine, liste noire. Avec la liste des points \xE0 corriger.",
+        params: [{ name: "url", label: "Site", required: true, help: "Ex. https://monsite.fr" }, { name: "ports_attendus", label: "Ports normaux", default: "80,443" }],
+        run: async (p, ctx, api) => {
+          const B = (n) => module2.exports.concat(require_securite()).find((b) => b.name === n);
+          const u = new URL(/^https?:/.test(p.url) ? p.url : `https://${p.url}`);
+          const host = u.hostname, dom = host.split(".").slice(-2).join(".");
+          const safe = async (n, q) => {
+            try {
+              return await B(n).run(q, ctx, api);
+            } catch (e) {
+              return { erreur: e.message };
+            }
+          };
+          const [ent, tls, ports, mail, bl] = await Promise.all([
+            safe("dzf_entetes_securite", { url: u.href }),
+            safe("dzf_certificat_tls", { hotes: host, port: 443 }),
+            safe("dzf_ports", { hote: host, ports: "21,22,23,25,80,443,3000,3306,5432,6379,8080,8443,9000,9200,27017", delai_ms: 1500 }),
+            safe("dzf_dns_mail", { domaine: dom }),
+            safe("dzf_liste_noire", { cible: host })
+          ]);
+          let score = 100;
+          const points = [];
+          const minus = (n, why) => {
+            score -= n;
+            points.push(why);
+          };
+          if (ent.erreur) minus(20, `site injoignable : ${ent.erreur}`);
+          else {
+            if (ent.score !== void 0) score -= Math.round((100 - ent.score) * 0.35);
+            for (const m of ent.manque || []) points.push(`en-t\xEAte manquant : ${m}`);
+            if (!ent.https) minus(15, "pas de HTTPS");
+          }
+          if (tls.erreur) minus(15, `TLS : ${tls.erreur}`);
+          else {
+            if (tls.jours_restants !== null && tls.jours_restants < 14) minus(10, `certificat expire dans ${tls.jours_restants} j`);
+            if (tls.valide === false) minus(20, `certificat invalide ${tls.erreur || ""}`);
+            if (/TLSv1(\.0|\.1)?$/.test(tls.protocole || "")) minus(10, `protocole ancien ${tls.protocole}`);
+          }
+          const okPorts = String(p.ports_attendus).split(",").map((x) => +x);
+          const extra = (ports.ouverts || []).filter((x) => !okPorts.includes(x));
+          if (extra.length) minus(Math.min(30, extra.length * 10), `ports ouverts \xE0 v\xE9rifier : ${extra.join(", ")}`);
+          if (!mail.erreur) for (const c of mail.conseils || []) minus(3, `mail : ${c}`);
+          if ((bl.sur_liste || []).length) minus(20, `IP sur liste noire : ${bl.sur_liste.join(", ")}`);
+          score = Math.max(0, Math.min(100, score));
+          const note = score >= 90 ? "A" : score >= 80 ? "B" : score >= 65 ? "C" : score >= 50 ? "D" : score >= 35 ? "E" : "F";
+          return { site: u.href, note, score, a_corriger: points, details: { entetes: ent, tls, ports, mail, liste_noire: bl }, etat: score >= 65 ? "ok" : score >= 50 ? "lent" : "panne", raison: points.slice(0, 3).join(" ; ") };
+        }
+      }
+    ];
   }
 });
 
@@ -84585,8 +85078,10 @@ var require_blocks = __commonJS({
       ...require_messagerie(),
       ...require_ia(),
       ...require_services(),
+      ...require_emplois(),
       ...require_securite(),
       ...require_surveillance(),
+      ...require_surveillance_plus(),
       ...require_observabilite(),
       ...require_taches(),
       ...require_extras(),
