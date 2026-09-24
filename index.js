@@ -1,4 +1,4 @@
-/* dysizz-flow 2.0.0 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.1.0 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.0.0" : "dev";
+    var VERSION2 = true ? "2.1.0" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -82414,6 +82414,7 @@ var require_messagerie = __commonJS({
       const self = node.disposition === "attachment" || node.dispositionParameters && node.dispositionParameters.filename ? 1 : 0;
       return self + (node.childNodes || []).reduce((s, c) => s + countAttachments(c), 0);
     };
+    var cleanHtml = (h) => String(h).replace(/<(script|noscript|iframe|object|embed|applet|frameset|frame|form)\b[\s\S]*?<\/\1\s*>/gi, "").replace(/<(script|iframe|object|embed|form|frame|frameset|applet|base|meta|link)\b[\s\S]*?(<\/\1\s*>|\/?>)/gi, "").replace(/\son[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, "").replace(/(href|src)\s*=\s*(["']?)\s*(javascript|vbscript|data:text\/html)[^"'\s>]*/gi, "$1=$2#");
     module2.exports = [
       {
         name: "dzf_imap_lire",
@@ -82422,7 +82423,7 @@ var require_messagerie = __commonJS({
         icon: "fas fa-inbox",
         output: "mails",
         timeout: 180,
-        description: "Lit les nouveaux messages d'une bo\xEEte IMAP en lecture seule (rien n'est modifi\xE9 sur le serveur). Reprend apr\xE8s le dernier UID d\xE9j\xE0 lu : aucun message trait\xE9 deux fois.",
+        description: "Lit les nouveaux messages d'une bo\xEEte IMAP en lecture seule (rien n'est modifi\xE9 sur le serveur). Reprend apr\xE8s le dernier UID d\xE9j\xE0 lu : aucun message trait\xE9 deux fois. Chaque mail a corps (texte), html (nettoy\xE9) et contenu (le HTML s'il existe, sinon le texte).",
         params: [
           { name: "serveur", label: "Serveur", default: "ssl0.ovh.net", help: "OVH : ssl0.ovh.net (MX Plan), pro1.mail.ovh.net (E-mail Pro)" },
           { name: "port", label: "Port", type: "int", default: 993 },
@@ -82447,10 +82448,11 @@ var require_messagerie = __commonJS({
               for (const uid of uids.filter((u) => u > last).slice(-(+p.max || 100))) {
                 const m = await client.fetchOne(String(uid), { uid: true, envelope: true, flags: true, bodyStructure: true, source: { start: 0, maxLength: 4e5 } }, { uid: true });
                 if (!m) continue;
-                let text = "";
+                let text = "", html = "";
                 try {
                   const parsed = await simpleParser(m.source, { skipImageLinks: true, skipTextToHtml: true, skipTextLinks: true });
                   text = parsed.text || plain(parsed.html || "");
+                  html = parsed.html ? cleanHtml(parsed.html).slice(0, 2e5) : "";
                 } catch (e) {
                   text = "";
                 }
@@ -82466,6 +82468,8 @@ var require_messagerie = __commonJS({
                   date: env.date || /* @__PURE__ */ new Date(),
                   extrait: plain(text, 240),
                   corps: String(text).slice(0, 3e4),
+                  html,
+                  contenu: html || String(text).slice(0, 3e4),
                   lu: flags.has("\\Seen"),
                   suivi: flags.has("\\Flagged"),
                   pieces_jointes: countAttachments(m.bodyStructure)
@@ -82979,7 +82983,7 @@ var require_securite = __commonJS({
           const j = await r.json();
           return (j.vulnerabilities || []).map(({ cve }) => {
             const m = cve.metrics && (cve.metrics.cvssMetricV31 || cve.metrics.cvssMetricV30 || [])[0] || {};
-            return { id: cve.id, publiee: cve.published, score: m.cvssData ? m.cvssData.baseScore : null, gravite: m.cvssData ? m.cvssData.baseSeverity : "", resume: ((cve.descriptions || []).find((d) => d.lang === "en") || {}).value || "", url: `https://nvd.nist.gov/vuln/detail/${cve.id}` };
+            return { cve: cve.id, publiee: cve.published, score: m.cvssData ? m.cvssData.baseScore : null, gravite: m.cvssData ? m.cvssData.baseSeverity : "", resume: ((cve.descriptions || []).find((d) => d.lang === "en") || {}).value || "", url: `https://nvd.nist.gov/vuln/detail/${cve.id}` };
           }).sort((a, b) => (b.score || 0) - (a.score || 0));
         }
       },
@@ -84877,11 +84881,11 @@ var require_templates = __commonJS({
         category: "S\xE9curit\xE9",
         when: "Daily",
         description: "Chaque jour : cherche les nouvelles failles publi\xE9es (base NVD) pour tes technologies et les range dans une table, sans doublon. Pr\xE9vient pour les critiques.",
-        vars: [{ name: "table_cve", label: "Table des failles (champs id unique, gravite, score, resume, url, publie_le)", default: "failles" }, { name: "mot_cle", label: "Technologie surveill\xE9e", default: "postgresql" }, { name: "gravite", label: "Gravit\xE9 minimale (MEDIUM, HIGH, CRITICAL)", default: "HIGH" }],
+        vars: [{ name: "table_cve", label: "Table des failles (champs cve unique, gravite, score, resume, url, publiee)", default: "failles" }, { name: "mot_cle", label: "Technologie surveill\xE9e", default: "postgresql" }, { name: "gravite", label: "Gravit\xE9 minimale (MEDIUM, HIGH, CRITICAL)", default: "HIGH" }],
         steps: chain(
           st("chercher", "dzf_cve", { mot_cle: "%%mot_cle%%", jours: 7, gravite_min: "%%gravite%%", sortie: "failles", delai_max: 90, essais: 2 }),
-          st("nouvelles", "dzf_liste_dedoublonner", { liste: "{{failles}}", cle: "id", table: "%%table_cve%%", sortie: "nouvelles" }),
-          st("ranger", "dzf_table_upsert", { table: "%%table_cve%%", liste: "{{nouvelles}}", cle: "id", sortie: "bilan" }),
+          st("nouvelles", "dzf_liste_dedoublonner", { liste: "{{failles}}", cle: "cve", table: "%%table_cve%%", sortie: "nouvelles" }),
+          st("ranger", "dzf_table_upsert", { table: "%%table_cve%%", liste: "{{nouvelles}}", cle: "cve", sortie: "bilan" }),
           st("critiques", "dzf_liste_filtrer", { liste: "{{nouvelles}}", champ: "gravite", operateur: "=", valeur: "CRITICAL", sortie: "critiques" }),
           st("prevenir", "dzf_notifier", { qui: "administrateurs", titre: "{{critiques.length}} faille(s) critique(s) : %%mot_cle%%", lien: "/page/%%table_cve%%" }, { only_if: "critiques.length > 0" })
         )
@@ -84901,6 +84905,72 @@ var require_templates = __commonJS({
           st("echecs", "dzf_file_terminer", { travaux: "{{boucle.echecs}}", resultat: "erreur" }, { only_if: "travaux.length > 0 && boucle.echecs.length > 0" }),
           st("liberer", "dzf_verrou", { action: "lib\xE9rer", nom: "file-%%file%%", sortie: "verrou" })
         )
+      },
+      {
+        key: "rapport_mail",
+        label: "Rapport du jour par e-mail",
+        category: "Organisation",
+        when: "Daily",
+        description: "Chaque matin : compte ce qui compte dans une table (ex. t\xE2ches du jour, nouveaux mails) et t'envoie un e-mail r\xE9capitulatif avec la liste.",
+        vars: [
+          { name: "table", label: "Table", default: "taches" },
+          { name: "filtre", label: "Lignes \xE0 lister (filtre JSON)", default: '{"not":{"statut":"fait"}}' },
+          { name: "champ", label: "Champ affich\xE9 pour chaque ligne", default: "titre" },
+          { name: "destinataire", label: "Envoyer \xE0 (e-mail)", default: "" }
+        ],
+        steps: chain(
+          st("lignes", "dzf_table_chercher", { table: "%%table%%", filtre: "%%filtre%%", limite: 50, sortie: "lignes" }),
+          st("texte", "dzf_texte", { modele: "Bonjour,\n\n{{nombre}} \xE9l\xE9ment(s) aujourd'hui :\n{{lignes}}", liste: "{{lignes}}", modele_ligne: "- {{item.%%champ%%}}", sortie: "texte" }),
+          st("envoyer", "dzf_mail_envoyer", { a: "%%destinataire%%", sujet: "Ton rapport du jour", texte: "{{texte}}", sortie: "envoi" }, { only_if: "lignes.length > 0" })
+        )
+      },
+      {
+        key: "webhook_signe",
+        label: "Webhook sign\xE9 \u2192 table (sans doublon)",
+        category: "Int\xE9grations",
+        when: "Never",
+        description: "\xC0 relier \xE0 un Point d'API (protection HMAC) : v\xE9rifie qu'un m\xEAme \xE9v\xE9nement n'est pas trait\xE9 deux fois, range les donn\xE9es re\xE7ues dans une table et r\xE9pond \xAB re\xE7u \xBB.",
+        vars: [{ name: "table", label: "Table de destination" }, { name: "cle", label: "Champ qui identifie l'\xE9v\xE9nement dans les donn\xE9es re\xE7ues", default: "id" }, { name: "modele", label: "Correspondance (JSON)", default: '{"ref":"{{corps.id}}","type":"{{corps.type}}","donnees":"{{corps_brut}}"}' }],
+        steps: chain(
+          st("deja", "dzf_idempotence", { cle: "webhook-{{corps.%%cle%%}}", duree_h: 72, sortie: "deja" }),
+          st("ligne", "dzf_definir", { valeurs: "%%modele%%", sortie: "ligne" }, { only_if: "!deja.deja_traite" }),
+          st("ranger", "dzf_table_ajouter", { table: "%%table%%", valeurs: "{{ligne}}", sortie: "id" }, { only_if: "!deja.deja_traite" }),
+          st("repondre", "dzf_definir", { valeurs: '{"reponse":{"recu":true}}', fusionner: true })
+        )
+      },
+      {
+        key: "seuil_alerte",
+        label: "Alerte si une valeur d\xE9passe un seuil",
+        category: "Surveillance",
+        when: "Hourly",
+        description: "Chaque heure : calcule une valeur dans une table (somme, nombre, max\u2026), la garde en m\xE9trique pour le graphique et te pr\xE9vient une seule fois quand elle d\xE9passe le seuil, puis quand elle redescend.",
+        vars: [
+          { name: "table", label: "Table" },
+          { name: "stat", label: "Calcul (compter, somme, max, min, moyenne)", default: "compter" },
+          { name: "champ", label: "Champ (sauf pour compter)", default: "" },
+          { name: "filtre", label: "Filtre (JSON, facultatif)", default: "{}" },
+          { name: "seuil", label: "Seuil", default: "100" },
+          { name: "nom", label: "Nom de la m\xE9trique", default: "ma.valeur" }
+        ],
+        steps: chain(
+          st("valeur", "dzf_table_compter", { table: "%%table%%", stat: "%%stat%%", champ: "%%champ%%", filtre: "%%filtre%%", sortie: "valeur" }),
+          st("mesure", "dzf_metrique", { nom: "%%nom%%", valeur: "{{valeur}}" }),
+          st("depasse", "dzf_calcul", { formule: "Math.max(0, {{valeur}} - %%seuil%%)", sortie: "depasse" }),
+          st("alerte", "dzf_alerte", { cle: "seuil-%%nom%%", probleme: "{{depasse}}", silence_min: 360, sortie: "alerte" }),
+          st("prevenir", "dzf_notifier", { qui: "administrateurs", titre: "%%nom%% : {{alerte.etat}}", texte: "Valeur actuelle : {{valeur}} (seuil %%seuil%%)" }, { only_if: "alerte.envoyer" })
+        )
+      },
+      {
+        key: "relance_planifiee",
+        label: "Relance automatique apr\xE8s N jours",
+        category: "Organisation",
+        when: "Insert",
+        tableVar: "table",
+        description: "Quand une ligne est ajout\xE9e (ex. une candidature, un devis), programme une relance dans N jours. Si la ligne a chang\xE9 de statut entre-temps, la relance ne part pas.",
+        vars: [{ name: "table", label: "Table surveill\xE9e", default: "candidatures" }, { name: "jours", label: "Relancer apr\xE8s (jours)", default: "7" }, { name: "workflow", label: "Workflow qui fait la relance (re\xE7oit \xAB ligne \xBB)" }],
+        steps: chain(
+          st("planifier", "dzf_planifier", { workflow: "%%workflow%%", dans: "%%jours%%", unite: "jours", contexte: '{"ligne":{"id":"{{id}}"}}', cle: "relance-%%table%%-{{id}}", sortie: "planifie" })
+        )
       }
     ];
   }
@@ -84917,6 +84987,24 @@ var require_install = __commonJS({
       if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, fill(x, vars)]));
       return v;
     };
+    var S = (n, t, o) => [n, t, o || {}];
+    var SCHEMAS = {
+      "rss_vers_table.table_sources": [S("nom", "String"), S("url", "String"), S("chaine", "String"), S("categorie", "String"), S("actif", "Bool")],
+      "rss_vers_table.table_articles": [S("titre", "String"), S("url", "String", { is_unique: true }), S("date", "Date"), S("resume", "String"), S("image", "String"), S("auteur", "String"), S("video_id", "String"), S("source", "String"), S("lu", "Bool")],
+      "imap_vers_table.table_mails": [S("uid", "Integer"), S("message_id", "String", { is_unique: true }), S("dossier", "String"), S("de", "String"), S("de_nom", "String"), S("a", "String"), S("sujet", "String"), S("date", "Date"), S("extrait", "String"), S("corps", "String"), S("lu", "Bool")],
+      "surveillance_sites.table_sites": [S("nom", "String"), S("url", "String", { is_unique: true }), S("actif", "Bool"), S("etat", "String"), S("ms", "Integer"), S("raison", "String"), S("verifie_le", "Date")],
+      "veille_cve.table_cve": [S("cve", "String", { is_unique: true }), S("gravite", "String"), S("score", "Float"), S("resume", "String"), S("url", "String"), S("publiee", "Date")]
+    };
+    var createTable = async (name, fields) => {
+      const Table = require("@saltcorn/data/models/table");
+      const Field = require("@saltcorn/data/models/field");
+      const t = await Table.create(name, { min_role_read: 1, min_role_write: 1 });
+      for (const [n, type, o] of fields) await Field.create({ table: t, name: n, label: n.charAt(0).toUpperCase() + n.slice(1).replace(/_/g, " "), type, ...o });
+      try {
+        await require("@saltcorn/data/db/state").getState().refresh_tables(true);
+      } catch (e) {
+      }
+    };
     var uniqueName = (base) => {
       const Trigger = require("@saltcorn/data/models/trigger");
       let n = base, i = 2;
@@ -84930,7 +85018,15 @@ var require_install = __commonJS({
       const WorkflowStep = require("@saltcorn/data/models/workflow_step");
       const Table = require("@saltcorn/data/models/table");
       const vars = Object.fromEntries((t.vars || []).map((v) => [v.name, input[v.name] !== void 0 && input[v.name] !== "" ? String(input[v.name]) : v.default ?? ""]));
-      for (const v of t.vars || []) if (/^table/.test(v.name) && vars[v.name] && !Table.findOne({ name: vars[v.name] })) throw new Error(`la table \xAB ${vars[v.name]} \xBB n'existe pas`);
+      const created = [];
+      for (const v of t.vars || []) {
+        if (!/^table/.test(v.name) || !vars[v.name] || Table.findOne({ name: vars[v.name] })) continue;
+        const schema = SCHEMAS[`${t.key}.${v.name}`];
+        if (schema && input.creer_tables !== "non") {
+          await createTable(vars[v.name], schema);
+          created.push(vars[v.name]);
+        } else throw new Error(`la table \xAB ${vars[v.name]} \xBB n'existe pas${schema ? "" : " : cr\xE9e-la d'abord dans Saltcorn (Tables \u2192 Cr\xE9er)"}`);
+      }
       const when = input.when || t.when;
       const table = t.tableVar ? Table.findOne({ name: vars[t.tableVar] }) : null;
       if (["Insert", "Update", "Delete"].includes(when) && !table) throw new Error("ce d\xE9clencheur a besoin d'une table");
@@ -84946,9 +85042,9 @@ var require_install = __commonJS({
         await require("@saltcorn/data/db/state").getState().refresh_triggers(true);
       } catch (e) {
       }
-      return { name, trigger_id, steps: steps.length };
+      return { name, trigger_id, steps: steps.length, created };
     };
-    module2.exports = { installTemplate, TEMPLATES, fill };
+    module2.exports = { installTemplate, TEMPLATES, fill, SCHEMAS };
   }
 });
 
@@ -85016,8 +85112,8 @@ var require_admin = __commonJS({
     var TYPE_LABEL = { texte: "texte court", text: "texte long", int: "nombre entier", number: "nombre", bool: "oui / non", select: "liste de choix", table: "une table", json: "JSON", code: "code", password: "mot de passe" };
     var page = (res, req, title, active, html) => res.sendWrap({ title, requestFluidLayout: true }, {
       above: [{ type: "blank", isHTML: true, contents: `<div class="dzf">
-<nav class="dzf-tabs">${[["", "Biblioth\xE8que", "fas fa-cubes"], ["atelier", "Atelier", "fas fa-tools"], ["modeles", "Mod\xE8les", "fas fa-project-diagram"], ["api", "Points d'API", "fas fa-plug"], ["coffre", "Coffre", "fas fa-lock"], ["supervision", "Supervision", "fas fa-tachometer-alt"], ["journal", "Journal", "fas fa-clipboard-list"]].map(([u, l, i]) => `<a href="/dysizz-flow${u ? "/" + u : ""}" class="${active === u ? "on" : ""}"><i class="${i}"></i>${l}</a>`).join("")}
-<a href="/actions" class="dzf-ext"><i class="fas fa-external-link-alt"></i>Workflows Saltcorn</a></nav>
+<nav class="dzf-tabs">${[["workflows", "Workflows", "fas fa-project-diagram"], ["modeles", "Catalogue", "fas fa-magic"], ["", "Blocs", "fas fa-cubes"], ["atelier", "Atelier", "fas fa-tools"], ["api", "Points d'API", "fas fa-plug"], ["coffre", "Coffre", "fas fa-lock"], ["supervision", "Supervision", "fas fa-tachometer-alt"], ["journal", "Journal", "fas fa-clipboard-list"]].map(([u, l, i]) => `<a href="/dysizz-flow${u ? "/" + u : ""}" class="${active === u ? "on" : ""}"><i class="${i}"></i>${l}</a>`).join("")}
+<a href="/dysizz" class="dzf-ext"><i class="fas fa-th-large"></i>Accueil</a></nav>
 ${flash(req)}${html}</div>`.replace(/\{\{/g, "&#123;&#123;").replace(/\}\}/g, "&#125;&#125;") }]
     });
     var flash = (req) => {
@@ -85108,7 +85204,7 @@ ${(b.params || []).map((p) => `<tr><td><code>${esc(p.name)}</code> ${esc(p.label
 <a class="dzf-card${b.off ? " dzf-off" : ""}" href="/dysizz-flow/atelier/${encodeURIComponent(b.row.nom)}"><span class="dzf-ic"><i class="${esc(b.icon)}"></i></span>
 <span><b>${esc(b.label)}${b.off ? " (d\xE9sactiv\xE9)" : ""}</b><small>${esc(b.description)}</small><code>${esc(PREFIX + b.row.nom)}</code></span></a>`).join("") || '<p class="dzf-muted">Pas encore de bloc perso.</p>'}</div>`);
     };
-    var editor = async (req, res) => {
+    var editor2 = async (req, res) => {
       if (!isAdmin(req)) return denied(res);
       const { blocs } = await ensureTables();
       let r = req.params.nom === "nouveau" ? null : await blocs.getRow({ nom: req.params.nom });
@@ -85265,27 +85361,47 @@ return r.r;`;
     var WHEN_LABEL = { Never: "\xE0 la main (pour tester)", Often: "toutes les ~5 min", Hourly: "toutes les heures", Daily: "chaque jour", Weekly: "chaque semaine", Insert: "\xE0 chaque ajout dans la table", Update: "\xE0 chaque modification", "API call": "sur appel d'API (webhook)" };
     var templates = async (req, res) => {
       if (!isAdmin(req)) return denied(res);
+      const { SCHEMAS } = require_install();
+      const Table = require("@saltcorn/data/models/table");
       const byName = Object.fromEntries((await allBlocks()).map((b) => [b.name, b]));
-      page(res, req, "Mod\xE8les de workflows", "modeles", `
-<div class="dzf-head"><div><h1>Mod\xE8les de workflows</h1><p>Des encha\xEEnements de blocs pr\xEAts \xE0 l'emploi. L'installation cr\xE9e un vrai workflow Saltcorn que tu ouvres ensuite dans l'\xE9diteur visuel pour le modifier. Conseil : installe-le d'abord \xAB \xE0 la main \xBB, essaie-le avec \xAB Test run \xBB, puis choisis sa fr\xE9quence.</p></div></div>
-<div class="dzf-tpls">${TEMPLATES.map((t) => `
-<details class="dzf-tpl"><summary><span class="dzf-ic"><i class="fas fa-project-diagram"></i></span><span><b>${esc(t.label)}</b><small>${esc(t.description)}</small><em>${esc(t.category)} \xB7 ${esc(WHEN_LABEL[t.when] || t.when)} \xB7 ${t.steps.length} \xE9tapes</em></span></summary>
-<ol class="dzf-steps">${t.steps.map((s) => `<li><i class="${esc((byName[s.action_name] || {}).icon || "fas fa-cog")}"></i><b>${esc(s.name)}</b> ${esc((byName[s.action_name] || {}).label || s.action_name)}${s.only_if ? ` <small>si ${esc(s.only_if)}</small>` : ""}</li>`).join("")}</ol>
-<form method="post" action="/dysizz-flow/modeles/${t.key}" class="dzf-tpl-form">${hidden(req)}
-<label>Nom du workflow<input class="form-control" name="nom" value="dzf_${esc(t.key)}"></label>
-<label>D\xE9clenchement<select class="form-select" name="when">${WHEN.map((w) => `<option value="${w}"${w === "Never" ? " selected" : ""}>${esc(WHEN_LABEL[w])}${w === t.when ? " \u2014 conseill\xE9" : ""}</option>`).join("")}</select></label>
-${(t.vars || []).map((v) => `<label>${esc(v.label)}<input class="form-control" name="${esc(v.name)}" value="${esc(v.default || "")}"></label>`).join("")}
-<button class="btn btn-primary"><i class="fas fa-download"></i> Installer</button></form></details>`).join("")}</div>`);
+      const cats = [...new Set(TEMPLATES.map((t) => t.category))];
+      const CAT_COLOR = { Veille: "#00aba9", Messagerie: "#2d89ef", Organisation: "#00a300", Int\u00E9grations: "#603cba", Donn\u00E9es: "#1e7145", IA: "#e3008c", Services: "#e3a21a", Surveillance: "#da532c", S\u00E9curit\u00E9: "#b91d47", T\u00E2ches: "#7e3878" };
+      const mini = (t) => `<div class="dzf-mini"><span class="dzf-mini-n trig" title="${esc(WHEN_LABEL[t.when] || t.when)}"><i class="fas fa-bolt"></i></span>${t.steps.slice(0, 7).map((st) => {
+        const b = byName[st.action_name] || {};
+        return `<span class="dzf-mini-l${st.only_if ? " if" : ""}"></span><span class="dzf-mini-n" title="${esc(b.label || st.action_name)}${st.only_if ? " \u2014 seulement si " + esc(st.only_if) : ""}"><i class="${esc(b.icon || "fas fa-cog")}"></i></span>`;
+      }).join("")}${t.steps.length > 7 ? `<span class="dzf-mini-more">+${t.steps.length - 7}</span>` : ""}</div>`;
+      const card = (t) => {
+        const needs = (t.vars || []).filter((v) => /^table/.test(v.name));
+        const auto = needs.filter((v) => SCHEMAS[`${t.key}.${v.name}`]);
+        return `<article class="dzf-tplc" data-cat="${esc(t.category)}" data-search="${esc((t.label + " " + t.description + " " + t.category).toLowerCase())}" style="--c:${CAT_COLOR[t.category] || "#5b5bf0"}">
+<div class="dzf-tplc-top"><span class="dzf-tplc-cat">${esc(t.category)}</span><span class="dzf-tplc-when"><i class="far fa-clock"></i> ${esc(WHEN_LABEL[t.when] || t.when)}</span></div>
+<h3>${esc(t.label)}</h3><p>${esc(t.description)}</p>${mini(t)}
+<details class="dzf-tplc-use"><summary class="btn btn-primary btn-sm"><i class="fas fa-magic"></i> Utiliser ce mod\xE8le</summary>
+<form method="post" action="/dysizz-flow/modeles/${esc(t.key)}" class="dzf-tplc-form">${hidden(req)}
+<label>Nom du workflow<input class="form-control form-control-sm" name="nom" value="${esc(t.key)}"></label>
+${(t.vars || []).map((v) => `<label>${esc(v.label)}<input class="form-control form-control-sm" name="${esc(v.name)}" value="${esc(v.default || "")}"${/^table/.test(v.name) ? ` list="dzf-tables"` : ""}></label>`).join("")}
+<label>D\xE9marrage<select class="form-select form-select-sm" name="when">${WHEN.map((w) => `<option value="${w}"${w === "Never" ? " selected" : ""}>${esc(WHEN_LABEL[w])}${w === t.when ? " (conseill\xE9)" : ""}</option>`).join("")}</select><small>Conseil : commence \xAB \xE0 la main \xBB, essaie-le dans l'\xE9diteur, puis choisis sa fr\xE9quence.</small></label>
+${auto.length ? `<label class="dzf-check"><input type="checkbox" name="creer_tables" value="oui" checked onchange="this.value=this.checked?'oui':'non'"> Cr\xE9er les tables qui manquent (${auto.map((v) => esc(v.default || v.name)).join(", ")})</label>` : ""}
+<button class="btn btn-primary"><i class="fas fa-check"></i> Cr\xE9er et ouvrir dans l'\xE9diteur</button></form></details></article>`;
+      };
+      page(res, req, "Catalogue de workflows", "modeles", `
+<div class="dzf-head"><div><h1>Catalogue</h1><p>Des workflows pr\xEAts \xE0 l'emploi. Choisis-en un, r\xE9ponds \xE0 2 ou 3 questions, il s'ouvre dans l'\xE9diteur visuel : tu vois chaque \xE9tape et tu peux tout changer.</p></div>
+<a class="btn btn-outline-primary" href="/dysizz-flow/editeur/nouveau"><i class="fas fa-plus"></i> Partir de z\xE9ro</a></div>
+<input class="form-control dzf-search" placeholder="Chercher (mail, RSS, alerte, IA\u2026)" oninput="dzfSearchWf(this.value)">
+<nav class="dzf-chipsbar"><button class="on" onclick="dzfCat(this,'')">Tout <small>${TEMPLATES.length}</small></button>${cats.map((c) => `<button onclick="dzfCat(this,'${esc(c)}')">${esc(c)} <small>${TEMPLATES.filter((t) => t.category === c).length}</small></button>`).join("")}</nav>
+<div class="dzf-tplgrid">${TEMPLATES.map(card).join("")}</div>
+<datalist id="dzf-tables">${(await Table.find({})).map((t) => `<option value="${esc(t.name)}">`).join("")}</datalist>`);
     };
     var installTpl = async (req, res) => {
       if (!isAdmin(req)) return denied(res);
       try {
         const t = TEMPLATES.find((x) => x.key === req.params.key);
         const input = { ...req.body || {} };
+        if (!input.creer_tables) input.creer_tables = "non";
         if (t && ["Insert", "Update"].includes(input.when) && !t.tableVar) input.when = t.when;
         if (t && t.tableVar && !["Insert", "Update", "Delete"].includes(input.when) && ["Insert", "Update"].includes(t.when)) input.when = input.when === "Never" ? "Never" : t.when;
         const r = await installTemplate(req.params.key, input);
-        res.redirect(`/dysizz-flow/modeles?ok=${encodeURIComponent(`Workflow \xAB ${r.name} \xBB cr\xE9\xE9 (${r.steps} \xE9tapes). Ouvre-le : Param\xE8tres \u2192 D\xE9clencheurs \u2192 ${r.name}`)}`);
+        res.redirect(`/dysizz-flow/editeur/${r.trigger_id}?ok=${encodeURIComponent(`Workflow \xAB ${r.name} \xBB cr\xE9\xE9${r.created.length ? ` (tables cr\xE9\xE9es : ${r.created.join(", ")})` : ""}. Clique sur une \xE9tape pour la r\xE9gler, puis \xAB Essayer \xBB.`)}`);
       } catch (e) {
         go(res, "/dysizz-flow/modeles", e.message, true);
       }
@@ -85306,7 +85422,7 @@ ${rows.map((r) => `<tr class="${r.ok ? "" : "dzf-bad"}"><td>${esc(new Date(r.qua
       await journal.deleteRows({ quand: { lt: new Date(Date.now() - 7 * 864e5) } });
       go(res, "/dysizz-flow/journal", "Journal nettoy\xE9");
     };
-    module2.exports = { allBlocks, csrf, restore, page, go, hidden, flash, library, blockPage, tryBlock, workshop, editor, save, remove, copyBuiltin, exportBlocks, importBlocks, templates, installTpl, journalPage, purge };
+    module2.exports = { allBlocks, csrf, restore, page, go, hidden, flash, library, blockPage, tryBlock, workshop, editor: editor2, save, remove, copyBuiltin, exportBlocks, importBlocks, templates, installTpl, journalPage, purge };
   }
 });
 
@@ -85591,10 +85707,383 @@ ${lastErr.map((r) => `<tr><td>${esc(new Date(r.quand).toLocaleString("fr-FR"))}<
   }
 });
 
+// src/editor.js
+var require_editor = __commonJS({
+  "src/editor.js"(exports2, module2) {
+    "use strict";
+    var { esc, isAdmin, denied, VERSION: VERSION2 } = require_core();
+    var { BLOCKS: BLOCKS2, CATEGORIES } = require_blocks();
+    var { COMMON } = require_engine();
+    var WHEN = [
+      ["Never", "\xC0 la main (bouton, essai, autre workflow)"],
+      ["Often", "Toutes les ~5 minutes"],
+      ["Hourly", "Toutes les heures"],
+      ["Daily", "Chaque jour"],
+      ["Weekly", "Chaque semaine"],
+      ["Insert", "Quand une ligne est ajout\xE9e dans une table"],
+      ["Update", "Quand une ligne est modifi\xE9e"],
+      ["Delete", "Quand une ligne est supprim\xE9e"],
+      ["API call", "Quand une adresse d'API est appel\xE9e"]
+    ];
+    var TABLE_WHEN = ["Insert", "Update", "Delete", "Validate"];
+    var NAME_RE = /^[a-zA-Z_][a-zA-Z0-9_]{0,60}$/;
+    var BUILTIN = {
+      ForLoop: ["Boucle : pour chaque \xE9l\xE9ment", "fas fa-redo", "R\xE9p\xE8te un morceau du workflow pour chaque \xE9l\xE9ment d'une liste"],
+      SetContext: ["D\xE9finir des variables (Saltcorn)", "fas fa-equals", "Cr\xE9e des variables \xE0 partir d'expressions JavaScript"],
+      TableQuery: ["Lire une table (Saltcorn)", "fas fa-table", "Requ\xEAte sur une table, rang\xE9e dans une variable"],
+      UserForm: ["Poser des questions", "fas fa-question-circle", "Demande \xE0 un utilisateur de r\xE9pondre, le workflow attend"],
+      EditViewForm: ["Faire remplir un formulaire", "fas fa-edit", "Ouvre une vue Edit, le workflow attend la r\xE9ponse"],
+      Output: ["Afficher un message", "fas fa-comment-alt", "Montre un message, le workflow attend qu'il soit lu"],
+      DataOutput: ["Afficher des donn\xE9es", "fas fa-th-list", "Montre une valeur ou un tableau"],
+      OutputView: ["Afficher une vue", "fas fa-eye", "Montre le r\xE9sultat d'une vue Saltcorn"],
+      WaitUntil: ["Attendre jusqu'\xE0", "fas fa-hourglass-half", "Met le workflow en pause jusqu'\xE0 une date"],
+      WaitNextTick: ["Continuer en arri\xE8re-plan", "fas fa-forward", "D\xE9tache la suite du workflow"],
+      SetErrorHandler: ["Si erreur, aller \xE0", "fas fa-life-ring", "Choisit l'\xE9tape qui prend la main en cas d'erreur"],
+      APIResponse: ["R\xE9pondre \xE0 l'appel d'API", "fas fa-reply", "La r\xE9ponse renvoy\xE9e \xE0 qui a appel\xE9 le workflow"],
+      TerminateWorkflow: ["Arr\xEAter le workflow", "fas fa-stop-circle", "Termine tout de suite"]
+    };
+    var FR = {
+      array_expression: ["Liste \xE0 parcourir", "Expression qui donne la liste, ex. nouveaux ou resultat.lignes"],
+      item_variable: ["Nom de l'\xE9l\xE9ment", "Dans la boucle, l'\xE9l\xE9ment courant s'appelle ainsi, ex. item"],
+      index_variable: ["Nom du num\xE9ro (facultatif)", "Le rang de l'\xE9l\xE9ment, \xE0 partir de 0"],
+      loop_body_initial_step: ["Premi\xE8re \xE9tape de la boucle", "Les \xE9tapes \xE0 r\xE9p\xE9ter commencent ici"],
+      form_header: ["Titre du formulaire", ""],
+      user_id_expression: ["Qui doit r\xE9pondre (id, expression)", "Vide = l'utilisateur qui lance"],
+      edit_view: ["Vue Edit \xE0 remplir", ""],
+      view: ["Vue \xE0 afficher", ""],
+      view_state: ["\xC9tat de la vue (expression)", "Ex. { id: ligne.id }"],
+      response_variable: ["Ranger la r\xE9ponse dans", ""],
+      resume_at: ["Reprendre \xE0 (expression date)", "Ex. new Date(Date.now() + 3600e3)"],
+      ctx_values: ["Valeurs (expression objet)", "Ex. { total: a + b }"],
+      response_expression: ["R\xE9ponse (expression)", ""],
+      return_value: ["Valeur renvoy\xE9e (expression)", ""],
+      output_text: ["Message", "Tu peux utiliser {{variables}}"],
+      output_expr: ["Valeur \xE0 afficher (expression)", ""],
+      markdown: ["Message en Markdown", ""],
+      immediately_bg: ["Tout de suite en arri\xE8re-plan", ""],
+      wait_delay: ["Attendre (secondes)", ""],
+      query_table: ["Table", ""],
+      query_object: ["Filtre (objet)", 'Ex. { statut: "ouvert" }'],
+      error_handling_step: ["\xC9tape en cas d'erreur", ""],
+      query_variable: ["Ranger les lignes dans", ""],
+      popup_title: ["Titre de la fen\xEAtre", ""],
+      user_form_questions: ["Questions", ""]
+    };
+    var st = () => require("@saltcorn/data/db/state").getState();
+    var json = (res, code, body) => {
+      res.status(code);
+      res.setHeader("Cache-Control", "no-store");
+      res.json(body);
+    };
+    var PALETTE = null;
+    var palette = async () => {
+      if (PALETTE && PALETTE.t > Date.now() - 6e4) return PALETTE.v;
+      const { loadUserBlocks } = require_userblocks();
+      const { externalBlocks, registerExternal: registerExternal2 } = require_registry();
+      registerExternal2();
+      const mine = await loadUserBlocks().catch(() => []);
+      const dz = [...BLOCKS2, ...externalBlocks(), ...mine].map((b) => ({ name: b.name, label: b.label, category: b.category, icon: b.icon, description: b.description, output: b.output, dz: true }));
+      const known = new Set(dz.map((b) => b.name));
+      const builtin = Object.entries(BUILTIN).map(([name, [label, icon, description]]) => ({ name, label, icon, description, category: "Contr\xF4le du workflow", builtin: true }));
+      const others = Object.entries(st().actions || {}).filter(([n, a]) => !known.has(n) && !n.startsWith("dzf_") && a && !a.disableInWorkflow).map(([name, a]) => ({ name, label: name.replace(/_/g, " "), icon: "fas fa-plug", description: String(a.description || "").slice(0, 200), category: "Actions Saltcorn et modules" }));
+      const cats = [...CATEGORIES, "Extensions", "Contr\xF4le du workflow", "Actions Saltcorn et modules"];
+      const v = { categories: cats, blocks: [...dz, ...builtin, ...others] };
+      PALETTE = { t: Date.now(), v };
+      return v;
+    };
+    var optList = async (o) => {
+      if (!o) return null;
+      if (typeof o === "function") o = await o();
+      if (typeof o === "string") o = o.split(",").map((s) => s.trim());
+      if (!Array.isArray(o)) return null;
+      return o.map((x) => x && typeof x === "object" ? { v: String(x.value ?? x.name ?? ""), l: String(x.label ?? x.name ?? x.value ?? "") } : { v: String(x), l: String(x) });
+    };
+    var kindOf = (f) => {
+      const t = typeof f.type === "string" ? f.type : f.type && f.type.name;
+      if (f.fieldview === "code_editor" || f.input_type === "code") return f.attributes && /json/.test(f.attributes.mode || "") ? "json" : "code";
+      if (f.fieldview === "textarea" || f.attributes && f.attributes.rows) return "text";
+      if (f.fieldview === "password" || f.input_type === "password") return "password";
+      if (t === "Bool") return "bool";
+      if (t === "Integer" || t === "Float") return "number";
+      if (f.input_type === "section_header") return "header";
+      return "string";
+    };
+    var normField = async (f) => ({
+      name: f.name,
+      label: f.label || f.name,
+      help: f.sublabel || "",
+      required: !!f.required,
+      def: f.default,
+      kind: kindOf(f),
+      options: await optList(f.options || f.attributes && f.attributes.options),
+      showIf: f.showIf || null
+    });
+    var fieldsFor = async (name, tableName) => {
+      const Table = require("@saltcorn/data/models/table");
+      const table = tableName ? Table.findOne({ name: tableName }) : null;
+      const tableNames = async () => (await Table.find({})).map((t) => t.name).filter((n) => !/^_sc_/.test(n)).sort();
+      let dz = BLOCKS2.find((b) => b.name === name) || require_registry().externalBlocks().find((b) => b.name === name);
+      if (!dz && name.startsWith("dzf_u_")) dz = (await require_userblocks().loadUserBlocks().catch(() => [])).find((b) => b.name === name);
+      if (dz) {
+        const kind = { int: "number", number: "number", bool: "bool", select: "select", table: "table", json: "json", code: "code", text: "text", password: "password" };
+        const params = await Promise.all((dz.params || []).map(async (p) => ({
+          name: p.name,
+          label: p.label || p.name,
+          help: p.help || "",
+          required: !!p.required,
+          def: p.default,
+          kind: kind[p.type] || "string",
+          options: p.type === "select" ? await optList(p.options) : p.type === "table" ? await optList(await tableNames()) : null,
+          vars: !["bool", "select", "table"].includes(p.type)
+        })));
+        const common = await Promise.all(COMMON(dz).map(normField));
+        return { dz: true, label: dz.label, description: dz.description, icon: dz.icon, output: dz.output, fields: params, advanced: common.map((c) => ({ ...c, vars: false })) };
+      }
+      if (BUILTIN[name]) {
+        const WorkflowStep = require("@saltcorn/data/models/workflow_step");
+        const all = await WorkflowStep.builtInActionConfigFields({});
+        const mine = all.filter((f) => f.showIf && [].concat(f.showIf.wf_action_name || []).includes(name));
+        return { builtin: true, label: BUILTIN[name][0], description: BUILTIN[name][2], icon: BUILTIN[name][1], fields: await Promise.all(mine.map(async (f) => {
+          const n = await normField(f);
+          const { wf_action_name, ...rest } = n.showIf || {};
+          const fr = FR[n.name];
+          return { ...n, ...fr ? { label: fr[0], help: fr[1] || n.help } : {}, showIf: Object.keys(rest).length ? rest : null };
+        })) };
+      }
+      const a = (st().actions || {})[name];
+      if (!a) return { unknown: true, fields: [] };
+      let fs = [];
+      try {
+        fs = typeof a.configFields === "function" ? await a.configFields({ table, mode: "workflow" }) : a.configFields || [];
+      } catch (e) {
+        fs = [];
+      }
+      return { label: name, description: a.description || "", icon: "fas fa-plug", fields: await Promise.all((fs || []).filter((f) => f && f.name).map(normField)) };
+    };
+    var loadWorkflow = async (id) => {
+      const Trigger = require("@saltcorn/data/models/trigger");
+      const WorkflowStep = require("@saltcorn/data/models/workflow_step");
+      const Table = require("@saltcorn/data/models/table");
+      const t = Trigger.findOne({ id: +id });
+      if (!t || t.action !== "Workflow") return null;
+      const steps = await WorkflowStep.find({ trigger_id: t.id });
+      const table = t.table_id ? Table.findOne({ id: t.table_id }) : null;
+      return {
+        id: t.id,
+        name: t.name,
+        description: t.description || "",
+        when_trigger: t.when_trigger,
+        table: table ? table.name : "",
+        channel: t.channel || "",
+        layout: t.configuration && t.configuration.dzf_layout || {},
+        steps: steps.map((s) => ({ id: s.id, name: s.name, action_name: s.action_name, configuration: s.configuration || {}, next_step: s.next_step || "", only_if: s.only_if || "", initial_step: !!s.initial_step }))
+      };
+    };
+    var saveWorkflow = async (body) => {
+      const Trigger = require("@saltcorn/data/models/trigger");
+      const WorkflowStep = require("@saltcorn/data/models/workflow_step");
+      const Table = require("@saltcorn/data/models/table");
+      const name = String(body.name || "").trim();
+      if (!name || name.length > 80) throw new Error("donne un nom au workflow");
+      const when = WHEN.some(([w]) => w === body.when_trigger) || body.when_trigger === "Validate" ? body.when_trigger : "Never";
+      const table = body.table ? Table.findOne({ name: body.table }) : null;
+      if (TABLE_WHEN.includes(when) && !table) throw new Error("choisis la table qui d\xE9clenche le workflow");
+      const steps = Array.isArray(body.steps) ? body.steps : [];
+      const names = /* @__PURE__ */ new Set();
+      for (const s of steps) {
+        if (!NAME_RE.test(s.name || "")) throw new Error(`nom d'\xE9tape invalide : \xAB ${s.name} \xBB (lettres, chiffres, _)`);
+        if (names.has(s.name)) throw new Error(`deux \xE9tapes s'appellent \xAB ${s.name} \xBB`);
+        names.add(s.name);
+        if (!s.action_name) throw new Error(`l'\xE9tape \xAB ${s.name} \xBB n'a pas de bloc`);
+      }
+      if (steps.length && steps.filter((s) => s.initial_step).length !== 1) throw new Error("il faut exactement une premi\xE8re \xE9tape (relie-la au d\xE9clencheur)");
+      const other = Trigger.findOne({ name });
+      if (other && other.id !== +body.id) throw new Error(`un autre \xE9v\xE9nement s'appelle d\xE9j\xE0 \xAB ${name} \xBB`);
+      let trig;
+      const layout = body.layout && typeof body.layout === "object" ? body.layout : {};
+      if (body.id) {
+        trig = Trigger.findOne({ id: +body.id });
+        if (!trig || trig.action !== "Workflow") throw new Error("workflow introuvable");
+        await Trigger.update(trig.id, { name, description: String(body.description || "").slice(0, 500), when_trigger: when, table_id: table ? table.id : null, configuration: { ...trig.configuration || {}, dzf_layout: layout } });
+      } else {
+        trig = await Trigger.create({ name, action: "Workflow", when_trigger: when, table_id: table ? table.id : null, description: String(body.description || "").slice(0, 500), configuration: { dzf_layout: layout }, min_role: 1 });
+        if (!trig.id) trig = Trigger.findOne({ name });
+      }
+      const existing = await WorkflowStep.find({ trigger_id: trig.id });
+      const keep = new Set(steps.filter((s) => s.id).map((s) => +s.id));
+      for (const ex of existing) if (!keep.has(ex.id)) await ex.delete();
+      for (const s of steps) {
+        const row = { name: s.name, action_name: s.action_name, configuration: s.configuration || {}, next_step: String(s.next_step || ""), only_if: String(s.only_if || ""), initial_step: !!s.initial_step };
+        const ex = s.id && existing.find((e) => e.id === +s.id);
+        if (ex) await ex.update(row);
+        else await WorkflowStep.create({ trigger_id: trig.id, ...row });
+      }
+      try {
+        await st().refresh_triggers(true);
+      } catch (e) {
+      }
+      try {
+        st().processSend({ refresh: "triggers", tenant: require("@saltcorn/data/db").getTenantSchema() });
+      } catch (e) {
+      }
+      return loadWorkflow(trig.id);
+    };
+    var listPage = async (req, res) => {
+      if (!isAdmin(req)) return denied(res);
+      const { page, hidden } = require_admin();
+      const Trigger = require("@saltcorn/data/models/trigger");
+      const Table = require("@saltcorn/data/models/table");
+      const WF = Trigger.find({ action: "Workflow" }).sort((a, b) => a.name.localeCompare(b.name));
+      let runs = [];
+      try {
+        runs = await require("@saltcorn/data/models/workflow_run").find({ started_at: { gt: new Date(Date.now() - 7 * 864e5) } }, { orderBy: "id", orderDesc: true, limit: 3e3 });
+      } catch (e) {
+        runs = [];
+      }
+      const last = /* @__PURE__ */ new Map();
+      const errs = /* @__PURE__ */ new Map();
+      for (const r of runs) {
+        if (!last.has(r.trigger_id)) last.set(r.trigger_id, r);
+        if (r.status === "Error") errs.set(r.trigger_id, (errs.get(r.trigger_id) || 0) + 1);
+      }
+      const WS = require("@saltcorn/data/models/workflow_step");
+      const counts = /* @__PURE__ */ new Map();
+      for (const s of await WS.find({})) counts.set(s.trigger_id, (counts.get(s.trigger_id) || 0) + 1);
+      const whenL = Object.fromEntries(WHEN);
+      const card = (t) => {
+        const r = last.get(t.id);
+        const tb = t.table_id ? (Table.findOne({ id: t.table_id }) || {}).name : "";
+        const e = errs.get(t.id) || 0;
+        return `<div class="dzf-wf" data-search="${esc((t.name + " " + (t.description || "")).toLowerCase())}">
+<a class="dzf-wf-main" href="/dysizz-flow/editeur/${t.id}"><span class="dzf-wf-ic"><i class="fas fa-project-diagram"></i></span>
+<span><b>${esc(t.name)}</b><small>${esc(t.description || "")}</small>
+<span class="dzf-wf-meta"><span><i class="far fa-clock"></i> ${esc(whenL[t.when_trigger] || t.when_trigger)}${tb ? ` \xB7 ${esc(tb)}` : ""}</span><span>${counts.get(t.id) || 0} \xE9tape(s)</span>
+${r ? `<span class="${r.status === "Error" ? "ko" : "ok"}">${r.status === "Error" ? "derni\xE8re ex\xE9cution en erreur" : "derni\xE8re ex\xE9cution " + esc(new Date(r.started_at).toLocaleString("fr-FR", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }))}</span>` : '<span class="mute">jamais lanc\xE9</span>'}
+${e ? `<span class="ko">${e} erreur(s) sur 7 j</span>` : ""}</span></span></a>
+<div class="dzf-wf-actions"><a class="btn btn-sm btn-primary" href="/dysizz-flow/editeur/${t.id}"><i class="fas fa-pen"></i> Ouvrir</a>
+<form method="post" action="/dysizz-flow/workflows/dupliquer">${hidden(req)}<input type="hidden" name="id" value="${t.id}"><button class="btn btn-sm btn-outline-secondary" title="Dupliquer"><i class="far fa-copy"></i></button></form>
+<form method="post" action="/dysizz-flow/workflows/supprimer" onsubmit="return confirm('Supprimer le workflow \xAB ${esc(t.name).replace(/'/g, "\\'")} \xBB ?')">${hidden(req)}<input type="hidden" name="id" value="${t.id}"><button class="btn btn-sm btn-outline-danger" title="Supprimer"><i class="far fa-trash-alt"></i></button></form></div></div>`;
+      };
+      page(res, req, "Workflows", "workflows", `
+<div class="dzf-head"><div><h1>Workflows</h1><p>Tes automatismes. Ouvre-en un pour le voir en sch\xE9ma et le modifier : des blocs reli\xE9s par des fl\xE8ches, un formulaire simple pour chaque bloc, et le code si tu le veux.</p></div>
+<div class="dzf-actions"><a class="btn btn-outline-primary" href="/dysizz-flow/modeles"><i class="fas fa-magic"></i> Partir d'un mod\xE8le</a><a class="btn btn-primary" href="/dysizz-flow/editeur/nouveau"><i class="fas fa-plus"></i> Nouveau workflow</a></div></div>
+<input class="form-control dzf-search" placeholder="Chercher un workflow\u2026" oninput="dzfSearchWf(this.value)">
+<div class="dzf-wfs">${WF.map(card).join("") || `<div class="dzf-empty"><i class="fas fa-project-diagram"></i><p>Pas encore de workflow.</p><a class="btn btn-primary" href="/dysizz-flow/modeles">Voir les mod\xE8les pr\xEAts \xE0 l'emploi</a></div>`}</div>`);
+    };
+    var editorPage = async (req, res) => {
+      if (!isAdmin(req)) return denied(res);
+      const Table = require("@saltcorn/data/models/table");
+      let wf = req.params.id === "nouveau" ? { id: null, name: "", description: "", when_trigger: "Never", table: "", layout: {}, steps: [] } : await loadWorkflow(req.params.id);
+      if (!wf) return res.redirect("/dysizz-flow/workflows");
+      const boot = {
+        wf,
+        when: WHEN,
+        tableWhen: TABLE_WHEN,
+        tables: (await Table.find({})).map((t) => ({ name: t.name, fields: t.getFields().map((f) => f.name) })).filter((t) => !/^_sc_/.test(t.name)),
+        palette: await palette(),
+        csrf: req.csrfToken ? req.csrfToken() : "",
+        version: VERSION2
+      };
+      const data = JSON.stringify(boot).replace(/</g, "\\u003c").replace(/\{\{/g, "\\u007b\\u007b");
+      res.sendWrap({ title: wf.name ? `Workflow ${wf.name}` : "Nouveau workflow", requestFluidLayout: true, headers: [{ css: `/dysizz-flow/a/${VERSION2}/editeur.css` }, { script: `/dysizz-flow/a/${VERSION2}/editeur.js`, defer: true }] }, {
+        above: [{ type: "blank", isHTML: true, contents: `<div id="dzfe" class="dzfe"><div class="dzfe-loading">Chargement de l'\xE9diteur\u2026</div></div><script type="application/json" id="dzfe-data">${data}</script>` }]
+      });
+    };
+    var apiFields = async (req, res) => {
+      if (!isAdmin(req)) return json(res, 403, { error: "r\xE9serv\xE9 aux admins" });
+      try {
+        json(res, 200, await fieldsFor(req.params.action, req.query.table));
+      } catch (e) {
+        json(res, 200, { error: e.message, fields: [] });
+      }
+    };
+    var apiSave = async (req, res) => {
+      if (!isAdmin(req)) return json(res, 403, { error: "r\xE9serv\xE9 aux admins" });
+      try {
+        json(res, 200, { ok: true, wf: await saveWorkflow(req.body || {}) });
+      } catch (e) {
+        json(res, 200, { error: e.message });
+      }
+    };
+    var apiRun = async (req, res) => {
+      if (!isAdmin(req)) return json(res, 403, { error: "r\xE9serv\xE9 aux admins" });
+      const Trigger = require("@saltcorn/data/models/trigger");
+      const WorkflowRun = require("@saltcorn/data/models/workflow_run");
+      const b = req.body || {};
+      const t = Trigger.findOne({ id: +b.id });
+      if (!t) return json(res, 200, { error: "enregistre d'abord le workflow" });
+      let ctx = {};
+      try {
+        ctx = typeof b.contexte === "string" ? JSON.parse(b.contexte || "{}") : b.contexte || {};
+      } catch (e) {
+        return json(res, 200, { error: `contexte JSON invalide : ${e.message}` });
+      }
+      const t0 = Date.now();
+      const run = await WorkflowRun.create({ trigger_id: t.id, context: ctx, started_by: req.user.id });
+      try {
+        await run.run({ user: req.user, req, interactive: false, trace: true });
+        const after = await WorkflowRun.findOne({ id: run.id });
+        json(res, 200, { ok: after.status !== "Error", status: after.status, error: after.error || "", step: after.current_step, context: after.context, ms: Date.now() - t0, run_id: run.id });
+      } catch (e) {
+        const after = await WorkflowRun.findOne({ id: run.id }).catch(() => null);
+        json(res, 200, { ok: false, status: "Error", error: e.message, step: after && after.current_step, context: after && after.context, ms: Date.now() - t0, run_id: run.id });
+      }
+    };
+    var duplicate = async (req, res) => {
+      if (!isAdmin(req)) return denied(res);
+      const wf = await loadWorkflow((req.body || {}).id);
+      if (!wf) return res.redirect("/dysizz-flow/workflows");
+      const Trigger = require("@saltcorn/data/models/trigger");
+      let n = `${wf.name}_copie`, i = 2;
+      while (Trigger.findOne({ name: n })) n = `${wf.name}_copie${i++}`;
+      const copy = await saveWorkflow({ ...wf, id: null, name: n, when_trigger: "Never", steps: wf.steps.map((s) => ({ ...s, id: null })) });
+      res.redirect(`/dysizz-flow/editeur/${copy.id}`);
+    };
+    var remove = async (req, res) => {
+      if (!isAdmin(req)) return denied(res);
+      const Trigger = require("@saltcorn/data/models/trigger");
+      const t = Trigger.findOne({ id: +(req.body || {}).id });
+      if (t && t.action === "Workflow") await t.delete();
+      res.redirect("/dysizz-flow/workflows");
+    };
+    module2.exports = { listPage, editorPage, apiFields, apiSave, apiRun, duplicate, remove, palette, loadWorkflow, saveWorkflow, fieldsFor, WHEN };
+  }
+});
+
+// src/hub.js
+var require_hub = __commonJS({
+  "src/hub.js"(exports2, module2) {
+    "use strict";
+    var admin3 = (req) => !!(req && req.user && req.user.role_id === 1);
+    var liveWf = async () => {
+      const WR = require("@saltcorn/data/models/workflow_run");
+      const runs = await WR.find({ started_at: { gt: new Date(Date.now() - 864e5) } }, { limit: 5e3 }).catch(() => []);
+      const e = runs.filter((r) => r.status === "Error").length;
+      return e ? { n: e, text: `${e} en erreur (24 h)` } : { text: `${runs.length} ex\xE9cution(s) sur 24 h` };
+    };
+    var liveWfCount = async () => {
+      const n = require("@saltcorn/data/models/trigger").find({ action: "Workflow" }).length;
+      return { n, text: `${n} workflow${n > 1 ? "s" : ""}` };
+    };
+    var dysizz_hub2 = (req) => admin3(req) ? [
+      { group: "Workflows", label: "Mes workflows", sub: "les voir en sch\xE9ma, les modifier sans code", url: "/dysizz-flow/workflows", icon: "fas fa-project-diagram", color: "#e3a21a", size: "w", live: liveWfCount },
+      { group: "Workflows", label: "Nouveau", url: "/dysizz-flow/editeur/nouveau", icon: "fas fa-plus", color: "#00a300", size: "s" },
+      { group: "Workflows", label: "Catalogue", sub: "mod\xE8les pr\xEAts \xE0 l'emploi", url: "/dysizz-flow/modeles", icon: "fas fa-magic", color: "#603cba", size: "m" },
+      { group: "Workflows", label: "Blocs", sub: "les 100+ blocs", url: "/dysizz-flow", icon: "fas fa-cubes", color: "#2d89ef", size: "m" },
+      { group: "Workflows", label: "Supervision", url: "/dysizz-flow/supervision", icon: "fas fa-tachometer-alt", color: "#b91d47", size: "s", live: liveWf },
+      { group: "Workflows", label: "Points d'API", url: "/dysizz-flow/api", icon: "fas fa-plug", color: "#00aba9", size: "s" },
+      { group: "Workflows", label: "Coffre", url: "/dysizz-flow/coffre", icon: "fas fa-lock", color: "#3a4a5c", size: "s" },
+      { group: "Workflows", label: "Atelier", url: "/dysizz-flow/atelier", icon: "fas fa-tools", color: "#7e3878", size: "s" },
+      { group: "Workflows", label: "Journal", url: "/dysizz-flow/journal", icon: "fas fa-clipboard-list", color: "#8a5a2b", size: "s" }
+    ] : [];
+    module2.exports = { dysizz_hub: dysizz_hub2 };
+  }
+});
+
 // src/generated/assets.js
 var require_assets = __commonJS({
   "src/generated/assets.js"(exports2, module2) {
-    module2.exports = { ASSETS: { "dzf.css": { "src": ".dzf{--f-surface:var(--dz-surface,#fff);--f-s2:var(--dz-surface-2,#f2f2f5);--f-border:var(--dz-border,rgba(0,0,0,.1));--f-text:var(--dz-text,#16161a);--f-mute:var(--dz-text-mute,#777);--f-ink:var(--dz-primary-ink,#4b4bd8);--f-soft:var(--dz-primary-soft,rgba(91,91,240,.12));--f-r:var(--dz-radius,14px);--f-mono:var(--dz-font-mono,ui-monospace,Menlo,monospace);max-width:1280px;margin:0 auto}\n.dzf h1{font-weight:750;letter-spacing:-.02em;display:flex;gap:.6rem;align-items:center}\n.dzf h2{font-size:1.02rem;font-weight:700;margin:1.8rem 0 .8rem}\n.dzf h2 small{color:var(--f-mute);font-weight:500}\n.dzf code{font-family:var(--f-mono);font-size:.82em}\n.dzf-tabs{display:flex;flex-wrap:wrap;gap:.35rem;margin:0 0 1.2rem;padding-bottom:.8rem;border-bottom:1px solid var(--f-border)}\n.dzf-tabs a{display:inline-flex;gap:.5rem;align-items:center;padding:.45rem .9rem;border-radius:99px;color:var(--f-mute)!important;text-decoration:none!important;font-weight:600;font-size:.9rem}\n.dzf-tabs a:hover{background:var(--f-s2);color:var(--f-text)!important}\n.dzf-tabs a.on{background:var(--f-text);color:var(--f-surface)!important}\n.dzf-tabs .dzf-ext{margin-left:auto}\n.dzf-head{display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap;align-items:flex-start}\n.dzf-head p{color:var(--f-mute);max-width:80ch}\n.dzf-actions{display:flex;gap:.5rem;flex-wrap:wrap;align-items:flex-start}\n.dzf-import{display:flex;gap:.4rem}.dzf-import textarea{width:220px}\n.dzf-muted{color:var(--f-mute)}\n.dzf-search{max-width:520px;margin:.5rem 0 1rem;border-radius:12px}\n.dzf-grid{display:grid;gap:.8rem;grid-template-columns:repeat(auto-fill,minmax(min(100%,320px),1fr))}\n.dzf-card{display:flex;gap:.8rem;padding:.95rem 1rem;border-radius:var(--f-r);border:1px solid var(--f-border);background:var(--f-surface);color:var(--f-text)!important;text-decoration:none!important;transition:transform .15s,border-color .15s}\n.dzf-card:hover{transform:translateY(-2px);border-color:var(--f-ink)}\n.dzf-card b{display:block;font-size:.95rem}.dzf-card small{display:block;color:var(--f-mute);line-height:1.4;margin:.2rem 0 .35rem;font-size:.82rem}\n.dzf-card code{color:var(--f-mute);font-size:.72rem}\n.dzf-off{opacity:.55}\n.dzf-ic{width:40px;height:40px;flex:none;border-radius:11px;display:grid;place-items:center;background:var(--f-soft);color:var(--f-ink)}\n.dzf-cat h2 small{font-family:var(--f-mono);font-size:.72rem}\n.dzf-table{width:100%;font-size:.88rem;border-collapse:collapse;background:var(--f-surface);border-radius:12px;overflow:hidden}\n.dzf-table th{font:600 .68rem var(--f-mono);text-transform:uppercase;letter-spacing:.06em;color:var(--f-mute);padding:.55rem .7rem;text-align:left;background:var(--f-s2)}\n.dzf-table td{padding:.55rem .7rem;border-top:1px solid var(--f-border);vertical-align:top}\n.dzf-table .dzf-common td{color:var(--f-mute);font-size:.82rem}\n.dzf-bad td{background:color-mix(in srgb,#e5484d 7%,transparent)}\n.dzf-req{font:600 .62rem var(--f-mono);text-transform:uppercase;color:#e5484d}\n.dzf .dzf-code,.dzf .dzf-out{margin:0;padding:1rem;border-radius:12px;background:#0f1117!important;color:#e6e6ea!important;font:.8rem/1.55 var(--f-mono);white-space:pre-wrap;max-height:520px;overflow:auto}\n.dzf-out.ok{border-left:4px solid #30a46c}.dzf-out.ko{border-left:4px solid #e5484d}\n.dzf-mono{font-family:var(--f-mono)!important;font-size:.82rem!important}\n.dzf-try{display:grid;gap:.8rem;grid-template-columns:1fr 1fr}\n.dzf-try label{font-size:.8rem;font-weight:600;color:var(--f-mute)}\n.dzf-try-bar,.dzf-try .dzf-out{grid-column:1/-1}\n.dzf-try-bar{display:flex;gap:.8rem;align-items:center}\n@media(max-width:760px){.dzf-try{grid-template-columns:1fr}}\n.dzf-flash{padding:.75rem 1rem;border-radius:10px;margin:0 0 1rem;font-size:.9rem}\n.dzf-flash.ok{background:color-mix(in srgb,#30a46c 13%,transparent)}.dzf-flash.ko{background:color-mix(in srgb,#e5484d 13%,transparent)}\n.dzf-ed-grid{display:grid;gap:.8rem 1rem;grid-template-columns:repeat(auto-fill,minmax(240px,1fr))}\n.dzf-ed-grid label{font-size:.8rem;font-weight:600;color:var(--f-mute);display:grid;gap:.25rem}\n.dzf-ed-grid small{font-weight:400}\n.dzf-wide{grid-column:1/-1}\n.dzf-check{display:flex!important;align-items:center;gap:.5rem}\n.dzf-params{display:grid;gap:.4rem;margin-bottom:.6rem}\n.dzf-prm{display:grid;gap:.35rem;grid-template-columns:1fr 1.2fr 1fr 1fr 1fr 1.4fr auto auto auto;align-items:center;padding:.4rem;border-radius:10px;background:var(--f-s2)}\n.dzf-prm .form-control,.dzf-prm .form-select{font-size:.82rem;padding:.3rem .5rem}\n.dzf-req-l{font-size:.78rem;white-space:nowrap;display:flex;gap:.3rem;align-items:center}\n@media(max-width:900px){.dzf-prm{grid-template-columns:1fr 1fr}}\n.dzf-codearea{min-height:320px;tab-size:2}\n.dzf-save{display:flex;gap:.6rem;margin-top:1rem}\n.dzf-tpls{display:grid;gap:.7rem}\n.dzf-tpl{border:1px solid var(--f-border);border-radius:var(--f-r);background:var(--f-surface);padding:.9rem 1rem}\n.dzf-tpl summary{display:flex;gap:.8rem;cursor:pointer;list-style:none}\n.dzf-tpl summary::-webkit-details-marker{display:none}\n.dzf-tpl summary b{display:block}.dzf-tpl summary small{display:block;color:var(--f-mute);margin:.15rem 0}.dzf-tpl summary em{font-style:normal;font:600 .7rem var(--f-mono);color:var(--f-mute)}\n.dzf-steps{margin:1rem 0;padding-left:1.4rem;display:grid;gap:.35rem;font-size:.88rem}\n.dzf-steps i{width:1.3em;color:var(--f-ink);text-align:center;margin-right:.3rem}\n.dzf-steps small{color:var(--f-mute)}\n.dzf-tpl-form{display:grid;gap:.6rem 1rem;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));align-items:end;padding-top:.8rem;border-top:1px dashed var(--f-border)}\n.dzf-tpl-form label{font-size:.8rem;font-weight:600;color:var(--f-mute);display:grid;gap:.25rem}\n.dzf-point{display:grid;gap:.7rem;grid-template-columns:repeat(auto-fill,minmax(min(100%,220px),1fr));align-items:end;padding:1rem;border:1px solid var(--f-border);border-radius:var(--f-r);background:var(--f-surface)}\n.dzf-point label{display:flex;flex-direction:column;gap:.25rem;font-size:.82rem;font-weight:600;color:var(--f-mute)}\n.dzf-point .dzf-save{grid-column:1/-1;display:flex;gap:.5rem}\n.dzf-box{border:1px solid var(--f-border);border-radius:var(--f-r);background:var(--f-surface);margin:.5rem 0}\n.dzf-box>summary{padding:.75rem 1rem;cursor:pointer;display:flex;gap:.6rem;flex-wrap:wrap;align-items:center}\n.dzf-box>summary code{overflow-wrap:anywhere}\n.dzf-box .dzf-point{border:0;border-top:1px solid var(--f-border);border-radius:0 0 var(--f-r) var(--f-r)}\n.dzf-kpis{display:grid;gap:.8rem;grid-template-columns:repeat(auto-fill,minmax(min(100%,200px),1fr));margin:1rem 0}\n.dzf-kpi{display:flex;flex-direction:column;gap:.15rem;padding:.9rem 1rem;border:1px solid var(--f-border);border-radius:var(--f-r);background:var(--f-surface)}\n.dzf-kpi small{color:var(--f-mute);font-size:.78rem}\n.dzf-kpi b{font-size:1.5rem;font-weight:750;letter-spacing:-.02em}\n.dzf-bar{display:inline-block;width:120px;height:8px;border-radius:99px;background:var(--f-s2);overflow:hidden;vertical-align:middle}\n.dzf-bar i{display:block;height:100%;background:var(--f-ink);border-radius:99px}\n.dzf-bar.bad i{background:#d9534f}" }, "dzf.js": { "src": `/* dysizz-flow \u2014 script des pages d'administration (aucune d\xE9pendance). */
+    module2.exports = { ASSETS: { "dzf.css": { "src": ".dzf{--f-surface:var(--dz-surface,#fff);--f-s2:var(--dz-surface-2,#f2f2f5);--f-border:var(--dz-border,rgba(0,0,0,.1));--f-text:var(--dz-text,#16161a);--f-mute:var(--dz-text-mute,#777);--f-ink:var(--dz-primary-ink,#4b4bd8);--f-soft:var(--dz-primary-soft,rgba(91,91,240,.12));--f-r:var(--dz-radius,14px);--f-mono:var(--dz-font-mono,ui-monospace,Menlo,monospace);max-width:1280px;margin:0 auto}\n.dzf h1{font-weight:750;letter-spacing:-.02em;display:flex;gap:.6rem;align-items:center}\n.dzf h2{font-size:1.02rem;font-weight:700;margin:1.8rem 0 .8rem}\n.dzf h2 small{color:var(--f-mute);font-weight:500}\n.dzf code{font-family:var(--f-mono);font-size:.82em}\n.dzf-tabs{display:flex;flex-wrap:wrap;gap:.35rem;margin:0 0 1.2rem;padding-bottom:.8rem;border-bottom:1px solid var(--f-border)}\n.dzf-tabs a{display:inline-flex;gap:.5rem;align-items:center;padding:.45rem .9rem;border-radius:99px;color:var(--f-mute)!important;text-decoration:none!important;font-weight:600;font-size:.9rem}\n.dzf-tabs a:hover{background:var(--f-s2);color:var(--f-text)!important}\n.dzf-tabs a.on{background:var(--f-text);color:var(--f-surface)!important}\n.dzf-tabs .dzf-ext{margin-left:auto}\n.dzf-head{display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap;align-items:flex-start}\n.dzf-head p{color:var(--f-mute);max-width:80ch}\n.dzf-actions{display:flex;gap:.5rem;flex-wrap:wrap;align-items:flex-start}\n.dzf-import{display:flex;gap:.4rem}.dzf-import textarea{width:220px}\n.dzf-muted{color:var(--f-mute)}\n.dzf-search{max-width:520px;margin:.5rem 0 1rem;border-radius:12px}\n.dzf-grid{display:grid;gap:.8rem;grid-template-columns:repeat(auto-fill,minmax(min(100%,320px),1fr))}\n.dzf-card{display:flex;gap:.8rem;padding:.95rem 1rem;border-radius:var(--f-r);border:1px solid var(--f-border);background:var(--f-surface);color:var(--f-text)!important;text-decoration:none!important;transition:transform .15s,border-color .15s}\n.dzf-card:hover{transform:translateY(-2px);border-color:var(--f-ink)}\n.dzf-card b{display:block;font-size:.95rem}.dzf-card small{display:block;color:var(--f-mute);line-height:1.4;margin:.2rem 0 .35rem;font-size:.82rem}\n.dzf-card code{color:var(--f-mute);font-size:.72rem}\n.dzf-off{opacity:.55}\n.dzf-ic{width:40px;height:40px;flex:none;border-radius:11px;display:grid;place-items:center;background:var(--f-soft);color:var(--f-ink)}\n.dzf-cat h2 small{font-family:var(--f-mono);font-size:.72rem}\n.dzf-table{width:100%;font-size:.88rem;border-collapse:collapse;background:var(--f-surface);border-radius:12px;overflow:hidden}\n.dzf-table th{font:600 .68rem var(--f-mono);text-transform:uppercase;letter-spacing:.06em;color:var(--f-mute);padding:.55rem .7rem;text-align:left;background:var(--f-s2)}\n.dzf-table td{padding:.55rem .7rem;border-top:1px solid var(--f-border);vertical-align:top}\n.dzf-table .dzf-common td{color:var(--f-mute);font-size:.82rem}\n.dzf-bad td{background:color-mix(in srgb,#e5484d 7%,transparent)}\n.dzf-req{font:600 .62rem var(--f-mono);text-transform:uppercase;color:#e5484d}\n.dzf .dzf-code,.dzf .dzf-out{margin:0;padding:1rem;border-radius:12px;background:#0f1117!important;color:#e6e6ea!important;font:.8rem/1.55 var(--f-mono);white-space:pre-wrap;max-height:520px;overflow:auto}\n.dzf-out.ok{border-left:4px solid #30a46c}.dzf-out.ko{border-left:4px solid #e5484d}\n.dzf-mono{font-family:var(--f-mono)!important;font-size:.82rem!important}\n.dzf-try{display:grid;gap:.8rem;grid-template-columns:1fr 1fr}\n.dzf-try label{font-size:.8rem;font-weight:600;color:var(--f-mute)}\n.dzf-try-bar,.dzf-try .dzf-out{grid-column:1/-1}\n.dzf-try-bar{display:flex;gap:.8rem;align-items:center}\n@media(max-width:760px){.dzf-try{grid-template-columns:1fr}}\n.dzf-flash{padding:.75rem 1rem;border-radius:10px;margin:0 0 1rem;font-size:.9rem}\n.dzf-flash.ok{background:color-mix(in srgb,#30a46c 13%,transparent)}.dzf-flash.ko{background:color-mix(in srgb,#e5484d 13%,transparent)}\n.dzf-ed-grid{display:grid;gap:.8rem 1rem;grid-template-columns:repeat(auto-fill,minmax(240px,1fr))}\n.dzf-ed-grid label{font-size:.8rem;font-weight:600;color:var(--f-mute);display:grid;gap:.25rem}\n.dzf-ed-grid small{font-weight:400}\n.dzf-wide{grid-column:1/-1}\n.dzf-check{display:flex!important;align-items:center;gap:.5rem}\n.dzf-params{display:grid;gap:.4rem;margin-bottom:.6rem}\n.dzf-prm{display:grid;gap:.35rem;grid-template-columns:1fr 1.2fr 1fr 1fr 1fr 1.4fr auto auto auto;align-items:center;padding:.4rem;border-radius:10px;background:var(--f-s2)}\n.dzf-prm .form-control,.dzf-prm .form-select{font-size:.82rem;padding:.3rem .5rem}\n.dzf-req-l{font-size:.78rem;white-space:nowrap;display:flex;gap:.3rem;align-items:center}\n@media(max-width:900px){.dzf-prm{grid-template-columns:1fr 1fr}}\n.dzf-codearea{min-height:320px;tab-size:2}\n.dzf-save{display:flex;gap:.6rem;margin-top:1rem}\n.dzf-tpls{display:grid;gap:.7rem}\n.dzf-tpl{border:1px solid var(--f-border);border-radius:var(--f-r);background:var(--f-surface);padding:.9rem 1rem}\n.dzf-tpl summary{display:flex;gap:.8rem;cursor:pointer;list-style:none}\n.dzf-tpl summary::-webkit-details-marker{display:none}\n.dzf-tpl summary b{display:block}.dzf-tpl summary small{display:block;color:var(--f-mute);margin:.15rem 0}.dzf-tpl summary em{font-style:normal;font:600 .7rem var(--f-mono);color:var(--f-mute)}\n.dzf-steps{margin:1rem 0;padding-left:1.4rem;display:grid;gap:.35rem;font-size:.88rem}\n.dzf-steps i{width:1.3em;color:var(--f-ink);text-align:center;margin-right:.3rem}\n.dzf-steps small{color:var(--f-mute)}\n.dzf-tpl-form{display:grid;gap:.6rem 1rem;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));align-items:end;padding-top:.8rem;border-top:1px dashed var(--f-border)}\n.dzf-tpl-form label{font-size:.8rem;font-weight:600;color:var(--f-mute);display:grid;gap:.25rem}\n.dzf-point{display:grid;gap:.7rem;grid-template-columns:repeat(auto-fill,minmax(min(100%,220px),1fr));align-items:end;padding:1rem;border:1px solid var(--f-border);border-radius:var(--f-r);background:var(--f-surface)}\n.dzf-point label{display:flex;flex-direction:column;gap:.25rem;font-size:.82rem;font-weight:600;color:var(--f-mute)}\n.dzf-point .dzf-save{grid-column:1/-1;display:flex;gap:.5rem}\n.dzf-box{border:1px solid var(--f-border);border-radius:var(--f-r);background:var(--f-surface);margin:.5rem 0}\n.dzf-box>summary{padding:.75rem 1rem;cursor:pointer;display:flex;gap:.6rem;flex-wrap:wrap;align-items:center}\n.dzf-box>summary code{overflow-wrap:anywhere}\n.dzf-box .dzf-point{border:0;border-top:1px solid var(--f-border);border-radius:0 0 var(--f-r) var(--f-r)}\n.dzf-kpis{display:grid;gap:.8rem;grid-template-columns:repeat(auto-fill,minmax(min(100%,200px),1fr));margin:1rem 0}\n.dzf-kpi{display:flex;flex-direction:column;gap:.15rem;padding:.9rem 1rem;border:1px solid var(--f-border);border-radius:var(--f-r);background:var(--f-surface)}\n.dzf-kpi small{color:var(--f-mute);font-size:.78rem}\n.dzf-kpi b{font-size:1.5rem;font-weight:750;letter-spacing:-.02em}\n.dzf-bar{display:inline-block;width:120px;height:8px;border-radius:99px;background:var(--f-s2);overflow:hidden;vertical-align:middle}\n.dzf-bar i{display:block;height:100%;background:var(--f-ink);border-radius:99px}\n.dzf-bar.bad i{background:#d9534f}\n.dzf-wfs{display:flex;flex-direction:column;gap:.6rem}\n.dzf-wf{display:flex;gap:1rem;align-items:center;justify-content:space-between;padding:.85rem 1rem;border:1px solid var(--f-border);border-radius:var(--f-r);background:var(--f-surface)}\n.dzf-wf:hover{border-color:var(--f-ink)}\n.dzf-wf-main{display:flex;gap:.9rem;align-items:flex-start;color:var(--f-text)!important;text-decoration:none!important;min-width:0;flex:1}\n.dzf-wf-main>span:last-child{display:flex;flex-direction:column;min-width:0}\n.dzf-wf-main small{color:var(--f-mute)}\n.dzf-wf-ic{width:42px;height:42px;border-radius:12px;display:grid;place-items:center;background:var(--f-soft);color:var(--f-ink);flex:none}\n.dzf-wf-meta{display:flex;flex-wrap:wrap;gap:.3rem .9rem;margin-top:.35rem;font-size:.78rem;color:var(--f-mute)}\n.dzf-wf-meta .ok{color:#12a150}.dzf-wf-meta .ko{color:#e5484d;font-weight:600}.dzf-wf-meta .mute{opacity:.7}\n.dzf-wf-actions{display:flex;gap:.35rem;flex:none}\n.dzf-empty{text-align:center;padding:2.5rem 1rem;color:var(--f-mute);border:1px dashed var(--f-border);border-radius:var(--f-r)}\n.dzf-empty i{font-size:2rem;opacity:.5}\n@media (max-width:640px){.dzf-wf{flex-direction:column;align-items:stretch}.dzf-wf-actions{justify-content:flex-end}}\n.dzf-chipsbar{display:flex;flex-wrap:wrap;gap:.35rem;margin:0 0 1rem}\n.dzf-chipsbar button{border:1px solid var(--f-border);background:var(--f-surface);border-radius:99px;padding:.3rem .8rem;font-size:.85rem;font-weight:600;color:var(--f-mute)}\n.dzf-chipsbar button.on{background:var(--f-text);color:var(--f-surface);border-color:var(--f-text)}\n.dzf-chipsbar small{opacity:.65}\n.dzf-tplgrid{display:grid;gap:1rem;grid-template-columns:repeat(auto-fill,minmax(min(100%,330px),1fr));align-items:start}\n.dzf-tplc{border:1px solid var(--f-border);border-radius:var(--f-r);background:var(--f-surface);padding:1rem 1.1rem;display:flex;flex-direction:column;gap:.55rem;border-top:4px solid var(--c)}\n.dzf-tplc h3{font-size:1.02rem;font-weight:700;margin:0}.dzf-tplc p{margin:0;color:var(--f-mute);font-size:.88rem}\n.dzf-tplc-top{display:flex;justify-content:space-between;font-size:.76rem;color:var(--f-mute)}\n.dzf-tplc-cat{color:var(--c);font-weight:700;text-transform:uppercase;letter-spacing:.04em}\n.dzf-mini{display:flex;align-items:center;flex-wrap:wrap;gap:0;padding:.6rem;background:var(--f-s2);border-radius:12px;margin:.2rem 0}\n.dzf-mini-n{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;background:var(--f-surface);color:var(--c);border:1px solid var(--f-border);font-size:.8rem;flex:none}\n.dzf-mini-n.trig{background:var(--c);color:#fff;border-color:var(--c)}\n.dzf-mini-l{width:14px;height:2px;background:var(--f-border);flex:none}.dzf-mini-l.if{background:repeating-linear-gradient(90deg,var(--c) 0 3px,transparent 3px 6px)}\n.dzf-mini-more{font-size:.75rem;color:var(--f-mute);margin-left:.4rem}\n.dzf-tplc-use summary{list-style:none;display:inline-flex;gap:.4rem;align-items:center;cursor:pointer}\n.dzf-tplc-use summary::-webkit-details-marker{display:none}\n.dzf-tplc-use[open] summary{display:none}\n.dzf-tplc-form{display:flex;flex-direction:column;gap:.55rem;padding-top:.3rem}\n.dzf-tplc-form label{display:flex;flex-direction:column;gap:.2rem;font-size:.82rem;font-weight:600}\n.dzf-tplc-form label small{font-weight:400;color:var(--f-mute)}\n.dzf-tplc-form .dzf-check{flex-direction:row;gap:.5rem;align-items:center;font-weight:500}" }, "dzf.js": { "src": `/* dysizz-flow \u2014 script des pages d'administration (aucune d\xE9pendance). */
 (function () {
   "use strict";
   var doc = document;
@@ -85608,6 +86097,16 @@ var require_assets = __commonJS({
       sec.querySelectorAll(".dzf-card").forEach(function (c) { var ok = !q || (c.getAttribute("data-search") || "").indexOf(q) >= 0; c.hidden = !ok; if (ok) any = true; });
       sec.hidden = !any && !!q;
     });
+  };
+
+  window.dzfSearchWf = function (q) {
+    q = String(q || "").toLowerCase().trim();
+    doc.querySelectorAll(".dzf-wf,.dzf-tplc").forEach(function (c) { c.hidden = !!q && (c.getAttribute("data-search") || "").indexOf(q) < 0; });
+  };
+
+  window.dzfCat = function (btn, cat) {
+    btn.parentNode.querySelectorAll("button").forEach(function (b) { b.classList.toggle("on", b === btn); });
+    doc.querySelectorAll(".dzf-tplc").forEach(function (c) { c.hidden = !!cat && c.getAttribute("data-cat") !== cat; });
   };
 
   /* essai d'un bloc */
@@ -85670,6 +86169,678 @@ var require_assets = __commonJS({
     });
   });
 })();
+` }, "editeur.css": { "src": '.dzfe{--bg:var(--dz-bg,#f4f5f8);--sf:var(--dz-surface,#fff);--s2:var(--dz-surface-2,#eef0f4);--bd:var(--dz-border,rgba(15,20,40,.12));--tx:var(--dz-text,#161a26);--mu:var(--dz-text-mute,#6b7285);--pr:var(--dz-primary,#5b5bf0);--pk:var(--dz-primary-ink,#4545d8);--ok:#12a150;--ko:#e5484d;--wa:#f5a524;--mono:var(--dz-font-mono,ui-monospace,SFMono-Regular,Menlo,monospace);\nposition:fixed;inset:0;z-index:4000;display:flex;flex-direction:column;background:var(--bg);color:var(--tx);font-size:14px;line-height:1.4}\n@media (prefers-color-scheme:dark){.dzfe:not(.light){--bg:#0f1117;--sf:#171a23;--s2:#1f2330;--bd:rgba(255,255,255,.1);--tx:#eceef5;--mu:#9aa1b5}}\n[data-dz-theme="dark"] .dzfe,html.dark .dzfe{--bg:#0f1117;--sf:#171a23;--s2:#1f2330;--bd:rgba(255,255,255,.1);--tx:#eceef5;--mu:#9aa1b5}\n.dzfe *{box-sizing:border-box}\n.dzfe-loading{margin:auto;color:var(--mu)}\n.dzfe button{font:inherit;color:inherit}\n.dzfe-top{display:flex;align-items:center;gap:.5rem;padding:.55rem .8rem;background:var(--sf);border-bottom:1px solid var(--bd);min-height:54px}\n.dzfe-back{width:36px;height:36px;display:grid;place-items:center;border-radius:10px;color:var(--mu)!important;text-decoration:none!important}\n.dzfe-back:hover{background:var(--s2)}\n.dzfe-name{border:1px solid transparent;background:transparent;font-weight:650;font-size:1.05rem;padding:.35rem .5rem;border-radius:8px;min-width:120px;width:min(340px,40vw);color:var(--tx)}\n.dzfe-name:hover,.dzfe-name:focus{border-color:var(--bd);background:var(--bg);outline:none}\n.dzfe-status{font-size:.78rem;color:var(--mu)}.dzfe-status.dirty{color:var(--wa)}\n.dzfe-sp{flex:1}\n.dzfe-btn{display:inline-flex;align-items:center;gap:.45rem;border:1px solid var(--bd);background:var(--sf);padding:.42rem .75rem;border-radius:10px;cursor:pointer;font-weight:550;white-space:nowrap}\n.dzfe-btn:hover{background:var(--s2)}.dzfe-btn:disabled{opacity:.5}\n.dzfe-btn.primary{background:var(--pr);border-color:var(--pr);color:#fff}.dzfe-btn.primary:hover{filter:brightness(1.07)}\n.dzfe-btn.danger{color:var(--ko);border-color:color-mix(in srgb,var(--ko) 40%,transparent)}\n.dzfe-body{flex:1;display:grid;grid-template-columns:270px minmax(0,1fr) 360px;min-height:0}\n.dzfe-pal{background:var(--sf);border-right:1px solid var(--bd);display:flex;flex-direction:column;min-height:0}\n.dzfe-pal-head{padding:.6rem;display:flex;gap:.4rem;border-bottom:1px solid var(--bd)}\n.dzfe-pal-q,.dzfe-in-q{width:100%;border:1px solid var(--bd);background:var(--bg);border-radius:10px;padding:.5rem .7rem;color:var(--tx)}\n.dzfe-pal-list{overflow:auto;padding:.3rem .4rem 2rem}\n.dzfe-cat summary{cursor:pointer;font-weight:650;font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--mu);padding:.6rem .4rem .35rem;list-style:none}\n.dzfe-cat summary::-webkit-details-marker{display:none}.dzfe-cat summary small{font-weight:500;opacity:.7}\n.dzfe-pb{display:flex;gap:.6rem;align-items:flex-start;padding:.5rem .55rem;border-radius:10px;cursor:grab;border:1px solid transparent;background:none;width:100%;text-align:left}\n.dzfe-pb:hover{background:var(--s2);border-color:var(--bd)}\n.dzfe-pb i{width:30px;height:30px;flex:none;display:grid;place-items:center;border-radius:8px;background:color-mix(in srgb,var(--pr) 13%,transparent);color:var(--pk);font-size:.9rem}\n.dzfe-pb span{display:flex;flex-direction:column;min-width:0}.dzfe-pb b{font-weight:600;font-size:.86rem}\n.dzfe-pb small{color:var(--mu);font-size:.74rem;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}\n.dzfe-canvas{position:relative;overflow:hidden;background-color:var(--bg);background-image:radial-gradient(color-mix(in srgb,var(--tx) 14%,transparent) 1px,transparent 1px);background-size:22px 22px;cursor:grab;touch-action:none;outline:none}\n.dzfe-canvas:active{cursor:grabbing}\n.dzfe-world{position:absolute;left:0;top:0;transform-origin:0 0}\n.dzfe-svg{position:absolute;left:-5000px;top:-5000px;width:10000px;height:10000px;overflow:visible;pointer-events:none}\n.dzfe-svg>*{transform:translate(5000px,5000px)}\n.dzfe-edge{fill:none;stroke:color-mix(in srgb,var(--tx) 45%,transparent);stroke-width:2}\n.dzfe-edge.dashed{stroke-dasharray:6 5}.dzfe-edge.yes{stroke:var(--ok)}.dzfe-edge.no{stroke:var(--ko)}\n.dzfe-edge.live{stroke:var(--pr);stroke-dasharray:5 4}\n.dzfe-arrow{fill:color-mix(in srgb,var(--tx) 55%,transparent)}\n.dzfe-el{font-size:11px;fill:var(--mu);paint-order:stroke;stroke:var(--bg);stroke-width:4px;text-anchor:middle}\n.dzfe-node{position:absolute;width:232px;min-height:66px;display:flex;gap:.6rem;align-items:center;padding:.55rem .7rem;background:var(--sf);border:1.5px solid var(--bd);border-radius:14px;box-shadow:0 1px 2px rgba(0,0,0,.06),0 6px 18px rgba(20,20,60,.06);cursor:pointer;user-select:none;transition:border-color .12s,box-shadow .12s}\n.dzfe-node:hover{border-color:color-mix(in srgb,var(--pr) 50%,var(--bd))}\n.dzfe-node.sel{border-color:var(--pr);box-shadow:0 0 0 4px color-mix(in srgb,var(--pr) 20%,transparent)}\n.dzfe-node.target{border-color:var(--ok);box-shadow:0 0 0 4px color-mix(in srgb,var(--ok) 22%,transparent)}\n.dzfe-node.err{border-color:var(--ko);box-shadow:0 0 0 4px color-mix(in srgb,var(--ko) 20%,transparent)}\n.dzfe-node.ok::after{content:"\\2713";position:absolute;right:-8px;top:-8px;width:20px;height:20px;border-radius:50%;background:var(--ok);color:#fff;font-size:12px;display:grid;place-items:center}\n.dzfe-node.trig{background:linear-gradient(135deg,color-mix(in srgb,var(--pr) 16%,var(--sf)),var(--sf))}\n.dzfe-ic{width:38px;height:38px;flex:none;border-radius:10px;display:grid;place-items:center;background:color-mix(in srgb,var(--pr) 14%,transparent);color:var(--pk);font-size:1rem}\n.dzfe-ic.trig,.dzfe-node.trig .dzfe-ic{background:var(--pr);color:#fff}\n.dzfe-node.builtin .dzfe-ic{background:color-mix(in srgb,var(--wa) 20%,transparent);color:#a86b00}\n.dzfe-nt{display:flex;flex-direction:column;min-width:0}\n.dzfe-nt b{font-size:.86rem;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}\n.dzfe-nt small{font-size:.72rem;color:var(--mu);font-family:var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}\n.dzfe-nt em{font-style:normal;font-size:.72rem;color:var(--mu);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}\n.dzfe-if{position:absolute;left:-10px;top:-10px;width:22px;height:22px;border-radius:50%;background:var(--wa);color:#fff;font-size:10px;display:grid;place-items:center}\n.dzfe-in{position:absolute;left:50%;top:-6px;width:12px;height:12px;margin-left:-6px;border-radius:50%;background:var(--sf);border:2px solid color-mix(in srgb,var(--tx) 30%,transparent)}\n.dzfe-node.trig .dzfe-in{display:none}\n.dzfe-port{position:absolute;left:50%;bottom:-8px;width:16px;height:16px;margin-left:-8px;border-radius:50%;background:var(--pr);border:3px solid var(--sf);cursor:crosshair;box-shadow:0 0 0 1px var(--pr);transition:transform .1s}\n.dzfe-port:hover{transform:scale(1.35)}\n.dzfe-port.yes,.dzfe-port.no{width:auto;height:18px;padding:0 6px;border-radius:9px;font-size:10px;font-weight:700;color:#fff;border-width:2px;display:grid;place-items:center;margin-left:0;bottom:-10px}\n.dzfe-port.yes{left:30%;transform:translateX(-50%);background:var(--ok);box-shadow:0 0 0 1px var(--ok)}\n.dzfe-port.no{left:70%;transform:translateX(-50%);background:var(--ko);box-shadow:0 0 0 1px var(--ko)}\n.dzfe-port.side{left:auto;right:-8px;bottom:auto;top:50%;margin:-8px 0 0;background:var(--wa);box-shadow:0 0 0 1px var(--wa)}\n.dzfe-zoom{position:absolute;left:12px;bottom:12px;display:flex;flex-direction:column;background:var(--sf);border:1px solid var(--bd);border-radius:10px;overflow:hidden}\n.dzfe-zoom button{border:0;background:none;width:34px;height:32px;cursor:pointer;font-size:1rem}.dzfe-zoom button:hover{background:var(--s2)}\n.dzfe-hint{position:absolute;left:50%;top:45%;transform:translate(-50%,-50%);pointer-events:none}\n.dzfe-hint>div{pointer-events:auto;max-width:380px;text-align:center;background:var(--sf);border:1px dashed var(--bd);border-radius:16px;padding:1.2rem 1.4rem;color:var(--mu)}\n.dzfe-hint i{font-size:1.6rem;color:var(--pr);display:block;margin-bottom:.4rem}.dzfe-hint b{color:var(--tx);font-size:1.05rem}\n.dzfe-panel{background:var(--sf);border-left:1px solid var(--bd);overflow:auto;min-height:0}\n.dzfe-ph{display:flex;gap:.7rem;align-items:center;padding:.9rem 1rem .5rem;position:sticky;top:0;background:var(--sf);z-index:2}\n.dzfe-ph b{display:block;font-size:1rem}.dzfe-ph small{color:var(--mu)}\n.dzfe-x{margin-left:auto;border:0;background:none;width:32px;height:32px;border-radius:8px;cursor:pointer;color:var(--mu)}.dzfe-x:hover{background:var(--s2)}\n.dzfe-desc{padding:0 1rem;color:var(--mu);font-size:.84rem;margin:.2rem 0 .6rem}.dzfe-desc a{white-space:nowrap}\n.dzfe-tabs{display:flex;gap:.2rem;padding:0 1rem;border-bottom:1px solid var(--bd);position:sticky;top:62px;background:var(--sf);z-index:2}\n.dzfe-tabs button{border:0;background:none;padding:.55rem .6rem;cursor:pointer;color:var(--mu);font-weight:600;border-bottom:2px solid transparent}\n.dzfe-tabs button.on{color:var(--pk);border-bottom-color:var(--pr)}\n.dzfe-pb-body{padding:.9rem 1rem 3rem;display:flex;flex-direction:column;gap:.85rem}\n.dzfe-f{display:flex;flex-direction:column;gap:.3rem;position:relative}\n.dzfe-f>label{font-weight:600;font-size:.84rem}.dzfe-f>label small{font-weight:400;color:var(--mu)}\n.dzfe-f .req{color:var(--ko)}\n.dzfe-fi{display:flex;gap:.35rem;align-items:flex-start}\n.dzfe-f input:not([type=checkbox]):not([type=radio]),.dzfe-f select,.dzfe-f textarea,.dzfe-ctx,.dzfe-all,.dzfe-json{width:100%;border:1px solid var(--bd);background:var(--bg);color:var(--tx);border-radius:10px;padding:.5rem .65rem;font:inherit;font-size:.88rem}\n.dzfe-f input:focus,.dzfe-f select:focus,.dzfe-f textarea:focus{outline:none;border-color:var(--pr);box-shadow:0 0 0 3px color-mix(in srgb,var(--pr) 18%,transparent)}\n.dzfe .mono{font-family:var(--mono)!important;font-size:.8rem!important;line-height:1.5;tab-size:2}\n.dzfe-f .help{color:var(--mu);font-size:.76rem}.dzfe-ferr{color:var(--ko);font-size:.76rem}.dzfe-ferr:empty{display:none}\n.dzfe-vb{flex:none;border:1px solid var(--bd);background:var(--s2);border-radius:8px;padding:.45rem .5rem;cursor:pointer;font-family:var(--mono);font-size:.78rem;font-weight:700;color:var(--pk)}\n.dzfe-vm{position:absolute;right:0;top:100%;z-index:10;width:300px;max-height:320px;overflow:auto;background:var(--sf);border:1px solid var(--bd);border-radius:12px;box-shadow:0 12px 30px rgba(0,0,0,.18);padding:.5rem;display:flex;flex-direction:column;gap:.15rem}\n.dzfe-vm>b{font-size:.78rem;color:var(--mu);padding:.2rem .3rem}\n.dzfe-vm button{border:0;background:none;text-align:left;padding:.35rem .4rem;border-radius:8px;cursor:pointer;display:flex;flex-direction:column}\n.dzfe-vm button:hover{background:var(--s2)}.dzfe-vm code{font-size:.8rem;color:var(--pk)}.dzfe-vm small{color:var(--mu);font-size:.72rem}\n.dzfe-sw{display:flex!important;align-items:center;gap:.6rem;cursor:pointer;font-weight:600;font-size:.86rem}\n.dzfe-sw input{position:absolute;opacity:0;width:0;height:0}\n.dzfe-sw span{width:38px;height:22px;border-radius:11px;background:color-mix(in srgb,var(--tx) 22%,transparent);position:relative;flex:none;transition:background .15s}\n.dzfe-sw span::after{content:"";position:absolute;left:3px;top:3px;width:16px;height:16px;border-radius:50%;background:#fff;transition:transform .15s}\n.dzfe-sw input:checked+span{background:var(--pr)}.dzfe-sw input:checked+span::after{transform:translateX(16px)}\n.dzfe-sw input:focus-visible+span{box-shadow:0 0 0 3px color-mix(in srgb,var(--pr) 30%,transparent)}\n.dzfe-adv{border:1px solid var(--bd);border-radius:12px;padding:.5rem .75rem}\n.dzfe-adv summary{cursor:pointer;font-weight:600;font-size:.84rem;color:var(--mu)}\n.dzfe-adv[open]{display:flex;flex-direction:column;gap:.8rem}\n.dzfe-when{display:flex;flex-direction:column;gap:.3rem}\n.dzfe-when label{display:flex;gap:.55rem;align-items:center;border:1px solid var(--bd);border-radius:10px;padding:.5rem .65rem;cursor:pointer;font-size:.86rem}\n.dzfe-when label.on{border-color:var(--pr);background:color-mix(in srgb,var(--pr) 8%,transparent)}\n.dzfe-seg{display:flex;border:1px solid var(--bd);border-radius:10px;overflow:hidden}\n.dzfe-seg button{flex:1;border:0;background:none;padding:.45rem .3rem;cursor:pointer;font-size:.8rem;font-weight:600;color:var(--mu)}\n.dzfe-seg button+button{border-left:1px solid var(--bd)}.dzfe-seg button.on{background:var(--pr);color:#fff}\n.dzfe-chips{display:flex;flex-wrap:wrap;gap:.25rem}.dzfe-chips button{border:1px solid var(--bd);background:var(--s2);border-radius:99px;padding:.1rem .5rem;font-family:var(--mono);font-size:.72rem;cursor:pointer}\n.dzfe-danger{margin-top:.8rem;padding-top:.8rem;border-top:1px solid var(--bd)}\n.dzfe-pe{padding:2rem 1.3rem;color:var(--mu)}.dzfe-pe>i{font-size:1.6rem;color:var(--pr)}.dzfe-pe b{display:block;color:var(--tx);font-size:1rem;margin:.5rem 0}\n.dzfe-pe ul{padding-left:1.1rem;display:flex;flex-direction:column;gap:.4rem;font-size:.84rem}\n.dzfe-mute{color:var(--mu);font-size:.84rem}.dzfe-warn{color:var(--wa)}.dzfe-note{font-size:.82rem;background:var(--s2);border-radius:10px;padding:.6rem .7rem}\n.dzfe-fh{margin:.4rem 0 0;font-size:.8rem;text-transform:uppercase;letter-spacing:.05em;color:var(--mu)}\n.dzfe-run{position:fixed;left:270px;right:360px;bottom:0;max-height:0;overflow:hidden;background:var(--sf);border-top:1px solid var(--bd);box-shadow:0 -10px 30px rgba(0,0,0,.08);transition:max-height .2s;z-index:3}\n.dzfe-run.open{max-height:45vh;overflow:auto}\n.dzfe-rh{display:flex;gap:.8rem;align-items:center;padding:.6rem 1rem;position:sticky;top:0;background:var(--sf)}\n.dzfe-rh .ok{color:var(--ok)}.dzfe-rh .ko{color:var(--ko)}.dzfe-rh span{color:var(--mu);font-size:.82rem}\n.dzfe-rerr{margin:0 1rem .6rem;padding:.6rem .8rem;border-radius:10px;background:color-mix(in srgb,var(--ko) 10%,transparent);color:var(--ko);font-size:.86rem}\n.dzfe-rctx{padding:0 1rem 1rem;font-size:.82rem;font-family:var(--mono)}\n.dzfe-rctx ul{list-style:none;margin:.2rem 0 .2rem .9rem;padding:0;border-left:1px dashed var(--bd);padding-left:.6rem}\n.dzfe-rctx summary{cursor:pointer;color:var(--mu)}.dzfe-rctx b{color:var(--pk);font-weight:600}\n.dzfe-rctx .string{color:#b35900}.dzfe-rctx .number{color:#0b7a55}.dzfe-rctx .boolean{color:#7a3fd1}.dzfe-rctx .n{color:var(--mu)}\n.dzfe-modal{position:fixed;inset:0;background:rgba(10,12,20,.45);display:none;align-items:center;justify-content:center;z-index:10;padding:1rem}\n.dzfe-modal.open{display:flex}\n.dzfe-mb{background:var(--sf);border-radius:16px;padding:1.2rem 1.3rem;width:min(640px,100%);max-height:88vh;overflow:auto;display:flex;flex-direction:column;gap:.7rem;box-shadow:0 30px 80px rgba(0,0,0,.3)}\n.dzfe-mb h3{margin:0;font-size:1.1rem}\n.dzfe-mact{display:flex;gap:.5rem;justify-content:flex-end}\n.dzfe-pick{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:.3rem;max-height:50vh;overflow:auto}\n.dzfe-toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--tx);color:var(--bg);padding:.6rem 1rem;border-radius:12px;z-index:20;font-weight:600;transition:opacity .3s}\n.dzfe-toast.bad{background:var(--ko);color:#fff}.dzfe-toast.out{opacity:0}\n.dzfe-only-m,.dzfe-fab{display:none}\n@media (max-width:1100px){\n.dzfe-body{grid-template-columns:minmax(0,1fr)}\n.dzfe-pal{position:fixed;left:0;top:54px;bottom:0;width:min(320px,88vw);z-index:6;transform:translateX(-102%);transition:transform .2s;box-shadow:10px 0 30px rgba(0,0,0,.15)}\n.dzfe.pal-open .dzfe-pal{transform:none}\n.dzfe-panel{position:fixed;left:0;right:0;bottom:0;max-height:62vh;z-index:5;border-left:0;border-top:1px solid var(--bd);border-radius:18px 18px 0 0;transform:translateY(102%);transition:transform .2s;box-shadow:0 -10px 30px rgba(0,0,0,.15)}\n.dzfe.panel-open .dzfe-panel{transform:none}\n.dzfe-tabs{top:58px}\n.dzfe-only-m{display:inline-flex}\n.dzfe-fab{display:grid;place-items:center;position:absolute;right:16px;bottom:16px;width:52px;height:52px;border-radius:50%;border:0;background:var(--pr);color:#fff;font-size:1.2rem;box-shadow:0 8px 20px rgba(0,0,0,.2)}\n.dzfe-run{left:0;right:0}\n.dzfe-btn span{display:none}\n.dzfe-top{gap:.3rem;padding:.45rem .5rem}\n.dzfe-name{min-width:0;width:auto;flex:1;font-size:.95rem}\n.dzfe-sp{display:none}\n.dzfe-top [data-a="undo"],.dzfe-top [data-a="redo"],.dzfe-top [data-a="tidy"]{display:none}\n.dzfe-status{display:none}\n}\n@media (prefers-reduced-motion:reduce){.dzfe *{transition:none!important}}\n.dzfe code{color:var(--pk)!important;background:var(--s2)!important;padding:.05rem .3rem;border-radius:5px;font-family:var(--mono)!important;font-size:.85em!important}' }, "editeur.js": { "src": `/* =====================================================================
+   dysizz-flow \u2014 \xE9diteur visuel de workflows (toile fa\xE7on n8n).
+   Aucune d\xE9pendance. Tout se passe dans le navigateur ; le serveur n'est
+   appel\xE9 que pour lire les r\xE9glages d'un bloc, enregistrer et essayer.
+   ===================================================================== */
+(function () {
+  "use strict";
+  var root = document.getElementById("dzfe");
+  var dataEl = document.getElementById("dzfe-data");
+  if (!root || !dataEl) return;
+  var B = JSON.parse(dataEl.textContent);
+  var NW = 232, NH = 66, TRIG = "__trigger";
+
+  /* ---------------- \xE9tat ---------------- */
+  var S = {
+    wf: B.wf, steps: B.wf.steps.map(clone), layout: clone(B.wf.layout || {}),
+    sel: null, zoom: 1, px: 40, py: 30, dirty: false, fields: {}, run: null, tab: "form",
+    undo: [], redo: [],
+  };
+  var BY = {}; B.palette.blocks.forEach(function (b) { BY[b.name] = b; });
+
+  function clone(o) { return JSON.parse(JSON.stringify(o)); }
+  function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+  function $(sel, el) { return (el || root).querySelector(sel); }
+  function $$(sel, el) { return Array.prototype.slice.call((el || root).querySelectorAll(sel)); }
+  function stepBy(name) { for (var i = 0; i < S.steps.length; i++) if (S.steps[i].name === name) return S.steps[i]; return null; }
+  function blockOf(s) { return BY[s.action_name] || { label: s.action_name, icon: "fas fa-question", category: "?" }; }
+  function snapshot() { return JSON.stringify({ steps: S.steps, layout: S.layout, wf: { name: S.wf.name, description: S.wf.description, when_trigger: S.wf.when_trigger, table: S.wf.table } }); }
+  function push() { S.undo.push(snapshot()); if (S.undo.length > 60) S.undo.shift(); S.redo = []; }
+  function restore(snap) { var o = JSON.parse(snap); S.steps = o.steps; S.layout = o.layout; Object.assign(S.wf, o.wf); if (S.sel && S.sel !== TRIG && !stepBy(S.sel)) S.sel = null; changed(true); }
+  function changed(full) { S.dirty = true; drawAll(); if (full) panel(); status(); }
+  function status() { var el = $(".dzfe-status"); if (el) { el.textContent = S.dirty ? "Modifications non enregistr\xE9es" : "Tout est enregistr\xE9"; el.className = "dzfe-status" + (S.dirty ? " dirty" : ""); } }
+
+  /* ---------------- routage : ce que devient next_step ---------------- */
+  var COND = /^\\s*\\(?\\s*([\\s\\S]+?)\\s*\\)?\\s*\\?\\s*"([^"]*)"\\s*:\\s*"([^"]*)"\\s*$/;
+  function routeOf(s) {
+    var n = (s.next_step || "").trim();
+    if (!n) return { mode: "end" };
+    if (stepBy(n) || /^[A-Za-z_][A-Za-z0-9_]*$/.test(n)) return { mode: "simple", to: n };
+    var m = COND.exec(n);
+    if (m) return { mode: "cond", expr: m[1], yes: m[2], no: m[3] };
+    var t = []; n.replace(/"([A-Za-z_][A-Za-z0-9_]*)"/g, function (_, x) { if (stepBy(x)) t.push(x); });
+    return { mode: "expr", expr: n, targets: t };
+  }
+  function setRoute(s, r) {
+    if (r.mode === "end") s.next_step = "";
+    else if (r.mode === "simple") s.next_step = r.to || "";
+    else if (r.mode === "cond") s.next_step = (r.expr || "true") + ' ? "' + (r.yes || "") + '" : "' + (r.no || "") + '"';
+    else s.next_step = r.expr || "";
+  }
+  function edges() {
+    var out = [];
+    var first = S.steps.filter(function (s) { return s.initial_step; })[0];
+    if (first) out.push({ from: TRIG, port: "out", to: first.name });
+    S.steps.forEach(function (s) {
+      var r = routeOf(s);
+      if (r.mode === "simple" && stepBy(r.to)) out.push({ from: s.name, port: "out", to: r.to });
+      if (r.mode === "cond") { if (stepBy(r.yes)) out.push({ from: s.name, port: "yes", to: r.yes, kind: "oui" }); if (stepBy(r.no)) out.push({ from: s.name, port: "no", to: r.no, kind: "non" }); }
+      if (r.mode === "expr") r.targets.forEach(function (t) { out.push({ from: s.name, port: "out", to: t, label: "?", dashed: true }); });
+      var c = s.configuration || {};
+      if (s.action_name === "ForLoop" && stepBy(c.loop_body_initial_step)) out.push({ from: s.name, port: "loop", to: c.loop_body_initial_step, label: "pour chaque", dashed: true });
+      if (s.action_name === "SetErrorHandler" && stepBy(c.error_handling_step)) out.push({ from: s.name, port: "loop", to: c.error_handling_step, label: "si erreur", dashed: true });
+    });
+    return out;
+  }
+  function renameRefs(oldN, newN) {
+    S.steps.forEach(function (s) {
+      var r = routeOf(s);
+      if (r.mode === "simple" && r.to === oldN) r.to = newN;
+      if (r.mode === "cond") { if (r.yes === oldN) r.yes = newN; if (r.no === oldN) r.no = newN; }
+      if (r.mode === "expr") r.expr = r.expr.split('"' + oldN + '"').join('"' + newN + '"');
+      setRoute(s, r);
+      var c = s.configuration || {};
+      if (c.loop_body_initial_step === oldN) c.loop_body_initial_step = newN;
+      if (c.error_handling_step === oldN) c.error_handling_step = newN;
+    });
+    if (S.layout[oldN]) { S.layout[newN] = S.layout[oldN]; delete S.layout[oldN]; }
+  }
+
+  /* ---------------- disposition automatique ---------------- */
+  function autoLayout(force) {
+    var need = force || S.steps.some(function (s) { return !S.layout[s.name]; }) || !S.layout[TRIG];
+    if (!need) return;
+    var level = {}, order = [], q = [];
+    var first = S.steps.filter(function (s) { return s.initial_step; })[0];
+    if (first) { level[first.name] = 1; q.push(first.name); }
+    var es = edges();
+    while (q.length) {
+      var n = q.shift(); order.push(n);
+      es.filter(function (e) { return e.from === n; }).forEach(function (e) { if (level[e.to] === undefined) { level[e.to] = level[n] + 1; q.push(e.to); } });
+    }
+    var maxL = Math.max.apply(null, [1].concat(Object.keys(level).map(function (k) { return level[k]; })));
+    S.steps.forEach(function (s) { if (level[s.name] === undefined) { level[s.name] = ++maxL; } });
+    var rows = {};
+    S.steps.forEach(function (s) { var l = level[s.name]; (rows[l] = rows[l] || []).push(s.name); });
+    if (force || !S.layout[TRIG]) S.layout[TRIG] = { x: 0, y: 0 };
+    Object.keys(rows).forEach(function (l) {
+      var r = rows[l];
+      r.forEach(function (n, i) { if (force || !S.layout[n]) S.layout[n] = { x: (i - (r.length - 1) / 2) * (NW + 60), y: l * (NH + 56) }; });
+    });
+  }
+
+  /* ---------------- structure de la page ---------------- */
+  root.innerHTML =
+    '<div class="dzfe-top">' +
+    '<a class="dzfe-back" href="/dysizz-flow/workflows" title="Tous les workflows"><i class="fas fa-arrow-left"></i></a>' +
+    '<input class="dzfe-name" placeholder="Nom du workflow (ex. releve_mails)" value="' + esc(S.wf.name) + '">' +
+    '<span class="dzfe-status"></span>' +
+    '<span class="dzfe-sp"></span>' +
+    '<button class="dzfe-btn" data-a="undo" title="Annuler (Ctrl Z)"><i class="fas fa-undo"></i></button>' +
+    '<button class="dzfe-btn" data-a="redo" title="R\xE9tablir (Ctrl Y)"><i class="fas fa-redo"></i></button>' +
+    '<button class="dzfe-btn" data-a="tidy" title="Ranger les blocs"><i class="fas fa-magic"></i><span>Ranger</span></button>' +
+    '<button class="dzfe-btn" data-a="code" title="Tout le workflow en JSON"><i class="fas fa-code"></i><span>Code</span></button>' +
+    '<button class="dzfe-btn" data-a="run" title="Lancer un essai"><i class="fas fa-play"></i><span>Essayer</span></button>' +
+    '<button class="dzfe-btn primary" data-a="save" title="Enregistrer (Ctrl S)"><i class="fas fa-save"></i><span>Enregistrer</span></button>' +
+    "</div>" +
+    '<div class="dzfe-body">' +
+    '<aside class="dzfe-pal"><div class="dzfe-pal-head"><input class="dzfe-pal-q" placeholder="Chercher un bloc (mail, table, IA\u2026)"><button class="dzfe-btn dzfe-only-m" data-a="pal"><i class="fas fa-times"></i></button></div><div class="dzfe-pal-list"></div></aside>' +
+    '<section class="dzfe-canvas" tabindex="0"><div class="dzfe-world"><svg class="dzfe-svg"></svg><div class="dzfe-nodes"></div></div>' +
+    '<div class="dzfe-zoom"><button data-a="zin" title="Zoomer">+</button><button data-a="zout" title="D\xE9zoomer">\u2212</button><button data-a="fit" title="Tout voir"><i class="fas fa-expand"></i></button></div>' +
+    '<button class="dzfe-fab dzfe-only-m" data-a="pal"><i class="fas fa-plus"></i></button>' +
+    '<div class="dzfe-hint"></div></section>' +
+    '<aside class="dzfe-panel"></aside>' +
+    "</div>" +
+    '<div class="dzfe-run"></div><div class="dzfe-modal"></div>';
+
+  /* ---------------- palette ---------------- */
+  function drawPalette() {
+    var q = ($(".dzfe-pal-q").value || "").toLowerCase().trim();
+    var html = "";
+    B.palette.categories.forEach(function (c) {
+      var bs = B.palette.blocks.filter(function (b) { return (b.category || "Actions Saltcorn et modules") === c && (!q || (b.label + " " + b.description + " " + b.name).toLowerCase().indexOf(q) >= 0); });
+      if (!bs.length) return;
+      html += '<details class="dzfe-cat"' + (q || c === "Donn\xE9es" || c === "Transformer" ? " open" : "") + "><summary>" + esc(c) + " <small>" + bs.length + "</small></summary>" +
+        bs.map(function (b) {
+          return '<div class="dzfe-pb" draggable="true" data-b="' + esc(b.name) + '" title="' + esc(b.description) + '"><i class="' + esc(b.icon || "fas fa-cube") + '"></i><span><b>' + esc(b.label) + "</b><small>" + esc(b.description || b.name) + "</small></span></div>";
+        }).join("") + "</details>";
+    });
+    $(".dzfe-pal-list").innerHTML = html || '<p class="dzfe-mute">Aucun bloc ne correspond.</p>';
+  }
+  $(".dzfe-pal-q").addEventListener("input", drawPalette);
+  $(".dzfe-pal-list").addEventListener("click", function (e) { var p = e.target.closest(".dzfe-pb"); if (p) { addStep(p.dataset.b); root.classList.remove("pal-open"); } });
+  $(".dzfe-pal-list").addEventListener("dragstart", function (e) { var p = e.target.closest(".dzfe-pb"); if (p) e.dataTransfer.setData("text/dzf", p.dataset.b); });
+
+  /* ---------------- ajout / suppression d'\xE9tapes ---------------- */
+  function uniqueName(base) {
+    base = String(base || "etape").replace(/^dzf_u?_?/, "").replace(/[^A-Za-z0-9_]/g, "_").replace(/^[^A-Za-z_]/, "e_").slice(0, 40) || "etape";
+    var n = base, i = 2; while (stepBy(n)) n = base + "_" + i++; return n;
+  }
+  function defaults(action) {
+    return getFields(action).then(function (F) {
+      var c = {};
+      (F.fields || []).concat(F.advanced || []).forEach(function (f) {
+        if (!f.required || f.def === undefined || f.def === null || f.def === "") return;
+        if (f.name === "si_erreur" || f.name === "delai_max" || f.name === "essais" || f.name === "pause_essais") return;
+        c[f.name] = typeof f.def === "object" ? JSON.stringify(f.def) : f.def;
+      });
+      if (F.dz) c.sortie = F.output || "resultat";
+      return c;
+    });
+  }
+  function addStep(action, pos) {
+    defaults(action).then(function (cfg) {
+      push();
+      var b = BY[action] || {};
+      var name = uniqueName(cfg.sortie || b.output || action);
+      if (cfg.sortie) cfg.sortie = uniqueVar(cfg.sortie);
+      var s = { id: null, name: name, action_name: action, configuration: cfg, next_step: "", only_if: "", initial_step: !S.steps.length };
+      var prev = S.sel && S.sel !== TRIG ? stepBy(S.sel) : null;
+      if (!prev && S.sel === TRIG && S.steps.length) { /* ins\xE9rer en t\xEAte */
+        var first = S.steps.filter(function (x) { return x.initial_step; })[0];
+        if (first) { first.initial_step = false; s.initial_step = true; s.next_step = first.name; }
+      }
+      if (!prev && !pos && !S.sel && S.steps.length) prev = lastStep();
+      if (prev) { var r = routeOf(prev); if (r.mode === "simple" || r.mode === "end") { s.next_step = r.mode === "simple" ? r.to : ""; prev.next_step = name; } }
+      S.steps.push(s);
+      if (pos) S.layout[name] = pos;
+      else { var ref = prev ? S.layout[prev.name] : S.layout[TRIG]; S.layout[name] = { x: ref ? ref.x : 0, y: (ref ? ref.y : 0) + NH + 56 }; shiftBelow(name); }
+      S.sel = name; S.tab = "form";
+      changed(true);
+    });
+  }
+  function uniqueVar(v) { var used = {}; S.steps.forEach(function (s) { if (s.configuration && s.configuration.sortie) used[s.configuration.sortie] = 1; }); var n = v, i = 2; while (used[n]) n = v + i++; return n; }
+  function lastStep() { var ends = S.steps.filter(function (s) { return routeOf(s).mode === "end"; }); return ends.length ? ends[ends.length - 1] : S.steps[S.steps.length - 1]; }
+  function shiftBelow(name) {
+    var p = S.layout[name];
+    S.steps.forEach(function (s) { if (s.name === name) return; var l = S.layout[s.name]; if (l && Math.abs(l.x - p.x) < NW && l.y >= p.y - 10 && l.y < p.y + NH + 40) l.y += NH + 56; });
+  }
+  function removeStep(name) {
+    var s = stepBy(name); if (!s) return;
+    push();
+    var r = routeOf(s), next = r.mode === "simple" ? r.to : "";
+    S.steps.forEach(function (x) {
+      var rx = routeOf(x);
+      if (rx.mode === "simple" && rx.to === name) rx.to = next;
+      if (rx.mode === "cond") { if (rx.yes === name) rx.yes = next; if (rx.no === name) rx.no = next; }
+      setRoute(x, rx);
+      if (rx.mode === "simple" && !rx.to) x.next_step = "";
+    });
+    if (s.initial_step && next && stepBy(next)) stepBy(next).initial_step = true;
+    S.steps = S.steps.filter(function (x) { return x !== s; });
+    if (S.steps.length && !S.steps.some(function (x) { return x.initial_step; })) S.steps[0].initial_step = true;
+    delete S.layout[name];
+    S.sel = null; changed(true);
+  }
+
+  /* ---------------- dessin de la toile ---------------- */
+  var world = $(".dzfe-world"), svg = $(".dzfe-svg"), nodesEl = $(".dzfe-nodes"), canvas = $(".dzfe-canvas");
+  function applyView() { world.style.transform = "translate(" + S.px + "px," + S.py + "px) scale(" + S.zoom + ")"; }
+  function summary(s) {
+    var c = s.configuration || {};
+    var keys = ["table", "url", "cibles", "sources", "workflow", "modele", "message", "titre", "operation", "array_expression", "code", "valeurs", "liste"];
+    for (var i = 0; i < keys.length; i++) if (c[keys[i]]) return keys[i] === "code" ? "code JavaScript" : String(c[keys[i]]).replace(/\\s+/g, " ").slice(0, 46);
+    return "";
+  }
+  function nodeHtml(s) {
+    var b = blockOf(s), r = routeOf(s), c = s.configuration || {};
+    var err = S.run && S.run.errStep === s.name, done = S.run && S.run.okSteps && S.run.okSteps[s.name];
+    var ports = r.mode === "cond" ? '<span class="dzfe-port yes" data-p="yes" title="Si oui">oui</span><span class="dzfe-port no" data-p="no" title="Sinon">non</span>' : '<span class="dzfe-port" data-p="out" title="Tirer pour relier \xE0 l\\'\xE9tape suivante"></span>';
+    if (s.action_name === "ForLoop" || s.action_name === "SetErrorHandler") ports += '<span class="dzfe-port side" data-p="loop" title="' + (s.action_name === "ForLoop" ? "Premi\xE8re \xE9tape de la boucle" : "\xC9tape en cas d'erreur") + '"></span>';
+    return '<div class="dzfe-node' + (S.sel === s.name ? " sel" : "") + (err ? " err" : "") + (done ? " ok" : "") + (b.builtin ? " builtin" : "") + '" data-n="' + esc(s.name) + '" style="left:' + S.layout[s.name].x + "px;top:" + S.layout[s.name].y + 'px">' +
+      '<span class="dzfe-ic"><i class="' + esc(b.icon || "fas fa-cube") + '"></i></span><span class="dzfe-nt"><b>' + esc(b.label) + "</b><small>" + esc(s.name) + (c.sortie ? " \u2192 " + esc(c.sortie) : "") + "</small>" +
+      (summary(s) ? '<em>' + esc(summary(s)) + "</em>" : "") + "</span>" +
+      (s.only_if ? '<span class="dzfe-if" title="Seulement si : ' + esc(s.only_if) + '"><i class="fas fa-filter"></i></span>' : "") +
+      '<span class="dzfe-in"></span>' + ports + "</div>";
+  }
+  function drawNodes() {
+    var t = S.layout[TRIG] || { x: 0, y: 0 };
+    var wl = (B.when.filter(function (w) { return w[0] === S.wf.when_trigger; })[0] || [0, S.wf.when_trigger])[1];
+    var html = '<div class="dzfe-node trig' + (S.sel === TRIG ? " sel" : "") + '" data-n="' + TRIG + '" style="left:' + t.x + "px;top:" + t.y + 'px"><span class="dzfe-ic"><i class="fas fa-bolt"></i></span><span class="dzfe-nt"><b>D\xE9clencheur</b><small>' + esc(wl) + (S.wf.table ? " \xB7 " + esc(S.wf.table) : "") + '</small></span><span class="dzfe-port" data-p="out" title="Tirer vers la premi\xE8re \xE9tape"></span></div>';
+    html += S.steps.map(nodeHtml).join("");
+    nodesEl.innerHTML = html;
+    var hint = $(".dzfe-hint");
+    hint.innerHTML = S.steps.length ? "" : '<div><i class="fas fa-hand-pointer"></i><b>Commence ici</b><p>Clique sur un bloc \xE0 gauche (ou glisse-le sur la toile) : il se relie tout seul au d\xE9clencheur. Tu peux aussi partir d\\'un <a href="/dysizz-flow/modeles">mod\xE8le pr\xEAt \xE0 l\\'emploi</a>.</p></div>';
+  }
+  function portPos(name, port) {
+    var l = S.layout[name] || { x: 0, y: 0 };
+    if (port === "yes") return { x: l.x + NW * 0.3, y: l.y + NH };
+    if (port === "no") return { x: l.x + NW * 0.7, y: l.y + NH };
+    if (port === "loop") return { x: l.x + NW, y: l.y + NH / 2 };
+    return { x: l.x + NW / 2, y: l.y + NH };
+  }
+  function path(a, b, side) {
+    if (side) { var dx = Math.max(60, Math.abs(b.x - a.x) / 2); return "M" + a.x + "," + a.y + " C" + (a.x + dx) + "," + a.y + " " + (b.x + dx) + "," + (b.y - 40) + " " + b.x + "," + b.y; }
+    var dy = Math.max(40, Math.abs(b.y - a.y) / 2);
+    if (b.y < a.y) dy = Math.max(120, Math.abs(b.y - a.y) / 2);
+    return "M" + a.x + "," + a.y + " C" + a.x + "," + (a.y + dy) + " " + b.x + "," + (b.y - dy) + " " + b.x + "," + b.y;
+  }
+  function drawEdges(extra) {
+    var html = '<defs><marker id="dzfe-arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="dzfe-arrow"/></marker></defs>';
+    edges().forEach(function (e) {
+      var a = portPos(e.from, e.port), tl = S.layout[e.to]; if (!tl) return;
+      var b = { x: tl.x + NW / 2, y: tl.y };
+      var d = path(a, b, e.port === "loop");
+      html += '<path class="dzfe-edge' + (e.dashed ? " dashed" : "") + (e.kind === "non" ? " no" : e.kind === "oui" ? " yes" : "") + '" d="' + d + '" marker-end="url(#dzfe-arr)" data-from="' + esc(e.from) + '" data-port="' + e.port + '"/>';
+      if (e.label) { var mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2; html += '<text class="dzfe-el" x="' + mx + '" y="' + my + '">' + esc(e.label) + "</text>"; }
+    });
+    if (extra) html += '<path class="dzfe-edge live" d="' + extra + '"/>';
+    svg.innerHTML = html;
+  }
+  function drawAll() { autoLayout(false); drawNodes(); drawEdges(); applyView(); }
+
+  /* ---------------- d\xE9placer, relier, zoomer ---------------- */
+  var drag = null;
+  function toWorld(ev) { var r = canvas.getBoundingClientRect(); return { x: (ev.clientX - r.left - S.px) / S.zoom, y: (ev.clientY - r.top - S.py) / S.zoom }; }
+  canvas.addEventListener("pointerdown", function (ev) {
+    if (ev.button !== 0 || ev.target.closest(".dzfe-zoom,.dzfe-fab,.dzfe-hint a")) return;
+    var port = ev.target.closest(".dzfe-port"), node = ev.target.closest(".dzfe-node");
+    if (port && node) { drag = { kind: "link", from: node.dataset.n, port: port.dataset.p }; ev.preventDefault(); canvas.setPointerCapture(ev.pointerId); return; }
+    if (node) {
+      var n = node.dataset.n, w = toWorld(ev), l = S.layout[n];
+      drag = { kind: "move", n: n, dx: w.x - l.x, dy: w.y - l.y, moved: false };
+      canvas.setPointerCapture(ev.pointerId); return;
+    }
+    drag = { kind: "pan", x: ev.clientX, y: ev.clientY, px: S.px, py: S.py, moved: false };
+    canvas.setPointerCapture(ev.pointerId);
+  });
+  canvas.addEventListener("pointermove", function (ev) {
+    if (!drag) return;
+    if (drag.kind === "pan") { S.px = drag.px + ev.clientX - drag.x; S.py = drag.py + ev.clientY - drag.y; if (Math.abs(ev.clientX - drag.x) + Math.abs(ev.clientY - drag.y) > 3) drag.moved = true; applyView(); return; }
+    var w = toWorld(ev);
+    if (drag.kind === "move") {
+      if (!drag.moved) { push(); drag.moved = true; }
+      S.layout[drag.n] = { x: Math.round((w.x - drag.dx) / 8) * 8, y: Math.round((w.y - drag.dy) / 8) * 8 };
+      var el = nodesEl.querySelector('[data-n="' + cssEsc(drag.n) + '"]'); if (el) { el.style.left = S.layout[drag.n].x + "px"; el.style.top = S.layout[drag.n].y + "px"; }
+      drawEdges(); return;
+    }
+    if (drag.kind === "link") { var a = portPos(drag.from, drag.port); drawEdges(path(a, w, drag.port === "loop")); var over = document.elementFromPoint(ev.clientX, ev.clientY); $$(".dzfe-node.target").forEach(function (x) { x.classList.remove("target"); }); var tn = over && over.closest && over.closest(".dzfe-node"); if (tn && tn.dataset.n !== drag.from && tn.dataset.n !== TRIG) tn.classList.add("target"); }
+  });
+  canvas.addEventListener("pointerup", function (ev) {
+    if (!drag) return;
+    var d = drag; drag = null;
+    if (d.kind === "pan" && !d.moved) { S.sel = null; drawNodes(); panel(); return; }
+    if (d.kind === "move") { if (d.moved) { S.dirty = true; status(); } else { S.sel = d.n; S.tab = "form"; drawNodes(); panel(); } return; }
+    if (d.kind === "link") {
+      var over = document.elementFromPoint(ev.clientX, ev.clientY), tn = over && over.closest && over.closest(".dzfe-node");
+      $$(".dzfe-node.target").forEach(function (x) { x.classList.remove("target"); });
+      if (tn && tn.dataset.n !== d.from && tn.dataset.n !== TRIG) link(d.from, d.port, tn.dataset.n);
+      else if (!tn) { S.sel = d.from === TRIG ? TRIG : d.from; pickNext(d.from, d.port, toWorld(ev)); }
+      drawEdges();
+    }
+  });
+  function cssEsc(s) { return String(s).replace(/"/g, '\\\\"'); }
+  function link(from, port, to) {
+    push();
+    if (from === TRIG) { S.steps.forEach(function (s) { s.initial_step = s.name === to; }); changed(true); return; }
+    var s = stepBy(from), r = routeOf(s);
+    if (port === "loop") { s.configuration = s.configuration || {}; s.configuration[s.action_name === "ForLoop" ? "loop_body_initial_step" : "error_handling_step"] = to; }
+    else if (port === "yes" || port === "no") { r[port] = to; setRoute(s, r); }
+    else setRoute(s, { mode: "simple", to: to });
+    changed(true);
+  }
+  /* rel\xE2ch\xE9 dans le vide : on propose d'ajouter un bloc \xE0 cet endroit */
+  function pickNext(from, port, pos) {
+    modal('<h3>Ajouter une \xE9tape ici</h3><input class="dzfe-in-q" placeholder="Chercher un bloc\u2026" autofocus><div class="dzfe-pick"></div>', function (m) {
+      var q = m.querySelector(".dzfe-in-q"), list = m.querySelector(".dzfe-pick");
+      function draw() { var v = q.value.toLowerCase(); list.innerHTML = B.palette.blocks.filter(function (b) { return !v || (b.label + " " + b.description).toLowerCase().indexOf(v) >= 0; }).slice(0, 40).map(function (b) { return '<button class="dzfe-pb" data-b="' + esc(b.name) + '"><i class="' + esc(b.icon) + '"></i><span><b>' + esc(b.label) + "</b><small>" + esc(b.category) + "</small></span></button>"; }).join(""); }
+      q.addEventListener("input", draw); draw(); setTimeout(function () { q.focus(); }, 30);
+      list.addEventListener("click", function (e) {
+        var p = e.target.closest(".dzfe-pb"); if (!p) return; closeModal();
+        defaults(p.dataset.b).then(function (cfg) {
+          push();
+          var name = uniqueName(cfg.sortie || p.dataset.b); if (cfg.sortie) cfg.sortie = uniqueVar(cfg.sortie);
+          S.steps.push({ id: null, name: name, action_name: p.dataset.b, configuration: cfg, next_step: "", only_if: "", initial_step: false });
+          S.layout[name] = { x: Math.round(pos.x - NW / 2), y: Math.round(pos.y) };
+          if (from === TRIG) S.steps.forEach(function (s) { s.initial_step = s.name === name; });
+          else { var s = stepBy(from), r = routeOf(s); if (port === "loop") s.configuration[s.action_name === "ForLoop" ? "loop_body_initial_step" : "error_handling_step"] = name; else if (port === "yes" || port === "no") { r[port] = name; setRoute(s, r); } else setRoute(s, { mode: "simple", to: name }); }
+          S.sel = name; changed(true);
+        });
+      });
+    });
+  }
+  canvas.addEventListener("dragover", function (e) { e.preventDefault(); });
+  canvas.addEventListener("drop", function (e) { var b = e.dataTransfer.getData("text/dzf"); if (!b) return; e.preventDefault(); var w = toWorld(e); S.sel = null; addStep(b, { x: Math.round(w.x - NW / 2), y: Math.round(w.y - NH / 2) }); });
+  canvas.addEventListener("wheel", function (e) {
+    e.preventDefault();
+    if (!e.ctrlKey && Math.abs(e.deltaX) + Math.abs(e.deltaY) < 50 && !e.deltaMode) { S.px -= e.deltaX; S.py -= e.deltaY; applyView(); return; }
+    zoomAt(e.deltaY < 0 ? 1.1 : 1 / 1.1, e.clientX, e.clientY);
+  }, { passive: false });
+  function zoomAt(f, cx, cy) {
+    var r = canvas.getBoundingClientRect(); cx = cx === undefined ? r.left + r.width / 2 : cx; cy = cy === undefined ? r.top + r.height / 2 : cy;
+    var nz = Math.min(2, Math.max(0.3, S.zoom * f)), k = nz / S.zoom;
+    S.px = cx - r.left - (cx - r.left - S.px) * k; S.py = cy - r.top - (cy - r.top - S.py) * k; S.zoom = nz; applyView();
+  }
+  function fit() {
+    var ns = [TRIG].concat(S.steps.map(function (s) { return s.name; })).map(function (n) { return S.layout[n]; }).filter(Boolean);
+    if (!ns.length) return;
+    var x0 = Math.min.apply(null, ns.map(function (l) { return l.x; })), y0 = Math.min.apply(null, ns.map(function (l) { return l.y; }));
+    var x1 = Math.max.apply(null, ns.map(function (l) { return l.x + NW; })), y1 = Math.max.apply(null, ns.map(function (l) { return l.y + NH; }));
+    var r = canvas.getBoundingClientRect();
+    S.zoom = Math.min(1.2, Math.max(0.3, Math.min((r.width - 80) / (x1 - x0 || 1), (r.height - 80) / (y1 - y0 || 1))));
+    S.px = (r.width - (x1 - x0) * S.zoom) / 2 - x0 * S.zoom; S.py = 40 - y0 * S.zoom; applyView();
+  }
+
+  /* ---------------- panneau de droite ---------------- */
+  var panelEl = $(".dzfe-panel");
+  function getFields(action) {
+    if (S.fields[action]) return Promise.resolve(S.fields[action]);
+    return fetch("/dysizz-flow/editeur-api/fields/" + encodeURIComponent(action) + "?table=" + encodeURIComponent(S.wf.table || ""), { credentials: "same-origin" })
+      .then(function (r) { return r.json(); }).then(function (j) { S.fields[action] = j; return j; }).catch(function () { return { fields: [] }; });
+  }
+  function vars(upto) {
+    var out = [{ v: "user.email", l: "l'utilisateur" }];
+    var t = B.tables.filter(function (x) { return x.name === S.wf.table; })[0];
+    if (t) t.fields.forEach(function (f) { out.push({ v: f, l: "champ de la ligne (" + S.wf.table + ")" }); });
+    if (S.wf.when_trigger === "API call") out.push({ v: "corps", l: "donn\xE9es re\xE7ues" });
+    var seen = {}, order = [], first = S.steps.filter(function (s) { return s.initial_step; })[0];
+    (function walk(s) { if (!s || seen[s.name]) return; seen[s.name] = 1; order.push(s); edges().filter(function (e) { return e.from === s.name; }).forEach(function (e) { walk(stepBy(e.to)); }); })(first);
+    S.steps.forEach(function (s) { if (!seen[s.name]) order.push(s); });
+    for (var i = 0; i < order.length; i++) {
+      var s = order[i]; if (s.name === upto) break;
+      var c = s.configuration || {};
+      if (c.sortie) out.push({ v: c.sortie, l: "r\xE9sultat de \xAB " + blockOf(s).label + " \xBB" });
+      if (s.action_name === "ForLoop" && c.item_variable) out.push({ v: c.item_variable, l: "\xE9l\xE9ment de la boucle" });
+      if (s.action_name === "TableQuery" && c.query_variable) out.push({ v: c.query_variable, l: "lignes lues" });
+    }
+    return out;
+  }
+  function fieldHtml(f, val, withVars) {
+    var id = "f_" + f.name, v = val === undefined || val === null ? "" : val, ph = f.def !== undefined && f.def !== null && typeof f.def !== "object" ? String(f.def) : "";
+    var head = '<label for="' + id + '">' + esc(f.label) + (f.required ? ' <span class="req">*</span>' : "") + "</label>";
+    var help = f.help ? '<small class="help">' + esc(f.help) + "</small>" : "";
+    var vb = withVars && f.vars !== false ? '<button type="button" class="dzfe-vb" data-for="' + id + '" title="Ins\xE9rer une variable">{ }</button>' : "";
+    var input;
+    if (f.kind === "header") return '<h4 class="dzfe-fh">' + esc(f.label) + "</h4>";
+    if (f.kind === "bool") input = '<label class="dzfe-sw"><input type="checkbox" id="' + id + '" data-f="' + esc(f.name) + '"' + (v === true || v === "true" || v === "on" ? " checked" : "") + '><span></span>' + esc(f.label) + "</label>";
+    else if (f.options && f.options.length) {
+      var has = f.options.some(function (o) { return o.v === String(v); });
+      input = '<select id="' + id + '" data-f="' + esc(f.name) + '"><option value=""' + (!v ? " selected" : "") + ">" + (ph ? "(par d\xE9faut : " + esc(ph) + ")" : "\u2014 choisir \u2014") + "</option>" +
+        f.options.map(function (o) { return '<option value="' + esc(o.v) + '"' + (o.v === String(v) ? " selected" : "") + ">" + esc(o.l) + "</option>"; }).join("") +
+        (v && !has ? '<option value="' + esc(v) + '" selected>' + esc(v) + "</option>" : "") + "</select>";
+    } else if (f.kind === "json" || f.kind === "code" || f.kind === "text") {
+      input = '<textarea id="' + id + '" data-f="' + esc(f.name) + '" class="' + (f.kind !== "text" ? "mono" : "") + '" rows="' + (f.kind === "code" ? 12 : f.kind === "json" ? 6 : 4) + '" spellcheck="false" placeholder="' + esc(ph) + '">' + esc(typeof v === "object" ? JSON.stringify(v, null, 2) : v) + "</textarea>";
+    } else input = '<input id="' + id + '" data-f="' + esc(f.name) + '" type="' + (f.kind === "number" ? "number" : f.kind === "password" ? "password" : "text") + '" value="' + esc(v) + '" placeholder="' + esc(ph) + '">';
+    return '<div class="dzfe-f' + (f.kind === "bool" ? " bool" : "") + '" data-show=\\'' + esc(JSON.stringify(f.showIf || null)) + "'>" + (f.kind === "bool" ? "" : head) + '<div class="dzfe-fi">' + input + vb + "</div>" + help + '<small class="dzfe-ferr"></small></div>';
+  }
+  function panel() {
+    root.classList.toggle("panel-open", !!S.sel);
+    if (!S.sel) { panelEl.innerHTML = panelEmpty(); return; }
+    if (S.sel === TRIG) return panelTrigger();
+    var s = stepBy(S.sel); if (!s) { S.sel = null; return panel(); }
+    var b = blockOf(s);
+    panelEl.innerHTML = '<div class="dzfe-ph"><span class="dzfe-ic"><i class="' + esc(b.icon) + '"></i></span><div><b>' + esc(b.label) + '</b><small>' + esc(b.category || "") + '</small></div><button class="dzfe-x" data-a="close" title="Fermer"><i class="fas fa-times"></i></button></div>' +
+      '<p class="dzfe-desc">' + esc(b.description || "") + (b.dz ? ' <a href="/dysizz-flow/bloc/' + encodeURIComponent(s.action_name) + '" target="_blank">Exemples et essai <i class="fas fa-external-link-alt"></i></a>' : "") + "</p>" +
+      '<div class="dzfe-tabs"><button data-tab="form" class="' + (S.tab === "form" ? "on" : "") + '">R\xE9glages</button><button data-tab="flow" class="' + (S.tab === "flow" ? "on" : "") + '">Encha\xEEnement</button><button data-tab="json" class="' + (S.tab === "json" ? "on" : "") + '">Code</button></div>' +
+      '<div class="dzfe-pb-body">Chargement\u2026</div>';
+    var body = $(".dzfe-pb-body", panelEl);
+    if (S.tab === "json") return panelJson(s, body);
+    if (S.tab === "flow") return panelFlow(s, body);
+    getFields(s.action_name).then(function (F) {
+      if (S.sel !== s.name || S.tab !== "form") return;
+      var c = s.configuration || {};
+      var html = '<div class="dzfe-f"><label>Nom de l\\'\xE9tape</label><div class="dzfe-fi"><input data-meta="name" value="' + esc(s.name) + '"></div><small class="help">Lettres, chiffres et _. Sert \xE0 relier les \xE9tapes.</small><small class="dzfe-ferr"></small></div>';
+      if (F.unknown) html += '<p class="dzfe-warn">Ce bloc n\\'existe pas (module retir\xE9 ?). Ses r\xE9glages restent visibles dans l\\'onglet Code.</p>';
+      html += (F.fields || []).map(function (f) { return fieldHtml(f, c[f.name], F.dz); }).join("") || '<p class="dzfe-mute">Ce bloc n\\'a pas de r\xE9glage.</p>';
+      if ((F.advanced || []).length) html += '<details class="dzfe-adv"><summary>R\xE9glages avanc\xE9s (r\xE9sultat, erreurs, essais)</summary>' + F.advanced.map(function (f) { return fieldHtml(f, c[f.name], false); }).join("") + "</details>";
+      body.innerHTML = html;
+      showIfs(body, s);
+    });
+  }
+  function showIfs(body, s) {
+    $$(".dzfe-f", body).forEach(function (el) {
+      var cond = JSON.parse(el.getAttribute("data-show") || "null"); if (!cond) return;
+      var ok = Object.keys(cond).every(function (k) { var want = [].concat(cond[k]); var v = (s.configuration || {})[k]; return want.some(function (w) { return String(w) === String(v) || (w === true && (v === true || v === "on")); }); });
+      el.style.display = ok ? "" : "none";
+    });
+  }
+  function panelEmpty() {
+    return '<div class="dzfe-pe"><i class="fas fa-mouse-pointer"></i><b>Clique sur un bloc pour le r\xE9gler</b><p>Astuces :</p><ul>' +
+      "<li>Tire le petit rond sous un bloc vers un autre pour les relier.</li><li>Rel\xE2che dans le vide pour ajouter une \xE9tape \xE0 cet endroit.</li>" +
+      "<li>Chaque \xE9tape range son r\xE9sultat dans une variable ; les suivantes la lisent avec <code>{{nom}}</code> (bouton <b>{ }</b>).</li>" +
+      "<li>Molette : se d\xE9placer \xB7 Ctrl + molette : zoomer \xB7 Suppr : effacer le bloc choisi.</li><li>Ctrl S : enregistrer \xB7 Ctrl Z : annuler.</li></ul></div>";
+  }
+  function panelTrigger() {
+    var need = B.tableWhen.indexOf(S.wf.when_trigger) >= 0;
+    panelEl.innerHTML = '<div class="dzfe-ph"><span class="dzfe-ic trig"><i class="fas fa-bolt"></i></span><div><b>D\xE9clencheur</b><small>Quand le workflow d\xE9marre</small></div><button class="dzfe-x" data-a="close"><i class="fas fa-times"></i></button></div>' +
+      '<div class="dzfe-pb-body"><div class="dzfe-f"><label>Nom du workflow</label><div class="dzfe-fi"><input data-w="name" value="' + esc(S.wf.name) + '" placeholder="ex. releve_mails"></div></div>' +
+      '<div class="dzfe-f"><label>Description</label><div class="dzfe-fi"><textarea data-w="description" rows="2" placeholder="Ce que fait ce workflow, en une phrase">' + esc(S.wf.description) + "</textarea></div></div>" +
+      '<div class="dzfe-f"><label>Quand d\xE9marre-t-il ?</label><div class="dzfe-when">' + B.when.map(function (w) { return '<label class="' + (S.wf.when_trigger === w[0] ? "on" : "") + '"><input type="radio" name="when" value="' + esc(w[0]) + '"' + (S.wf.when_trigger === w[0] ? " checked" : "") + ">" + esc(w[1]) + "</label>"; }).join("") + "</div></div>" +
+      '<div class="dzfe-f" style="' + (need ? "" : "display:none") + '"><label>Quelle table ?</label><div class="dzfe-fi"><select data-w="table"><option value="">\u2014 choisir \u2014</option>' + B.tables.map(function (t) { return '<option' + (t.name === S.wf.table ? " selected" : "") + ">" + esc(t.name) + "</option>"; }).join("") + '</select></div><small class="help">Dans les \xE9tapes, les champs de la ligne sont disponibles directement : {{nom_du_champ}}.</small></div>' +
+      (S.wf.when_trigger === "API call" ? '<p class="dzfe-note">Adresse Saltcorn : <code>POST /api/action/' + esc(S.wf.name || "nom") + '</code>. Pour une adresse publique prot\xE9g\xE9e (jeton, signature, limite), utilise plut\xF4t les <a href="/dysizz-flow/api" target="_blank">Points d\\'API</a> : laisse ce workflow \xAB \xE0 la main \xBB et choisis-le dans un point.</p>' : "") +
+      "</div>";
+  }
+  function panelFlow(s, body) {
+    var r = routeOf(s), others = S.steps.filter(function (x) { return x !== s; }).map(function (x) { return x.name; });
+    function opts(cur) { return '<option value="">(fin du workflow)</option>' + others.map(function (n) { return "<option" + (n === cur ? " selected" : "") + ">" + esc(n) + "</option>"; }).join(""); }
+    body.innerHTML =
+      '<div class="dzfe-f"><label>Seulement si\u2026 <small>(sinon l\\'\xE9tape est saut\xE9e)</small></label><div class="dzfe-fi"><input data-meta="only_if" value="' + esc(s.only_if) + '" placeholder="ex. nouveaux.length > 0" class="mono"></div><small class="help">Une condition JavaScript sur les variables du contexte. Vide = toujours.</small><div class="dzfe-chips">' +
+      vars(s.name).slice(0, 12).map(function (v) { return '<button type="button" data-ins="only_if" data-v="' + esc(v.v) + '" title="' + esc(v.l) + '">' + esc(v.v) + "</button>"; }).join("") + "</div></div>" +
+      '<div class="dzfe-f"><label>Ensuite</label><div class="dzfe-seg">' +
+      [["end", "Fin"], ["simple", "\xC9tape suivante"], ["cond", "Si\u2026 sinon\u2026"], ["expr", "Expression"]].map(function (m) { return '<button type="button" data-mode="' + m[0] + '" class="' + (r.mode === m[0] ? "on" : "") + '">' + m[1] + "</button>"; }).join("") + "</div></div>" +
+      (r.mode === "simple" ? '<div class="dzfe-f"><label>Aller \xE0</label><div class="dzfe-fi"><select data-r="to">' + opts(r.to) + "</select></div></div>" : "") +
+      (r.mode === "cond" ? '<div class="dzfe-f"><label>Si cette condition est vraie</label><div class="dzfe-fi"><input data-r="expr" class="mono" value="' + esc(r.expr) + '" placeholder="ex. verrou"></div></div><div class="dzfe-f"><label>alors aller \xE0</label><div class="dzfe-fi"><select data-r="yes">' + opts(r.yes) + '</select></div></div><div class="dzfe-f"><label>sinon aller \xE0</label><div class="dzfe-fi"><select data-r="no">' + opts(r.no) + "</select></div></div>" : "") +
+      (r.mode === "expr" ? '<div class="dzfe-f"><label>Expression qui donne le nom de l\\'\xE9tape suivante</label><div class="dzfe-fi"><textarea data-r="expr" class="mono" rows="3">' + esc(r.expr) + '</textarea></div><small class="help">JavaScript. Ex. <code>statut === "urgent" ? "alerte" : "ranger"</code></small></div>' : "") +
+      '<div class="dzfe-f"><label class="dzfe-sw"><input type="checkbox" data-meta="initial_step"' + (s.initial_step ? " checked" : "") + "><span></span>Premi\xE8re \xE9tape du workflow</label></div>" +
+      '<div class="dzfe-danger"><button type="button" class="dzfe-btn danger" data-a="del"><i class="far fa-trash-alt"></i> Supprimer cette \xE9tape</button></div>';
+  }
+  function panelJson(s, body) {
+    body.innerHTML = '<p class="dzfe-mute">Pour les techniciens : l\\'\xE9tape telle que Saltcorn la range. Modifie puis applique.</p><textarea class="mono dzfe-json" rows="22" spellcheck="false">' + esc(JSON.stringify({ action_name: s.action_name, configuration: s.configuration, only_if: s.only_if, next_step: s.next_step }, null, 2)) + '</textarea><small class="dzfe-ferr"></small><button type="button" class="dzfe-btn primary" data-a="applyjson">Appliquer</button>';
+  }
+
+  /* saisie dans le panneau : l'\xE9tat change, seul le bloc concern\xE9 est redessin\xE9 (pas de lag) */
+  var typing = null;
+  panelEl.addEventListener("focusin", function (e) { if (e.target.matches("input,textarea,select") && !typing) { push(); typing = true; } });
+  panelEl.addEventListener("focusout", function () { typing = null; });
+  panelEl.addEventListener("input", onPanelInput);
+  panelEl.addEventListener("change", onPanelInput);
+  function onPanelInput(e) {
+    var t = e.target;
+    if (t.name === "when") { S.wf.when_trigger = t.value; changed(false); panelTrigger(); return; }
+    if (t.dataset.w) { S.wf[t.dataset.w] = t.value; if (t.dataset.w === "name") $(".dzfe-name").value = t.value; if (t.dataset.w === "table") S.fields = {}; S.dirty = true; status(); drawNodes(); return; }
+    var s = stepBy(S.sel); if (!s) return;
+    if (t.dataset.f) {
+      s.configuration = s.configuration || {};
+      var v = t.type === "checkbox" ? t.checked : t.type === "number" ? (t.value === "" ? "" : Number(t.value)) : t.value;
+      if (v === "" && t.type !== "checkbox") delete s.configuration[t.dataset.f]; else s.configuration[t.dataset.f] = v;
+      var err = t.closest(".dzfe-f").querySelector(".dzfe-ferr");
+      if (err) { err.textContent = ""; if (t.classList.contains("mono") && /^\\s*[\\[{]/.test(t.value) && e.type === "change") { try { JSON.parse(t.value.replace(/\\{\\{[^}]*\\}\\}/g, "0")); } catch (x) { err.textContent = "JSON invalide : " + x.message; } } }
+      showIfs(panelEl, s); redrawNode(s); return;
+    }
+    if (t.dataset.meta === "name") {
+      var nv = t.value.trim(), err2 = t.closest(".dzfe-f").querySelector(".dzfe-ferr");
+      if (!/^[A-Za-z_][A-Za-z0-9_]{0,60}$/.test(nv)) { err2.textContent = "Lettres, chiffres et _ seulement"; return; }
+      if (nv !== s.name && stepBy(nv)) { err2.textContent = "Ce nom est d\xE9j\xE0 pris"; return; }
+      err2.textContent = ""; renameRefs(s.name, nv); s.name = nv; S.sel = nv; S.dirty = true; status(); drawNodes(); drawEdges(); return;
+    }
+    if (t.dataset.meta === "only_if") { s.only_if = t.value; redrawNode(s); S.dirty = true; status(); return; }
+    if (t.dataset.meta === "initial_step") { S.steps.forEach(function (x) { x.initial_step = x === s ? t.checked : false; }); if (!S.steps.some(function (x) { return x.initial_step; })) s.initial_step = true; changed(false); return; }
+    if (t.dataset.r) { var r = routeOf(s); r[t.dataset.r] = t.value; if (r.mode === "simple" && !r.to) r = { mode: "end" }; setRoute(s, r); S.dirty = true; status(); drawEdges(); redrawNode(s); }
+  }
+  function redrawNode(s) { var el = nodesEl.querySelector('[data-n="' + cssEsc(s.name) + '"]'); if (!el) return drawNodes(); var tmp = document.createElement("div"); tmp.innerHTML = nodeHtml(s); el.replaceWith(tmp.firstChild); S.dirty = true; status(); }
+  panelEl.addEventListener("click", function (e) {
+    var t = e.target.closest("button"); if (!t) return;
+    var s = stepBy(S.sel);
+    if (t.dataset.tab) { S.tab = t.dataset.tab; panel(); return; }
+    if (t.dataset.a === "close") { S.sel = null; drawNodes(); panel(); return; }
+    if (t.dataset.a === "del" && s && confirm("Supprimer l'\xE9tape \xAB " + s.name + " \xBB ?")) { removeStep(s.name); return; }
+    if (t.dataset.mode && s) {
+      push(); var r = routeOf(s), m = t.dataset.mode, next = r.mode === "simple" ? r.to : r.mode === "cond" ? r.yes : "";
+      if (m === "end") setRoute(s, { mode: "end" });
+      if (m === "simple") setRoute(s, { mode: "simple", to: next || "" });
+      if (m === "cond") setRoute(s, { mode: "cond", expr: r.expr && r.mode !== "expr" ? r.expr : "true", yes: next, no: "" });
+      if (m === "expr") setRoute(s, { mode: "expr", expr: s.next_step || '""' });
+      if (m === "simple" && !next) s.next_step = "";
+      S.tab = "flow"; changed(true); return;
+    }
+    if (t.dataset.ins && s) { var inp = panelEl.querySelector('[data-meta="' + t.dataset.ins + '"]'); inp.value = (inp.value ? inp.value + " " : "") + t.dataset.v; inp.dispatchEvent(new Event("input", { bubbles: true })); inp.focus(); return; }
+    if (t.dataset.a === "applyjson" && s) {
+      var ta = panelEl.querySelector(".dzfe-json"), er = panelEl.querySelector(".dzfe-ferr");
+      try { var o = JSON.parse(ta.value); push(); s.action_name = o.action_name || s.action_name; s.configuration = o.configuration || {}; s.only_if = o.only_if || ""; s.next_step = o.next_step || ""; er.textContent = ""; changed(true); } catch (x) { er.textContent = "JSON invalide : " + x.message; }
+      return;
+    }
+    if (t.classList.contains("dzfe-vb")) varMenu(t);
+  });
+  function varMenu(btn) {
+    var s = stepBy(S.sel), input = panelEl.querySelector("#" + btn.dataset.for), list = vars(s ? s.name : "");
+    var old = panelEl.querySelector(".dzfe-vm"); if (old) { old.remove(); if (old.dataset.for === btn.dataset.for) return; }
+    var m = document.createElement("div"); m.className = "dzfe-vm"; m.dataset.for = btn.dataset.for;
+    m.innerHTML = "<b>Ins\xE9rer une variable</b>" + list.map(function (v) { return '<button type="button" data-v="' + esc(v.v) + '"><code>{{' + esc(v.v) + "}}</code><small>" + esc(v.l) + "</small></button>"; }).join("") + '<small class="help">Pour un champ d\\'un r\xE9sultat : <code>{{resultat.champ}}</code>. Dans une liste transform\xE9e : <code>{{item.champ}}</code>.</small>';
+    btn.closest(".dzfe-f").appendChild(m);
+    m.addEventListener("click", function (e) {
+      var b = e.target.closest("button"); if (!b) return;
+      var ins = "{{" + b.dataset.v + "}}", st = input.selectionStart || input.value.length, en = input.selectionEnd || st;
+      input.value = input.value.slice(0, st) + ins + input.value.slice(en); input.focus(); input.selectionStart = input.selectionEnd = st + ins.length;
+      input.dispatchEvent(new Event("input", { bubbles: true })); m.remove();
+    });
+  }
+  /* Tab dans les zones de code */
+  root.addEventListener("keydown", function (e) {
+    if (e.key === "Tab" && e.target.matches("textarea.mono")) { e.preventDefault(); var t = e.target, a = t.selectionStart; t.value = t.value.slice(0, a) + "  " + t.value.slice(t.selectionEnd); t.selectionStart = t.selectionEnd = a + 2; t.dispatchEvent(new Event("input", { bubbles: true })); }
+  });
+  $(".dzfe-name").addEventListener("input", function (e) { S.wf.name = e.target.value; S.dirty = true; status(); var x = panelEl.querySelector('[data-w="name"]'); if (x) x.value = e.target.value; });
+
+  /* ---------------- barre du haut ---------------- */
+  root.addEventListener("click", function (e) {
+    var b = e.target.closest("[data-a]"); if (!b || panelEl.contains(b)) return;
+    var a = b.dataset.a;
+    if (a === "undo" && S.undo.length) { S.redo.push(snapshot()); restore(S.undo.pop()); }
+    if (a === "redo" && S.redo.length) { S.undo.push(snapshot()); restore(S.redo.pop()); }
+    if (a === "tidy") { push(); autoLayout(true); changed(false); fit(); }
+    if (a === "zin") zoomAt(1.2); if (a === "zout") zoomAt(1 / 1.2); if (a === "fit") fit();
+    if (a === "save") save();
+    if (a === "run") runDialog();
+    if (a === "code") codeDialog();
+    if (a === "pal") root.classList.toggle("pal-open");
+  });
+  document.addEventListener("keydown", function (e) {
+    var inField = e.target.matches && e.target.matches("input,textarea,select");
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); save(); return; }
+    if (inField) return;
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") { e.preventDefault(); if (S.undo.length) { S.redo.push(snapshot()); restore(S.undo.pop()); } }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "y") { e.preventDefault(); if (S.redo.length) { S.undo.push(snapshot()); restore(S.redo.pop()); } }
+    if ((e.key === "Delete" || e.key === "Backspace") && S.sel && S.sel !== TRIG) { e.preventDefault(); removeStep(S.sel); }
+    if (e.key === "Escape") { closeModal(); S.sel = null; drawNodes(); panel(); }
+  });
+  window.addEventListener("beforeunload", function (e) { if (S.dirty) { e.preventDefault(); e.returnValue = ""; } });
+
+  function post(url, body) {
+    return fetch(url, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json", "CSRF-Token": B.csrf, "X-Requested-With": "XMLHttpRequest" }, body: JSON.stringify(Object.assign({ _csrf: B.csrf }, body)) }).then(function (r) { return r.json(); });
+  }
+  function toast(msg, bad) { var t = document.createElement("div"); t.className = "dzfe-toast" + (bad ? " bad" : ""); t.textContent = msg; root.appendChild(t); setTimeout(function () { t.classList.add("out"); }, 3200); setTimeout(function () { t.remove(); }, 3700); }
+  function save() {
+    if (!S.wf.name) { S.sel = TRIG; panel(); toast("Donne d'abord un nom au workflow", true); return Promise.reject(); }
+    var btn = root.querySelector('[data-a="save"]'); btn.disabled = true;
+    return post("/dysizz-flow/editeur-api/save", { id: S.wf.id, name: S.wf.name, description: S.wf.description, when_trigger: S.wf.when_trigger, table: S.wf.table, layout: S.layout, steps: S.steps })
+      .then(function (j) {
+        btn.disabled = false;
+        if (j.error) { toast(j.error, true); throw new Error(j.error); }
+        var isNew = !S.wf.id;
+        S.wf.id = j.wf.id; S.steps.forEach(function (s) { var m = j.wf.steps.filter(function (x) { return x.name === s.name; })[0]; if (m) s.id = m.id; });
+        S.dirty = false; status(); toast("Enregistr\xE9");
+        if (isNew) history.replaceState(null, "", "/dysizz-flow/editeur/" + j.wf.id);
+        return j;
+      }, function (e) { btn.disabled = false; toast("Enregistrement impossible : " + e.message, true); throw e; });
+  }
+
+  /* ---------------- essai ---------------- */
+  function exampleCtx() {
+    var t = B.tables.filter(function (x) { return x.name === S.wf.table; })[0];
+    if (t) { var o = {}; t.fields.forEach(function (f) { if (f !== "id") o[f] = ""; }); return JSON.stringify(o, null, 2); }
+    if (S.wf.when_trigger === "API call") return '{\\n  "corps": {}\\n}';
+    return "{}";
+  }
+  function runDialog() {
+    modal('<h3>Lancer un essai</h3><p class="dzfe-mute">Le workflow s\\'ex\xE9cute vraiment (\xE9critures, envois compris). Donn\xE9es de d\xE9part (JSON) :</p><textarea class="mono dzfe-ctx" rows="8" spellcheck="false">' + esc(S.lastCtx || exampleCtx()) + '</textarea><div class="dzfe-mact"><button class="dzfe-btn" data-m="cancel">Annuler</button><button class="dzfe-btn primary" data-m="go"><i class="fas fa-play"></i> Lancer</button></div>', function (m) {
+      m.addEventListener("click", function (e) {
+        var b = e.target.closest("[data-m]"); if (!b) return;
+        if (b.dataset.m === "cancel") return closeModal();
+        var ctx = m.querySelector(".dzfe-ctx").value; S.lastCtx = ctx;
+        try { JSON.parse(ctx || "{}"); } catch (x) { toast("JSON invalide : " + x.message, true); return; }
+        closeModal();
+        (S.dirty || !S.wf.id ? save() : Promise.resolve()).then(function () {
+          showRun({ pending: true });
+          return post("/dysizz-flow/editeur-api/run", { id: S.wf.id, contexte: ctx });
+        }).then(function (j) { if (j) showRun(j); }).catch(function () {});
+      });
+    });
+  }
+  function showRun(j) {
+    var el = $(".dzfe-run");
+    if (j.pending) { el.className = "dzfe-run open"; el.innerHTML = '<div class="dzfe-rh"><b><i class="fas fa-spinner fa-spin"></i> Essai en cours\u2026</b></div>'; return; }
+    var errStep = !j.ok && j.step ? [].concat(j.step)[0] : null;
+    S.run = { errStep: errStep, okSteps: {} };
+    if (j.context) S.steps.forEach(function (s) { var c = s.configuration || {}; if (c.sortie && j.context[c.sortie] !== undefined) S.run.okSteps[s.name] = true; });
+    drawNodes();
+    el.className = "dzfe-run open";
+    el.innerHTML = '<div class="dzfe-rh"><b class="' + (j.ok ? "ok" : "ko") + '">' + (j.ok ? '<i class="fas fa-check-circle"></i> Termin\xE9' : j.status === "Waiting" ? '<i class="fas fa-pause-circle"></i> En attente' : '<i class="fas fa-times-circle"></i> Erreur') + "</b><span>" + (j.ms || 0) + " ms" + (j.run_id ? ' \xB7 <a href="/actions/run/' + j.run_id + '" target="_blank">d\xE9tail Saltcorn</a>' : "") + '</span><button class="dzfe-x" data-rc><i class="fas fa-times"></i></button></div>' +
+      (j.error ? '<div class="dzfe-rerr">' + (errStep ? "\xC9tape <b>" + esc(errStep) + "</b> : " : "") + esc(j.error) + "</div>" : "") +
+      '<div class="dzfe-rctx">' + tree(j.context || {}, 0) + "</div>";
+    el.querySelector("[data-rc]").addEventListener("click", function () { el.className = "dzfe-run"; S.run = null; drawNodes(); });
+  }
+  function tree(v, d) {
+    if (v === null || v === undefined) return '<span class="n">vide</span>';
+    if (typeof v !== "object") return '<span class="' + typeof v + '">' + esc(typeof v === "string" && v.length > 300 ? v.slice(0, 300) + "\u2026" : v) + "</span>";
+    var keys = Object.keys(v), arr = Array.isArray(v);
+    if (!keys.length) return arr ? "[ ]" : "{ }";
+    return '<details' + (d < 1 ? " open" : "") + "><summary>" + (arr ? "liste \xB7 " + keys.length + " \xE9l\xE9ment(s)" : keys.length + " champ(s)") + "</summary><ul>" +
+      keys.slice(0, 100).map(function (k) { return "<li><b>" + esc(k) + "</b> " + tree(v[k], d + 1) + "</li>"; }).join("") + (keys.length > 100 ? "<li>\u2026</li>" : "") + "</ul></details>";
+  }
+
+  /* ---------------- code du workflow entier ---------------- */
+  function codeDialog() {
+    var txt = JSON.stringify({ name: S.wf.name, description: S.wf.description, when_trigger: S.wf.when_trigger, table: S.wf.table, steps: S.steps.map(function (s) { return { name: s.name, action_name: s.action_name, initial_step: s.initial_step, only_if: s.only_if, next_step: s.next_step, configuration: s.configuration }; }) }, null, 2);
+    modal('<h3>Le workflow en JSON</h3><p class="dzfe-mute">Copie-le pour le partager ou le versionner, ou colle un workflow pour le remplacer.</p><textarea class="mono dzfe-all" rows="22" spellcheck="false">' + esc(txt) + '</textarea><small class="dzfe-ferr"></small><div class="dzfe-mact"><button class="dzfe-btn" data-m="copy"><i class="far fa-copy"></i> Copier</button><button class="dzfe-btn" data-m="cancel">Fermer</button><button class="dzfe-btn primary" data-m="apply">Appliquer</button></div>', function (m) {
+      m.addEventListener("click", function (e) {
+        var b = e.target.closest("[data-m]"); if (!b) return;
+        var ta = m.querySelector(".dzfe-all");
+        if (b.dataset.m === "cancel") return closeModal();
+        if (b.dataset.m === "copy") { ta.select(); try { navigator.clipboard.writeText(ta.value); } catch (x) { document.execCommand("copy"); } toast("Copi\xE9"); return; }
+        try {
+          var o = JSON.parse(ta.value); if (!Array.isArray(o.steps)) throw new Error("\xAB steps \xBB doit \xEAtre une liste");
+          push();
+          var ids = {}; S.steps.forEach(function (s) { ids[s.name] = s.id; });
+          S.steps = o.steps.map(function (s) { return { id: ids[s.name] || null, name: s.name, action_name: s.action_name, configuration: s.configuration || {}, next_step: s.next_step || "", only_if: s.only_if || "", initial_step: !!s.initial_step }; });
+          ["name", "description", "when_trigger", "table"].forEach(function (k) { if (o[k] !== undefined) S.wf[k] = o[k]; });
+          $(".dzfe-name").value = S.wf.name; S.layout = {}; closeModal(); changed(true); fit();
+        } catch (x) { m.querySelector(".dzfe-ferr").textContent = "JSON invalide : " + x.message; }
+      });
+    });
+  }
+
+  /* ---------------- fen\xEAtre ---------------- */
+  function modal(html, init) { var m = $(".dzfe-modal"); m.innerHTML = '<div class="dzfe-mb">' + html + "</div>"; m.classList.add("open"); m.onclick = function (e) { if (e.target === m) closeModal(); }; init(m.firstChild); }
+  function closeModal() { var m = $(".dzfe-modal"); m.classList.remove("open"); m.innerHTML = ""; }
+
+  /* ---------------- d\xE9marrage ---------------- */
+  drawPalette();
+  autoLayout(false);
+  drawAll();
+  panel();
+  status();
+  setTimeout(fit, 30);
+  if (!S.wf.id) { S.sel = TRIG; panel(); }
+  var ok = new URLSearchParams(location.search).get("ok");
+  if (ok) { toast(ok); history.replaceState(null, "", location.pathname); }
+})();
+` }, "hook.js": { "src": `/* dysizz-flow : sur les pages natives des workflows Saltcorn, un raccourci vers l'\xE9diteur visuel */
+(function () {
+  var m = location.pathname.match(/^\\/actions\\/(configure|testrun|workflow)\\/(\\d+)/);
+  var onList = /^\\/actions\\/?$/.test(location.pathname);
+  if (!m && !onList) return;
+  function add() {
+    if (document.getElementById("dzf-hook")) return;
+    var a = document.createElement("a");
+    a.id = "dzf-hook";
+    a.href = m ? "/dysizz-flow/editeur/" + m[2] : "/dysizz-flow/workflows";
+    a.innerHTML = '<i class="fas fa-project-diagram"></i> ' + (m ? "Ouvrir dans l'\xE9diteur visuel" : "Workflows en sch\xE9ma (Dysizz)");
+    a.setAttribute("style", "position:fixed;right:18px;bottom:18px;z-index:3000;background:#5b5bf0;color:#fff;padding:.65rem 1rem;border-radius:99px;font-weight:600;text-decoration:none;box-shadow:0 8px 24px rgba(0,0,0,.2);font-size:.9rem");
+    document.body.appendChild(a);
+  }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", add); else add();
+})();
 ` } } };
   }
 });
@@ -85682,6 +86853,8 @@ var { registerUserBlocks } = require_userblocks();
 var admin = require_admin();
 var admin2 = require_admin2();
 var expose = require_expose();
+var editor = require_editor();
+var { dysizz_hub } = require_hub();
 var { registerExternal } = require_registry();
 var { ASSETS } = require_assets();
 var TYPES = { css: "text/css; charset=utf-8", js: "application/javascript; charset=utf-8" };
@@ -85704,6 +86877,21 @@ module.exports = {
   plugin_name: PLUGIN,
   /* pas de configuration_workflow : Saltcorn lit alors des valeurs, pas des fonctions */
   actions: ACTIONS,
+  /* petit script (1 Ko) : sur les pages natives des workflows, un bouton vers l'éditeur visuel */
+  headers: [{ script: `/dysizz-flow/a/${VERSION}/hook.js`, defer: true }],
+  /* pour les autres plugins (ex. Me) : ranger un secret dans le coffre, savoir s'il existe */
+  dysizz_flow_api: {
+    writeSecret: (nom, valeur, note) => require_vault().writeSecret(nom, valeur, note),
+    hasSecret: async (nom) => {
+      try {
+        return await require_vault().readSecret(nom) !== void 0;
+      } catch (e) {
+        return false;
+      }
+    }
+  },
+  /* tuiles sur l'accueil Dysizz (/dysizz, fourni par dysizz-ui) */
+  dysizz_hub,
   /* les blocs perso de l'atelier (table dzf_blocs) sont ajoutés au chargement */
   /* + les blocs apportés par d'autres plugins (export dysizz_flow_blocks) */
   onLoad: async () => {
@@ -85729,6 +86917,13 @@ module.exports = {
     { url: "/dysizz-flow/atelier/:nom", method: "get", callback: withAssets(admin.editor) },
     { url: "/dysizz-flow/modeles", method: "get", callback: withAssets(admin.templates) },
     { url: "/dysizz-flow/modeles/:key", method: "post", callback: admin.installTpl },
+    { url: "/dysizz-flow/workflows", method: "get", callback: withAssets(editor.listPage) },
+    { url: "/dysizz-flow/workflows/dupliquer", method: "post", callback: editor.duplicate },
+    { url: "/dysizz-flow/workflows/supprimer", method: "post", callback: editor.remove },
+    { url: "/dysizz-flow/editeur/:id", method: "get", callback: editor.editorPage },
+    { url: "/dysizz-flow/editeur-api/fields/:action", method: "get", callback: editor.apiFields },
+    { url: "/dysizz-flow/editeur-api/save", method: "post", callback: editor.apiSave },
+    { url: "/dysizz-flow/editeur-api/run", method: "post", callback: editor.apiRun },
     { url: "/dysizz-flow/atelier/restaurer", method: "post", callback: admin.restore },
     { url: "/dysizz-flow/api", method: "get", callback: withAssets(admin2.apiPage) },
     { url: "/dysizz-flow/api/save", method: "post", callback: admin2.apiSave },

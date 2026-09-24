@@ -14,6 +14,16 @@
     });
   };
 
+  window.dzfSearchWf = function (q) {
+    q = String(q || "").toLowerCase().trim();
+    doc.querySelectorAll(".dzf-wf,.dzf-tplc").forEach(function (c) { c.hidden = !!q && (c.getAttribute("data-search") || "").indexOf(q) < 0; });
+  };
+
+  window.dzfCat = function (btn, cat) {
+    btn.parentNode.querySelectorAll("button").forEach(function (b) { b.classList.toggle("on", b === btn); });
+    doc.querySelectorAll(".dzf-tplc").forEach(function (c) { c.hidden = !!cat && c.getAttribute("data-cat") !== cat; });
+  };
+
   /* essai d'un bloc */
   window.dzfTry = function (btn) {
     var box = btn.closest(".dzf-try"), out = box.querySelector("[data-out]");

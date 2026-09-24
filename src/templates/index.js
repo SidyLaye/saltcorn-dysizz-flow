@@ -153,11 +153,11 @@ module.exports = [
   {
     key: "veille_cve", label: "Veille failles (CVE) → table", category: "Sécurité", when: "Daily",
     description: "Chaque jour : cherche les nouvelles failles publiées (base NVD) pour tes technologies et les range dans une table, sans doublon. Prévient pour les critiques.",
-    vars: [{ name: "table_cve", label: "Table des failles (champs id unique, gravite, score, resume, url, publie_le)", default: "failles" }, { name: "mot_cle", label: "Technologie surveillée", default: "postgresql" }, { name: "gravite", label: "Gravité minimale (MEDIUM, HIGH, CRITICAL)", default: "HIGH" }],
+    vars: [{ name: "table_cve", label: "Table des failles (champs cve unique, gravite, score, resume, url, publiee)", default: "failles" }, { name: "mot_cle", label: "Technologie surveillée", default: "postgresql" }, { name: "gravite", label: "Gravité minimale (MEDIUM, HIGH, CRITICAL)", default: "HIGH" }],
     steps: chain(
       st("chercher", "dzf_cve", { mot_cle: "%%mot_cle%%", jours: 7, gravite_min: "%%gravite%%", sortie: "failles", delai_max: 90, essais: 2 }),
-      st("nouvelles", "dzf_liste_dedoublonner", { liste: "{{failles}}", cle: "id", table: "%%table_cve%%", sortie: "nouvelles" }),
-      st("ranger", "dzf_table_upsert", { table: "%%table_cve%%", liste: "{{nouvelles}}", cle: "id", sortie: "bilan" }),
+      st("nouvelles", "dzf_liste_dedoublonner", { liste: "{{failles}}", cle: "cve", table: "%%table_cve%%", sortie: "nouvelles" }),
+      st("ranger", "dzf_table_upsert", { table: "%%table_cve%%", liste: "{{nouvelles}}", cle: "cve", sortie: "bilan" }),
       st("critiques", "dzf_liste_filtrer", { liste: "{{nouvelles}}", champ: "gravite", operateur: "=", valeur: "CRITICAL", sortie: "critiques" }),
       st("prevenir", "dzf_notifier", { qui: "administrateurs", titre: "{{critiques.length}} faille(s) critique(s) : %%mot_cle%%", lien: "/page/%%table_cve%%" }, { only_if: "critiques.length > 0" }),
     ),
@@ -173,6 +173,49 @@ module.exports = [
       st("reussis", "dzf_file_terminer", { travaux: "{{boucle.reussis}}", resultat: "réussi" }, { only_if: "travaux.length > 0 && boucle.reussis.length > 0" }),
       st("echecs", "dzf_file_terminer", { travaux: "{{boucle.echecs}}", resultat: "erreur" }, { only_if: "travaux.length > 0 && boucle.echecs.length > 0" }),
       st("liberer", "dzf_verrou", { action: "libérer", nom: "file-%%file%%", sortie: "verrou" }),
+    ),
+  },
+  {
+    key: "rapport_mail", label: "Rapport du jour par e-mail", category: "Organisation", when: "Daily",
+    description: "Chaque matin : compte ce qui compte dans une table (ex. tâches du jour, nouveaux mails) et t'envoie un e-mail récapitulatif avec la liste.",
+    vars: [{ name: "table", label: "Table", default: "taches" }, { name: "filtre", label: "Lignes à lister (filtre JSON)", default: '{"not":{"statut":"fait"}}' }, { name: "champ", label: "Champ affiché pour chaque ligne", default: "titre" },
+      { name: "destinataire", label: "Envoyer à (e-mail)", default: "" }],
+    steps: chain(
+      st("lignes", "dzf_table_chercher", { table: "%%table%%", filtre: "%%filtre%%", limite: 50, sortie: "lignes" }),
+      st("texte", "dzf_texte", { modele: "Bonjour,\n\n{{nombre}} élément(s) aujourd'hui :\n{{lignes}}", liste: "{{lignes}}", modele_ligne: "- {{item.%%champ%%}}", sortie: "texte" }),
+      st("envoyer", "dzf_mail_envoyer", { a: "%%destinataire%%", sujet: "Ton rapport du jour", texte: "{{texte}}", sortie: "envoi" }, { only_if: "lignes.length > 0" }),
+    ),
+  },
+  {
+    key: "webhook_signe", label: "Webhook signé → table (sans doublon)", category: "Intégrations", when: "Never",
+    description: "À relier à un Point d'API (protection HMAC) : vérifie qu'un même événement n'est pas traité deux fois, range les données reçues dans une table et répond « reçu ».",
+    vars: [{ name: "table", label: "Table de destination" }, { name: "cle", label: "Champ qui identifie l'événement dans les données reçues", default: "id" }, { name: "modele", label: "Correspondance (JSON)", default: '{"ref":"{{corps.id}}","type":"{{corps.type}}","donnees":"{{corps_brut}}"}' }],
+    steps: chain(
+      st("deja", "dzf_idempotence", { cle: "webhook-{{corps.%%cle%%}}", duree_h: 72, sortie: "deja" }),
+      st("ligne", "dzf_definir", { valeurs: "%%modele%%", sortie: "ligne" }, { only_if: "!deja.deja_traite" }),
+      st("ranger", "dzf_table_ajouter", { table: "%%table%%", valeurs: "{{ligne}}", sortie: "id" }, { only_if: "!deja.deja_traite" }),
+      st("repondre", "dzf_definir", { valeurs: '{"reponse":{"recu":true}}', fusionner: true }),
+    ),
+  },
+  {
+    key: "seuil_alerte", label: "Alerte si une valeur dépasse un seuil", category: "Surveillance", when: "Hourly",
+    description: "Chaque heure : calcule une valeur dans une table (somme, nombre, max…), la garde en métrique pour le graphique et te prévient une seule fois quand elle dépasse le seuil, puis quand elle redescend.",
+    vars: [{ name: "table", label: "Table" }, { name: "stat", label: "Calcul (compter, somme, max, min, moyenne)", default: "compter" }, { name: "champ", label: "Champ (sauf pour compter)", default: "" },
+      { name: "filtre", label: "Filtre (JSON, facultatif)", default: "{}" }, { name: "seuil", label: "Seuil", default: "100" }, { name: "nom", label: "Nom de la métrique", default: "ma.valeur" }],
+    steps: chain(
+      st("valeur", "dzf_table_compter", { table: "%%table%%", stat: "%%stat%%", champ: "%%champ%%", filtre: "%%filtre%%", sortie: "valeur" }),
+      st("mesure", "dzf_metrique", { nom: "%%nom%%", valeur: "{{valeur}}" }),
+      st("depasse", "dzf_calcul", { formule: "Math.max(0, {{valeur}} - %%seuil%%)", sortie: "depasse" }),
+      st("alerte", "dzf_alerte", { cle: "seuil-%%nom%%", probleme: "{{depasse}}", silence_min: 360, sortie: "alerte" }),
+      st("prevenir", "dzf_notifier", { qui: "administrateurs", titre: "%%nom%% : {{alerte.etat}}", texte: "Valeur actuelle : {{valeur}} (seuil %%seuil%%)" }, { only_if: "alerte.envoyer" }),
+    ),
+  },
+  {
+    key: "relance_planifiee", label: "Relance automatique après N jours", category: "Organisation", when: "Insert", tableVar: "table",
+    description: "Quand une ligne est ajoutée (ex. une candidature, un devis), programme une relance dans N jours. Si la ligne a changé de statut entre-temps, la relance ne part pas.",
+    vars: [{ name: "table", label: "Table surveillée", default: "candidatures" }, { name: "jours", label: "Relancer après (jours)", default: "7" }, { name: "workflow", label: "Workflow qui fait la relance (reçoit « ligne »)" }],
+    steps: chain(
+      st("planifier", "dzf_planifier", { workflow: "%%workflow%%", dans: "%%jours%%", unite: "jours", contexte: '{"ligne":{"id":"{{id}}"}}', cle: "relance-%%table%%-{{id}}", sortie: "planifie" }),
     ),
   },
 ];

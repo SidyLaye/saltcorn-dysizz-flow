@@ -137,7 +137,7 @@ module.exports = [
       const j = await r.json();
       return (j.vulnerabilities || []).map(({ cve }) => {
         const m = (cve.metrics && (cve.metrics.cvssMetricV31 || cve.metrics.cvssMetricV30 || [])[0]) || {};
-        return { id: cve.id, publiee: cve.published, score: m.cvssData ? m.cvssData.baseScore : null, gravite: m.cvssData ? m.cvssData.baseSeverity : "", resume: ((cve.descriptions || []).find((d) => d.lang === "en") || {}).value || "", url: `https://nvd.nist.gov/vuln/detail/${cve.id}` };
+        return { cve: cve.id, publiee: cve.published, score: m.cvssData ? m.cvssData.baseScore : null, gravite: m.cvssData ? m.cvssData.baseSeverity : "", resume: ((cve.descriptions || []).find((d) => d.lang === "en") || {}).value || "", url: `https://nvd.nist.gov/vuln/detail/${cve.id}` };
       }).sort((a, b) => (b.score || 0) - (a.score || 0));
     },
   },

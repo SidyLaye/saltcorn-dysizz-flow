@@ -11,6 +11,8 @@ const { registerUserBlocks } = require("./userblocks");
 const admin = require("./admin");
 const admin2 = require("./admin2");
 const expose = require("./expose");
+const editor = require("./editor");
+const { dysizz_hub } = require("./hub");
 const { registerExternal } = require("./registry");
 const { ASSETS } = require("./generated/assets");
 
@@ -38,6 +40,15 @@ module.exports = {
   plugin_name: PLUGIN,
   /* pas de configuration_workflow : Saltcorn lit alors des valeurs, pas des fonctions */
   actions: ACTIONS,
+  /* petit script (1 Ko) : sur les pages natives des workflows, un bouton vers l'éditeur visuel */
+  headers: [{ script: `/dysizz-flow/a/${VERSION}/hook.js`, defer: true }],
+  /* pour les autres plugins (ex. Me) : ranger un secret dans le coffre, savoir s'il existe */
+  dysizz_flow_api: {
+    writeSecret: (nom, valeur, note) => require("./vault").writeSecret(nom, valeur, note),
+    hasSecret: async (nom) => { try { return (await require("./vault").readSecret(nom)) !== undefined; } catch (e) { return false; } },
+  },
+  /* tuiles sur l'accueil Dysizz (/dysizz, fourni par dysizz-ui) */
+  dysizz_hub,
   /* les blocs perso de l'atelier (table dzf_blocs) sont ajoutés au chargement */
   /* + les blocs apportés par d'autres plugins (export dysizz_flow_blocks) */
   onLoad: async () => {
@@ -57,6 +68,13 @@ module.exports = {
     { url: "/dysizz-flow/atelier/:nom", method: "get", callback: withAssets(admin.editor) },
     { url: "/dysizz-flow/modeles", method: "get", callback: withAssets(admin.templates) },
     { url: "/dysizz-flow/modeles/:key", method: "post", callback: admin.installTpl },
+    { url: "/dysizz-flow/workflows", method: "get", callback: withAssets(editor.listPage) },
+    { url: "/dysizz-flow/workflows/dupliquer", method: "post", callback: editor.duplicate },
+    { url: "/dysizz-flow/workflows/supprimer", method: "post", callback: editor.remove },
+    { url: "/dysizz-flow/editeur/:id", method: "get", callback: editor.editorPage },
+    { url: "/dysizz-flow/editeur-api/fields/:action", method: "get", callback: editor.apiFields },
+    { url: "/dysizz-flow/editeur-api/save", method: "post", callback: editor.apiSave },
+    { url: "/dysizz-flow/editeur-api/run", method: "post", callback: editor.apiRun },
     { url: "/dysizz-flow/atelier/restaurer", method: "post", callback: admin.restore },
     { url: "/dysizz-flow/api", method: "get", callback: withAssets(admin2.apiPage) },
     { url: "/dysizz-flow/api/save", method: "post", callback: admin2.apiSave },

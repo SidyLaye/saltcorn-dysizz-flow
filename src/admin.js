@@ -18,9 +18,9 @@ const TYPE_LABEL = { texte: "texte court", text: "texte long", int: "nombre enti
 
 const page = (res, req, title, active, html) => res.sendWrap({ title, requestFluidLayout: true }, {
   above: [{ type: "blank", isHTML: true, contents: `<div class="dzf">
-<nav class="dzf-tabs">${[["", "Bibliothèque", "fas fa-cubes"], ["atelier", "Atelier", "fas fa-tools"], ["modeles", "Modèles", "fas fa-project-diagram"], ["api", "Points d'API", "fas fa-plug"], ["coffre", "Coffre", "fas fa-lock"], ["supervision", "Supervision", "fas fa-tachometer-alt"], ["journal", "Journal", "fas fa-clipboard-list"]]
+<nav class="dzf-tabs">${[["workflows", "Workflows", "fas fa-project-diagram"], ["modeles", "Catalogue", "fas fa-magic"], ["", "Blocs", "fas fa-cubes"], ["atelier", "Atelier", "fas fa-tools"], ["api", "Points d'API", "fas fa-plug"], ["coffre", "Coffre", "fas fa-lock"], ["supervision", "Supervision", "fas fa-tachometer-alt"], ["journal", "Journal", "fas fa-clipboard-list"]]
     .map(([u, l, i]) => `<a href="/dysizz-flow${u ? "/" + u : ""}" class="${active === u ? "on" : ""}"><i class="${i}"></i>${l}</a>`).join("")}
-<a href="/actions" class="dzf-ext"><i class="fas fa-external-link-alt"></i>Workflows Saltcorn</a></nav>
+<a href="/dysizz" class="dzf-ext"><i class="fas fa-th-large"></i>Accueil</a></nav>
 ${flash(req)}${html}</div>`.replace(/\{\{/g, "&#123;&#123;").replace(/\}\}/g, "&#125;&#125;") }],
 });
 /* (les {{ }} sont écrits en entités : Saltcorn les interpréterait sinon comme des variables de page) */
@@ -258,27 +258,48 @@ const WHEN = ["Never", "Often", "Hourly", "Daily", "Weekly", "Insert", "Update",
 const WHEN_LABEL = { Never: "à la main (pour tester)", Often: "toutes les ~5 min", Hourly: "toutes les heures", Daily: "chaque jour", Weekly: "chaque semaine", Insert: "à chaque ajout dans la table", Update: "à chaque modification", "API call": "sur appel d'API (webhook)" };
 const templates = async (req, res) => {
   if (!isAdmin(req)) return denied(res);
+  const { SCHEMAS } = require("./templates/install");
+  const Table = require("@saltcorn/data/models/table");
   const byName = Object.fromEntries((await allBlocks()).map((b) => [b.name, b]));
-  page(res, req, "Modèles de workflows", "modeles", `
-<div class="dzf-head"><div><h1>Modèles de workflows</h1><p>Des enchaînements de blocs prêts à l'emploi. L'installation crée un vrai workflow Saltcorn que tu ouvres ensuite dans l'éditeur visuel pour le modifier. Conseil : installe-le d'abord « à la main », essaie-le avec « Test run », puis choisis sa fréquence.</p></div></div>
-<div class="dzf-tpls">${TEMPLATES.map((t) => `
-<details class="dzf-tpl"><summary><span class="dzf-ic"><i class="fas fa-project-diagram"></i></span><span><b>${esc(t.label)}</b><small>${esc(t.description)}</small><em>${esc(t.category)} · ${esc(WHEN_LABEL[t.when] || t.when)} · ${t.steps.length} étapes</em></span></summary>
-<ol class="dzf-steps">${t.steps.map((s) => `<li><i class="${esc((byName[s.action_name] || {}).icon || "fas fa-cog")}"></i><b>${esc(s.name)}</b> ${esc((byName[s.action_name] || {}).label || s.action_name)}${s.only_if ? ` <small>si ${esc(s.only_if)}</small>` : ""}</li>`).join("")}</ol>
-<form method="post" action="/dysizz-flow/modeles/${t.key}" class="dzf-tpl-form">${hidden(req)}
-<label>Nom du workflow<input class="form-control" name="nom" value="dzf_${esc(t.key)}"></label>
-<label>Déclenchement<select class="form-select" name="when">${WHEN.map((w) => `<option value="${w}"${w === "Never" ? " selected" : ""}>${esc(WHEN_LABEL[w])}${w === t.when ? " — conseillé" : ""}</option>`).join("")}</select></label>
-${(t.vars || []).map((v) => `<label>${esc(v.label)}<input class="form-control" name="${esc(v.name)}" value="${esc(v.default || "")}"></label>`).join("")}
-<button class="btn btn-primary"><i class="fas fa-download"></i> Installer</button></form></details>`).join("")}</div>`);
+  const cats = [...new Set(TEMPLATES.map((t) => t.category))];
+  const CAT_COLOR = { Veille: "#00aba9", Messagerie: "#2d89ef", Organisation: "#00a300", Intégrations: "#603cba", Données: "#1e7145", IA: "#e3008c", Services: "#e3a21a", Surveillance: "#da532c", Sécurité: "#b91d47", Tâches: "#7e3878" };
+  /* petit schéma : les étapes en file, avec leur icône */
+  const mini = (t) => `<div class="dzf-mini"><span class="dzf-mini-n trig" title="${esc(WHEN_LABEL[t.when] || t.when)}"><i class="fas fa-bolt"></i></span>${t.steps.slice(0, 7).map((st) => {
+    const b = byName[st.action_name] || {};
+    return `<span class="dzf-mini-l${st.only_if ? " if" : ""}"></span><span class="dzf-mini-n" title="${esc(b.label || st.action_name)}${st.only_if ? " — seulement si " + esc(st.only_if) : ""}"><i class="${esc(b.icon || "fas fa-cog")}"></i></span>`;
+  }).join("")}${t.steps.length > 7 ? `<span class="dzf-mini-more">+${t.steps.length - 7}</span>` : ""}</div>`;
+  const card = (t) => {
+    const needs = (t.vars || []).filter((v) => /^table/.test(v.name));
+    const auto = needs.filter((v) => SCHEMAS[`${t.key}.${v.name}`]);
+    return `<article class="dzf-tplc" data-cat="${esc(t.category)}" data-search="${esc((t.label + " " + t.description + " " + t.category).toLowerCase())}" style="--c:${CAT_COLOR[t.category] || "#5b5bf0"}">
+<div class="dzf-tplc-top"><span class="dzf-tplc-cat">${esc(t.category)}</span><span class="dzf-tplc-when"><i class="far fa-clock"></i> ${esc(WHEN_LABEL[t.when] || t.when)}</span></div>
+<h3>${esc(t.label)}</h3><p>${esc(t.description)}</p>${mini(t)}
+<details class="dzf-tplc-use"><summary class="btn btn-primary btn-sm"><i class="fas fa-magic"></i> Utiliser ce modèle</summary>
+<form method="post" action="/dysizz-flow/modeles/${esc(t.key)}" class="dzf-tplc-form">${hidden(req)}
+<label>Nom du workflow<input class="form-control form-control-sm" name="nom" value="${esc(t.key)}"></label>
+${(t.vars || []).map((v) => `<label>${esc(v.label)}<input class="form-control form-control-sm" name="${esc(v.name)}" value="${esc(v.default || "")}"${/^table/.test(v.name) ? ` list="dzf-tables"` : ""}></label>`).join("")}
+<label>Démarrage<select class="form-select form-select-sm" name="when">${WHEN.map((w) => `<option value="${w}"${w === "Never" ? " selected" : ""}>${esc(WHEN_LABEL[w])}${w === t.when ? " (conseillé)" : ""}</option>`).join("")}</select><small>Conseil : commence « à la main », essaie-le dans l'éditeur, puis choisis sa fréquence.</small></label>
+${auto.length ? `<label class="dzf-check"><input type="checkbox" name="creer_tables" value="oui" checked onchange="this.value=this.checked?'oui':'non'"> Créer les tables qui manquent (${auto.map((v) => esc(v.default || v.name)).join(", ")})</label>` : ""}
+<button class="btn btn-primary"><i class="fas fa-check"></i> Créer et ouvrir dans l'éditeur</button></form></details></article>`;
+  };
+  page(res, req, "Catalogue de workflows", "modeles", `
+<div class="dzf-head"><div><h1>Catalogue</h1><p>Des workflows prêts à l'emploi. Choisis-en un, réponds à 2 ou 3 questions, il s'ouvre dans l'éditeur visuel : tu vois chaque étape et tu peux tout changer.</p></div>
+<a class="btn btn-outline-primary" href="/dysizz-flow/editeur/nouveau"><i class="fas fa-plus"></i> Partir de zéro</a></div>
+<input class="form-control dzf-search" placeholder="Chercher (mail, RSS, alerte, IA…)" oninput="dzfSearchWf(this.value)">
+<nav class="dzf-chipsbar"><button class="on" onclick="dzfCat(this,'')">Tout <small>${TEMPLATES.length}</small></button>${cats.map((c) => `<button onclick="dzfCat(this,'${esc(c)}')">${esc(c)} <small>${TEMPLATES.filter((t) => t.category === c).length}</small></button>`).join("")}</nav>
+<div class="dzf-tplgrid">${TEMPLATES.map(card).join("")}</div>
+<datalist id="dzf-tables">${(await Table.find({})).map((t) => `<option value="${esc(t.name)}">`).join("")}</datalist>`);
 };
 const installTpl = async (req, res) => {
   if (!isAdmin(req)) return denied(res);
   try {
     const t = TEMPLATES.find((x) => x.key === req.params.key);
     const input = { ...(req.body || {}) };
+    if (!input.creer_tables) input.creer_tables = "non";
     if (t && ["Insert", "Update"].includes(input.when) && !t.tableVar) input.when = t.when;
     if (t && t.tableVar && !["Insert", "Update", "Delete"].includes(input.when) && ["Insert", "Update"].includes(t.when)) input.when = input.when === "Never" ? "Never" : t.when;
     const r = await installTemplate(req.params.key, input);
-    res.redirect(`/dysizz-flow/modeles?ok=${encodeURIComponent(`Workflow « ${r.name} » créé (${r.steps} étapes). Ouvre-le : Paramètres → Déclencheurs → ${r.name}`)}`);
+    res.redirect(`/dysizz-flow/editeur/${r.trigger_id}?ok=${encodeURIComponent(`Workflow « ${r.name} » créé${r.created.length ? ` (tables créées : ${r.created.join(", ")})` : ""}. Clique sur une étape pour la régler, puis « Essayer ».`)}`);
   } catch (e) { go(res, "/dysizz-flow/modeles", e.message, true); }
 };
 

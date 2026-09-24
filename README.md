@@ -2,9 +2,10 @@
 
 Des **blocs workflow** pour Saltcorn, comme les nœuds de n8n : chaque bloc fait une chose (lire une table, appeler une API, lire des flux RSS, relever une boîte mail, envoyer un WhatsApp, demander à une IA…) et s'enchaîne avec les autres dans l'éditeur de workflows natif de Saltcorn.
 
+- **Éditeur visuel** (`/dysizz-flow/workflows`) : tes workflows en schéma, blocs reliés par des flèches, sans code ou en code au choix.
 - **Sans code** : chaque bloc a son formulaire de réglages. Les réglages acceptent des `{{variables}}` du contexte (`{{lignes}}`, `{{item.titre}}`, `{{user.email}}`).
 - **Avec code** : chaque bloc montre son code. Tu peux partir d'un bloc intégré ou créer les tiens dans l'**atelier** (réglages + code + essai), sans redémarrer Saltcorn.
-- **Modèles** : 14 workflows prêts à installer (flux RSS → table, boîte IMAP → table, rappel du matin, webhook → table, export CSV, résumé IA, alerte Telegram, synchro d'API, classement IA, offres France Travail, surveillance de sites, santé de la plateforme, veille CVE, file de travaux).
+- **Catalogue** : 18 workflows prêts à installer (flux RSS → table, boîte IMAP → table, rappel du matin, webhook → table, export CSV, résumé IA, alerte Telegram, synchro d'API, classement IA, offres France Travail, surveillance de sites, santé de la plateforme, veille CVE, file de travaux).
 - **Points d'API** : tes propres adresses publiques `/dzf/api/<nom>` qui lancent un workflow, protégées par jeton ou signature HMAC, avec limite de débit.
 - **Coffre** : secrets chiffrés en base (AES-256-GCM), jamais réaffichés.
 - **Supervision** : exécutions, erreurs, temps de réponse par bloc, workflows, état du serveur.
@@ -92,5 +93,3 @@ cd .. && NODE_PATH=tools/node_modules node tests/run.cjs
 Voir [docs/CREER-UN-BLOC.md](docs/CREER-UN-BLOC.md). `index.js` est généré : ne le modifie pas à la main.
 
 Licence MIT.
-#   s a l t c o r n - d y s i z z - f l o w  
- 

@@ -11,10 +11,16 @@ const countAttachments = (node) => {
   return self + (node.childNodes || []).reduce((s, c) => s + countAttachments(c), 0);
 };
 
+const cleanHtml = (h) => String(h)
+  .replace(/<(script|noscript|iframe|object|embed|applet|frameset|frame|form)\b[\s\S]*?<\/\1\s*>/gi, "")
+  .replace(/<(script|iframe|object|embed|form|frame|frameset|applet|base|meta|link)\b[\s\S]*?(<\/\1\s*>|\/?>)/gi, "")
+  .replace(/\son[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, "")
+  .replace(/(href|src)\s*=\s*(["']?)\s*(javascript|vbscript|data:text\/html)[^"'\s>]*/gi, "$1=$2#");
+
 module.exports = [
   {
     name: "dzf_imap_lire", label: "Mail : lire une boîte (IMAP)", category: "Messagerie", icon: "fas fa-inbox", output: "mails", timeout: 180,
-    description: "Lit les nouveaux messages d'une boîte IMAP en lecture seule (rien n'est modifié sur le serveur). Reprend après le dernier UID déjà lu : aucun message traité deux fois.",
+    description: "Lit les nouveaux messages d'une boîte IMAP en lecture seule (rien n'est modifié sur le serveur). Reprend après le dernier UID déjà lu : aucun message traité deux fois. Chaque mail a corps (texte), html (nettoyé) et contenu (le HTML s'il existe, sinon le texte).",
     params: [
       { name: "serveur", label: "Serveur", default: "ssl0.ovh.net", help: "OVH : ssl0.ovh.net (MX Plan), pro1.mail.ovh.net (E-mail Pro)" },
       { name: "port", label: "Port", type: "int", default: 993 },
@@ -39,14 +45,19 @@ module.exports = [
           for (const uid of uids.filter((u) => u > last).slice(-(+p.max || 100))) {
             const m = await client.fetchOne(String(uid), { uid: true, envelope: true, flags: true, bodyStructure: true, source: { start: 0, maxLength: 400000 } }, { uid: true });
             if (!m) continue;
-            let text = "";
-            try { const parsed = await simpleParser(m.source, { skipImageLinks: true, skipTextToHtml: true, skipTextLinks: true }); text = parsed.text || plain(parsed.html || ""); } catch (e) { text = ""; }
+            let text = "", html = "";
+            try {
+              const parsed = await simpleParser(m.source, { skipImageLinks: true, skipTextToHtml: true, skipTextLinks: true });
+              text = parsed.text || plain(parsed.html || "");
+              /* HTML nettoyé (sans script ni événement) : à afficher dans un cadre isolé (vue « dz_mail » de dysizz-ui) */
+              html = parsed.html ? cleanHtml(parsed.html).slice(0, 200000) : "";
+            } catch (e) { text = ""; }
             const env = m.envelope || {}, from = (env.from || [])[0] || {}, flags = m.flags || new Set();
             out.push({
               uid, dossier: p.dossier || "INBOX", message_id: String(env.messageId || "").slice(0, 300),
               de: String(from.address || "").toLowerCase(), de_nom: String(from.name || from.address || ""),
               a: (env.to || []).map((x) => x.address).join(", "), sujet: String(env.subject || "(sans objet)").slice(0, 500),
-              date: env.date || new Date(), extrait: plain(text, 240), corps: String(text).slice(0, 30000),
+              date: env.date || new Date(), extrait: plain(text, 240), corps: String(text).slice(0, 30000), html, contenu: html || String(text).slice(0, 30000),
               lu: flags.has("\\Seen"), suivi: flags.has("\\Flagged"), pieces_jointes: countAttachments(m.bodyStructure),
             });
           }
