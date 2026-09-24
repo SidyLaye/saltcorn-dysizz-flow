@@ -92,3 +92,5 @@ cd .. && NODE_PATH=tools/node_modules node tests/run.cjs
 Voir [docs/CREER-UN-BLOC.md](docs/CREER-UN-BLOC.md). `index.js` est généré : ne le modifie pas à la main.
 
 Licence MIT.
+#   s a l t c o r n - d y s i z z - f l o w  
+ 
