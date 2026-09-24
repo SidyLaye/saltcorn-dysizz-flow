@@ -1,0 +1,13 @@
+{
+  "name": "dysizz-flow-tools",
+  "private": true,
+  "description": "Outils de build et de test (jamais installés sur le serveur Saltcorn)",
+  "type": "module",
+  "scripts": { "build": "node build.mjs", "test": "node ../tests/run.mjs" },
+  "devDependencies": {
+    "esbuild": "^0.25.0",
+    "fast-xml-parser": "^5.2.0",
+    "imapflow": "^1.0.190",
+    "mailparser": "^3.7.4"
+  }
+}

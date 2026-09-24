@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:media="http://search.yahoo.com/mrss/">
+<channel><title>Exemple</title>
+<item><title><![CDATA[Alerte <b>critique</b> &amp; correctif]]></title><link>https://exemple.fr/a1</link><pubDate>Tue, 22 Sep 2026 08:00:00 +0200</pubDate>
+<description><![CDATA[<p>Une <script>alert(1)</script>faille dans <img src="https://exemple.fr/i.jpg"> le noyau.</p>]]></description><dc:creator>CERT</dc:creator></item>
+<item><title>Sans lien</title></item>
+<item><title>Lien javascript</title><link>javascript:alert(1)</link></item>
+<item><title>Avec média</title><guid isPermaLink="true">https://exemple.fr/a2</guid><media:content url="https://exemple.fr/m.jpg" medium="image"/></item>
+</channel></rss>
