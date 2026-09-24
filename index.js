@@ -1,16 +1,16 @@
-/* dysizz-flow 1.0.0 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.0.0 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
   return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
 };
 
-// ../src/core.js
+// src/core.js
 var require_core = __commonJS({
-  "../src/core.js"(exports2, module2) {
+  "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "1.0.0" : "dev";
+    var VERSION2 = true ? "2.0.0" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -46,9 +46,9 @@ var require_core = __commonJS({
   }
 });
 
-// ../src/store.js
+// src/store.js
 var require_store = __commonJS({
-  "../src/store.js"(exports2, module2) {
+  "src/store.js"(exports2, module2) {
     "use strict";
     var DEFS = {
       blocs: {
@@ -63,7 +63,8 @@ var require_store = __commonJS({
           ["code", "String"],
           ["sortie", "String"],
           ["actif", "Bool"],
-          ["maj_le", "Date"]
+          ["maj_le", "Date"],
+          ["version", "Integer"]
         ]
       },
       journal: {
@@ -71,6 +72,13 @@ var require_store = __commonJS({
         fields: [["quand", "Date"], ["bloc", "String"], ["ok", "Bool"], ["duree_ms", "Integer"], ["message", "String"]]
       },
       cache: { name: "dzf_cache", fields: [["cle", "String", { required: true, is_unique: true }], ["valeur", "String"], ["expire", "Date"]] },
+      metriques: { name: "dzf_metriques", fields: [["heure", "Date"], ["bloc", "String"], ["n", "Integer"], ["erreurs", "Integer"], ["ms_moyen", "Integer"], ["ms_max", "Integer"]] },
+      mesures: { name: "dzf_mesures", fields: [["quand", "Date"], ["nom", "String"], ["valeur", "Float"], ["etiquettes", "String"]] },
+      secrets: { name: "dzf_secrets", fields: [["nom", "String", { required: true, is_unique: true }], ["valeur", "String"], ["note", "String"], ["maj_le", "Date"]] },
+      planifs: { name: "dzf_planifs", fields: [["workflow", "String", { required: true }], ["quand", "Date"], ["contexte", "String"], ["etat", "String"], ["cle", "String"], ["essais", "Integer"], ["message", "String"]] },
+      points: { name: "dzf_points", fields: [["nom", "String", { required: true, is_unique: true }], ["workflow", "String"], ["methode", "String"], ["auth", "String"], ["secret", "String"], ["en_tete_signature", "String"], ["reponse", "String"], ["limite_minute", "Integer"], ["actif", "Bool"], ["note", "String"], ["executer_en", "String"]] },
+      file: { name: "dzf_file", fields: [["file", "String", { required: true }], ["charge", "String"], ["etat", "String"], ["cree_le", "Date"], ["pris_le", "Date"], ["essais", "Integer"]] },
+      versions: { name: "dzf_versions", fields: [["nom", "String", { required: true }], ["version", "Integer"], ["contenu", "String"], ["quand", "Date"], ["par", "String"]] },
       verrous: { name: "dzf_verrous", fields: [["nom", "String", { required: true, is_unique: true }], ["jusqu_a", "Date"], ["par", "String"]] }
     };
     var ready = null;
@@ -83,6 +91,16 @@ var require_store = __commonJS({
         if (!t) {
           t = await Table.create(d.name, { min_role_read: 1, min_role_write: 1, description: "dysizz-flow" });
           for (const [name, type, o] of d.fields) await Field.create({ table: t, name, label: name, type, ...o || {} });
+          try {
+            await require("@saltcorn/data/db/state").getState().refresh_tables(true);
+          } catch (e) {
+          }
+          t = Table.findOne({ name: d.name });
+        }
+        const have = new Set(t.getFields().map((f) => f.name));
+        const missing = d.fields.filter(([name]) => !have.has(name));
+        for (const [name, type, o] of missing) await Field.create({ table: t, name, label: name, type, ...o || {}, required: false, is_unique: false });
+        if (missing.length) {
           try {
             await require("@saltcorn/data/db/state").getState().refresh_tables(true);
           } catch (e) {
@@ -107,9 +125,49 @@ var require_store = __commonJS({
   }
 });
 
-// ../src/engine.js
+// src/vault.js
+var require_vault = __commonJS({
+  "src/vault.js"(exports2, module2) {
+    "use strict";
+    var crypto = require("crypto");
+    var { ensureTables } = require_store();
+    var key = () => {
+      const raw = process.env.DZF_CLE_COFFRE || process.env.SALTCORN_SESSION_SECRET;
+      if (!raw) throw new Error("cl\xE9 du coffre absente : d\xE9finis DZF_CLE_COFFRE sur le serveur");
+      return crypto.createHash("sha256").update(`dysizz-flow:${raw}`).digest();
+    };
+    var encrypt = (plain) => {
+      const iv = crypto.randomBytes(12);
+      const c = crypto.createCipheriv("aes-256-gcm", key(), iv);
+      const data = Buffer.concat([c.update(String(plain), "utf8"), c.final()]);
+      return `v1:${iv.toString("base64")}:${c.getAuthTag().toString("base64")}:${data.toString("base64")}`;
+    };
+    var decrypt = (blob) => {
+      const [v, iv, tag, data] = String(blob || "").split(":");
+      if (v !== "v1") throw new Error("secret illisible");
+      const d = crypto.createDecipheriv("aes-256-gcm", key(), Buffer.from(iv, "base64"));
+      d.setAuthTag(Buffer.from(tag, "base64"));
+      return Buffer.concat([d.update(Buffer.from(data, "base64")), d.final()]).toString("utf8");
+    };
+    var readSecret = async (nom) => {
+      const { secrets } = await ensureTables();
+      const r = await secrets.getRow({ nom });
+      return r ? decrypt(r.valeur) : void 0;
+    };
+    var writeSecret = async (nom, valeur, note) => {
+      const { secrets } = await ensureTables();
+      const row = { nom, valeur: encrypt(valeur), note: note || "", maj_le: /* @__PURE__ */ new Date() };
+      const ex = await secrets.getRow({ nom });
+      if (ex) await secrets.updateRow(row, ex.id);
+      else await secrets.insertRow(row);
+    };
+    module2.exports = { encrypt, decrypt, readSecret, writeSecret };
+  }
+});
+
+// src/engine.js
 var require_engine = __commonJS({
-  "../src/engine.js"(exports2, module2) {
+  "src/engine.js"(exports2, module2) {
     "use strict";
     var getPath = (obj, path) => {
       if (!path) return void 0;
@@ -178,7 +236,9 @@ var require_engine = __commonJS({
     var COMMON = (b) => [
       { name: "sortie", label: "Ranger le r\xE9sultat dans", sublabel: "Nom de la variable du contexte que les \xE9tapes suivantes liront", type: "String", default: b.output || "resultat" },
       { name: "si_erreur", label: "En cas d'erreur", type: "String", attributes: { options: ["arr\xEAter", "continuer"] }, default: "arr\xEAter", sublabel: "\xAB continuer \xBB range le message dans <sortie>_erreur et passe \xE0 la suite" },
-      { name: "delai_max", label: "D\xE9lai max (secondes)", type: "Integer", default: b.timeout || 30 }
+      { name: "delai_max", label: "D\xE9lai max (secondes)", type: "Integer", default: b.timeout || 30 },
+      { name: "essais", label: "Essais en cas d'\xE9chec", sublabel: "1 = pas de nouvel essai. Attente doubl\xE9e \xE0 chaque fois", type: "Integer", default: b.retries || 1 },
+      { name: "pause_essais", label: "Premi\xE8re attente entre deux essais (secondes)", type: "Integer", default: 2 }
     ];
     var resolveParams = (b, cfg, ctx) => {
       const p = {};
@@ -213,6 +273,12 @@ var require_engine = __commonJS({
       user,
       req,
       env: (name) => name ? process.env[name] : void 0,
+      /* secret : variable d'environnement d'abord, sinon le coffre chiffré (table dzf_secrets) */
+      secret: async (name) => {
+        if (!name) return void 0;
+        if (process.env[name]) return process.env[name];
+        return require_vault().readSecret(name);
+      },
       log: (...a) => {
         try {
           require("@saltcorn/data/db/state").getState().log(5, `[dysizz-flow] ${a.join(" ")}`);
@@ -228,6 +294,56 @@ var require_engine = __commonJS({
       } catch (e) {
       }
     };
+    var METRICS = /* @__PURE__ */ new Map();
+    var tenantKey = () => {
+      try {
+        return require("@saltcorn/data/db").getTenantSchema();
+      } catch (e) {
+        return "public";
+      }
+    };
+    var hourOf = (d = /* @__PURE__ */ new Date()) => {
+      const x = new Date(d);
+      x.setMinutes(0, 0, 0);
+      return x;
+    };
+    var record = async (name, ms, ok) => {
+      const k = tenantKey();
+      const h = +hourOf();
+      let m = METRICS.get(k);
+      if (m && m.heure !== h) {
+        const old = m;
+        m = null;
+        METRICS.delete(k);
+        flush(old).catch(() => {
+        });
+      }
+      if (!m) {
+        m = { heure: h, blocs: /* @__PURE__ */ new Map() };
+        METRICS.set(k, m);
+      }
+      const x = m.blocs.get(name) || { n: 0, erreurs: 0, total_ms: 0, max_ms: 0 };
+      x.n++;
+      if (!ok) x.erreurs++;
+      x.total_ms += ms;
+      x.max_ms = Math.max(x.max_ms, ms);
+      m.blocs.set(name, x);
+    };
+    var flush = async (m) => {
+      const { ensureTables } = require_store();
+      const T = await ensureTables();
+      for (const [bloc, x] of m.blocs) {
+        const heure = new Date(m.heure);
+        const ex = await T.metriques.getRow({ heure, bloc });
+        const row = { heure, bloc, n: x.n, erreurs: x.erreurs, ms_moyen: Math.round(x.total_ms / x.n), ms_max: x.max_ms };
+        if (ex) await T.metriques.updateRow({ n: ex.n + x.n, erreurs: ex.erreurs + x.erreurs, ms_moyen: Math.round((ex.ms_moyen * ex.n + x.total_ms) / (ex.n + x.n)), ms_max: Math.max(ex.ms_max, x.max_ms) }, ex.id);
+        else await T.metriques.insertRow(row);
+      }
+    };
+    var liveMetrics = () => {
+      const m = METRICS.get(tenantKey());
+      return m ? [...m.blocs.entries()].map(([bloc, x]) => ({ bloc, ...x })) : [];
+    };
     var toAction2 = (b) => ({
       description: `${b.label} \u2014 ${b.description}`,
       disableInBuilder: !!b.noButton,
@@ -237,21 +353,30 @@ var require_engine = __commonJS({
         const ctx = { ...row || {}, user: row && row.user ? row.user : user ? { id: user.id, email: user.email, role_id: user.role_id } : void 0 };
         const out = configuration.sortie || b.output || "resultat";
         const t0 = Date.now();
-        try {
-          const p = resolveParams(b, configuration, ctx);
-          const res = await withTimeout(Promise.resolve(b.run(p, ctx, makeApi({ user, req, table, mode, out }))), +configuration.delai_max || b.timeout || 30, b.label);
-          if (b.log || configuration.journaliser) await journal({ bloc: b.name, ok: true, duree_ms: Date.now() - t0, message: summarize(res) });
-          if (res && res.__saltcorn) {
-            const { __saltcorn, ...rest } = res;
-            return rest;
+        const tries = Math.max(1, Math.min(10, +configuration.essais || b.retries || 1));
+        let lastErr;
+        for (let attempt = 1; attempt <= tries; attempt++) {
+          try {
+            const p = resolveParams(b, configuration, ctx);
+            const res = await withTimeout(Promise.resolve(b.run(p, ctx, makeApi({ user, req, table, mode, out }))), +configuration.delai_max || b.timeout || 30, b.label);
+            await record(b.name, Date.now() - t0, true);
+            if (b.log || configuration.journaliser) await journal({ bloc: b.name, ok: true, duree_ms: Date.now() - t0, message: summarize(res) });
+            if (res && res.__saltcorn) {
+              const { __saltcorn, ...rest } = res;
+              return rest;
+            }
+            if (res && res.__merge) return res.__merge;
+            return { [out]: res };
+          } catch (e) {
+            lastErr = e;
+            if (e.permanent || /réglage|JSON invalide|introuvable|refus/i.test(e.message)) break;
+            if (attempt < tries) await new Promise((r) => setTimeout(r, Math.min(60, (+configuration.pause_essais || 2) * 2 ** (attempt - 1)) * 1e3));
           }
-          if (res && res.__merge) return res.__merge;
-          return { [out]: res };
-        } catch (e) {
-          await journal({ bloc: b.name, ok: false, duree_ms: Date.now() - t0, message: e.message });
-          if (configuration.si_erreur === "continuer") return { [out]: null, [`${out}_erreur`]: e.message };
-          throw new Error(`[${b.label}] ${e.message}`);
         }
+        await record(b.name, Date.now() - t0, false);
+        await journal({ bloc: b.name, ok: false, duree_ms: Date.now() - t0, message: lastErr.message });
+        if (configuration.si_erreur === "continuer") return { [out]: null, [`${out}_erreur`]: lastErr.message };
+        throw new Error(`[${b.label}] ${lastErr.message}`);
       }
     });
     var summarize = (res) => {
@@ -271,15 +396,17 @@ var require_engine = __commonJS({
       return res;
     };
     var asList = (v) => v === void 0 || v === null || v === "" ? [] : Array.isArray(v) ? v : typeof v === "string" && v.trim().startsWith("[") ? parseJSON(v, "liste") : [v];
-    module2.exports = { interpolate, deep, getPath, parseJSON, toAction: toAction2, toField, resolveParams, COMMON, pool, asList, withTimeout, makeApi, journal };
+    var SENSIBLE = /^(password|reset_password_token|reset_password_expiry|api_token|verification_token|_attributes)$/;
+    var sanitize = (v) => Array.isArray(v) ? v.map(sanitize) : v && typeof v === "object" && !(v instanceof Date) ? Object.fromEntries(Object.entries(v).filter(([k]) => !SENSIBLE.test(k))) : v;
+    module2.exports = { sanitize, liveMetrics, flush, METRICS, interpolate, deep, getPath, parseJSON, toAction: toAction2, toField, resolveParams, COMMON, pool, asList, withTimeout, makeApi, journal };
   }
 });
 
-// ../src/blocks/donnees.js
+// src/blocks/donnees.js
 var require_donnees = __commonJS({
-  "../src/blocks/donnees.js"(exports2, module2) {
+  "src/blocks/donnees.js"(exports2, module2) {
     "use strict";
-    var { asList } = require_engine();
+    var { asList, sanitize } = require_engine();
     var T = (api, name) => {
       const t = api.Table.findOne({ name });
       if (!t) throw new Error(`table \xAB ${name} \xBB introuvable`);
@@ -311,7 +438,7 @@ var require_donnees = __commonJS({
           { name: "decroissant", label: "Ordre d\xE9croissant", type: "bool" },
           { name: "limite", label: "Nombre max de lignes", type: "int", default: 200 }
         ],
-        run: async (p, ctx, api) => needRead(T(api, p.table), api).getRows(p.filtre || {}, { orderBy: p.tri || "id", orderDesc: !!p.decroissant, limit: Math.min(+p.limite || 200, 1e4) })
+        run: async (p, ctx, api) => sanitize(await needRead(T(api, p.table), api).getRows(p.filtre || {}, { orderBy: p.tri || "id", orderDesc: !!p.decroissant, limit: Math.min(+p.limite || 200, 1e4) }))
       },
       {
         name: "dzf_table_compter",
@@ -446,9 +573,9 @@ var require_donnees = __commonJS({
   }
 });
 
-// ../src/blocks/transformer.js
+// src/blocks/transformer.js
 var require_transformer = __commonJS({
-  "../src/blocks/transformer.js"(exports2, module2) {
+  "src/blocks/transformer.js"(exports2, module2) {
     "use strict";
     var { asList, deep, getPath, parseJSON } = require_engine();
     var { plain } = require_core();
@@ -733,9 +860,9 @@ var require_transformer = __commonJS({
   }
 });
 
-// node_modules/fast-xml-parser/lib/fxp.cjs
+// tools/node_modules/fast-xml-parser/lib/fxp.cjs
 var require_fxp = __commonJS({
-  "node_modules/fast-xml-parser/lib/fxp.cjs"(exports2, module2) {
+  "tools/node_modules/fast-xml-parser/lib/fxp.cjs"(exports2, module2) {
     (() => {
       "use strict";
       var t = { d: (e2, i2) => {
@@ -2494,9 +2621,267 @@ var require_fxp = __commonJS({
   }
 });
 
-// ../src/lib/feeds.js
+// src/blocks/transformer_plus.js
+var require_transformer_plus = __commonJS({
+  "src/blocks/transformer_plus.js"(exports2, module2) {
+    "use strict";
+    var { asList, getPath } = require_engine();
+    var slug = (s) => String(s ?? "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+    var num = (v) => typeof v === "number" ? v : Number(String(v ?? "").replace(/\s/g, "").replace(",", "."));
+    module2.exports = [
+      {
+        name: "dzf_liste_grouper",
+        label: "Liste : regrouper et compter",
+        category: "Transformer",
+        icon: "fas fa-layer-group",
+        output: "groupes",
+        description: "Regroupe une liste par un champ et calcule, pour chaque groupe, le nombre d'\xE9l\xE9ments et la somme / moyenne / min / max d'un champ.",
+        params: [
+          { name: "liste", label: "Liste", required: true },
+          { name: "par", label: "Regrouper par (champ)", required: true },
+          { name: "champ", label: "Champ \xE0 calculer (facultatif)" },
+          { name: "tri", label: "Trier par", type: "select", options: ["nombre", "somme", "groupe"], default: "nombre" }
+        ],
+        run: async (p) => {
+          const g = /* @__PURE__ */ new Map();
+          for (const it of asList(p.liste)) {
+            const k = String(getPath(it, p.par) ?? "(vide)");
+            const x = g.get(k) || { groupe: k, nombre: 0, somme: 0, min: null, max: null };
+            x.nombre++;
+            if (p.champ) {
+              const v = num(getPath(it, p.champ));
+              if (Number.isFinite(v)) {
+                x.somme += v;
+                x.min = x.min === null ? v : Math.min(x.min, v);
+                x.max = x.max === null ? v : Math.max(x.max, v);
+              }
+            }
+            g.set(k, x);
+          }
+          const out = [...g.values()].map((x) => ({ ...x, moyenne: x.nombre ? +(x.somme / x.nombre).toFixed(4) : 0 }));
+          return out.sort((a, b) => p.tri === "groupe" ? a.groupe.localeCompare(b.groupe) : (b[p.tri || "nombre"] || 0) - (a[p.tri || "nombre"] || 0));
+        }
+      },
+      {
+        name: "dzf_liste_joindre",
+        label: "Liste : joindre deux listes",
+        category: "Transformer",
+        icon: "fas fa-object-group",
+        output: "liste",
+        description: "Compl\xE8te chaque \xE9l\xE9ment d'une liste avec l'\xE9l\xE9ment de l'autre liste qui a la m\xEAme cl\xE9 (comme une jointure SQL).",
+        params: [
+          { name: "gauche", label: "Liste principale", required: true },
+          { name: "droite", label: "Liste \xE0 joindre", required: true },
+          { name: "cle_gauche", label: "Cl\xE9 dans la principale", required: true },
+          { name: "cle_droite", label: "Cl\xE9 dans l'autre", required: true },
+          { name: "prefixe", label: "Pr\xE9fixe des champs ajout\xE9s", default: "" },
+          { name: "type", label: "Type", type: "select", options: ["garder tout (left)", "seulement les correspondances (inner)"], default: "garder tout (left)" }
+        ],
+        run: async (p) => {
+          const idx = new Map(asList(p.droite).map((r) => [String(getPath(r, p.cle_droite)), r]));
+          const out = [];
+          for (const l of asList(p.gauche)) {
+            const r = idx.get(String(getPath(l, p.cle_gauche)));
+            if (!r && p.type !== "garder tout (left)") continue;
+            out.push({ ...l, ...r ? Object.fromEntries(Object.entries(r).map(([k, v]) => [`${p.prefixe || ""}${k}`, v])) : {} });
+          }
+          return out;
+        }
+      },
+      {
+        name: "dzf_liste_comparer",
+        label: "Liste : ce qui a chang\xE9",
+        category: "Transformer",
+        icon: "fas fa-not-equal",
+        output: "changements",
+        description: "Compare l'ancienne et la nouvelle version d'une liste par une cl\xE9 : \xE9l\xE9ments ajout\xE9s, retir\xE9s, modifi\xE9s. Id\xE9al pour d\xE9tecter ce qui a boug\xE9 sur un site ou une API.",
+        params: [
+          { name: "avant", label: "Liste d'avant", required: true },
+          { name: "apres", label: "Liste d'apr\xE8s", required: true },
+          { name: "cle", label: "Cl\xE9", required: true },
+          { name: "champs", label: "Champs compar\xE9s (facultatif)", help: "S\xE9par\xE9s par des virgules. Vide = tous" }
+        ],
+        run: async (p) => {
+          const A = new Map(asList(p.avant).map((x) => [String(getPath(x, p.cle)), x]));
+          const B = new Map(asList(p.apres).map((x) => [String(getPath(x, p.cle)), x]));
+          const f = String(p.champs || "").split(",").map((s) => s.trim()).filter(Boolean);
+          const same = (a, b) => (f.length ? f : [.../* @__PURE__ */ new Set([...Object.keys(a), ...Object.keys(b)])]).every((k) => JSON.stringify(a[k]) === JSON.stringify(b[k]));
+          const ajoutes = [...B.keys()].filter((k) => !A.has(k)).map((k) => B.get(k));
+          const retires = [...A.keys()].filter((k) => !B.has(k)).map((k) => A.get(k));
+          const modifies = [...B.keys()].filter((k) => A.has(k) && !same(A.get(k), B.get(k))).map((k) => ({ avant: A.get(k), apres: B.get(k) }));
+          return { ajoutes, retires, modifies, change: !!(ajoutes.length || retires.length || modifies.length) };
+        }
+      },
+      {
+        name: "dzf_liste_aplatir",
+        label: "Liste : aplatir / extraire un champ",
+        category: "Transformer",
+        icon: "fas fa-compress",
+        output: "liste",
+        description: "Transforme une liste de listes en une seule liste, ou garde seulement la valeur d'un champ de chaque \xE9l\xE9ment (ex. la liste des e-mails).",
+        params: [{ name: "liste", label: "Liste", required: true }, { name: "champ", label: "Garder seulement ce champ (facultatif)" }, { name: "sans_vides", label: "Retirer les valeurs vides", type: "bool", default: true }],
+        run: async (p) => {
+          let l = asList(p.liste).flat(Infinity);
+          if (p.champ) l = l.map((x) => getPath(x, p.champ)).flat(Infinity);
+          return p.sans_vides === false ? l : l.filter((x) => x !== void 0 && x !== null && x !== "");
+        }
+      },
+      {
+        name: "dzf_liste_element",
+        label: "Liste : premier, dernier, N-i\xE8me, taille",
+        category: "Transformer",
+        icon: "fas fa-list-ol",
+        output: "element",
+        description: "Prend un \xE9l\xE9ment d'une liste (premier, dernier, position N, au hasard) ou donne sa taille.",
+        params: [{ name: "liste", label: "Liste", required: true }, { name: "quoi", label: "Quoi", type: "select", options: ["premier", "dernier", "position", "au hasard", "taille"], default: "premier" }, { name: "position", label: "Position (commence \xE0 0)", type: "int", default: 0 }],
+        run: async (p) => {
+          const l = asList(p.liste);
+          if (p.quoi === "taille") return l.length;
+          if (p.quoi === "dernier") return l[l.length - 1] ?? null;
+          if (p.quoi === "position") return l[+p.position || 0] ?? null;
+          if (p.quoi === "au hasard") return l.length ? l[require("crypto").randomInt(l.length)] : null;
+          return l[0] ?? null;
+        }
+      },
+      {
+        name: "dzf_objet_champs",
+        label: "Objet : garder, renommer, retirer des champs",
+        category: "Transformer",
+        icon: "fas fa-columns",
+        output: "objet",
+        description: "Sur un objet ou chaque \xE9l\xE9ment d'une liste : garde seulement certains champs, en renomme, en retire. Pour envoyer \xE0 une API exactement ce qu'elle attend.",
+        params: [
+          { name: "valeur", label: "Objet ou liste", required: true },
+          { name: "garder", label: "Garder (facultatif)", help: "Champs s\xE9par\xE9s par des virgules" },
+          { name: "retirer", label: "Retirer (facultatif)" },
+          { name: "renommer", label: "Renommer (JSON)", type: "json", help: '{"ancien":"nouveau"}' }
+        ],
+        run: async (p) => {
+          const keep = String(p.garder || "").split(",").map((s) => s.trim()).filter(Boolean);
+          const drop = new Set(String(p.retirer || "").split(",").map((s) => s.trim()).filter(Boolean));
+          const ren = p.renommer || {};
+          const one = (o) => {
+            if (!o || typeof o !== "object") return o;
+            let e = Object.entries(o);
+            if (keep.length) e = e.filter(([k]) => keep.includes(k));
+            e = e.filter(([k]) => !drop.has(k)).map(([k, v]) => [ren[k] || k, v]);
+            return Object.fromEntries(e);
+          };
+          return Array.isArray(p.valeur) ? p.valeur.map(one) : one(p.valeur);
+        }
+      },
+      {
+        name: "dzf_regex",
+        label: "Texte : chercher avec une expression r\xE9guli\xE8re",
+        category: "Transformer",
+        icon: "fas fa-asterisk",
+        output: "regex",
+        description: "Teste, extrait ou remplace dans un texte avec une expression r\xE9guli\xE8re (ex. extraire un num\xE9ro de commande d'un mail).",
+        params: [
+          { name: "texte", label: "Texte", required: true },
+          { name: "motif", label: "Expression r\xE9guli\xE8re", required: true, help: "Ex. Commande n\xB0\\s*(\\d+)" },
+          { name: "action", label: "Action", type: "select", options: ["tester", "premier r\xE9sultat", "tous les r\xE9sultats", "remplacer"], default: "premier r\xE9sultat" },
+          { name: "remplacement", label: "Remplacer par", help: "$1 = 1er groupe" },
+          { name: "options", label: "Options", default: "i", help: "i = sans casse, m = multiligne, s = . inclut les retours" }
+        ],
+        run: async (p) => {
+          const flags = String(p.options || "").replace(/[^imsu]/g, "");
+          const t = String(p.texte ?? "");
+          if (t.length > 1e6) throw new Error("texte trop long (1 Mo max)");
+          const re = new RegExp(p.motif, flags);
+          if (p.action === "tester") return re.test(t);
+          if (p.action === "remplacer") return t.replace(new RegExp(p.motif, flags + "g"), p.remplacement ?? "");
+          if (p.action === "tous les r\xE9sultats") return [...t.matchAll(new RegExp(p.motif, flags + "g"))].slice(0, 1e3).map((m2) => m2.length > 1 ? m2.length > 2 ? m2.slice(1) : m2[1] : m2[0]);
+          const m = re.exec(t);
+          return m ? m.groups ? { ...m.groups } : m.length > 1 ? m.length > 2 ? m.slice(1) : m[1] : m[0] : null;
+        }
+      },
+      {
+        name: "dzf_texte_outils",
+        label: "Texte : outils",
+        category: "Transformer",
+        icon: "fas fa-font",
+        output: "texte",
+        description: "Majuscules, minuscules, premi\xE8re lettre en majuscule, slug d'URL, couper \xE0 N caract\xE8res, enlever les espaces, d\xE9couper en liste, assembler une liste.",
+        params: [
+          { name: "valeur", label: "Texte ou liste", required: true },
+          { name: "operation", label: "Op\xE9ration", type: "select", options: ["majuscules", "minuscules", "capitaliser", "slug", "couper", "nettoyer les espaces", "d\xE9couper", "assembler", "longueur"], default: "nettoyer les espaces" },
+          { name: "n", label: "Longueur (pour couper)", type: "int", default: 160 },
+          { name: "separateur", label: "S\xE9parateur (d\xE9couper / assembler)", default: "," }
+        ],
+        run: async (p) => {
+          const v = p.valeur;
+          const s = Array.isArray(v) ? v : String(v ?? "");
+          switch (p.operation) {
+            case "majuscules":
+              return String(s).toUpperCase();
+            case "minuscules":
+              return String(s).toLowerCase();
+            case "capitaliser":
+              return String(s).charAt(0).toUpperCase() + String(s).slice(1);
+            case "slug":
+              return slug(s);
+            case "couper": {
+              const t = String(s);
+              const n = +p.n || 160;
+              return t.length > n ? t.slice(0, n - 1).replace(/\s+\S*$/, "") + "\u2026" : t;
+            }
+            case "d\xE9couper":
+              return String(s).split(p.separateur ?? ",").map((x) => x.trim()).filter(Boolean);
+            case "assembler":
+              return asList(v).join(p.separateur ?? ", ");
+            case "longueur":
+              return Array.isArray(s) ? s.length : String(s).length;
+            default:
+              return String(s).replace(/\s+/g, " ").trim();
+          }
+        }
+      },
+      {
+        name: "dzf_calcul",
+        label: "Nombre : calculer",
+        category: "Transformer",
+        icon: "fas fa-square-root-alt",
+        output: "nombre",
+        description: "Calcule une formule avec des variables (ex. {{prix}} * 1.2), arrondit, met en forme (\u20AC, %, s\xE9parateurs fran\xE7ais).",
+        params: [
+          { name: "formule", label: "Formule", required: true, help: "Ex. ({{total}} - {{rembourse}}) / {{jours}}. Chiffres, + - * / % ( ) et Math.round/min/max/abs" },
+          { name: "decimales", label: "D\xE9cimales", type: "int", default: 2 },
+          { name: "format", label: "Format du r\xE9sultat", type: "select", options: ["nombre", "texte fr", "euros", "pourcentage"], default: "nombre" }
+        ],
+        run: async (p) => {
+          const f = String(p.formule);
+          if (!/^[\d\s+\-*/%().,eE]*$/.test(f.replace(/Math\.(round|min|max|abs|floor|ceil|sqrt|pow)\b/g, ""))) throw Object.assign(new Error("formule refus\xE9e : seulement des nombres, op\xE9rations et Math.*"), { permanent: true });
+          const v = Number(new Function(`"use strict"; return (${f});`)());
+          if (!Number.isFinite(v)) throw new Error("le r\xE9sultat n'est pas un nombre");
+          const d = +p.decimales >= 0 ? +p.decimales : 2;
+          const r = Math.round(v * 10 ** d) / 10 ** d;
+          if (p.format === "texte fr") return r.toLocaleString("fr-FR", { maximumFractionDigits: d });
+          if (p.format === "euros") return r.toLocaleString("fr-FR", { style: "currency", currency: "EUR", maximumFractionDigits: d });
+          if (p.format === "pourcentage") return `${r.toLocaleString("fr-FR", { maximumFractionDigits: d })} %`;
+          return r;
+        }
+      },
+      {
+        name: "dzf_xml",
+        label: "XML : lire",
+        category: "Transformer",
+        icon: "fas fa-file-code",
+        output: "xml",
+        description: "Transforme un texte XML (API SOAP, fichiers d'\xE9change, sitemaps) en objet utilisable par les autres blocs.",
+        params: [{ name: "valeur", label: "XML", required: true }],
+        run: async (p) => {
+          const { XMLParser } = require_fxp();
+          return new XMLParser({ ignoreAttributes: false, attributeNamePrefix: "@", processEntities: true }).parse(String(p.valeur));
+        }
+      }
+    ];
+  }
+});
+
+// src/lib/feeds.js
 var require_feeds = __commonJS({
-  "../src/lib/feeds.js"(exports2, module2) {
+  "src/lib/feeds.js"(exports2, module2) {
     "use strict";
     var { XMLParser } = require_fxp();
     var { plain, safeUrl } = require_core();
@@ -2589,22 +2974,22 @@ var require_feeds = __commonJS({
   }
 });
 
-// ../src/blocks/reseau.js
+// src/blocks/reseau.js
 var require_reseau = __commonJS({
-  "../src/blocks/reseau.js"(exports2, module2) {
+  "src/blocks/reseau.js"(exports2, module2) {
     "use strict";
     var { asList, pool } = require_engine();
     var { parseFeed, resolveYoutube, youtubeFeed, httpGet } = require_feeds();
-    var secret = (api, name) => {
-      const v = api.env(name);
-      if (name && !v) throw new Error(`variable d'environnement ${name} absente du serveur`);
+    var secret = async (api, name) => {
+      const v = await api.secret(name);
+      if (name && !v) throw Object.assign(new Error(`secret ${name} introuvable (variable d'environnement ou coffre)`), { permanent: true });
       return v;
     };
     var request = async (p, api) => {
       const headers = { Accept: "application/json, text/plain, */*", ...p.entetes || {} };
-      if (p.auth === "Bearer (variable d'env)") headers.Authorization = `Bearer ${secret(api, p.variable_secret)}`;
-      if (p.auth === "Basic (variable d'env user:motdepasse)") headers.Authorization = `Basic ${Buffer.from(secret(api, p.variable_secret)).toString("base64")}`;
-      if (p.auth === "En-t\xEAte perso (variable d'env)") headers[p.nom_entete || "X-API-Key"] = secret(api, p.variable_secret);
+      if (p.auth === "Bearer (secret)") headers.Authorization = `Bearer ${await secret(api, p.variable_secret)}`;
+      if (p.auth === "Basic (secret user:motdepasse)") headers.Authorization = `Basic ${Buffer.from(await secret(api, p.variable_secret)).toString("base64")}`;
+      if (p.auth === "En-t\xEAte perso (secret)") headers[p.nom_entete || "X-API-Key"] = await secret(api, p.variable_secret);
       let body;
       if (p.corps !== void 0 && p.corps !== "" && !["GET", "HEAD"].includes(p.methode)) {
         if (p.type_corps === "formulaire") {
@@ -2645,8 +3030,8 @@ var require_reseau = __commonJS({
           { name: "entetes", label: "En-t\xEAtes (JSON)", type: "json" },
           { name: "corps", label: "Corps (JSON ou texte)", type: "json" },
           { name: "type_corps", label: "Type du corps", type: "select", options: ["json", "formulaire", "texte"], default: "json" },
-          { name: "auth", label: "Authentification", type: "select", options: ["aucune", "Bearer (variable d'env)", "Basic (variable d'env user:motdepasse)", "En-t\xEAte perso (variable d'env)"], default: "aucune" },
-          { name: "variable_secret", label: "Variable d'environnement du secret", help: "Ex. MON_API_TOKEN" },
+          { name: "auth", label: "Authentification", type: "select", options: ["aucune", "Bearer (secret)", "Basic (secret user:motdepasse)", "En-t\xEAte perso (secret)"], default: "aucune" },
+          { name: "variable_secret", label: "Nom du secret (variable d'env. ou coffre)", help: "Ex. MON_API_TOKEN" },
           { name: "nom_entete", label: "Nom de l'en-t\xEAte perso", default: "X-API-Key" },
           { name: "reponse", label: "R\xE9ponse", type: "select", options: ["json", "texte"], default: "json" },
           { name: "essais", label: "Essais max", type: "int", default: 3 },
@@ -2720,9 +3105,9 @@ var require_reseau = __commonJS({
   }
 });
 
-// node_modules/pino-std-serializers/lib/err-helpers.js
+// tools/node_modules/pino-std-serializers/lib/err-helpers.js
 var require_err_helpers = __commonJS({
-  "node_modules/pino-std-serializers/lib/err-helpers.js"(exports2, module2) {
+  "tools/node_modules/pino-std-serializers/lib/err-helpers.js"(exports2, module2) {
     "use strict";
     var isErrorLike = (err) => {
       return err && typeof err.message === "string";
@@ -2777,9 +3162,9 @@ var require_err_helpers = __commonJS({
   }
 });
 
-// node_modules/pino-std-serializers/lib/err-proto.js
+// tools/node_modules/pino-std-serializers/lib/err-proto.js
 var require_err_proto = __commonJS({
-  "node_modules/pino-std-serializers/lib/err-proto.js"(exports2, module2) {
+  "tools/node_modules/pino-std-serializers/lib/err-proto.js"(exports2, module2) {
     "use strict";
     var seen = Symbol("circular-ref-tag");
     var rawSymbol = Symbol("pino-raw-err-ref");
@@ -2828,9 +3213,9 @@ var require_err_proto = __commonJS({
   }
 });
 
-// node_modules/pino-std-serializers/lib/err.js
+// tools/node_modules/pino-std-serializers/lib/err.js
 var require_err = __commonJS({
-  "node_modules/pino-std-serializers/lib/err.js"(exports2, module2) {
+  "tools/node_modules/pino-std-serializers/lib/err.js"(exports2, module2) {
     "use strict";
     module2.exports = errSerializer;
     var { messageWithCauses, stackWithCauses, isErrorLike } = require_err_helpers();
@@ -2868,9 +3253,9 @@ var require_err = __commonJS({
   }
 });
 
-// node_modules/pino-std-serializers/lib/err-with-cause.js
+// tools/node_modules/pino-std-serializers/lib/err-with-cause.js
 var require_err_with_cause = __commonJS({
-  "node_modules/pino-std-serializers/lib/err-with-cause.js"(exports2, module2) {
+  "tools/node_modules/pino-std-serializers/lib/err-with-cause.js"(exports2, module2) {
     "use strict";
     module2.exports = errWithCauseSerializer;
     var { isErrorLike } = require_err_helpers();
@@ -2911,9 +3296,9 @@ var require_err_with_cause = __commonJS({
   }
 });
 
-// node_modules/pino-std-serializers/lib/req.js
+// tools/node_modules/pino-std-serializers/lib/req.js
 var require_req = __commonJS({
-  "node_modules/pino-std-serializers/lib/req.js"(exports2, module2) {
+  "tools/node_modules/pino-std-serializers/lib/req.js"(exports2, module2) {
     "use strict";
     module2.exports = {
       mapHttpRequest,
@@ -3006,9 +3391,9 @@ var require_req = __commonJS({
   }
 });
 
-// node_modules/pino-std-serializers/lib/res.js
+// tools/node_modules/pino-std-serializers/lib/res.js
 var require_res = __commonJS({
-  "node_modules/pino-std-serializers/lib/res.js"(exports2, module2) {
+  "tools/node_modules/pino-std-serializers/lib/res.js"(exports2, module2) {
     "use strict";
     module2.exports = {
       mapHttpResponse,
@@ -3055,9 +3440,9 @@ var require_res = __commonJS({
   }
 });
 
-// node_modules/pino-std-serializers/index.js
+// tools/node_modules/pino-std-serializers/index.js
 var require_pino_std_serializers = __commonJS({
-  "node_modules/pino-std-serializers/index.js"(exports2, module2) {
+  "tools/node_modules/pino-std-serializers/index.js"(exports2, module2) {
     "use strict";
     var errSerializer = require_err();
     var errWithCauseSerializer = require_err_with_cause();
@@ -3092,9 +3477,9 @@ var require_pino_std_serializers = __commonJS({
   }
 });
 
-// node_modules/pino/lib/caller.js
+// tools/node_modules/pino/lib/caller.js
 var require_caller = __commonJS({
-  "node_modules/pino/lib/caller.js"(exports2, module2) {
+  "tools/node_modules/pino/lib/caller.js"(exports2, module2) {
     "use strict";
     function noOpPrepareStackTrace(_, stack) {
       return stack;
@@ -3120,9 +3505,9 @@ var require_caller = __commonJS({
   }
 });
 
-// node_modules/@pinojs/redact/index.js
+// tools/node_modules/@pinojs/redact/index.js
 var require_redact = __commonJS({
-  "node_modules/@pinojs/redact/index.js"(exports2, module2) {
+  "tools/node_modules/@pinojs/redact/index.js"(exports2, module2) {
     "use strict";
     function deepClone(obj) {
       if (obj === null || typeof obj !== "object") {
@@ -3553,9 +3938,9 @@ var require_redact = __commonJS({
   }
 });
 
-// node_modules/pino/lib/symbols.js
+// tools/node_modules/pino/lib/symbols.js
 var require_symbols = __commonJS({
-  "node_modules/pino/lib/symbols.js"(exports2, module2) {
+  "tools/node_modules/pino/lib/symbols.js"(exports2, module2) {
     "use strict";
     var setLevelSym = Symbol("pino.setLevel");
     var getLevelSym = Symbol("pino.getLevel");
@@ -3624,9 +4009,9 @@ var require_symbols = __commonJS({
   }
 });
 
-// node_modules/pino/lib/redaction.js
+// tools/node_modules/pino/lib/redaction.js
 var require_redaction = __commonJS({
-  "node_modules/pino/lib/redaction.js"(exports2, module2) {
+  "tools/node_modules/pino/lib/redaction.js"(exports2, module2) {
     "use strict";
     var Redact = require_redact();
     var { redactFmtSym, wildcardFirstSym } = require_symbols();
@@ -3706,9 +4091,9 @@ var require_redaction = __commonJS({
   }
 });
 
-// node_modules/pino/lib/time.js
+// tools/node_modules/pino/lib/time.js
 var require_time = __commonJS({
-  "node_modules/pino/lib/time.js"(exports2, module2) {
+  "tools/node_modules/pino/lib/time.js"(exports2, module2) {
     "use strict";
     var nullTime = () => "";
     var epochTime = () => `,"time":${Date.now()}`;
@@ -3737,9 +4122,9 @@ var require_time = __commonJS({
   }
 });
 
-// node_modules/quick-format-unescaped/index.js
+// tools/node_modules/quick-format-unescaped/index.js
 var require_quick_format_unescaped = __commonJS({
-  "node_modules/quick-format-unescaped/index.js"(exports2, module2) {
+  "tools/node_modules/quick-format-unescaped/index.js"(exports2, module2) {
     "use strict";
     function tryStringify(o) {
       try {
@@ -3856,9 +4241,9 @@ var require_quick_format_unescaped = __commonJS({
   }
 });
 
-// node_modules/atomic-sleep/index.js
+// tools/node_modules/atomic-sleep/index.js
 var require_atomic_sleep = __commonJS({
-  "node_modules/atomic-sleep/index.js"(exports2, module2) {
+  "tools/node_modules/atomic-sleep/index.js"(exports2, module2) {
     "use strict";
     if (typeof SharedArrayBuffer !== "undefined" && typeof Atomics !== "undefined") {
       let sleep = function(ms) {
@@ -3891,9 +4276,9 @@ var require_atomic_sleep = __commonJS({
   }
 });
 
-// node_modules/sonic-boom/index.js
+// tools/node_modules/sonic-boom/index.js
 var require_sonic_boom = __commonJS({
-  "node_modules/sonic-boom/index.js"(exports2, module2) {
+  "tools/node_modules/sonic-boom/index.js"(exports2, module2) {
     "use strict";
     var fs = require("fs");
     var EventEmitter = require("events");
@@ -4478,9 +4863,9 @@ var require_sonic_boom = __commonJS({
   }
 });
 
-// node_modules/on-exit-leak-free/index.js
+// tools/node_modules/on-exit-leak-free/index.js
 var require_on_exit_leak_free = __commonJS({
-  "node_modules/on-exit-leak-free/index.js"(exports2, module2) {
+  "tools/node_modules/on-exit-leak-free/index.js"(exports2, module2) {
     "use strict";
     var refs = {
       exit: [],
@@ -4572,9 +4957,9 @@ var require_on_exit_leak_free = __commonJS({
   }
 });
 
-// node_modules/thread-stream/package.json
+// tools/node_modules/thread-stream/package.json
 var require_package = __commonJS({
-  "node_modules/thread-stream/package.json"(exports2, module2) {
+  "tools/node_modules/thread-stream/package.json"(exports2, module2) {
     module2.exports = {
       name: "thread-stream",
       version: "4.2.0",
@@ -4628,9 +5013,9 @@ var require_package = __commonJS({
   }
 });
 
-// node_modules/thread-stream/lib/wait.js
+// tools/node_modules/thread-stream/lib/wait.js
 var require_wait = __commonJS({
-  "node_modules/thread-stream/lib/wait.js"(exports2, module2) {
+  "tools/node_modules/thread-stream/lib/wait.js"(exports2, module2) {
     "use strict";
     var WAIT_MS = 1e4;
     function wait(state, index, expected, timeout, done) {
@@ -4687,9 +5072,9 @@ var require_wait = __commonJS({
   }
 });
 
-// node_modules/thread-stream/lib/indexes.js
+// tools/node_modules/thread-stream/lib/indexes.js
 var require_indexes = __commonJS({
-  "node_modules/thread-stream/lib/indexes.js"(exports2, module2) {
+  "tools/node_modules/thread-stream/lib/indexes.js"(exports2, module2) {
     "use strict";
     var SEQ_INDEX = 2;
     var WRITE_INDEX = 4;
@@ -4702,9 +5087,9 @@ var require_indexes = __commonJS({
   }
 });
 
-// node_modules/thread-stream/index.js
+// tools/node_modules/thread-stream/index.js
 var require_thread_stream = __commonJS({
-  "node_modules/thread-stream/index.js"(exports2, module2) {
+  "tools/node_modules/thread-stream/index.js"(exports2, module2) {
     "use strict";
     var { version } = require_package();
     var { EventEmitter } = require("events");
@@ -5221,9 +5606,9 @@ var require_thread_stream = __commonJS({
   }
 });
 
-// node_modules/pino/lib/transport.js
+// tools/node_modules/pino/lib/transport.js
 var require_transport = __commonJS({
-  "node_modules/pino/lib/transport.js"(exports2, module2) {
+  "tools/node_modules/pino/lib/transport.js"(exports2, module2) {
     "use strict";
     var { createRequire } = require("module");
     var { existsSync } = require("node:fs");
@@ -5444,9 +5829,9 @@ var require_transport = __commonJS({
   }
 });
 
-// node_modules/pino/lib/tools.js
+// tools/node_modules/pino/lib/tools.js
 var require_tools = __commonJS({
-  "node_modules/pino/lib/tools.js"(exports2, module2) {
+  "tools/node_modules/pino/lib/tools.js"(exports2, module2) {
     "use strict";
     var diagChan = require("node:diagnostics_channel");
     var format = require_quick_format_unescaped();
@@ -5773,9 +6158,9 @@ var require_tools = __commonJS({
   }
 });
 
-// node_modules/pino/lib/constants.js
+// tools/node_modules/pino/lib/constants.js
 var require_constants = __commonJS({
-  "node_modules/pino/lib/constants.js"(exports2, module2) {
+  "tools/node_modules/pino/lib/constants.js"(exports2, module2) {
     var DEFAULT_LEVELS = {
       trace: 10,
       debug: 20,
@@ -5795,9 +6180,9 @@ var require_constants = __commonJS({
   }
 });
 
-// node_modules/pino/lib/levels.js
+// tools/node_modules/pino/lib/levels.js
 var require_levels = __commonJS({
-  "node_modules/pino/lib/levels.js"(exports2, module2) {
+  "tools/node_modules/pino/lib/levels.js"(exports2, module2) {
     "use strict";
     var {
       lsCacheSym,
@@ -5988,17 +6373,17 @@ var require_levels = __commonJS({
   }
 });
 
-// node_modules/pino/lib/meta.js
+// tools/node_modules/pino/lib/meta.js
 var require_meta = __commonJS({
-  "node_modules/pino/lib/meta.js"(exports2, module2) {
+  "tools/node_modules/pino/lib/meta.js"(exports2, module2) {
     "use strict";
     module2.exports = { version: "10.3.1" };
   }
 });
 
-// node_modules/pino/lib/proto.js
+// tools/node_modules/pino/lib/proto.js
 var require_proto = __commonJS({
-  "node_modules/pino/lib/proto.js"(exports2, module2) {
+  "tools/node_modules/pino/lib/proto.js"(exports2, module2) {
     "use strict";
     var { EventEmitter } = require("node:events");
     var {
@@ -6226,9 +6611,9 @@ var require_proto = __commonJS({
   }
 });
 
-// node_modules/safe-stable-stringify/index.js
+// tools/node_modules/safe-stable-stringify/index.js
 var require_safe_stable_stringify = __commonJS({
-  "node_modules/safe-stable-stringify/index.js"(exports2, module2) {
+  "tools/node_modules/safe-stable-stringify/index.js"(exports2, module2) {
     "use strict";
     var { hasOwnProperty } = Object.prototype;
     var stringify = configure();
@@ -6822,9 +7207,9 @@ ${originalIndentation}`;
   }
 });
 
-// node_modules/pino/lib/multistream.js
+// tools/node_modules/pino/lib/multistream.js
 var require_multistream = __commonJS({
-  "node_modules/pino/lib/multistream.js"(exports2, module2) {
+  "tools/node_modules/pino/lib/multistream.js"(exports2, module2) {
     "use strict";
     var metadata = Symbol.for("pino.metadata");
     var { DEFAULT_LEVELS } = require_constants();
@@ -6990,9 +7375,9 @@ var require_multistream = __commonJS({
   }
 });
 
-// node_modules/pino/pino.js
+// tools/node_modules/pino/pino.js
 var require_pino = __commonJS({
-  "node_modules/pino/pino.js"(exports2, module2) {
+  "tools/node_modules/pino/pino.js"(exports2, module2) {
     "use strict";
     var os = require("node:os");
     var stdSerializers = require_pino_std_serializers();
@@ -7200,9 +7585,9 @@ var require_pino = __commonJS({
   }
 });
 
-// node_modules/imapflow/lib/logger.js
+// tools/node_modules/imapflow/lib/logger.js
 var require_logger = __commonJS({
-  "node_modules/imapflow/lib/logger.js"(exports2, module2) {
+  "tools/node_modules/imapflow/lib/logger.js"(exports2, module2) {
     "use strict";
     var logger = require_pino()();
     logger.level = "trace";
@@ -7210,9 +7595,9 @@ var require_logger = __commonJS({
   }
 });
 
-// node_modules/safer-buffer/safer.js
+// tools/node_modules/safer-buffer/safer.js
 var require_safer = __commonJS({
-  "node_modules/safer-buffer/safer.js"(exports2, module2) {
+  "tools/node_modules/safer-buffer/safer.js"(exports2, module2) {
     "use strict";
     var buffer = require("buffer");
     var Buffer2 = buffer.Buffer;
@@ -7278,9 +7663,9 @@ var require_safer = __commonJS({
   }
 });
 
-// node_modules/iconv-lite/lib/bom-handling.js
+// tools/node_modules/iconv-lite/lib/bom-handling.js
 var require_bom_handling = __commonJS({
-  "node_modules/iconv-lite/lib/bom-handling.js"(exports2) {
+  "tools/node_modules/iconv-lite/lib/bom-handling.js"(exports2) {
     "use strict";
     var BOMChar = "\uFEFF";
     exports2.PrependBOM = PrependBOMWrapper;
@@ -7324,9 +7709,9 @@ var require_bom_handling = __commonJS({
   }
 });
 
-// node_modules/iconv-lite/lib/helpers/merge-exports.js
+// tools/node_modules/iconv-lite/lib/helpers/merge-exports.js
 var require_merge_exports = __commonJS({
-  "node_modules/iconv-lite/lib/helpers/merge-exports.js"(exports2, module2) {
+  "tools/node_modules/iconv-lite/lib/helpers/merge-exports.js"(exports2, module2) {
     "use strict";
     var hasOwn = typeof Object.hasOwn === "undefined" ? Function.call.bind(Object.prototype.hasOwnProperty) : Object.hasOwn;
     function mergeModules(target, module3) {
@@ -7340,9 +7725,9 @@ var require_merge_exports = __commonJS({
   }
 });
 
-// node_modules/iconv-lite/encodings/internal.js
+// tools/node_modules/iconv-lite/encodings/internal.js
 var require_internal = __commonJS({
-  "node_modules/iconv-lite/encodings/internal.js"(exports2, module2) {
+  "tools/node_modules/iconv-lite/encodings/internal.js"(exports2, module2) {
     "use strict";
     var Buffer2 = require_safer().Buffer;
     module2.exports = {
@@ -7521,9 +7906,9 @@ var require_internal = __commonJS({
   }
 });
 
-// node_modules/iconv-lite/encodings/utf32.js
+// tools/node_modules/iconv-lite/encodings/utf32.js
 var require_utf32 = __commonJS({
-  "node_modules/iconv-lite/encodings/utf32.js"(exports2) {
+  "tools/node_modules/iconv-lite/encodings/utf32.js"(exports2) {
     "use strict";
     var Buffer2 = require_safer().Buffer;
     exports2._utf32 = Utf32Codec;
@@ -7756,9 +8141,9 @@ var require_utf32 = __commonJS({
   }
 });
 
-// node_modules/iconv-lite/encodings/utf16.js
+// tools/node_modules/iconv-lite/encodings/utf16.js
 var require_utf16 = __commonJS({
-  "node_modules/iconv-lite/encodings/utf16.js"(exports2) {
+  "tools/node_modules/iconv-lite/encodings/utf16.js"(exports2) {
     "use strict";
     var Buffer2 = require_safer().Buffer;
     exports2.utf16be = Utf16BECodec;
@@ -7899,9 +8284,9 @@ var require_utf16 = __commonJS({
   }
 });
 
-// node_modules/iconv-lite/encodings/utf7.js
+// tools/node_modules/iconv-lite/encodings/utf7.js
 var require_utf7 = __commonJS({
-  "node_modules/iconv-lite/encodings/utf7.js"(exports2) {
+  "tools/node_modules/iconv-lite/encodings/utf7.js"(exports2) {
     "use strict";
     var Buffer2 = require_safer().Buffer;
     exports2.utf7 = Utf7Codec;
@@ -8117,9 +8502,9 @@ var require_utf7 = __commonJS({
   }
 });
 
-// node_modules/iconv-lite/encodings/sbcs-codec.js
+// tools/node_modules/iconv-lite/encodings/sbcs-codec.js
 var require_sbcs_codec = __commonJS({
-  "node_modules/iconv-lite/encodings/sbcs-codec.js"(exports2) {
+  "tools/node_modules/iconv-lite/encodings/sbcs-codec.js"(exports2) {
     "use strict";
     var Buffer2 = require_safer().Buffer;
     exports2._sbcs = SBCSCodec;
@@ -8179,9 +8564,9 @@ var require_sbcs_codec = __commonJS({
   }
 });
 
-// node_modules/iconv-lite/encodings/sbcs-data.js
+// tools/node_modules/iconv-lite/encodings/sbcs-data.js
 var require_sbcs_data = __commonJS({
-  "node_modules/iconv-lite/encodings/sbcs-data.js"(exports2, module2) {
+  "tools/node_modules/iconv-lite/encodings/sbcs-data.js"(exports2, module2) {
     "use strict";
     module2.exports = {
       // Not supported by iconv, not sure why.
@@ -8334,9 +8719,9 @@ var require_sbcs_data = __commonJS({
   }
 });
 
-// node_modules/iconv-lite/encodings/sbcs-data-generated.js
+// tools/node_modules/iconv-lite/encodings/sbcs-data-generated.js
 var require_sbcs_data_generated = __commonJS({
-  "node_modules/iconv-lite/encodings/sbcs-data-generated.js"(exports2, module2) {
+  "tools/node_modules/iconv-lite/encodings/sbcs-data-generated.js"(exports2, module2) {
     "use strict";
     module2.exports = {
       "437": "cp437",
@@ -8789,9 +9174,9 @@ var require_sbcs_data_generated = __commonJS({
   }
 });
 
-// node_modules/iconv-lite/encodings/dbcs-codec.js
+// tools/node_modules/iconv-lite/encodings/dbcs-codec.js
 var require_dbcs_codec = __commonJS({
-  "node_modules/iconv-lite/encodings/dbcs-codec.js"(exports2) {
+  "tools/node_modules/iconv-lite/encodings/dbcs-codec.js"(exports2) {
     "use strict";
     var Buffer2 = require_safer().Buffer;
     exports2._dbcs = DBCSCodec;
@@ -9249,9 +9634,9 @@ var require_dbcs_codec = __commonJS({
   }
 });
 
-// node_modules/iconv-lite/encodings/tables/shiftjis.json
+// tools/node_modules/iconv-lite/encodings/tables/shiftjis.json
 var require_shiftjis = __commonJS({
-  "node_modules/iconv-lite/encodings/tables/shiftjis.json"(exports2, module2) {
+  "tools/node_modules/iconv-lite/encodings/tables/shiftjis.json"(exports2, module2) {
     module2.exports = [
       ["0", "\0", 128],
       ["a1", "\uFF61", 62],
@@ -9380,9 +9765,9 @@ var require_shiftjis = __commonJS({
   }
 });
 
-// node_modules/iconv-lite/encodings/tables/eucjp.json
+// tools/node_modules/iconv-lite/encodings/tables/eucjp.json
 var require_eucjp = __commonJS({
-  "node_modules/iconv-lite/encodings/tables/eucjp.json"(exports2, module2) {
+  "tools/node_modules/iconv-lite/encodings/tables/eucjp.json"(exports2, module2) {
     module2.exports = [
       ["0", "\0", 127],
       ["8ea1", "\uFF61", 62],
@@ -9568,9 +9953,9 @@ var require_eucjp = __commonJS({
   }
 });
 
-// node_modules/iconv-lite/encodings/tables/cp936.json
+// tools/node_modules/iconv-lite/encodings/tables/cp936.json
 var require_cp936 = __commonJS({
-  "node_modules/iconv-lite/encodings/tables/cp936.json"(exports2, module2) {
+  "tools/node_modules/iconv-lite/encodings/tables/cp936.json"(exports2, module2) {
     module2.exports = [
       ["0", "\0", 127, "\u20AC"],
       ["8140", "\u4E02\u4E04\u4E05\u4E06\u4E0F\u4E12\u4E17\u4E1F\u4E20\u4E21\u4E23\u4E26\u4E29\u4E2E\u4E2F\u4E31\u4E33\u4E35\u4E37\u4E3C\u4E40\u4E41\u4E42\u4E44\u4E46\u4E4A\u4E51\u4E55\u4E57\u4E5A\u4E5B\u4E62\u4E63\u4E64\u4E65\u4E67\u4E68\u4E6A", 5, "\u4E72\u4E74", 9, "\u4E7F", 6, "\u4E87\u4E8A"],
@@ -9838,9 +10223,9 @@ var require_cp936 = __commonJS({
   }
 });
 
-// node_modules/iconv-lite/encodings/tables/gbk-added.json
+// tools/node_modules/iconv-lite/encodings/tables/gbk-added.json
 var require_gbk_added = __commonJS({
-  "node_modules/iconv-lite/encodings/tables/gbk-added.json"(exports2, module2) {
+  "tools/node_modules/iconv-lite/encodings/tables/gbk-added.json"(exports2, module2) {
     module2.exports = [
       ["a140", "\uE4C6", 62],
       ["a180", "\uE505", 32],
@@ -9900,16 +10285,16 @@ var require_gbk_added = __commonJS({
   }
 });
 
-// node_modules/iconv-lite/encodings/tables/gb18030-ranges.json
+// tools/node_modules/iconv-lite/encodings/tables/gb18030-ranges.json
 var require_gb18030_ranges = __commonJS({
-  "node_modules/iconv-lite/encodings/tables/gb18030-ranges.json"(exports2, module2) {
+  "tools/node_modules/iconv-lite/encodings/tables/gb18030-ranges.json"(exports2, module2) {
     module2.exports = { uChars: [128, 165, 169, 178, 184, 216, 226, 235, 238, 244, 248, 251, 253, 258, 276, 284, 300, 325, 329, 334, 364, 463, 465, 467, 469, 471, 473, 475, 477, 506, 594, 610, 712, 716, 730, 930, 938, 962, 970, 1026, 1104, 1106, 8209, 8215, 8218, 8222, 8231, 8241, 8244, 8246, 8252, 8365, 8452, 8454, 8458, 8471, 8482, 8556, 8570, 8596, 8602, 8713, 8720, 8722, 8726, 8731, 8737, 8740, 8742, 8748, 8751, 8760, 8766, 8777, 8781, 8787, 8802, 8808, 8816, 8854, 8858, 8870, 8896, 8979, 9322, 9372, 9548, 9588, 9616, 9622, 9634, 9652, 9662, 9672, 9676, 9680, 9702, 9735, 9738, 9793, 9795, 11906, 11909, 11913, 11917, 11928, 11944, 11947, 11951, 11956, 11960, 11964, 11979, 12284, 12292, 12312, 12319, 12330, 12351, 12436, 12447, 12535, 12543, 12586, 12842, 12850, 12964, 13200, 13215, 13218, 13253, 13263, 13267, 13270, 13384, 13428, 13727, 13839, 13851, 14617, 14703, 14801, 14816, 14964, 15183, 15471, 15585, 16471, 16736, 17208, 17325, 17330, 17374, 17623, 17997, 18018, 18212, 18218, 18301, 18318, 18760, 18811, 18814, 18820, 18823, 18844, 18848, 18872, 19576, 19620, 19738, 19887, 40870, 59244, 59336, 59367, 59413, 59417, 59423, 59431, 59437, 59443, 59452, 59460, 59478, 59493, 63789, 63866, 63894, 63976, 63986, 64016, 64018, 64021, 64025, 64034, 64037, 64042, 65074, 65093, 65107, 65112, 65127, 65132, 65375, 65510, 65536], gbChars: [0, 36, 38, 45, 50, 81, 89, 95, 96, 100, 103, 104, 105, 109, 126, 133, 148, 172, 175, 179, 208, 306, 307, 308, 309, 310, 311, 312, 313, 341, 428, 443, 544, 545, 558, 741, 742, 749, 750, 805, 819, 820, 7922, 7924, 7925, 7927, 7934, 7943, 7944, 7945, 7950, 8062, 8148, 8149, 8152, 8164, 8174, 8236, 8240, 8262, 8264, 8374, 8380, 8381, 8384, 8388, 8390, 8392, 8393, 8394, 8396, 8401, 8406, 8416, 8419, 8424, 8437, 8439, 8445, 8482, 8485, 8496, 8521, 8603, 8936, 8946, 9046, 9050, 9063, 9066, 9076, 9092, 9100, 9108, 9111, 9113, 9131, 9162, 9164, 9218, 9219, 11329, 11331, 11334, 11336, 11346, 11361, 11363, 11366, 11370, 11372, 11375, 11389, 11682, 11686, 11687, 11692, 11694, 11714, 11716, 11723, 11725, 11730, 11736, 11982, 11989, 12102, 12336, 12348, 12350, 12384, 12393, 12395, 12397, 12510, 12553, 12851, 12962, 12973, 13738, 13823, 13919, 13933, 14080, 14298, 14585, 14698, 15583, 15847, 16318, 16434, 16438, 16481, 16729, 17102, 17122, 17315, 17320, 17402, 17418, 17859, 17909, 17911, 17915, 17916, 17936, 17939, 17961, 18664, 18703, 18814, 18962, 19043, 33469, 33470, 33471, 33484, 33485, 33490, 33497, 33501, 33505, 33513, 33520, 33536, 33550, 37845, 37921, 37948, 38029, 38038, 38064, 38065, 38066, 38069, 38075, 38076, 38078, 39108, 39109, 39113, 39114, 39115, 39116, 39265, 39394, 189e3] };
   }
 });
 
-// node_modules/iconv-lite/encodings/tables/cp949.json
+// tools/node_modules/iconv-lite/encodings/tables/cp949.json
 var require_cp949 = __commonJS({
-  "node_modules/iconv-lite/encodings/tables/cp949.json"(exports2, module2) {
+  "tools/node_modules/iconv-lite/encodings/tables/cp949.json"(exports2, module2) {
     module2.exports = [
       ["0", "\0", 127],
       ["8141", "\uAC02\uAC03\uAC05\uAC06\uAC0B", 4, "\uAC18\uAC1E\uAC1F\uAC21\uAC22\uAC23\uAC25", 6, "\uAC2E\uAC32\uAC33\uAC34"],
@@ -10186,9 +10571,9 @@ var require_cp949 = __commonJS({
   }
 });
 
-// node_modules/iconv-lite/encodings/tables/cp950.json
+// tools/node_modules/iconv-lite/encodings/tables/cp950.json
 var require_cp950 = __commonJS({
-  "node_modules/iconv-lite/encodings/tables/cp950.json"(exports2, module2) {
+  "tools/node_modules/iconv-lite/encodings/tables/cp950.json"(exports2, module2) {
     module2.exports = [
       ["0", "\0", 127],
       ["a140", "\u3000\uFF0C\u3001\u3002\uFF0E\u2027\uFF1B\uFF1A\uFF1F\uFF01\uFE30\u2026\u2025\uFE50\uFE51\uFE52\xB7\uFE54\uFE55\uFE56\uFE57\uFF5C\u2013\uFE31\u2014\uFE33\u2574\uFE34\uFE4F\uFF08\uFF09\uFE35\uFE36\uFF5B\uFF5D\uFE37\uFE38\u3014\u3015\uFE39\uFE3A\u3010\u3011\uFE3B\uFE3C\u300A\u300B\uFE3D\uFE3E\u3008\u3009\uFE3F\uFE40\u300C\u300D\uFE41\uFE42\u300E\u300F\uFE43\uFE44\uFE59\uFE5A"],
@@ -10369,9 +10754,9 @@ var require_cp950 = __commonJS({
   }
 });
 
-// node_modules/iconv-lite/encodings/tables/big5-added.json
+// tools/node_modules/iconv-lite/encodings/tables/big5-added.json
 var require_big5_added = __commonJS({
-  "node_modules/iconv-lite/encodings/tables/big5-added.json"(exports2, module2) {
+  "tools/node_modules/iconv-lite/encodings/tables/big5-added.json"(exports2, module2) {
     module2.exports = [
       ["8740", "\u43F0\u4C32\u4603\u45A6\u4578\u{27267}\u4D77\u45B3\u{27CB1}\u4CE2\u{27CC5}\u3B95\u4736\u4744\u4C47\u4C40\u{242BF}\u{23617}\u{27352}\u{26E8B}\u{270D2}\u4C57\u{2A351}\u474F\u45DA\u4C85\u{27C6C}\u4D07\u4AA4\u46A1\u{26B23}\u7225\u{25A54}\u{21A63}\u{23E06}\u{23F61}\u664D\u56FB"],
       ["8767", "\u7D95\u591D\u{28BB9}\u3DF4\u9734\u{27BEF}\u5BDB\u{21D5E}\u5AA4\u3625\u{29EB0}\u5AD1\u5BB7\u5CFC\u676E\u8593\u{29945}\u7461\u749D\u3875\u{21D53}\u{2369E}\u{26021}\u3EEC"],
@@ -10497,9 +10882,9 @@ var require_big5_added = __commonJS({
   }
 });
 
-// node_modules/iconv-lite/encodings/dbcs-data.js
+// tools/node_modules/iconv-lite/encodings/dbcs-data.js
 var require_dbcs_data = __commonJS({
-  "node_modules/iconv-lite/encodings/dbcs-data.js"(exports2, module2) {
+  "tools/node_modules/iconv-lite/encodings/dbcs-data.js"(exports2, module2) {
     "use strict";
     module2.exports = {
       // == Japanese/ShiftJIS ====================================================
@@ -10744,9 +11129,9 @@ var require_dbcs_data = __commonJS({
   }
 });
 
-// node_modules/iconv-lite/encodings/index.js
+// tools/node_modules/iconv-lite/encodings/index.js
 var require_encodings = __commonJS({
-  "node_modules/iconv-lite/encodings/index.js"(exports2, module2) {
+  "tools/node_modules/iconv-lite/encodings/index.js"(exports2, module2) {
     "use strict";
     var mergeModules = require_merge_exports();
     var modules = [
@@ -10769,9 +11154,9 @@ var require_encodings = __commonJS({
   }
 });
 
-// node_modules/iconv-lite/lib/streams.js
+// tools/node_modules/iconv-lite/lib/streams.js
 var require_streams = __commonJS({
-  "node_modules/iconv-lite/lib/streams.js"(exports2, module2) {
+  "tools/node_modules/iconv-lite/lib/streams.js"(exports2, module2) {
     "use strict";
     var Buffer2 = require_safer().Buffer;
     module2.exports = function(streamModule) {
@@ -10866,9 +11251,9 @@ var require_streams = __commonJS({
   }
 });
 
-// node_modules/iconv-lite/lib/index.js
+// tools/node_modules/iconv-lite/lib/index.js
 var require_lib = __commonJS({
-  "node_modules/iconv-lite/lib/index.js"(exports2, module2) {
+  "tools/node_modules/iconv-lite/lib/index.js"(exports2, module2) {
     "use strict";
     var Buffer2 = require_safer().Buffer;
     var bomHandling = require_bom_handling();
@@ -10998,9 +11383,9 @@ var require_lib = __commonJS({
   }
 });
 
-// node_modules/encoding-japanese/src/util.js
+// tools/node_modules/encoding-japanese/src/util.js
 var require_util = __commonJS({
-  "node_modules/encoding-japanese/src/util.js"(exports2) {
+  "tools/node_modules/encoding-japanese/src/util.js"(exports2) {
     var config = require_config();
     var fromCharCode = String.fromCharCode;
     var slice = Array.prototype.slice;
@@ -11453,9 +11838,9 @@ var require_util = __commonJS({
   }
 });
 
-// node_modules/encoding-japanese/src/utf8-to-jis-table.js
+// tools/node_modules/encoding-japanese/src/utf8-to-jis-table.js
 var require_utf8_to_jis_table = __commonJS({
-  "node_modules/encoding-japanese/src/utf8-to-jis-table.js"(exports2, module2) {
+  "tools/node_modules/encoding-japanese/src/utf8-to-jis-table.js"(exports2, module2) {
     module2.exports = {
       15711649: 33,
       15711650: 34,
@@ -18854,9 +19239,9 @@ var require_utf8_to_jis_table = __commonJS({
   }
 });
 
-// node_modules/encoding-japanese/src/utf8-to-jisx0212-table.js
+// tools/node_modules/encoding-japanese/src/utf8-to-jisx0212-table.js
 var require_utf8_to_jisx0212_table = __commonJS({
-  "node_modules/encoding-japanese/src/utf8-to-jisx0212-table.js"(exports2, module2) {
+  "tools/node_modules/encoding-japanese/src/utf8-to-jisx0212-table.js"(exports2, module2) {
     module2.exports = {
       52120: 8751,
       52103: 8752,
@@ -24931,25 +25316,25 @@ var require_utf8_to_jisx0212_table = __commonJS({
   }
 });
 
-// node_modules/encoding-japanese/src/jis-to-utf8-table.js
+// tools/node_modules/encoding-japanese/src/jis-to-utf8-table.js
 var require_jis_to_utf8_table = __commonJS({
-  "node_modules/encoding-japanese/src/jis-to-utf8-table.js"(exports2, module2) {
+  "tools/node_modules/encoding-japanese/src/jis-to-utf8-table.js"(exports2, module2) {
     var JIS_TO_UTF8_TABLE = null;
     module2.exports = JIS_TO_UTF8_TABLE;
   }
 });
 
-// node_modules/encoding-japanese/src/jisx0212-to-utf8-table.js
+// tools/node_modules/encoding-japanese/src/jisx0212-to-utf8-table.js
 var require_jisx0212_to_utf8_table = __commonJS({
-  "node_modules/encoding-japanese/src/jisx0212-to-utf8-table.js"(exports2, module2) {
+  "tools/node_modules/encoding-japanese/src/jisx0212-to-utf8-table.js"(exports2, module2) {
     var JISX0212_TO_UTF8_TABLE = null;
     module2.exports = JISX0212_TO_UTF8_TABLE;
   }
 });
 
-// node_modules/encoding-japanese/src/encoding-table.js
+// tools/node_modules/encoding-japanese/src/encoding-table.js
 var require_encoding_table = __commonJS({
-  "node_modules/encoding-japanese/src/encoding-table.js"(exports2) {
+  "tools/node_modules/encoding-japanese/src/encoding-table.js"(exports2) {
     exports2.UTF8_TO_JIS_TABLE = require_utf8_to_jis_table();
     exports2.UTF8_TO_JISX0212_TABLE = require_utf8_to_jisx0212_table();
     exports2.JIS_TO_UTF8_TABLE = require_jis_to_utf8_table();
@@ -24957,9 +25342,9 @@ var require_encoding_table = __commonJS({
   }
 });
 
-// node_modules/encoding-japanese/src/config.js
+// tools/node_modules/encoding-japanese/src/config.js
 var require_config = __commonJS({
-  "node_modules/encoding-japanese/src/config.js"(exports2) {
+  "tools/node_modules/encoding-japanese/src/config.js"(exports2) {
     var util = require_util();
     var EncodingTable = require_encoding_table();
     exports2.FALLBACK_CHARACTER = 63;
@@ -25079,9 +25464,9 @@ var require_config = __commonJS({
   }
 });
 
-// node_modules/encoding-japanese/src/encoding-detect.js
+// tools/node_modules/encoding-japanese/src/encoding-detect.js
 var require_encoding_detect = __commonJS({
-  "node_modules/encoding-japanese/src/encoding-detect.js"(exports2) {
+  "tools/node_modules/encoding-japanese/src/encoding-detect.js"(exports2) {
     function isBINARY(data) {
       var i = 0;
       var len = data && data.length;
@@ -25448,9 +25833,9 @@ var require_encoding_detect = __commonJS({
   }
 });
 
-// node_modules/encoding-japanese/src/sjis-ext.js
+// tools/node_modules/encoding-japanese/src/sjis-ext.js
 var require_sjis_ext = __commonJS({
-  "node_modules/encoding-japanese/src/sjis-ext.js"(exports2) {
+  "tools/node_modules/encoding-japanese/src/sjis-ext.js"(exports2) {
     var CP932_IBM_EXT_SYMBOL_MAP = [
       // 0xFA40 - 0xFA49 [ⅰ-ⅹ]
       61167,
@@ -25550,9 +25935,9 @@ var require_sjis_ext = __commonJS({
   }
 });
 
-// node_modules/encoding-japanese/src/encoding-convert.js
+// tools/node_modules/encoding-japanese/src/encoding-convert.js
 var require_encoding_convert = __commonJS({
-  "node_modules/encoding-japanese/src/encoding-convert.js"(exports2) {
+  "tools/node_modules/encoding-japanese/src/encoding-convert.js"(exports2) {
     var config = require_config();
     var util = require_util();
     var EncodingDetect = require_encoding_detect();
@@ -26833,9 +27218,9 @@ var require_encoding_convert = __commonJS({
   }
 });
 
-// node_modules/encoding-japanese/src/kana-case-table.js
+// tools/node_modules/encoding-japanese/src/kana-case-table.js
 var require_kana_case_table = __commonJS({
-  "node_modules/encoding-japanese/src/kana-case-table.js"(exports2) {
+  "tools/node_modules/encoding-japanese/src/kana-case-table.js"(exports2) {
     exports2.HANKANA_TABLE = {
       12289: 65380,
       12290: 65377,
@@ -26975,9 +27360,9 @@ var require_kana_case_table = __commonJS({
   }
 });
 
-// node_modules/encoding-japanese/package.json
+// tools/node_modules/encoding-japanese/package.json
 var require_package2 = __commonJS({
-  "node_modules/encoding-japanese/package.json"(exports2, module2) {
+  "tools/node_modules/encoding-japanese/package.json"(exports2, module2) {
     module2.exports = {
       name: "encoding-japanese",
       version: "2.3.0",
@@ -27048,9 +27433,9 @@ var require_package2 = __commonJS({
   }
 });
 
-// node_modules/encoding-japanese/src/index.js
+// tools/node_modules/encoding-japanese/src/index.js
 var require_src = __commonJS({
-  "node_modules/encoding-japanese/src/index.js"(exports2, module2) {
+  "tools/node_modules/encoding-japanese/src/index.js"(exports2, module2) {
     var config = require_config();
     var util = require_util();
     var EncodingDetect = require_encoding_detect();
@@ -27564,9 +27949,9 @@ var require_src = __commonJS({
   }
 });
 
-// node_modules/libmime/lib/charsets.js
+// tools/node_modules/libmime/lib/charsets.js
 var require_charsets = __commonJS({
-  "node_modules/libmime/lib/charsets.js"(exports2, module2) {
+  "tools/node_modules/libmime/lib/charsets.js"(exports2, module2) {
     "use strict";
     module2.exports = {
       "866": "IBM866",
@@ -27779,9 +28164,9 @@ var require_charsets = __commonJS({
   }
 });
 
-// node_modules/libmime/lib/charset.js
+// tools/node_modules/libmime/lib/charset.js
 var require_charset = __commonJS({
-  "node_modules/libmime/lib/charset.js"(exports2, module2) {
+  "tools/node_modules/libmime/lib/charset.js"(exports2, module2) {
     "use strict";
     var { Buffer: Buffer2 } = require("node:buffer");
     var iconv = require_lib();
@@ -27876,9 +28261,9 @@ var require_charset = __commonJS({
   }
 });
 
-// node_modules/libbase64/lib/libbase64.js
+// tools/node_modules/libbase64/lib/libbase64.js
 var require_libbase64 = __commonJS({
-  "node_modules/libbase64/lib/libbase64.js"(exports2, module2) {
+  "tools/node_modules/libbase64/lib/libbase64.js"(exports2, module2) {
     "use strict";
     var { Buffer: Buffer2 } = require("node:buffer");
     var stream = require("node:stream");
@@ -28051,9 +28436,9 @@ var require_libbase64 = __commonJS({
   }
 });
 
-// node_modules/libqp/lib/libqp.js
+// tools/node_modules/libqp/lib/libqp.js
 var require_libqp = __commonJS({
-  "node_modules/libqp/lib/libqp.js"(exports2, module2) {
+  "tools/node_modules/libqp/lib/libqp.js"(exports2, module2) {
     "use strict";
     var { Buffer: Buffer2 } = require("node:buffer");
     var stream = require("node:stream");
@@ -28258,9 +28643,9 @@ var require_libqp = __commonJS({
   }
 });
 
-// node_modules/libmime/lib/mimetypes.js
+// tools/node_modules/libmime/lib/mimetypes.js
 var require_mimetypes = __commonJS({
-  "node_modules/libmime/lib/mimetypes.js"(exports2, module2) {
+  "tools/node_modules/libmime/lib/mimetypes.js"(exports2, module2) {
     "use strict";
     module2.exports = {
       list: {
@@ -30309,9 +30694,9 @@ var require_mimetypes = __commonJS({
   }
 });
 
-// node_modules/libmime/lib/libmime.js
+// tools/node_modules/libmime/lib/libmime.js
 var require_libmime = __commonJS({
-  "node_modules/libmime/lib/libmime.js"(exports2, module2) {
+  "tools/node_modules/libmime/lib/libmime.js"(exports2, module2) {
     "use strict";
     var { Buffer: Buffer2 } = require("node:buffer");
     var libcharset = require_charset();
@@ -31056,9 +31441,9 @@ var require_libmime = __commonJS({
   }
 });
 
-// node_modules/@zone-eu/mailsplit/lib/headers.js
+// tools/node_modules/@zone-eu/mailsplit/lib/headers.js
 var require_headers = __commonJS({
-  "node_modules/@zone-eu/mailsplit/lib/headers.js"(exports2, module2) {
+  "tools/node_modules/@zone-eu/mailsplit/lib/headers.js"(exports2, module2) {
     "use strict";
     var libmime = require_libmime();
     var Libmime = (
@@ -31415,9 +31800,9 @@ var require_headers = __commonJS({
   }
 });
 
-// node_modules/@zone-eu/mailsplit/lib/mime-node.js
+// tools/node_modules/@zone-eu/mailsplit/lib/mime-node.js
 var require_mime_node = __commonJS({
-  "node_modules/@zone-eu/mailsplit/lib/mime-node.js"(exports2, module2) {
+  "tools/node_modules/@zone-eu/mailsplit/lib/mime-node.js"(exports2, module2) {
     "use strict";
     var Headers = require_headers();
     var libmime = require_libmime();
@@ -31714,9 +32099,9 @@ var require_mime_node = __commonJS({
   }
 });
 
-// node_modules/@zone-eu/mailsplit/lib/message-splitter.js
+// tools/node_modules/@zone-eu/mailsplit/lib/message-splitter.js
 var require_message_splitter = __commonJS({
-  "node_modules/@zone-eu/mailsplit/lib/message-splitter.js"(exports2, module2) {
+  "tools/node_modules/@zone-eu/mailsplit/lib/message-splitter.js"(exports2, module2) {
     "use strict";
     var Transform = require("stream").Transform;
     var MimeNode = require_mime_node();
@@ -32191,9 +32576,9 @@ var require_message_splitter = __commonJS({
   }
 });
 
-// node_modules/@zone-eu/mailsplit/lib/message-joiner.js
+// tools/node_modules/@zone-eu/mailsplit/lib/message-joiner.js
 var require_message_joiner = __commonJS({
-  "node_modules/@zone-eu/mailsplit/lib/message-joiner.js"(exports2, module2) {
+  "tools/node_modules/@zone-eu/mailsplit/lib/message-joiner.js"(exports2, module2) {
     "use strict";
     var Transform = require("stream").Transform;
     var MessageJoiner = class extends Transform {
@@ -32235,9 +32620,9 @@ var require_message_joiner = __commonJS({
   }
 });
 
-// node_modules/@zone-eu/mailsplit/lib/flowed-decoder.js
+// tools/node_modules/@zone-eu/mailsplit/lib/flowed-decoder.js
 var require_flowed_decoder = __commonJS({
-  "node_modules/@zone-eu/mailsplit/lib/flowed-decoder.js"(exports2, module2) {
+  "tools/node_modules/@zone-eu/mailsplit/lib/flowed-decoder.js"(exports2, module2) {
     "use strict";
     var Transform = require("stream").Transform;
     var libmime = require_libmime();
@@ -32293,9 +32678,9 @@ var require_flowed_decoder = __commonJS({
   }
 });
 
-// node_modules/@zone-eu/mailsplit/lib/node-rewriter.js
+// tools/node_modules/@zone-eu/mailsplit/lib/node-rewriter.js
 var require_node_rewriter = __commonJS({
-  "node_modules/@zone-eu/mailsplit/lib/node-rewriter.js"(exports2, module2) {
+  "tools/node_modules/@zone-eu/mailsplit/lib/node-rewriter.js"(exports2, module2) {
     "use strict";
     var Transform = require("stream").Transform;
     var FlowedDecoder = require_flowed_decoder();
@@ -32481,9 +32866,9 @@ var require_node_rewriter = __commonJS({
   }
 });
 
-// node_modules/@zone-eu/mailsplit/lib/node-streamer.js
+// tools/node_modules/@zone-eu/mailsplit/lib/node-streamer.js
 var require_node_streamer = __commonJS({
-  "node_modules/@zone-eu/mailsplit/lib/node-streamer.js"(exports2, module2) {
+  "tools/node_modules/@zone-eu/mailsplit/lib/node-streamer.js"(exports2, module2) {
     "use strict";
     var Transform = require("stream").Transform;
     var FlowedDecoder = require_flowed_decoder();
@@ -32617,9 +33002,9 @@ var require_node_streamer = __commonJS({
   }
 });
 
-// node_modules/@zone-eu/mailsplit/lib/chunked-passthrough.js
+// tools/node_modules/@zone-eu/mailsplit/lib/chunked-passthrough.js
 var require_chunked_passthrough = __commonJS({
-  "node_modules/@zone-eu/mailsplit/lib/chunked-passthrough.js"(exports2, module2) {
+  "tools/node_modules/@zone-eu/mailsplit/lib/chunked-passthrough.js"(exports2, module2) {
     "use strict";
     var { Transform } = require("stream");
     var ChunkedPassthrough = class extends Transform {
@@ -32665,9 +33050,9 @@ var require_chunked_passthrough = __commonJS({
   }
 });
 
-// node_modules/@zone-eu/mailsplit/index.js
+// tools/node_modules/@zone-eu/mailsplit/index.js
 var require_mailsplit = __commonJS({
-  "node_modules/@zone-eu/mailsplit/index.js"(exports2, module2) {
+  "tools/node_modules/@zone-eu/mailsplit/index.js"(exports2, module2) {
     "use strict";
     var MessageSplitter = require_message_splitter();
     var MessageJoiner = require_message_joiner();
@@ -32688,9 +33073,9 @@ var require_mailsplit = __commonJS({
   }
 });
 
-// node_modules/imapflow/lib/limited-passthrough.js
+// tools/node_modules/imapflow/lib/limited-passthrough.js
 var require_limited_passthrough = __commonJS({
-  "node_modules/imapflow/lib/limited-passthrough.js"(exports2, module2) {
+  "tools/node_modules/imapflow/lib/limited-passthrough.js"(exports2, module2) {
     "use strict";
     var { Transform } = require("stream");
     var normalizeByteLimit = (value) => {
@@ -32729,9 +33114,9 @@ var require_limited_passthrough = __commonJS({
   }
 });
 
-// node_modules/imapflow/lib/handler/limits.js
+// tools/node_modules/imapflow/lib/handler/limits.js
 var require_limits = __commonJS({
-  "node_modules/imapflow/lib/handler/limits.js"(exports2, module2) {
+  "tools/node_modules/imapflow/lib/handler/limits.js"(exports2, module2) {
     "use strict";
     var MAX_LITERAL_SIZE = 1024 * 1024 * 1024;
     var MAX_LINE_SIZE = MAX_LITERAL_SIZE;
@@ -32748,9 +33133,9 @@ var require_limits = __commonJS({
   }
 });
 
-// node_modules/imapflow/lib/handler/imap-stream.js
+// tools/node_modules/imapflow/lib/handler/imap-stream.js
 var require_imap_stream = __commonJS({
-  "node_modules/imapflow/lib/handler/imap-stream.js"(exports2, module2) {
+  "tools/node_modules/imapflow/lib/handler/imap-stream.js"(exports2, module2) {
     "use strict";
     var Transform = require("stream").Transform;
     var logger = require_logger();
@@ -33151,9 +33536,9 @@ var require_imap_stream = __commonJS({
   }
 });
 
-// node_modules/imapflow/lib/handler/imap-formal-syntax.js
+// tools/node_modules/imapflow/lib/handler/imap-formal-syntax.js
 var require_imap_formal_syntax = __commonJS({
-  "node_modules/imapflow/lib/handler/imap-formal-syntax.js"(exports2, module2) {
+  "tools/node_modules/imapflow/lib/handler/imap-formal-syntax.js"(exports2, module2) {
     "use strict";
     function expandRange(start, end) {
       let chars = [];
@@ -33297,9 +33682,9 @@ var require_imap_formal_syntax = __commonJS({
   }
 });
 
-// node_modules/imapflow/lib/handler/token-parser.js
+// tools/node_modules/imapflow/lib/handler/token-parser.js
 var require_token_parser = __commonJS({
-  "node_modules/imapflow/lib/handler/token-parser.js"(exports2, module2) {
+  "tools/node_modules/imapflow/lib/handler/token-parser.js"(exports2, module2) {
     "use strict";
     var imapFormalSyntax = require_imap_formal_syntax();
     var { MAX_LITERAL_SIZE, normalizeLimit, createLiteralTooLargeError } = require_limits();
@@ -33866,9 +34251,9 @@ var require_token_parser = __commonJS({
   }
 });
 
-// node_modules/imapflow/lib/handler/parser-instance.js
+// tools/node_modules/imapflow/lib/handler/parser-instance.js
 var require_parser_instance = __commonJS({
-  "node_modules/imapflow/lib/handler/parser-instance.js"(exports2, module2) {
+  "tools/node_modules/imapflow/lib/handler/parser-instance.js"(exports2, module2) {
     "use strict";
     var imapFormalSyntax = require_imap_formal_syntax();
     var { TokenParser } = require_token_parser();
@@ -34062,9 +34447,9 @@ var require_parser_instance = __commonJS({
   }
 });
 
-// node_modules/imapflow/lib/handler/imap-parser.js
+// tools/node_modules/imapflow/lib/handler/imap-parser.js
 var require_imap_parser = __commonJS({
-  "node_modules/imapflow/lib/handler/imap-parser.js"(exports2, module2) {
+  "tools/node_modules/imapflow/lib/handler/imap-parser.js"(exports2, module2) {
     "use strict";
     var imapFormalSyntax = require_imap_formal_syntax();
     var { ParserInstance } = require_parser_instance();
@@ -34122,9 +34507,9 @@ var require_imap_parser = __commonJS({
   }
 });
 
-// node_modules/imapflow/lib/handler/imap-compiler.js
+// tools/node_modules/imapflow/lib/handler/imap-compiler.js
 var require_imap_compiler = __commonJS({
-  "node_modules/imapflow/lib/handler/imap-compiler.js"(exports2, module2) {
+  "tools/node_modules/imapflow/lib/handler/imap-compiler.js"(exports2, module2) {
     "use strict";
     var imapFormalSyntax = require_imap_formal_syntax();
     var SEQ_RANGE = /^(\d+|\*)(:(\d+|\*))?$/;
@@ -34312,9 +34697,9 @@ var require_imap_compiler = __commonJS({
   }
 });
 
-// node_modules/imapflow/lib/handler/imap-handler.js
+// tools/node_modules/imapflow/lib/handler/imap-handler.js
 var require_imap_handler = __commonJS({
-  "node_modules/imapflow/lib/handler/imap-handler.js"(exports2, module2) {
+  "tools/node_modules/imapflow/lib/handler/imap-handler.js"(exports2, module2) {
     "use strict";
     var parser = require_imap_parser();
     var compiler = require_imap_compiler();
@@ -34325,9 +34710,9 @@ var require_imap_handler = __commonJS({
   }
 });
 
-// node_modules/imapflow/package.json
+// tools/node_modules/imapflow/package.json
 var require_package3 = __commonJS({
-  "node_modules/imapflow/package.json"(exports2, module2) {
+  "tools/node_modules/imapflow/package.json"(exports2, module2) {
     module2.exports = {
       name: "imapflow",
       version: "1.7.8",
@@ -34387,9 +34772,9 @@ var require_package3 = __commonJS({
   }
 });
 
-// node_modules/smart-buffer/build/utils.js
+// tools/node_modules/smart-buffer/build/utils.js
 var require_utils = __commonJS({
-  "node_modules/smart-buffer/build/utils.js"(exports2) {
+  "tools/node_modules/smart-buffer/build/utils.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var buffer_1 = require("buffer");
@@ -34456,9 +34841,9 @@ var require_utils = __commonJS({
   }
 });
 
-// node_modules/smart-buffer/build/smartbuffer.js
+// tools/node_modules/smart-buffer/build/smartbuffer.js
 var require_smartbuffer = __commonJS({
-  "node_modules/smart-buffer/build/smartbuffer.js"(exports2) {
+  "tools/node_modules/smart-buffer/build/smartbuffer.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     var utils_1 = require_utils();
@@ -35614,9 +35999,9 @@ var require_smartbuffer = __commonJS({
   }
 });
 
-// node_modules/socks/build/common/constants.js
+// tools/node_modules/socks/build/common/constants.js
 var require_constants2 = __commonJS({
-  "node_modules/socks/build/common/constants.js"(exports2) {
+  "tools/node_modules/socks/build/common/constants.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.SOCKS5_NO_ACCEPTABLE_AUTH = exports2.SOCKS5_CUSTOM_AUTH_END = exports2.SOCKS5_CUSTOM_AUTH_START = exports2.SOCKS_INCOMING_PACKET_SIZES = exports2.SocksClientState = exports2.Socks5Response = exports2.Socks5HostType = exports2.Socks5Auth = exports2.Socks4Response = exports2.SocksCommand = exports2.ERRORS = exports2.DEFAULT_TIMEOUT = void 0;
@@ -35731,9 +36116,9 @@ var require_constants2 = __commonJS({
   }
 });
 
-// node_modules/socks/build/common/util.js
+// tools/node_modules/socks/build/common/util.js
 var require_util2 = __commonJS({
-  "node_modules/socks/build/common/util.js"(exports2) {
+  "tools/node_modules/socks/build/common/util.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.shuffleArray = exports2.SocksClientError = void 0;
@@ -35754,9 +36139,9 @@ var require_util2 = __commonJS({
   }
 });
 
-// node_modules/ip-address/dist/address-error.js
+// tools/node_modules/ip-address/dist/address-error.js
 var require_address_error = __commonJS({
-  "node_modules/ip-address/dist/address-error.js"(exports2) {
+  "tools/node_modules/ip-address/dist/address-error.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.AddressError = void 0;
@@ -35771,9 +36156,9 @@ var require_address_error = __commonJS({
   }
 });
 
-// node_modules/ip-address/dist/common.js
+// tools/node_modules/ip-address/dist/common.js
 var require_common = __commonJS({
-  "node_modules/ip-address/dist/common.js"(exports2) {
+  "tools/node_modules/ip-address/dist/common.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.isInSubnet = isInSubnet;
@@ -35874,9 +36259,9 @@ var require_common = __commonJS({
   }
 });
 
-// node_modules/ip-address/dist/v4/constants.js
+// tools/node_modules/ip-address/dist/v4/constants.js
 var require_constants3 = __commonJS({
-  "node_modules/ip-address/dist/v4/constants.js"(exports2) {
+  "tools/node_modules/ip-address/dist/v4/constants.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.SPECIAL_PURPOSE = exports2.RE_SUBNET_STRING = exports2.RE_ADDRESS = exports2.GROUPS = exports2.BITS = void 0;
@@ -35915,9 +36300,9 @@ var require_constants3 = __commonJS({
   }
 });
 
-// node_modules/ip-address/dist/ipv4.js
+// tools/node_modules/ip-address/dist/ipv4.js
 var require_ipv4 = __commonJS({
-  "node_modules/ip-address/dist/ipv4.js"(exports2) {
+  "tools/node_modules/ip-address/dist/ipv4.js"(exports2) {
     "use strict";
     var __createBinding = exports2 && exports2.__createBinding || (Object.create ? (function(o, m, k, k2) {
       if (k2 === void 0) k2 = k;
@@ -36480,9 +36865,9 @@ var require_ipv4 = __commonJS({
   }
 });
 
-// node_modules/ip-address/dist/v6/constants.js
+// tools/node_modules/ip-address/dist/v6/constants.js
 var require_constants4 = __commonJS({
-  "node_modules/ip-address/dist/v6/constants.js"(exports2) {
+  "tools/node_modules/ip-address/dist/v6/constants.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.SPECIAL_PURPOSE = exports2.RE_URL_WITH_PORT = exports2.RE_URL = exports2.RE_ZONE_STRING = exports2.RE_SUBNET_STRING = exports2.RE_BAD_ADDRESS = exports2.RE_BAD_CHARACTERS = exports2.TYPES = exports2.SCOPES = exports2.GROUPS = exports2.BITS = void 0;
@@ -36570,9 +36955,9 @@ var require_constants4 = __commonJS({
   }
 });
 
-// node_modules/ip-address/dist/v6/helpers.js
+// tools/node_modules/ip-address/dist/v6/helpers.js
 var require_helpers = __commonJS({
-  "node_modules/ip-address/dist/v6/helpers.js"(exports2) {
+  "tools/node_modules/ip-address/dist/v6/helpers.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.escapeHtml = escapeHtml;
@@ -36609,9 +36994,9 @@ var require_helpers = __commonJS({
   }
 });
 
-// node_modules/ip-address/dist/v6/regular-expressions.js
+// tools/node_modules/ip-address/dist/v6/regular-expressions.js
 var require_regular_expressions = __commonJS({
-  "node_modules/ip-address/dist/v6/regular-expressions.js"(exports2) {
+  "tools/node_modules/ip-address/dist/v6/regular-expressions.js"(exports2) {
     "use strict";
     var __createBinding = exports2 && exports2.__createBinding || (Object.create ? (function(o, m, k, k2) {
       if (k2 === void 0) k2 = k;
@@ -36701,9 +37086,9 @@ var require_regular_expressions = __commonJS({
   }
 });
 
-// node_modules/ip-address/dist/ipv6.js
+// tools/node_modules/ip-address/dist/ipv6.js
 var require_ipv6 = __commonJS({
-  "node_modules/ip-address/dist/ipv6.js"(exports2) {
+  "tools/node_modules/ip-address/dist/ipv6.js"(exports2) {
     "use strict";
     var __createBinding = exports2 && exports2.__createBinding || (Object.create ? (function(o, m, k, k2) {
       if (k2 === void 0) k2 = k;
@@ -38034,9 +38419,9 @@ var require_ipv6 = __commonJS({
   }
 });
 
-// node_modules/ip-address/dist/ip-address.js
+// tools/node_modules/ip-address/dist/ip-address.js
 var require_ip_address = __commonJS({
-  "node_modules/ip-address/dist/ip-address.js"(exports2) {
+  "tools/node_modules/ip-address/dist/ip-address.js"(exports2) {
     "use strict";
     var __createBinding = exports2 && exports2.__createBinding || (Object.create ? (function(o, m, k, k2) {
       if (k2 === void 0) k2 = k;
@@ -38084,9 +38469,9 @@ var require_ip_address = __commonJS({
   }
 });
 
-// node_modules/socks/build/common/helpers.js
+// tools/node_modules/socks/build/common/helpers.js
 var require_helpers2 = __commonJS({
-  "node_modules/socks/build/common/helpers.js"(exports2) {
+  "tools/node_modules/socks/build/common/helpers.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.ipToBuffer = exports2.int32ToIpv4 = exports2.ipv4ToInt32 = exports2.validateSocksClientChainOptions = exports2.validateSocksClientOptions = void 0;
@@ -38191,9 +38576,9 @@ var require_helpers2 = __commonJS({
   }
 });
 
-// node_modules/socks/build/common/receivebuffer.js
+// tools/node_modules/socks/build/common/receivebuffer.js
 var require_receivebuffer = __commonJS({
-  "node_modules/socks/build/common/receivebuffer.js"(exports2) {
+  "tools/node_modules/socks/build/common/receivebuffer.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.ReceiveBuffer = void 0;
@@ -38239,9 +38624,9 @@ var require_receivebuffer = __commonJS({
   }
 });
 
-// node_modules/socks/build/client/socksclient.js
+// tools/node_modules/socks/build/client/socksclient.js
 var require_socksclient = __commonJS({
-  "node_modules/socks/build/client/socksclient.js"(exports2) {
+  "tools/node_modules/socks/build/client/socksclient.js"(exports2) {
     "use strict";
     var __awaiter = exports2 && exports2.__awaiter || function(thisArg, _arguments, P, generator) {
       function adopt(value) {
@@ -38918,9 +39303,9 @@ var require_socksclient = __commonJS({
   }
 });
 
-// node_modules/socks/build/index.js
+// tools/node_modules/socks/build/index.js
 var require_build = __commonJS({
-  "node_modules/socks/build/index.js"(exports2) {
+  "tools/node_modules/socks/build/index.js"(exports2) {
     "use strict";
     var __createBinding = exports2 && exports2.__createBinding || (Object.create ? (function(o, m, k, k2) {
       if (k2 === void 0) k2 = k;
@@ -38943,9 +39328,9 @@ var require_build = __commonJS({
   }
 });
 
-// node_modules/imapflow/lib/connection-deadline.js
+// tools/node_modules/imapflow/lib/connection-deadline.js
 var require_connection_deadline = __commonJS({
-  "node_modules/imapflow/lib/connection-deadline.js"(exports2, module2) {
+  "tools/node_modules/imapflow/lib/connection-deadline.js"(exports2, module2) {
     "use strict";
     var CONNECT_TIMEOUT = 90 * 1e3;
     var ConnectionDeadline = class {
@@ -39026,9 +39411,9 @@ var require_connection_deadline = __commonJS({
   }
 });
 
-// node_modules/imapflow/lib/proxy-connection.js
+// tools/node_modules/imapflow/lib/proxy-connection.js
 var require_proxy_connection = __commonJS({
-  "node_modules/imapflow/lib/proxy-connection.js"(exports2, module2) {
+  "tools/node_modules/imapflow/lib/proxy-connection.js"(exports2, module2) {
     "use strict";
     var { SocksClient } = require_build();
     var dns = require("dns").promises;
@@ -39311,9 +39696,9 @@ var require_proxy_connection = __commonJS({
   }
 });
 
-// node_modules/imapflow/lib/charsets.js
+// tools/node_modules/imapflow/lib/charsets.js
 var require_charsets2 = __commonJS({
-  "node_modules/imapflow/lib/charsets.js"(exports2, module2) {
+  "tools/node_modules/imapflow/lib/charsets.js"(exports2, module2) {
     "use strict";
     var CHARACTER_SETS = [
       "US-ASCII",
@@ -39590,9 +39975,9 @@ var require_charsets2 = __commonJS({
   }
 });
 
-// node_modules/imapflow/lib/jp-decoder.js
+// tools/node_modules/imapflow/lib/jp-decoder.js
 var require_jp_decoder = __commonJS({
-  "node_modules/imapflow/lib/jp-decoder.js"(exports2, module2) {
+  "tools/node_modules/imapflow/lib/jp-decoder.js"(exports2, module2) {
     "use strict";
     var { Transform } = require("stream");
     var encodingJapanese = require_src();
@@ -39656,9 +40041,9 @@ var require_jp_decoder = __commonJS({
   }
 });
 
-// node_modules/imapflow/lib/tools.js
+// tools/node_modules/imapflow/lib/tools.js
 var require_tools2 = __commonJS({
-  "node_modules/imapflow/lib/tools.js"(exports2, module2) {
+  "tools/node_modules/imapflow/lib/tools.js"(exports2, module2) {
     "use strict";
     var libmime = require_libmime();
     var { resolveCharset } = require_charsets2();
@@ -40863,9 +41248,9 @@ var require_tools2 = __commonJS({
   }
 });
 
-// node_modules/imapflow/lib/commands/id.js
+// tools/node_modules/imapflow/lib/commands/id.js
 var require_id = __commonJS({
-  "node_modules/imapflow/lib/commands/id.js"(exports2, module2) {
+  "tools/node_modules/imapflow/lib/commands/id.js"(exports2, module2) {
     "use strict";
     var { formatDateTime } = require_tools2();
     module2.exports = async (connection, clientInfo) => {
@@ -40915,9 +41300,9 @@ var require_id = __commonJS({
   }
 });
 
-// node_modules/imapflow/lib/commands/capability.js
+// tools/node_modules/imapflow/lib/commands/capability.js
 var require_capability = __commonJS({
-  "node_modules/imapflow/lib/commands/capability.js"(exports2, module2) {
+  "tools/node_modules/imapflow/lib/commands/capability.js"(exports2, module2) {
     "use strict";
     module2.exports = async (connection) => {
       if (connection.capabilities.size && !connection.expectCapabilityUpdate) {
@@ -40936,9 +41321,9 @@ var require_capability = __commonJS({
   }
 });
 
-// node_modules/imapflow/lib/commands/namespace.js
+// tools/node_modules/imapflow/lib/commands/namespace.js
 var require_namespace = __commonJS({
-  "node_modules/imapflow/lib/commands/namespace.js"(exports2, module2) {
+  "tools/node_modules/imapflow/lib/commands/namespace.js"(exports2, module2) {
     "use strict";
     var { hasCapability, getStringList } = require_tools2();
     module2.exports = async (connection) => {
@@ -41044,9 +41429,9 @@ var require_namespace = __commonJS({
   }
 });
 
-// node_modules/imapflow/lib/commands/login.js
+// tools/node_modules/imapflow/lib/commands/login.js
 var require_login = __commonJS({
-  "node_modules/imapflow/lib/commands/login.js"(exports2, module2) {
+  "tools/node_modules/imapflow/lib/commands/login.js"(exports2, module2) {
     "use strict";
     var { getStatusCode, getErrorText } = require_tools2();
     module2.exports = async (connection, username, password) => {
@@ -41075,9 +41460,9 @@ var require_login = __commonJS({
   }
 });
 
-// node_modules/imapflow/lib/commands/logout.js
+// tools/node_modules/imapflow/lib/commands/logout.js
 var require_logout = __commonJS({
-  "node_modules/imapflow/lib/commands/logout.js"(exports2, module2) {
+  "tools/node_modules/imapflow/lib/commands/logout.js"(exports2, module2) {
     "use strict";
     module2.exports = async (connection) => {
       if (connection.state === connection.states.LOGOUT) {
@@ -41109,9 +41494,9 @@ var require_logout = __commonJS({
   }
 });
 
-// node_modules/imapflow/lib/commands/starttls.js
+// tools/node_modules/imapflow/lib/commands/starttls.js
 var require_starttls = __commonJS({
-  "node_modules/imapflow/lib/commands/starttls.js"(exports2, module2) {
+  "tools/node_modules/imapflow/lib/commands/starttls.js"(exports2, module2) {
     "use strict";
     module2.exports = async (connection) => {
       if (!connection.capabilities.has("STARTTLS") || connection.secureConnection) {
@@ -41131,9 +41516,9 @@ var require_starttls = __commonJS({
   }
 });
 
-// node_modules/imapflow/lib/commands/status-fields.js
+// tools/node_modules/imapflow/lib/commands/status-fields.js
 var require_status_fields = __commonJS({
-  "node_modules/imapflow/lib/commands/status-fields.js"(exports2, module2) {
+  "tools/node_modules/imapflow/lib/commands/status-fields.js"(exports2, module2) {
     "use strict";
     var { parseBigIntValue, parseUintValue, MAX_UINT32_DIGITS } = require_tools2();
     var uint32 = (value) => parseUintValue(value, MAX_UINT32_DIGITS);
@@ -41176,9 +41561,9 @@ var require_status_fields = __commonJS({
   }
 });
 
-// node_modules/imapflow/lib/special-use.js
+// tools/node_modules/imapflow/lib/special-use.js
 var require_special_use = __commonJS({
-  "node_modules/imapflow/lib/special-use.js"(exports2, module2) {
+  "tools/node_modules/imapflow/lib/special-use.js"(exports2, module2) {
     "use strict";
     var GENERIC_TOKENS = new Set(
       [
@@ -42055,9 +42440,9 @@ var require_special_use = __commonJS({
   }
 });
 
-// node_modules/imapflow/lib/commands/list.js
+// tools/node_modules/imapflow/lib/commands/list.js
 var require_list = __commonJS({
-  "node_modules/imapflow/lib/commands/list.js"(exports2, module2) {
+  "tools/node_modules/imapflow/lib/commands/list.js"(exports2, module2) {
     "use strict";
     var {
       decodePath,
@@ -42402,9 +42787,9 @@ var require_list = __commonJS({
   }
 });
 
-// node_modules/imapflow/lib/commands/enable.js
+// tools/node_modules/imapflow/lib/commands/enable.js
 var require_enable = __commonJS({
-  "node_modules/imapflow/lib/commands/enable.js"(exports2, module2) {
+  "tools/node_modules/imapflow/lib/commands/enable.js"(exports2, module2) {
     "use strict";
     var { hasCapability } = require_tools2();
     module2.exports = async (connection, extensionList) => {
@@ -42451,9 +42836,9 @@ var require_enable = __commonJS({
   }
 });
 
-// node_modules/imapflow/lib/commands/select.js
+// tools/node_modules/imapflow/lib/commands/select.js
 var require_select = __commonJS({
-  "node_modules/imapflow/lib/commands/select.js"(exports2, module2) {
+  "tools/node_modules/imapflow/lib/commands/select.js"(exports2, module2) {
     "use strict";
     var { encodePath, normalizePath, enhanceCommandError, parseBigIntValue, parseUintValue, getStringList, MAX_UINT32_DIGITS } = require_tools2();
     var VALUED_RESPONSE_CODES = Object.assign(/* @__PURE__ */ Object.create(null), {
@@ -42636,9 +43021,9 @@ var require_select = __commonJS({
   }
 });
 
-// node_modules/imapflow/lib/commands/fetch.js
+// tools/node_modules/imapflow/lib/commands/fetch.js
 var require_fetch = __commonJS({
-  "node_modules/imapflow/lib/commands/fetch.js"(exports2, module2) {
+  "tools/node_modules/imapflow/lib/commands/fetch.js"(exports2, module2) {
     "use strict";
     var { formatMessageResponse, isRev2Active } = require_tools2();
     module2.exports = async (connection, range, query, options) => {
@@ -42823,9 +43208,9 @@ var require_fetch = __commonJS({
   }
 });
 
-// node_modules/imapflow/lib/commands/create.js
+// tools/node_modules/imapflow/lib/commands/create.js
 var require_create = __commonJS({
-  "node_modules/imapflow/lib/commands/create.js"(exports2, module2) {
+  "tools/node_modules/imapflow/lib/commands/create.js"(exports2, module2) {
     "use strict";
     var { encodePath, normalizePath, getStatusCode, enhanceCommandError } = require_tools2();
     module2.exports = async (connection, path) => {
@@ -42882,9 +43267,9 @@ var require_create = __commonJS({
   }
 });
 
-// node_modules/imapflow/lib/commands/delete.js
+// tools/node_modules/imapflow/lib/commands/delete.js
 var require_delete = __commonJS({
-  "node_modules/imapflow/lib/commands/delete.js"(exports2, module2) {
+  "tools/node_modules/imapflow/lib/commands/delete.js"(exports2, module2) {
     "use strict";
     var { encodePath, normalizePath, enhanceCommandError } = require_tools2();
     module2.exports = async (connection, path) => {
@@ -42912,9 +43297,9 @@ var require_delete = __commonJS({
   }
 });
 
-// node_modules/imapflow/lib/commands/rename.js
+// tools/node_modules/imapflow/lib/commands/rename.js
 var require_rename = __commonJS({
-  "node_modules/imapflow/lib/commands/rename.js"(exports2, module2) {
+  "tools/node_modules/imapflow/lib/commands/rename.js"(exports2, module2) {
     "use strict";
     var { encodePath, normalizePath, enhanceCommandError } = require_tools2();
     module2.exports = async (connection, path, newPath) => {
@@ -42947,9 +43332,9 @@ var require_rename = __commonJS({
   }
 });
 
-// node_modules/imapflow/lib/commands/close.js
+// tools/node_modules/imapflow/lib/commands/close.js
 var require_close = __commonJS({
-  "node_modules/imapflow/lib/commands/close.js"(exports2, module2) {
+  "tools/node_modules/imapflow/lib/commands/close.js"(exports2, module2) {
     "use strict";
     module2.exports = async (connection) => {
       if (connection.state !== connection.states.SELECTED) {
@@ -42975,9 +43360,9 @@ var require_close = __commonJS({
   }
 });
 
-// node_modules/imapflow/lib/commands/subscribe.js
+// tools/node_modules/imapflow/lib/commands/subscribe.js
 var require_subscribe = __commonJS({
-  "node_modules/imapflow/lib/commands/subscribe.js"(exports2, module2) {
+  "tools/node_modules/imapflow/lib/commands/subscribe.js"(exports2, module2) {
     "use strict";
     var { encodePath, normalizePath, enhanceCommandError } = require_tools2();
     module2.exports = async (connection, path) => {
@@ -42999,9 +43384,9 @@ var require_subscribe = __commonJS({
   }
 });
 
-// node_modules/imapflow/lib/commands/unsubscribe.js
+// tools/node_modules/imapflow/lib/commands/unsubscribe.js
 var require_unsubscribe = __commonJS({
-  "node_modules/imapflow/lib/commands/unsubscribe.js"(exports2, module2) {
+  "tools/node_modules/imapflow/lib/commands/unsubscribe.js"(exports2, module2) {
     "use strict";
     var { encodePath, normalizePath, enhanceCommandError } = require_tools2();
     module2.exports = async (connection, path) => {
@@ -43023,9 +43408,9 @@ var require_unsubscribe = __commonJS({
   }
 });
 
-// node_modules/imapflow/lib/commands/store.js
+// tools/node_modules/imapflow/lib/commands/store.js
 var require_store2 = __commonJS({
-  "node_modules/imapflow/lib/commands/store.js"(exports2, module2) {
+  "tools/node_modules/imapflow/lib/commands/store.js"(exports2, module2) {
     "use strict";
     var { formatFlag, canUseFlag, enhanceCommandError } = require_tools2();
     module2.exports = async (connection, range, flags, options) => {
@@ -43087,9 +43472,9 @@ var require_store2 = __commonJS({
   }
 });
 
-// node_modules/imapflow/lib/search-compiler.js
+// tools/node_modules/imapflow/lib/search-compiler.js
 var require_search_compiler = __commonJS({
-  "node_modules/imapflow/lib/search-compiler.js"(exports2, module2) {
+  "tools/node_modules/imapflow/lib/search-compiler.js"(exports2, module2) {
     "use strict";
     var { formatDate, formatFlag, canUseFlag, toValidDate, isRev2Active } = require_tools2();
     var setBoolOpt = (attributes, term, value) => {
@@ -43421,9 +43806,9 @@ var require_search_compiler = __commonJS({
   }
 });
 
-// node_modules/imapflow/lib/commands/search.js
+// tools/node_modules/imapflow/lib/commands/search.js
 var require_search = __commonJS({
-  "node_modules/imapflow/lib/commands/search.js"(exports2, module2) {
+  "tools/node_modules/imapflow/lib/commands/search.js"(exports2, module2) {
     "use strict";
     var {
       enhanceCommandError,
@@ -43648,9 +44033,9 @@ var require_search = __commonJS({
   }
 });
 
-// node_modules/imapflow/lib/commands/noop.js
+// tools/node_modules/imapflow/lib/commands/noop.js
 var require_noop = __commonJS({
-  "node_modules/imapflow/lib/commands/noop.js"(exports2, module2) {
+  "tools/node_modules/imapflow/lib/commands/noop.js"(exports2, module2) {
     "use strict";
     module2.exports = async (connection) => {
       try {
@@ -43665,9 +44050,9 @@ var require_noop = __commonJS({
   }
 });
 
-// node_modules/imapflow/lib/commands/expunge.js
+// tools/node_modules/imapflow/lib/commands/expunge.js
 var require_expunge = __commonJS({
-  "node_modules/imapflow/lib/commands/expunge.js"(exports2, module2) {
+  "tools/node_modules/imapflow/lib/commands/expunge.js"(exports2, module2) {
     "use strict";
     var { enhanceCommandError, hasCapability, parseBigIntValue } = require_tools2();
     module2.exports = async (connection, range, options) => {
@@ -43701,9 +44086,9 @@ var require_expunge = __commonJS({
   }
 });
 
-// node_modules/imapflow/lib/commands/append.js
+// tools/node_modules/imapflow/lib/commands/append.js
 var require_append = __commonJS({
-  "node_modules/imapflow/lib/commands/append.js"(exports2, module2) {
+  "tools/node_modules/imapflow/lib/commands/append.js"(exports2, module2) {
     "use strict";
     var {
       formatFlag,
@@ -43818,9 +44203,9 @@ var require_append = __commonJS({
   }
 });
 
-// node_modules/imapflow/lib/commands/status.js
+// tools/node_modules/imapflow/lib/commands/status.js
 var require_status = __commonJS({
-  "node_modules/imapflow/lib/commands/status.js"(exports2, module2) {
+  "tools/node_modules/imapflow/lib/commands/status.js"(exports2, module2) {
     "use strict";
     var { encodePath, normalizePath, buildStatusQueryAttributes, isRev2Active } = require_tools2();
     var { parseStatusList } = require_status_fields();
@@ -43896,9 +44281,9 @@ var require_status = __commonJS({
   }
 });
 
-// node_modules/imapflow/lib/commands/copyuid-parser.js
+// tools/node_modules/imapflow/lib/commands/copyuid-parser.js
 var require_copyuid_parser = __commonJS({
-  "node_modules/imapflow/lib/commands/copyuid-parser.js"(exports2, module2) {
+  "tools/node_modules/imapflow/lib/commands/copyuid-parser.js"(exports2, module2) {
     "use strict";
     var { expandRange, parseBigIntValue } = require_tools2();
     function parseCopyUid(response, map) {
@@ -43921,9 +44306,9 @@ var require_copyuid_parser = __commonJS({
   }
 });
 
-// node_modules/imapflow/lib/commands/copy.js
+// tools/node_modules/imapflow/lib/commands/copy.js
 var require_copy = __commonJS({
-  "node_modules/imapflow/lib/commands/copy.js"(exports2, module2) {
+  "tools/node_modules/imapflow/lib/commands/copy.js"(exports2, module2) {
     "use strict";
     var { normalizePath, encodePath, enhanceCommandError } = require_tools2();
     var { parseCopyUid } = require_copyuid_parser();
@@ -43953,9 +44338,9 @@ var require_copy = __commonJS({
   }
 });
 
-// node_modules/imapflow/lib/commands/move.js
+// tools/node_modules/imapflow/lib/commands/move.js
 var require_move = __commonJS({
-  "node_modules/imapflow/lib/commands/move.js"(exports2, module2) {
+  "tools/node_modules/imapflow/lib/commands/move.js"(exports2, module2) {
     "use strict";
     var { normalizePath, encodePath, enhanceCommandError, hasCapability } = require_tools2();
     var { parseCopyUid } = require_copyuid_parser();
@@ -43996,9 +44381,9 @@ var require_move = __commonJS({
   }
 });
 
-// node_modules/imapflow/lib/commands/compress.js
+// tools/node_modules/imapflow/lib/commands/compress.js
 var require_compress = __commonJS({
-  "node_modules/imapflow/lib/commands/compress.js"(exports2, module2) {
+  "tools/node_modules/imapflow/lib/commands/compress.js"(exports2, module2) {
     "use strict";
     module2.exports = async (connection) => {
       if (!connection.capabilities.has("COMPRESS=DEFLATE") || connection._inflate) {
@@ -44025,9 +44410,9 @@ var require_compress = __commonJS({
   }
 });
 
-// node_modules/imapflow/lib/commands/quota.js
+// tools/node_modules/imapflow/lib/commands/quota.js
 var require_quota = __commonJS({
-  "node_modules/imapflow/lib/commands/quota.js"(exports2, module2) {
+  "tools/node_modules/imapflow/lib/commands/quota.js"(exports2, module2) {
     "use strict";
     var { encodePath, normalizePath, enhanceCommandError, parseUintValue, isUnsafeKey } = require_tools2();
     module2.exports = async (connection, path) => {
@@ -44116,9 +44501,9 @@ var require_quota = __commonJS({
   }
 });
 
-// node_modules/imapflow/lib/commands/idle.js
+// tools/node_modules/imapflow/lib/commands/idle.js
 var require_idle = __commonJS({
-  "node_modules/imapflow/lib/commands/idle.js"(exports2, module2) {
+  "tools/node_modules/imapflow/lib/commands/idle.js"(exports2, module2) {
     "use strict";
     var { guardedPromise, hasCapability, logConnectionError, restampConnectionError, unrefTimer } = require_tools2();
     var NOOP_INTERVAL = 2 * 60 * 1e3;
@@ -44362,9 +44747,9 @@ var require_idle = __commonJS({
   }
 });
 
-// node_modules/imapflow/lib/commands/authenticate.js
+// tools/node_modules/imapflow/lib/commands/authenticate.js
 var require_authenticate = __commonJS({
-  "node_modules/imapflow/lib/commands/authenticate.js"(exports2, module2) {
+  "tools/node_modules/imapflow/lib/commands/authenticate.js"(exports2, module2) {
     "use strict";
     var { getStatusCode, getErrorText } = require_tools2();
     async function handleAuthError(err, errorResponse) {
@@ -44508,9 +44893,9 @@ var require_authenticate = __commonJS({
   }
 });
 
-// node_modules/imapflow/lib/imap-commands.js
+// tools/node_modules/imapflow/lib/imap-commands.js
 var require_imap_commands = __commonJS({
-  "node_modules/imapflow/lib/imap-commands.js"(exports2, module2) {
+  "tools/node_modules/imapflow/lib/imap-commands.js"(exports2, module2) {
     "use strict";
     module2.exports = /* @__PURE__ */ new Map([
       ["ID", require_id()],
@@ -44545,9 +44930,9 @@ var require_imap_commands = __commonJS({
   }
 });
 
-// node_modules/imapflow/lib/imap-flow.js
+// tools/node_modules/imapflow/lib/imap-flow.js
 var require_imap_flow = __commonJS({
-  "node_modules/imapflow/lib/imap-flow.js"(exports2, module2) {
+  "tools/node_modules/imapflow/lib/imap-flow.js"(exports2, module2) {
     "use strict";
     var tls = require("tls");
     var net = require("net");
@@ -48041,9 +48426,9 @@ var require_imap_flow = __commonJS({
   }
 });
 
-// node_modules/mailparser/node_modules/encoding-japanese/src/util.js
+// tools/node_modules/mailparser/node_modules/encoding-japanese/src/util.js
 var require_util3 = __commonJS({
-  "node_modules/mailparser/node_modules/encoding-japanese/src/util.js"(exports2) {
+  "tools/node_modules/mailparser/node_modules/encoding-japanese/src/util.js"(exports2) {
     var config = require_config2();
     var fromCharCode = String.fromCharCode;
     var slice = Array.prototype.slice;
@@ -48496,9 +48881,9 @@ var require_util3 = __commonJS({
   }
 });
 
-// node_modules/mailparser/node_modules/encoding-japanese/src/utf8-to-jis-table.js
+// tools/node_modules/mailparser/node_modules/encoding-japanese/src/utf8-to-jis-table.js
 var require_utf8_to_jis_table2 = __commonJS({
-  "node_modules/mailparser/node_modules/encoding-japanese/src/utf8-to-jis-table.js"(exports2, module2) {
+  "tools/node_modules/mailparser/node_modules/encoding-japanese/src/utf8-to-jis-table.js"(exports2, module2) {
     module2.exports = {
       15711649: 33,
       15711650: 34,
@@ -55899,9 +56284,9 @@ var require_utf8_to_jis_table2 = __commonJS({
   }
 });
 
-// node_modules/mailparser/node_modules/encoding-japanese/src/utf8-to-jis-alias-table.js
+// tools/node_modules/mailparser/node_modules/encoding-japanese/src/utf8-to-jis-alias-table.js
 var require_utf8_to_jis_alias_table = __commonJS({
-  "node_modules/mailparser/node_modules/encoding-japanese/src/utf8-to-jis-alias-table.js"(exports2, module2) {
+  "tools/node_modules/mailparser/node_modules/encoding-japanese/src/utf8-to-jis-alias-table.js"(exports2, module2) {
     module2.exports = {
       14846098: 8541,
       // − U+2212 MINUS SIGN same cell as － U+FF0D (0xEFBC8D) -> SJIS 0x817C
@@ -55915,9 +56300,9 @@ var require_utf8_to_jis_alias_table = __commonJS({
   }
 });
 
-// node_modules/mailparser/node_modules/encoding-japanese/src/utf8-to-jisx0212-table.js
+// tools/node_modules/mailparser/node_modules/encoding-japanese/src/utf8-to-jisx0212-table.js
 var require_utf8_to_jisx0212_table2 = __commonJS({
-  "node_modules/mailparser/node_modules/encoding-japanese/src/utf8-to-jisx0212-table.js"(exports2, module2) {
+  "tools/node_modules/mailparser/node_modules/encoding-japanese/src/utf8-to-jisx0212-table.js"(exports2, module2) {
     module2.exports = {
       52120: 8751,
       52103: 8752,
@@ -61990,25 +62375,25 @@ var require_utf8_to_jisx0212_table2 = __commonJS({
   }
 });
 
-// node_modules/mailparser/node_modules/encoding-japanese/src/jis-to-utf8-table.js
+// tools/node_modules/mailparser/node_modules/encoding-japanese/src/jis-to-utf8-table.js
 var require_jis_to_utf8_table2 = __commonJS({
-  "node_modules/mailparser/node_modules/encoding-japanese/src/jis-to-utf8-table.js"(exports2, module2) {
+  "tools/node_modules/mailparser/node_modules/encoding-japanese/src/jis-to-utf8-table.js"(exports2, module2) {
     var JIS_TO_UTF8_TABLE = null;
     module2.exports = JIS_TO_UTF8_TABLE;
   }
 });
 
-// node_modules/mailparser/node_modules/encoding-japanese/src/jisx0212-to-utf8-table.js
+// tools/node_modules/mailparser/node_modules/encoding-japanese/src/jisx0212-to-utf8-table.js
 var require_jisx0212_to_utf8_table2 = __commonJS({
-  "node_modules/mailparser/node_modules/encoding-japanese/src/jisx0212-to-utf8-table.js"(exports2, module2) {
+  "tools/node_modules/mailparser/node_modules/encoding-japanese/src/jisx0212-to-utf8-table.js"(exports2, module2) {
     var JISX0212_TO_UTF8_TABLE = null;
     module2.exports = JISX0212_TO_UTF8_TABLE;
   }
 });
 
-// node_modules/mailparser/node_modules/encoding-japanese/src/encoding-table.js
+// tools/node_modules/mailparser/node_modules/encoding-japanese/src/encoding-table.js
 var require_encoding_table2 = __commonJS({
-  "node_modules/mailparser/node_modules/encoding-japanese/src/encoding-table.js"(exports2) {
+  "tools/node_modules/mailparser/node_modules/encoding-japanese/src/encoding-table.js"(exports2) {
     exports2.UTF8_TO_JIS_TABLE = require_utf8_to_jis_table2();
     exports2.UTF8_TO_JIS_ALIAS_TABLE = require_utf8_to_jis_alias_table();
     exports2.UTF8_TO_JISX0212_TABLE = require_utf8_to_jisx0212_table2();
@@ -62017,9 +62402,9 @@ var require_encoding_table2 = __commonJS({
   }
 });
 
-// node_modules/mailparser/node_modules/encoding-japanese/src/config.js
+// tools/node_modules/mailparser/node_modules/encoding-japanese/src/config.js
 var require_config2 = __commonJS({
-  "node_modules/mailparser/node_modules/encoding-japanese/src/config.js"(exports2) {
+  "tools/node_modules/mailparser/node_modules/encoding-japanese/src/config.js"(exports2) {
     var util = require_util3();
     var EncodingTable = require_encoding_table2();
     exports2.FALLBACK_CHARACTER = 63;
@@ -62139,9 +62524,9 @@ var require_config2 = __commonJS({
   }
 });
 
-// node_modules/mailparser/node_modules/encoding-japanese/src/encoding-detect.js
+// tools/node_modules/mailparser/node_modules/encoding-japanese/src/encoding-detect.js
 var require_encoding_detect2 = __commonJS({
-  "node_modules/mailparser/node_modules/encoding-japanese/src/encoding-detect.js"(exports2) {
+  "tools/node_modules/mailparser/node_modules/encoding-japanese/src/encoding-detect.js"(exports2) {
     function isBINARY(data) {
       var i = 0;
       var len = data && data.length;
@@ -62508,9 +62893,9 @@ var require_encoding_detect2 = __commonJS({
   }
 });
 
-// node_modules/mailparser/node_modules/encoding-japanese/src/sjis-ext.js
+// tools/node_modules/mailparser/node_modules/encoding-japanese/src/sjis-ext.js
 var require_sjis_ext2 = __commonJS({
-  "node_modules/mailparser/node_modules/encoding-japanese/src/sjis-ext.js"(exports2) {
+  "tools/node_modules/mailparser/node_modules/encoding-japanese/src/sjis-ext.js"(exports2) {
     var CP932_IBM_EXT_SYMBOL_MAP = [
       // 0xFA40 - 0xFA49 [ⅰ-ⅹ]
       61167,
@@ -62610,9 +62995,9 @@ var require_sjis_ext2 = __commonJS({
   }
 });
 
-// node_modules/mailparser/node_modules/encoding-japanese/src/encoding-convert.js
+// tools/node_modules/mailparser/node_modules/encoding-japanese/src/encoding-convert.js
 var require_encoding_convert2 = __commonJS({
-  "node_modules/mailparser/node_modules/encoding-japanese/src/encoding-convert.js"(exports2) {
+  "tools/node_modules/mailparser/node_modules/encoding-japanese/src/encoding-convert.js"(exports2) {
     var config = require_config2();
     var util = require_util3();
     var EncodingDetect = require_encoding_detect2();
@@ -63895,9 +64280,9 @@ var require_encoding_convert2 = __commonJS({
   }
 });
 
-// node_modules/mailparser/node_modules/encoding-japanese/src/kana-case-table.js
+// tools/node_modules/mailparser/node_modules/encoding-japanese/src/kana-case-table.js
 var require_kana_case_table2 = __commonJS({
-  "node_modules/mailparser/node_modules/encoding-japanese/src/kana-case-table.js"(exports2) {
+  "tools/node_modules/mailparser/node_modules/encoding-japanese/src/kana-case-table.js"(exports2) {
     exports2.HANKANA_TABLE = {
       12289: 65380,
       12290: 65377,
@@ -64037,9 +64422,9 @@ var require_kana_case_table2 = __commonJS({
   }
 });
 
-// node_modules/mailparser/node_modules/encoding-japanese/package.json
+// tools/node_modules/mailparser/node_modules/encoding-japanese/package.json
 var require_package4 = __commonJS({
-  "node_modules/mailparser/node_modules/encoding-japanese/package.json"(exports2, module2) {
+  "tools/node_modules/mailparser/node_modules/encoding-japanese/package.json"(exports2, module2) {
     module2.exports = {
       name: "encoding-japanese",
       version: "2.4.0",
@@ -64119,9 +64504,9 @@ var require_package4 = __commonJS({
   }
 });
 
-// node_modules/mailparser/node_modules/encoding-japanese/src/index.js
+// tools/node_modules/mailparser/node_modules/encoding-japanese/src/index.js
 var require_src2 = __commonJS({
-  "node_modules/mailparser/node_modules/encoding-japanese/src/index.js"(exports2, module2) {
+  "tools/node_modules/mailparser/node_modules/encoding-japanese/src/index.js"(exports2, module2) {
     var config = require_config2();
     var util = require_util3();
     var EncodingDetect = require_encoding_detect2();
@@ -64635,9 +65020,9 @@ var require_src2 = __commonJS({
   }
 });
 
-// node_modules/mailparser/node_modules/libmime/lib/charsets.js
+// tools/node_modules/mailparser/node_modules/libmime/lib/charsets.js
 var require_charsets3 = __commonJS({
-  "node_modules/mailparser/node_modules/libmime/lib/charsets.js"(exports2, module2) {
+  "tools/node_modules/mailparser/node_modules/libmime/lib/charsets.js"(exports2, module2) {
     "use strict";
     module2.exports = {
       "866": "IBM866",
@@ -64850,9 +65235,9 @@ var require_charsets3 = __commonJS({
   }
 });
 
-// node_modules/mailparser/node_modules/libmime/lib/charset.js
+// tools/node_modules/mailparser/node_modules/libmime/lib/charset.js
 var require_charset2 = __commonJS({
-  "node_modules/mailparser/node_modules/libmime/lib/charset.js"(exports2, module2) {
+  "tools/node_modules/mailparser/node_modules/libmime/lib/charset.js"(exports2, module2) {
     "use strict";
     var { Buffer: Buffer2 } = require("node:buffer");
     var iconv = require_lib();
@@ -64947,9 +65332,9 @@ var require_charset2 = __commonJS({
   }
 });
 
-// node_modules/mailparser/node_modules/libmime/lib/mimetypes.js
+// tools/node_modules/mailparser/node_modules/libmime/lib/mimetypes.js
 var require_mimetypes2 = __commonJS({
-  "node_modules/mailparser/node_modules/libmime/lib/mimetypes.js"(exports2, module2) {
+  "tools/node_modules/mailparser/node_modules/libmime/lib/mimetypes.js"(exports2, module2) {
     "use strict";
     module2.exports = {
       list: {
@@ -66998,9 +67383,9 @@ var require_mimetypes2 = __commonJS({
   }
 });
 
-// node_modules/mailparser/node_modules/libmime/lib/libmime.js
+// tools/node_modules/mailparser/node_modules/libmime/lib/libmime.js
 var require_libmime2 = __commonJS({
-  "node_modules/mailparser/node_modules/libmime/lib/libmime.js"(exports2, module2) {
+  "tools/node_modules/mailparser/node_modules/libmime/lib/libmime.js"(exports2, module2) {
     "use strict";
     var { Buffer: Buffer2 } = require("node:buffer");
     var libcharset = require_charset2();
@@ -67745,9 +68130,9 @@ var require_libmime2 = __commonJS({
   }
 });
 
-// node_modules/mailparser/node_modules/@zone-eu/mailsplit/lib/headers.js
+// tools/node_modules/mailparser/node_modules/@zone-eu/mailsplit/lib/headers.js
 var require_headers2 = __commonJS({
-  "node_modules/mailparser/node_modules/@zone-eu/mailsplit/lib/headers.js"(exports2, module2) {
+  "tools/node_modules/mailparser/node_modules/@zone-eu/mailsplit/lib/headers.js"(exports2, module2) {
     "use strict";
     var libmime = require_libmime2();
     var Libmime = (
@@ -68104,9 +68489,9 @@ var require_headers2 = __commonJS({
   }
 });
 
-// node_modules/mailparser/node_modules/@zone-eu/mailsplit/lib/mime-node.js
+// tools/node_modules/mailparser/node_modules/@zone-eu/mailsplit/lib/mime-node.js
 var require_mime_node2 = __commonJS({
-  "node_modules/mailparser/node_modules/@zone-eu/mailsplit/lib/mime-node.js"(exports2, module2) {
+  "tools/node_modules/mailparser/node_modules/@zone-eu/mailsplit/lib/mime-node.js"(exports2, module2) {
     "use strict";
     var Headers = require_headers2();
     var libmime = require_libmime2();
@@ -68403,9 +68788,9 @@ var require_mime_node2 = __commonJS({
   }
 });
 
-// node_modules/mailparser/node_modules/@zone-eu/mailsplit/lib/message-splitter.js
+// tools/node_modules/mailparser/node_modules/@zone-eu/mailsplit/lib/message-splitter.js
 var require_message_splitter2 = __commonJS({
-  "node_modules/mailparser/node_modules/@zone-eu/mailsplit/lib/message-splitter.js"(exports2, module2) {
+  "tools/node_modules/mailparser/node_modules/@zone-eu/mailsplit/lib/message-splitter.js"(exports2, module2) {
     "use strict";
     var Transform = require("stream").Transform;
     var MimeNode = require_mime_node2();
@@ -68880,9 +69265,9 @@ var require_message_splitter2 = __commonJS({
   }
 });
 
-// node_modules/mailparser/node_modules/@zone-eu/mailsplit/lib/message-joiner.js
+// tools/node_modules/mailparser/node_modules/@zone-eu/mailsplit/lib/message-joiner.js
 var require_message_joiner2 = __commonJS({
-  "node_modules/mailparser/node_modules/@zone-eu/mailsplit/lib/message-joiner.js"(exports2, module2) {
+  "tools/node_modules/mailparser/node_modules/@zone-eu/mailsplit/lib/message-joiner.js"(exports2, module2) {
     "use strict";
     var Transform = require("stream").Transform;
     var MessageJoiner = class extends Transform {
@@ -68924,9 +69309,9 @@ var require_message_joiner2 = __commonJS({
   }
 });
 
-// node_modules/mailparser/node_modules/@zone-eu/mailsplit/lib/flowed-decoder.js
+// tools/node_modules/mailparser/node_modules/@zone-eu/mailsplit/lib/flowed-decoder.js
 var require_flowed_decoder2 = __commonJS({
-  "node_modules/mailparser/node_modules/@zone-eu/mailsplit/lib/flowed-decoder.js"(exports2, module2) {
+  "tools/node_modules/mailparser/node_modules/@zone-eu/mailsplit/lib/flowed-decoder.js"(exports2, module2) {
     "use strict";
     var Transform = require("stream").Transform;
     var libmime = require_libmime2();
@@ -68982,9 +69367,9 @@ var require_flowed_decoder2 = __commonJS({
   }
 });
 
-// node_modules/mailparser/node_modules/@zone-eu/mailsplit/lib/node-rewriter.js
+// tools/node_modules/mailparser/node_modules/@zone-eu/mailsplit/lib/node-rewriter.js
 var require_node_rewriter2 = __commonJS({
-  "node_modules/mailparser/node_modules/@zone-eu/mailsplit/lib/node-rewriter.js"(exports2, module2) {
+  "tools/node_modules/mailparser/node_modules/@zone-eu/mailsplit/lib/node-rewriter.js"(exports2, module2) {
     "use strict";
     var Transform = require("stream").Transform;
     var FlowedDecoder = require_flowed_decoder2();
@@ -69170,9 +69555,9 @@ var require_node_rewriter2 = __commonJS({
   }
 });
 
-// node_modules/mailparser/node_modules/@zone-eu/mailsplit/lib/node-streamer.js
+// tools/node_modules/mailparser/node_modules/@zone-eu/mailsplit/lib/node-streamer.js
 var require_node_streamer2 = __commonJS({
-  "node_modules/mailparser/node_modules/@zone-eu/mailsplit/lib/node-streamer.js"(exports2, module2) {
+  "tools/node_modules/mailparser/node_modules/@zone-eu/mailsplit/lib/node-streamer.js"(exports2, module2) {
     "use strict";
     var Transform = require("stream").Transform;
     var FlowedDecoder = require_flowed_decoder2();
@@ -69306,9 +69691,9 @@ var require_node_streamer2 = __commonJS({
   }
 });
 
-// node_modules/mailparser/node_modules/@zone-eu/mailsplit/lib/chunked-passthrough.js
+// tools/node_modules/mailparser/node_modules/@zone-eu/mailsplit/lib/chunked-passthrough.js
 var require_chunked_passthrough2 = __commonJS({
-  "node_modules/mailparser/node_modules/@zone-eu/mailsplit/lib/chunked-passthrough.js"(exports2, module2) {
+  "tools/node_modules/mailparser/node_modules/@zone-eu/mailsplit/lib/chunked-passthrough.js"(exports2, module2) {
     "use strict";
     var { Transform } = require("stream");
     var ChunkedPassthrough = class extends Transform {
@@ -69354,9 +69739,9 @@ var require_chunked_passthrough2 = __commonJS({
   }
 });
 
-// node_modules/mailparser/node_modules/@zone-eu/mailsplit/index.js
+// tools/node_modules/mailparser/node_modules/@zone-eu/mailsplit/index.js
 var require_mailsplit2 = __commonJS({
-  "node_modules/mailparser/node_modules/@zone-eu/mailsplit/index.js"(exports2, module2) {
+  "tools/node_modules/mailparser/node_modules/@zone-eu/mailsplit/index.js"(exports2, module2) {
     "use strict";
     var MessageSplitter = require_message_splitter2();
     var MessageJoiner = require_message_joiner2();
@@ -69377,9 +69762,9 @@ var require_mailsplit2 = __commonJS({
   }
 });
 
-// node_modules/nodemailer/dist/cjs/addressparser/index.js
+// tools/node_modules/nodemailer/dist/cjs/addressparser/index.js
 var require_addressparser = __commonJS({
-  "node_modules/nodemailer/dist/cjs/addressparser/index.js"(exports2, module2) {
+  "tools/node_modules/nodemailer/dist/cjs/addressparser/index.js"(exports2, module2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.default = addressparser;
@@ -69808,9 +70193,9 @@ var require_addressparser = __commonJS({
   }
 });
 
-// node_modules/punycode.js/punycode.js
+// tools/node_modules/punycode.js/punycode.js
 var require_punycode = __commonJS({
-  "node_modules/punycode.js/punycode.js"(exports2, module2) {
+  "tools/node_modules/punycode.js/punycode.js"(exports2, module2) {
     "use strict";
     var maxInt = 2147483647;
     var base = 36;
@@ -70047,9 +70432,9 @@ var require_punycode = __commonJS({
   }
 });
 
-// node_modules/mailparser/lib/stream-hash.js
+// tools/node_modules/mailparser/lib/stream-hash.js
 var require_stream_hash = __commonJS({
-  "node_modules/mailparser/lib/stream-hash.js"(exports2, module2) {
+  "tools/node_modules/mailparser/lib/stream-hash.js"(exports2, module2) {
     "use strict";
     var crypto = require("crypto");
     var Transform = require("stream").Transform;
@@ -70076,9 +70461,9 @@ var require_stream_hash = __commonJS({
   }
 });
 
-// node_modules/domelementtype/lib/index.js
+// tools/node_modules/domelementtype/lib/index.js
 var require_lib2 = __commonJS({
-  "node_modules/domelementtype/lib/index.js"(exports2) {
+  "tools/node_modules/domelementtype/lib/index.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.Doctype = exports2.CDATA = exports2.Tag = exports2.Style = exports2.Script = exports2.Comment = exports2.Directive = exports2.Text = exports2.Root = exports2.isTag = exports2.ElementType = void 0;
@@ -70110,9 +70495,9 @@ var require_lib2 = __commonJS({
   }
 });
 
-// node_modules/domhandler/lib/node.js
+// tools/node_modules/domhandler/lib/node.js
 var require_node = __commonJS({
-  "node_modules/domhandler/lib/node.js"(exports2) {
+  "tools/node_modules/domhandler/lib/node.js"(exports2) {
     "use strict";
     var __extends = exports2 && exports2.__extends || /* @__PURE__ */ (function() {
       var extendStatics = function(d, b) {
@@ -70544,9 +70929,9 @@ var require_node = __commonJS({
   }
 });
 
-// node_modules/domhandler/lib/index.js
+// tools/node_modules/domhandler/lib/index.js
 var require_lib3 = __commonJS({
-  "node_modules/domhandler/lib/index.js"(exports2) {
+  "tools/node_modules/domhandler/lib/index.js"(exports2) {
     "use strict";
     var __createBinding = exports2 && exports2.__createBinding || (Object.create ? (function(o, m, k, k2) {
       if (k2 === void 0) k2 = k;
@@ -70703,9 +71088,9 @@ var require_lib3 = __commonJS({
   }
 });
 
-// node_modules/leac/lib/leac.cjs
+// tools/node_modules/leac/lib/leac.cjs
 var require_leac = __commonJS({
-  "node_modules/leac/lib/leac.cjs"(exports2) {
+  "tools/node_modules/leac/lib/leac.cjs"(exports2) {
     "use strict";
     var linebreaksRe = /\n/g;
     function createPositionQuery(str) {
@@ -70830,9 +71215,9 @@ var require_leac = __commonJS({
   }
 });
 
-// node_modules/peberminta/lib/util/util.cjs
+// tools/node_modules/peberminta/lib/util/util.cjs
 var require_util4 = __commonJS({
-  "node_modules/peberminta/lib/util/util.cjs"(exports2) {
+  "tools/node_modules/peberminta/lib/util/util.cjs"(exports2) {
     "use strict";
     function clamp(left, x, right) {
       return Math.max(left, Math.min(x, right));
@@ -70845,9 +71230,9 @@ var require_util4 = __commonJS({
   }
 });
 
-// node_modules/peberminta/lib/core.cjs
+// tools/node_modules/peberminta/lib/core.cjs
 var require_core2 = __commonJS({
-  "node_modules/peberminta/lib/core.cjs"(exports2) {
+  "tools/node_modules/peberminta/lib/core.cjs"(exports2) {
     "use strict";
     var util_ts = require_util4();
     function mapInner(r, f) {
@@ -71323,9 +71708,9 @@ ${parserPosition(data, result.position, formatToken)}`);
   }
 });
 
-// node_modules/parseley/lib/parseley.cjs
+// tools/node_modules/parseley/lib/parseley.cjs
 var require_parseley = __commonJS({
-  "node_modules/parseley/lib/parseley.cjs"(exports2) {
+  "tools/node_modules/parseley/lib/parseley.cjs"(exports2) {
     "use strict";
     var leac = require_leac();
     var p = require_core2();
@@ -71738,9 +72123,9 @@ ${"".padEnd(offset)}${"^".repeat(len)}`;
   }
 });
 
-// node_modules/selderee/lib/selderee.cjs
+// tools/node_modules/selderee/lib/selderee.cjs
 var require_selderee = __commonJS({
-  "node_modules/selderee/lib/selderee.cjs"(exports2) {
+  "tools/node_modules/selderee/lib/selderee.cjs"(exports2) {
     "use strict";
     var parseley = require_parseley();
     function _interopNamespaceDefault(e) {
@@ -72202,9 +72587,9 @@ ${treeifyArray(node.cont)}`;
   }
 });
 
-// node_modules/@selderee/plugin-htmlparser2/lib/hp2-builder.cjs
+// tools/node_modules/@selderee/plugin-htmlparser2/lib/hp2-builder.cjs
 var require_hp2_builder = __commonJS({
-  "node_modules/@selderee/plugin-htmlparser2/lib/hp2-builder.cjs"(exports2) {
+  "tools/node_modules/@selderee/plugin-htmlparser2/lib/hp2-builder.cjs"(exports2) {
     "use strict";
     var domhandler = require_lib3();
     var domelementtype = require_lib2();
@@ -72339,9 +72724,9 @@ var require_hp2_builder = __commonJS({
   }
 });
 
-// node_modules/htmlparser2/node_modules/entities/dist/commonjs/decode-codepoint.js
+// tools/node_modules/htmlparser2/node_modules/entities/dist/commonjs/decode-codepoint.js
 var require_decode_codepoint = __commonJS({
-  "node_modules/htmlparser2/node_modules/entities/dist/commonjs/decode-codepoint.js"(exports2) {
+  "tools/node_modules/htmlparser2/node_modules/entities/dist/commonjs/decode-codepoint.js"(exports2) {
     "use strict";
     var _a;
     Object.defineProperty(exports2, "__esModule", { value: true });
@@ -72403,9 +72788,9 @@ var require_decode_codepoint = __commonJS({
   }
 });
 
-// node_modules/htmlparser2/node_modules/entities/dist/commonjs/internal/decode-shared.js
+// tools/node_modules/htmlparser2/node_modules/entities/dist/commonjs/internal/decode-shared.js
 var require_decode_shared = __commonJS({
-  "node_modules/htmlparser2/node_modules/entities/dist/commonjs/internal/decode-shared.js"(exports2) {
+  "tools/node_modules/htmlparser2/node_modules/entities/dist/commonjs/internal/decode-shared.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.decodeBase64 = decodeBase64;
@@ -72440,9 +72825,9 @@ var require_decode_shared = __commonJS({
   }
 });
 
-// node_modules/htmlparser2/node_modules/entities/dist/commonjs/generated/decode-data-html.js
+// tools/node_modules/htmlparser2/node_modules/entities/dist/commonjs/generated/decode-data-html.js
 var require_decode_data_html = __commonJS({
-  "node_modules/htmlparser2/node_modules/entities/dist/commonjs/generated/decode-data-html.js"(exports2) {
+  "tools/node_modules/htmlparser2/node_modules/entities/dist/commonjs/generated/decode-data-html.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.htmlDecodeTree = void 0;
@@ -72451,9 +72836,9 @@ var require_decode_data_html = __commonJS({
   }
 });
 
-// node_modules/htmlparser2/node_modules/entities/dist/commonjs/generated/decode-data-xml.js
+// tools/node_modules/htmlparser2/node_modules/entities/dist/commonjs/generated/decode-data-xml.js
 var require_decode_data_xml = __commonJS({
-  "node_modules/htmlparser2/node_modules/entities/dist/commonjs/generated/decode-data-xml.js"(exports2) {
+  "tools/node_modules/htmlparser2/node_modules/entities/dist/commonjs/generated/decode-data-xml.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.xmlDecodeTree = void 0;
@@ -72462,9 +72847,9 @@ var require_decode_data_xml = __commonJS({
   }
 });
 
-// node_modules/htmlparser2/node_modules/entities/dist/commonjs/internal/bin-trie-flags.js
+// tools/node_modules/htmlparser2/node_modules/entities/dist/commonjs/internal/bin-trie-flags.js
 var require_bin_trie_flags = __commonJS({
-  "node_modules/htmlparser2/node_modules/entities/dist/commonjs/internal/bin-trie-flags.js"(exports2) {
+  "tools/node_modules/htmlparser2/node_modules/entities/dist/commonjs/internal/bin-trie-flags.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.BinTrieFlags = void 0;
@@ -72478,9 +72863,9 @@ var require_bin_trie_flags = __commonJS({
   }
 });
 
-// node_modules/htmlparser2/node_modules/entities/dist/commonjs/decode.js
+// tools/node_modules/htmlparser2/node_modules/entities/dist/commonjs/decode.js
 var require_decode = __commonJS({
-  "node_modules/htmlparser2/node_modules/entities/dist/commonjs/decode.js"(exports2) {
+  "tools/node_modules/htmlparser2/node_modules/entities/dist/commonjs/decode.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.xmlDecodeTree = exports2.htmlDecodeTree = exports2.replaceCodePoint = exports2.fromCodePoint = exports2.decodeCodePoint = exports2.EntityDecoder = exports2.DecodingMode = void 0;
@@ -72918,9 +73303,9 @@ var require_decode = __commonJS({
   }
 });
 
-// node_modules/htmlparser2/dist/commonjs/Tokenizer.js
+// tools/node_modules/htmlparser2/dist/commonjs/Tokenizer.js
 var require_Tokenizer = __commonJS({
-  "node_modules/htmlparser2/dist/commonjs/Tokenizer.js"(exports2) {
+  "tools/node_modules/htmlparser2/dist/commonjs/Tokenizer.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.QuoteType = void 0;
@@ -73632,9 +74017,9 @@ var require_Tokenizer = __commonJS({
   }
 });
 
-// node_modules/htmlparser2/dist/commonjs/Parser.js
+// tools/node_modules/htmlparser2/dist/commonjs/Parser.js
 var require_Parser = __commonJS({
-  "node_modules/htmlparser2/dist/commonjs/Parser.js"(exports2) {
+  "tools/node_modules/htmlparser2/dist/commonjs/Parser.js"(exports2) {
     "use strict";
     var __createBinding = exports2 && exports2.__createBinding || (Object.create ? (function(o, m, k, k2) {
       if (k2 === void 0) k2 = k;
@@ -74127,9 +74512,9 @@ var require_Parser = __commonJS({
   }
 });
 
-// node_modules/entities/lib/generated/decode-data-html.js
+// tools/node_modules/entities/lib/generated/decode-data-html.js
 var require_decode_data_html2 = __commonJS({
-  "node_modules/entities/lib/generated/decode-data-html.js"(exports2) {
+  "tools/node_modules/entities/lib/generated/decode-data-html.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.default = new Uint16Array(
@@ -74141,9 +74526,9 @@ var require_decode_data_html2 = __commonJS({
   }
 });
 
-// node_modules/entities/lib/generated/decode-data-xml.js
+// tools/node_modules/entities/lib/generated/decode-data-xml.js
 var require_decode_data_xml2 = __commonJS({
-  "node_modules/entities/lib/generated/decode-data-xml.js"(exports2) {
+  "tools/node_modules/entities/lib/generated/decode-data-xml.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.default = new Uint16Array(
@@ -74155,9 +74540,9 @@ var require_decode_data_xml2 = __commonJS({
   }
 });
 
-// node_modules/entities/lib/decode_codepoint.js
+// tools/node_modules/entities/lib/decode_codepoint.js
 var require_decode_codepoint2 = __commonJS({
-  "node_modules/entities/lib/decode_codepoint.js"(exports2) {
+  "tools/node_modules/entities/lib/decode_codepoint.js"(exports2) {
     "use strict";
     var _a;
     Object.defineProperty(exports2, "__esModule", { value: true });
@@ -74219,9 +74604,9 @@ var require_decode_codepoint2 = __commonJS({
   }
 });
 
-// node_modules/entities/lib/decode.js
+// tools/node_modules/entities/lib/decode.js
 var require_decode2 = __commonJS({
-  "node_modules/entities/lib/decode.js"(exports2) {
+  "tools/node_modules/entities/lib/decode.js"(exports2) {
     "use strict";
     var __createBinding = exports2 && exports2.__createBinding || (Object.create ? (function(o, m, k, k2) {
       if (k2 === void 0) k2 = k;
@@ -74578,9 +74963,9 @@ var require_decode2 = __commonJS({
   }
 });
 
-// node_modules/entities/lib/generated/encode-html.js
+// tools/node_modules/entities/lib/generated/encode-html.js
 var require_encode_html = __commonJS({
-  "node_modules/entities/lib/generated/encode-html.js"(exports2) {
+  "tools/node_modules/entities/lib/generated/encode-html.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     function restoreDiff(arr) {
@@ -74593,9 +74978,9 @@ var require_encode_html = __commonJS({
   }
 });
 
-// node_modules/entities/lib/escape.js
+// tools/node_modules/entities/lib/escape.js
 var require_escape = __commonJS({
-  "node_modules/entities/lib/escape.js"(exports2) {
+  "tools/node_modules/entities/lib/escape.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.escapeText = exports2.escapeAttribute = exports2.escapeUTF8 = exports2.escape = exports2.encodeXML = exports2.getCodePoint = exports2.xmlReplacer = void 0;
@@ -74666,9 +75051,9 @@ var require_escape = __commonJS({
   }
 });
 
-// node_modules/entities/lib/encode.js
+// tools/node_modules/entities/lib/encode.js
 var require_encode = __commonJS({
-  "node_modules/entities/lib/encode.js"(exports2) {
+  "tools/node_modules/entities/lib/encode.js"(exports2) {
     "use strict";
     var __importDefault = exports2 && exports2.__importDefault || function(mod) {
       return mod && mod.__esModule ? mod : { "default": mod };
@@ -74721,9 +75106,9 @@ var require_encode = __commonJS({
   }
 });
 
-// node_modules/entities/lib/index.js
+// tools/node_modules/entities/lib/index.js
 var require_lib4 = __commonJS({
-  "node_modules/entities/lib/index.js"(exports2) {
+  "tools/node_modules/entities/lib/index.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.decodeXMLStrict = exports2.decodeHTML5Strict = exports2.decodeHTML4Strict = exports2.decodeHTML5 = exports2.decodeHTML4 = exports2.decodeHTMLAttribute = exports2.decodeHTMLStrict = exports2.decodeHTML = exports2.decodeXML = exports2.DecodingMode = exports2.EntityDecoder = exports2.encodeHTML5 = exports2.encodeHTML4 = exports2.encodeNonAsciiHTML = exports2.encodeHTML = exports2.escapeText = exports2.escapeAttribute = exports2.escapeUTF8 = exports2.escape = exports2.encodeXML = exports2.encode = exports2.decodeStrict = exports2.decode = exports2.EncodingMode = exports2.EntityLevel = void 0;
@@ -74851,9 +75236,9 @@ var require_lib4 = __commonJS({
   }
 });
 
-// node_modules/dom-serializer/lib/foreignNames.js
+// tools/node_modules/dom-serializer/lib/foreignNames.js
 var require_foreignNames = __commonJS({
-  "node_modules/dom-serializer/lib/foreignNames.js"(exports2) {
+  "tools/node_modules/dom-serializer/lib/foreignNames.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.attributeNames = exports2.elementNames = void 0;
@@ -74964,9 +75349,9 @@ var require_foreignNames = __commonJS({
   }
 });
 
-// node_modules/dom-serializer/lib/index.js
+// tools/node_modules/dom-serializer/lib/index.js
 var require_lib5 = __commonJS({
-  "node_modules/dom-serializer/lib/index.js"(exports2) {
+  "tools/node_modules/dom-serializer/lib/index.js"(exports2) {
     "use strict";
     var __assign = exports2 && exports2.__assign || function() {
       __assign = Object.assign || function(t) {
@@ -75164,9 +75549,9 @@ var require_lib5 = __commonJS({
   }
 });
 
-// node_modules/domutils/lib/stringify.js
+// tools/node_modules/domutils/lib/stringify.js
 var require_stringify = __commonJS({
-  "node_modules/domutils/lib/stringify.js"(exports2) {
+  "tools/node_modules/domutils/lib/stringify.js"(exports2) {
     "use strict";
     var __importDefault = exports2 && exports2.__importDefault || function(mod) {
       return mod && mod.__esModule ? mod : { "default": mod };
@@ -75222,9 +75607,9 @@ var require_stringify = __commonJS({
   }
 });
 
-// node_modules/domutils/lib/traversal.js
+// tools/node_modules/domutils/lib/traversal.js
 var require_traversal = __commonJS({
-  "node_modules/domutils/lib/traversal.js"(exports2) {
+  "tools/node_modules/domutils/lib/traversal.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.getChildren = getChildren;
@@ -75286,9 +75671,9 @@ var require_traversal = __commonJS({
   }
 });
 
-// node_modules/domutils/lib/manipulation.js
+// tools/node_modules/domutils/lib/manipulation.js
 var require_manipulation = __commonJS({
-  "node_modules/domutils/lib/manipulation.js"(exports2) {
+  "tools/node_modules/domutils/lib/manipulation.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.removeElement = removeElement;
@@ -75389,9 +75774,9 @@ var require_manipulation = __commonJS({
   }
 });
 
-// node_modules/domutils/lib/querying.js
+// tools/node_modules/domutils/lib/querying.js
 var require_querying = __commonJS({
-  "node_modules/domutils/lib/querying.js"(exports2) {
+  "tools/node_modules/domutils/lib/querying.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.filter = filter;
@@ -75486,9 +75871,9 @@ var require_querying = __commonJS({
   }
 });
 
-// node_modules/domutils/lib/legacy.js
+// tools/node_modules/domutils/lib/legacy.js
 var require_legacy = __commonJS({
-  "node_modules/domutils/lib/legacy.js"(exports2) {
+  "tools/node_modules/domutils/lib/legacy.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.testElement = testElement;
@@ -75604,9 +75989,9 @@ var require_legacy = __commonJS({
   }
 });
 
-// node_modules/domutils/lib/helpers.js
+// tools/node_modules/domutils/lib/helpers.js
 var require_helpers3 = __commonJS({
-  "node_modules/domutils/lib/helpers.js"(exports2) {
+  "tools/node_modules/domutils/lib/helpers.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.DocumentPosition = void 0;
@@ -75696,9 +76081,9 @@ var require_helpers3 = __commonJS({
   }
 });
 
-// node_modules/domutils/lib/feeds.js
+// tools/node_modules/domutils/lib/feeds.js
 var require_feeds2 = __commonJS({
-  "node_modules/domutils/lib/feeds.js"(exports2) {
+  "tools/node_modules/domutils/lib/feeds.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
     exports2.getFeed = getFeed;
@@ -75836,9 +76221,9 @@ var require_feeds2 = __commonJS({
   }
 });
 
-// node_modules/domutils/lib/index.js
+// tools/node_modules/domutils/lib/index.js
 var require_lib6 = __commonJS({
-  "node_modules/domutils/lib/index.js"(exports2) {
+  "tools/node_modules/domutils/lib/index.js"(exports2) {
     "use strict";
     var __createBinding = exports2 && exports2.__createBinding || (Object.create ? (function(o, m, k, k2) {
       if (k2 === void 0) k2 = k;
@@ -75887,9 +76272,9 @@ var require_lib6 = __commonJS({
   }
 });
 
-// node_modules/htmlparser2/dist/commonjs/index.js
+// tools/node_modules/htmlparser2/dist/commonjs/index.js
 var require_commonjs = __commonJS({
-  "node_modules/htmlparser2/dist/commonjs/index.js"(exports2) {
+  "tools/node_modules/htmlparser2/dist/commonjs/index.js"(exports2) {
     "use strict";
     var __createBinding = exports2 && exports2.__createBinding || (Object.create ? (function(o, m, k, k2) {
       if (k2 === void 0) k2 = k;
@@ -75988,9 +76373,9 @@ var require_commonjs = __commonJS({
   }
 });
 
-// node_modules/deepmerge-ts/dist/index.cjs
+// tools/node_modules/deepmerge-ts/dist/index.cjs
 var require_dist = __commonJS({
-  "node_modules/deepmerge-ts/dist/index.cjs"(exports2) {
+  "tools/node_modules/deepmerge-ts/dist/index.cjs"(exports2) {
     "use strict";
     var actions = {
       defaultMerge: Symbol("deepmerge-ts: default merge"),
@@ -77091,9 +77476,9 @@ var require_dist = __commonJS({
   }
 });
 
-// node_modules/html-to-text/lib/html-to-text.cjs
+// tools/node_modules/html-to-text/lib/html-to-text.cjs
 var require_html_to_text = __commonJS({
-  "node_modules/html-to-text/lib/html-to-text.cjs"(exports2) {
+  "tools/node_modules/html-to-text/lib/html-to-text.cjs"(exports2) {
     "use strict";
     var pluginHtmlparser2 = require_hp2_builder();
     var htmlparser2 = require_commonjs();
@@ -78697,9 +79082,9 @@ var require_html_to_text = __commonJS({
   }
 });
 
-// node_modules/he/he.js
+// tools/node_modules/he/he.js
 var require_he = __commonJS({
-  "node_modules/he/he.js"(exports2, module2) {
+  "tools/node_modules/he/he.js"(exports2, module2) {
     (function(root) {
       var freeExports = typeof exports2 == "object" && exports2;
       var freeModule = typeof module2 == "object" && module2 && module2.exports == freeExports && module2;
@@ -78947,9 +79332,9 @@ var require_he = __commonJS({
   }
 });
 
-// node_modules/uc.micro/build/index.cjs.js
+// tools/node_modules/uc.micro/build/index.cjs.js
 var require_index_cjs = __commonJS({
-  "node_modules/uc.micro/build/index.cjs.js"(exports2) {
+  "tools/node_modules/uc.micro/build/index.cjs.js"(exports2) {
     "use strict";
     var regex$5 = /[\0-\uD7FF\uE000-\uFFFF]|[\uD800-\uDBFF][\uDC00-\uDFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF]/;
     var regex$4 = /[\0-\x1F\x7F-\x9F]/;
@@ -78966,9 +79351,9 @@ var require_index_cjs = __commonJS({
   }
 });
 
-// node_modules/linkify-it/build/index.cjs.js
+// tools/node_modules/linkify-it/build/index.cjs.js
 var require_index_cjs2 = __commonJS({
-  "node_modules/linkify-it/build/index.cjs.js"(exports2, module2) {
+  "tools/node_modules/linkify-it/build/index.cjs.js"(exports2, module2) {
     "use strict";
     var uc_micro = require_index_cjs();
     function reFactory(opts) {
@@ -79399,9 +79784,9 @@ var require_index_cjs2 = __commonJS({
   }
 });
 
-// node_modules/tlds/index.json
+// tools/node_modules/tlds/index.json
 var require_tlds = __commonJS({
-  "node_modules/tlds/index.json"(exports2, module2) {
+  "tools/node_modules/tlds/index.json"(exports2, module2) {
     module2.exports = [
       "aaa",
       "aarp",
@@ -80845,9 +81230,9 @@ var require_tlds = __commonJS({
   }
 });
 
-// node_modules/mailparser/lib/mail-parser.js
+// tools/node_modules/mailparser/lib/mail-parser.js
 var require_mail_parser = __commonJS({
-  "node_modules/mailparser/lib/mail-parser.js"(exports2, module2) {
+  "tools/node_modules/mailparser/lib/mail-parser.js"(exports2, module2) {
     "use strict";
     var mailsplit = require_mailsplit2();
     var libmime = require_libmime2();
@@ -81883,9 +82268,9 @@ var require_mail_parser = __commonJS({
   }
 });
 
-// node_modules/mailparser/lib/simple-parser.js
+// tools/node_modules/mailparser/lib/simple-parser.js
 var require_simple_parser = __commonJS({
-  "node_modules/mailparser/lib/simple-parser.js"(exports2, module2) {
+  "tools/node_modules/mailparser/lib/simple-parser.js"(exports2, module2) {
     "use strict";
     var MailParser = require_mail_parser();
     module2.exports = (input, options, callback) => {
@@ -82001,9 +82386,9 @@ var require_simple_parser = __commonJS({
   }
 });
 
-// node_modules/mailparser/index.js
+// tools/node_modules/mailparser/index.js
 var require_mailparser = __commonJS({
-  "node_modules/mailparser/index.js"(exports2, module2) {
+  "tools/node_modules/mailparser/index.js"(exports2, module2) {
     "use strict";
     var MailParser = require_mail_parser();
     var simpleParser = require_simple_parser();
@@ -82014,14 +82399,14 @@ var require_mailparser = __commonJS({
   }
 });
 
-// ../src/blocks/messagerie.js
+// src/blocks/messagerie.js
 var require_messagerie = __commonJS({
-  "../src/blocks/messagerie.js"(exports2, module2) {
+  "src/blocks/messagerie.js"(exports2, module2) {
     "use strict";
     var { plain } = require_core();
-    var secret = (api, name, fallback) => {
-      const v = name && api.env(name) || fallback;
-      if (!v) throw new Error(`secret manquant : d\xE9finis la variable d'environnement ${name} sur le serveur`);
+    var secret = async (api, name) => {
+      const v = await api.secret(name);
+      if (!v) throw Object.assign(new Error(`secret ${name} introuvable : variable d'environnement ou coffre (/dysizz-flow/coffre)`), { permanent: true });
       return v;
     };
     var countAttachments = (node) => {
@@ -82051,7 +82436,7 @@ var require_messagerie = __commonJS({
         run: async (p, ctx, api) => {
           const { ImapFlow } = require_imap_flow();
           const { simpleParser } = require_mailparser();
-          const client = new ImapFlow({ host: p.serveur, port: +p.port || 993, secure: (+p.port || 993) === 993, auth: { user: p.utilisateur, pass: secret(api, p.variable_mot_de_passe) }, logger: false, socketTimeout: 6e4 });
+          const client = new ImapFlow({ host: p.serveur, port: +p.port || 993, secure: (+p.port || 993) === 993, auth: { user: p.utilisateur, pass: await secret(api, p.variable_mot_de_passe) }, logger: false, socketTimeout: 6e4 });
           const out = [];
           await client.connect();
           try {
@@ -82159,7 +82544,7 @@ var require_messagerie = __commonJS({
           { name: "format", label: "Format", type: "select", options: ["texte", "HTML", "MarkdownV2"], default: "texte" }
         ],
         run: async (p, ctx, api) => {
-          const r = await fetch(`https://api.telegram.org/bot${secret(api, p.variable_jeton)}/sendMessage`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ chat_id: p.chat_id, text: String(p.texte).slice(0, 4e3), ...p.format !== "texte" ? { parse_mode: p.format } : {} }) });
+          const r = await fetch(`https://api.telegram.org/bot${await secret(api, p.variable_jeton)}/sendMessage`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ chat_id: p.chat_id, text: String(p.texte).slice(0, 4e3), ...p.format !== "texte" ? { parse_mode: p.format } : {} }) });
           const j = await r.json();
           if (!j.ok) throw new Error(j.description || `HTTP ${r.status}`);
           return j.result && j.result.message_id;
@@ -82187,7 +82572,7 @@ var require_messagerie = __commonJS({
           const body = { messaging_product: "whatsapp", to: String(p.a).replace(/\D/g, "") };
           if (p.type === "mod\xE8le") Object.assign(body, { type: "template", template: { name: p.modele, language: { code: p.langue || "fr" }, ...p.variables && p.variables.length ? { components: [{ type: "body", parameters: p.variables.map((t) => ({ type: "text", text: String(t) })) }] } : {} } });
           else Object.assign(body, { type: "text", text: { body: String(p.texte || "").slice(0, 4096) } });
-          const r = await fetch(`https://graph.facebook.com/${p.version || "v21.0"}/${p.phone_number_id}/messages`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${secret(api, p.variable_jeton)}` }, body: JSON.stringify(body) });
+          const r = await fetch(`https://graph.facebook.com/${p.version || "v21.0"}/${p.phone_number_id}/messages`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${await secret(api, p.variable_jeton)}` }, body: JSON.stringify(body) });
           const j = await r.json();
           if (!r.ok) throw new Error(j.error && j.error.message || `HTTP ${r.status}`);
           return j.messages && j.messages[0] && j.messages[0].id;
@@ -82197,9 +82582,9 @@ var require_messagerie = __commonJS({
   }
 });
 
-// ../src/blocks/ia.js
+// src/blocks/ia.js
 var require_ia = __commonJS({
-  "../src/blocks/ia.js"(exports2, module2) {
+  "src/blocks/ia.js"(exports2, module2) {
     "use strict";
     var { asList } = require_engine();
     var CONN = [
@@ -82210,8 +82595,8 @@ var require_ia = __commonJS({
     var chat = async (p, api, messages, json) => {
       const headers = { "Content-Type": "application/json" };
       if (p.variable_cle) {
-        const k = api.env(p.variable_cle);
-        if (!k) throw new Error(`variable ${p.variable_cle} absente`);
+        const k = await api.secret(p.variable_cle);
+        if (!k) throw Object.assign(new Error(`secret ${p.variable_cle} introuvable`), { permanent: true });
         headers.Authorization = `Bearer ${k}`;
       }
       const r = await fetch(`${String(p.url_base).replace(/\/$/, "")}/chat/completions`, {
@@ -82300,9 +82685,9 @@ var require_ia = __commonJS({
   }
 });
 
-// ../src/blocks/services.js
+// src/blocks/services.js
 var require_services = __commonJS({
-  "../src/blocks/services.js"(exports2, module2) {
+  "src/blocks/services.js"(exports2, module2) {
     "use strict";
     var { plain, safeUrl } = require_core();
     module2.exports = [
@@ -82326,7 +82711,7 @@ var require_services = __commonJS({
           { name: "depuis_jours", label: "Publi\xE9es depuis (jours)", type: "int", default: 7 }
         ],
         run: async (p, ctx, api) => {
-          const id = api.env(p.variable_id), secret = api.env(p.variable_secret);
+          const id = await api.secret(p.variable_id), secret = await api.secret(p.variable_secret);
           if (!id || !secret) throw new Error(`variables ${p.variable_id} / ${p.variable_secret} absentes du serveur`);
           const tr = await fetch("https://entreprise.francetravail.fr/connexion/oauth2/access_token?realm=%2Fpartenaire", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ grant_type: "client_credentials", client_id: id, client_secret: secret, scope: "api_offresdemploiv2 o2dsoffre" }) });
           const tj = await tr.json().catch(() => ({}));
@@ -82400,9 +82785,533 @@ var require_services = __commonJS({
   }
 });
 
-// ../src/lib/redis.js
+// src/blocks/securite.js
+var require_securite = __commonJS({
+  "src/blocks/securite.js"(exports2, module2) {
+    "use strict";
+    var crypto = require("crypto");
+    var tls = require("tls");
+    var dns = require("dns").promises;
+    var { asList } = require_engine();
+    var b64u = (b) => Buffer.from(b).toString("base64").replace(/=+$/, "").replace(/\+/g, "-").replace(/\//g, "_");
+    var unb64u = (s) => Buffer.from(String(s).replace(/-/g, "+").replace(/_/g, "/"), "base64");
+    var need = async (api, name) => {
+      const v = await api.secret(name);
+      if (!v) throw Object.assign(new Error(`secret ${name} introuvable (variable d'environnement ou coffre)`), { permanent: true });
+      return v;
+    };
+    var keyFrom = (s) => crypto.createHash("sha256").update(String(s)).digest();
+    var PII = {
+      email: /[\w.+-]+@[\w-]+\.[\w.-]+/g,
+      t\u00E9l\u00E9phone: /(?:\+|00)?\d[\d .-]{7,}\d/g,
+      iban: /\b[A-Z]{2}\d{2}(?:\s?[A-Z0-9]{4}){3,7}\s?[A-Z0-9]{1,4}\b/g,
+      carte: /\b(?:\d[ -]?){13,19}\b/g,
+      ip: /\b(?:\d{1,3}\.){3}\d{1,3}\b/g
+    };
+    var SECRETS = [
+      ["cl\xE9 AWS", /AKIA[0-9A-Z]{16}/g],
+      ["jeton GitHub", /gh[pousr]_[A-Za-z0-9]{36,}/g],
+      ["cl\xE9 OpenAI", /sk-[A-Za-z0-9_-]{20,}/g],
+      ["cl\xE9 Google", /AIza[0-9A-Za-z_-]{35}/g],
+      ["jeton Slack", /xox[baprs]-[A-Za-z0-9-]{10,}/g],
+      ["cl\xE9 priv\xE9e", /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/g],
+      ["jeton JWT", /eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g],
+      ["mot de passe dans une URL", /[a-z]+:\/\/[^\s:/]+:[^\s@/]+@/gi],
+      ["jeton Stripe", /(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{16,}/g],
+      ["jeton Telegram", /\d{8,10}:[A-Za-z0-9_-]{35}/g]
+    ];
+    var SEC_HEADERS = [
+      ["strict-transport-security", "HSTS : force le HTTPS", 20],
+      ["content-security-policy", "CSP : limite les scripts autoris\xE9s", 20],
+      ["x-content-type-options", "nosniff : emp\xEAche de deviner le type", 10],
+      ["x-frame-options", "anti-clickjacking (ou frame-ancestors dans la CSP)", 10],
+      ["referrer-policy", "ne fuit pas les adresses", 10],
+      ["permissions-policy", "cam\xE9ra, micro, position bloqu\xE9s", 10],
+      ["cross-origin-opener-policy", "isole la fen\xEAtre", 10],
+      ["cross-origin-resource-policy", "prot\xE8ge les ressources", 10]
+    ];
+    var certInfo = (host, port = 443, timeout = 1e4) => new Promise((resolve, reject) => {
+      const sock = tls.connect({ host, port, servername: host, rejectUnauthorized: false, timeout }, () => {
+        const c = sock.getPeerCertificate();
+        const fin = new Date(c.valid_to);
+        resolve({ hote: host, emetteur: c.issuer && (c.issuer.O || c.issuer.CN) || "", sujet: c.subject && c.subject.CN || "", debut: new Date(c.valid_from).toISOString(), fin: fin.toISOString(), jours_restants: Math.floor((fin - Date.now()) / 864e5), valide: sock.authorized, erreur: sock.authorized ? "" : String(sock.authorizationError || ""), protocole: sock.getProtocol() });
+        sock.end();
+      });
+      sock.on("error", reject);
+      sock.on("timeout", () => {
+        sock.destroy();
+        reject(new Error("d\xE9lai d\xE9pass\xE9"));
+      });
+    });
+    module2.exports = [
+      {
+        name: "dzf_hacher",
+        label: "S\xE9curit\xE9 : hacher",
+        category: "S\xE9curit\xE9",
+        icon: "fas fa-fingerprint",
+        output: "empreinte",
+        description: "Empreinte d'un texte (SHA-256, SHA-512, SHA-1, MD5) ou HMAC avec un secret. Pour comparer, d\xE9doublonner ou v\xE9rifier sans stocker la donn\xE9e.",
+        params: [
+          { name: "texte", label: "Texte", required: true },
+          { name: "algo", label: "Algorithme", type: "select", options: ["sha256", "sha512", "sha1", "md5"], default: "sha256" },
+          { name: "secret_hmac", label: "Secret HMAC (facultatif)", help: "Nom d'un secret : donne un HMAC au lieu d'une simple empreinte" },
+          { name: "format", label: "Format", type: "select", options: ["hex", "base64"], default: "hex" }
+        ],
+        run: async (p, ctx, api) => (p.secret_hmac ? crypto.createHmac(p.algo, await need(api, p.secret_hmac)) : crypto.createHash(p.algo)).update(typeof p.texte === "string" ? p.texte : JSON.stringify(p.texte)).digest(p.format || "hex")
+      },
+      {
+        name: "dzf_chiffrer",
+        label: "S\xE9curit\xE9 : chiffrer / d\xE9chiffrer",
+        category: "S\xE9curit\xE9",
+        icon: "fas fa-user-secret",
+        output: "chiffre",
+        description: "Chiffre une valeur en AES-256-GCM (authentifi\xE9) avec une cl\xE9 tir\xE9e d'un secret, ou la d\xE9chiffre. Pour stocker une donn\xE9e sensible dans une table.",
+        params: [
+          { name: "sens", label: "Sens", type: "select", options: ["chiffrer", "d\xE9chiffrer"], default: "chiffrer" },
+          { name: "valeur", label: "Valeur", required: true },
+          { name: "secret_cle", label: "Nom du secret qui sert de cl\xE9", required: true, default: "DZF_CLE_DONNEES" }
+        ],
+        run: async (p, ctx, api) => {
+          const k = keyFrom(await need(api, p.secret_cle));
+          if (p.sens === "d\xE9chiffrer") {
+            const [iv2, tag, data2] = String(p.valeur).split(".");
+            const d = crypto.createDecipheriv("aes-256-gcm", k, unb64u(iv2));
+            d.setAuthTag(unb64u(tag));
+            const txt = Buffer.concat([d.update(unb64u(data2)), d.final()]).toString("utf8");
+            try {
+              return JSON.parse(txt);
+            } catch (e) {
+              return txt;
+            }
+          }
+          const iv = crypto.randomBytes(12);
+          const c = crypto.createCipheriv("aes-256-gcm", k, iv);
+          const data = Buffer.concat([c.update(typeof p.valeur === "string" ? p.valeur : JSON.stringify(p.valeur), "utf8"), c.final()]);
+          return `${b64u(iv)}.${b64u(c.getAuthTag())}.${b64u(data)}`;
+        }
+      },
+      {
+        name: "dzf_jwt",
+        label: "S\xE9curit\xE9 : jeton JWT",
+        category: "S\xE9curit\xE9",
+        icon: "fas fa-key",
+        output: "jwt",
+        description: "Cr\xE9e ou v\xE9rifie un jeton JWT sign\xE9 HS256 (pour tes API, liens magiques, invitations). La v\xE9rification contr\xF4le la signature et l'expiration.",
+        params: [
+          { name: "action", label: "Action", type: "select", options: ["cr\xE9er", "v\xE9rifier"], default: "cr\xE9er" },
+          { name: "secret", label: "Nom du secret de signature", required: true, default: "DZF_JWT_SECRET" },
+          { name: "donnees", label: "Donn\xE9es (JSON, pour cr\xE9er)", type: "json", default: '{"sub":"{{user.id}}"}' },
+          { name: "duree", label: "Dur\xE9e de validit\xE9 (secondes)", type: "int", default: 3600 },
+          { name: "jeton", label: "Jeton (pour v\xE9rifier)" }
+        ],
+        run: async (p, ctx, api) => {
+          const key = await need(api, p.secret);
+          if (p.action === "v\xE9rifier") {
+            const [h2, pl2, sig] = String(p.jeton || "").split(".");
+            if (!h2 || !pl2 || !sig) return { valide: false, raison: "format" };
+            const exp = b64u(crypto.createHmac("sha256", key).update(`${h2}.${pl2}`).digest());
+            if (exp.length !== sig.length || !crypto.timingSafeEqual(Buffer.from(exp), Buffer.from(sig))) return { valide: false, raison: "signature" };
+            const data = JSON.parse(unb64u(pl2).toString("utf8"));
+            if (data.exp && data.exp * 1e3 < Date.now()) return { valide: false, raison: "expir\xE9", donnees: data };
+            return { valide: true, donnees: data };
+          }
+          const now = Math.floor(Date.now() / 1e3);
+          const h = b64u(JSON.stringify({ alg: "HS256", typ: "JWT" }));
+          const pl = b64u(JSON.stringify({ ...p.donnees || {}, iat: now, exp: now + (+p.duree || 3600) }));
+          return `${h}.${pl}.${b64u(crypto.createHmac("sha256", key).update(`${h}.${pl}`).digest())}`;
+        }
+      },
+      {
+        name: "dzf_generer",
+        label: "S\xE9curit\xE9 : g\xE9n\xE9rer un identifiant ou un mot de passe",
+        category: "S\xE9curit\xE9",
+        icon: "fas fa-dice",
+        output: "genere",
+        description: "UUID, jeton al\xE9atoire, mot de passe fort, code \xE0 chiffres (OTP), tous avec le g\xE9n\xE9rateur cryptographique du syst\xE8me.",
+        params: [{ name: "type", label: "Type", type: "select", options: ["uuid", "jeton", "mot de passe", "code chiffres"], default: "uuid" }, { name: "longueur", label: "Longueur", type: "int", default: 24 }],
+        run: async (p) => {
+          const n = Math.max(4, Math.min(256, +p.longueur || 24));
+          if (p.type === "uuid") return crypto.randomUUID();
+          if (p.type === "jeton") return b64u(crypto.randomBytes(n)).slice(0, n);
+          if (p.type === "code chiffres") return Array.from(crypto.randomBytes(n), (x) => x % 10).join("").slice(0, Math.min(n, 12));
+          const set = "abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#$%&*-_=+?";
+          return Array.from(crypto.randomBytes(n), (x) => set[x % set.length]).join("");
+        }
+      },
+      {
+        name: "dzf_mdp_fuite",
+        label: "S\xE9curit\xE9 : mot de passe d\xE9j\xE0 fuit\xE9 ?",
+        category: "S\xE9curit\xE9",
+        icon: "fas fa-user-shield",
+        output: "fuite",
+        description: "V\xE9rifie si un mot de passe appara\xEEt dans des fuites connues (Have I Been Pwned). Seuls les 5 premiers caract\xE8res de son empreinte partent sur Internet : le mot de passe ne quitte jamais le serveur.",
+        params: [{ name: "mot_de_passe", label: "Mot de passe", type: "password", required: true }],
+        run: async (p) => {
+          const h = crypto.createHash("sha1").update(String(p.mot_de_passe)).digest("hex").toUpperCase();
+          const r = await fetch(`https://api.pwnedpasswords.com/range/${h.slice(0, 5)}`, { headers: { "Add-Padding": "true", "User-Agent": "dysizz-flow" } });
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          const line = (await r.text()).split("\n").find((l) => l.startsWith(h.slice(5)));
+          const n = line ? parseInt(line.split(":")[1], 10) : 0;
+          return { fuite: n > 0, fois: n };
+        }
+      },
+      {
+        name: "dzf_cve",
+        label: "S\xE9curit\xE9 : vuln\xE9rabilit\xE9s connues (CVE)",
+        category: "S\xE9curit\xE9",
+        icon: "fas fa-bug",
+        output: "cve",
+        timeout: 60,
+        description: "Cherche les CVE r\xE9centes par mot-cl\xE9 (ex. un logiciel que tu utilises) dans la base officielle NVD, avec leur score de gravit\xE9.",
+        params: [
+          { name: "mot_cle", label: "Mot-cl\xE9", required: true, help: "Ex. saltcorn, postgresql 16, traefik, n8n" },
+          { name: "jours", label: "Publi\xE9es depuis (jours)", type: "int", default: 30 },
+          { name: "gravite_min", label: "Gravit\xE9 minimum", type: "select", options: ["toutes", "MEDIUM", "HIGH", "CRITICAL"], default: "toutes" },
+          { name: "secret_cle", label: "Cl\xE9 NVD (facultatif, pour plus de requ\xEAtes)", default: "NVD_API_KEY" }
+        ],
+        run: async (p, ctx, api) => {
+          const end = /* @__PURE__ */ new Date(), start = new Date(Date.now() - Math.min(119, +p.jours || 30) * 864e5);
+          const q = new URLSearchParams({ keywordSearch: p.mot_cle, pubStartDate: start.toISOString(), pubEndDate: end.toISOString(), resultsPerPage: "100" });
+          if (p.gravite_min && p.gravite_min !== "toutes") q.set("cvssV3Severity", p.gravite_min);
+          const key = await api.secret(p.secret_cle);
+          const r = await fetch(`https://services.nvd.nist.gov/rest/json/cves/2.0?${q}`, { headers: key ? { apiKey: key } : {} });
+          if (!r.ok) throw new Error(`NVD : HTTP ${r.status}`);
+          const j = await r.json();
+          return (j.vulnerabilities || []).map(({ cve }) => {
+            const m = cve.metrics && (cve.metrics.cvssMetricV31 || cve.metrics.cvssMetricV30 || [])[0] || {};
+            return { id: cve.id, publiee: cve.published, score: m.cvssData ? m.cvssData.baseScore : null, gravite: m.cvssData ? m.cvssData.baseSeverity : "", resume: ((cve.descriptions || []).find((d) => d.lang === "en") || {}).value || "", url: `https://nvd.nist.gov/vuln/detail/${cve.id}` };
+          }).sort((a, b) => (b.score || 0) - (a.score || 0));
+        }
+      },
+      {
+        name: "dzf_entetes_securite",
+        label: "S\xE9curit\xE9 : audit des en-t\xEAtes HTTP",
+        category: "S\xE9curit\xE9",
+        icon: "fas fa-shield-alt",
+        output: "audit",
+        description: "Note sur 100 la protection d'un site par ses en-t\xEAtes (HSTS, CSP, anti-clickjacking\u2026), avec ce qui manque et pourquoi.",
+        params: [{ name: "url", label: "Adresse du site", required: true, help: "Ex. https://web.allinone.ovh" }],
+        run: async (p) => {
+          const r = await fetch(p.url, { method: "GET", redirect: "follow" });
+          const got = Object.fromEntries([...r.headers.entries()]);
+          let score = 0;
+          const manque = [];
+          for (const [h, why, pts] of SEC_HEADERS) {
+            const ok = h === "x-frame-options" ? !!got[h] || /frame-ancestors/i.test(got["content-security-policy"] || "") : !!got[h];
+            if (ok) score += pts;
+            else manque.push({ en_tete: h, pourquoi: why });
+          }
+          const fuites = ["server", "x-powered-by", "x-aspnet-version"].filter((h) => got[h]).map((h) => `${h}: ${got[h]}`);
+          return { url: r.url, statut: r.status, score, manque, fuites_info: fuites, https: r.url.startsWith("https://") };
+        }
+      },
+      {
+        name: "dzf_certificat_tls",
+        label: "S\xE9curit\xE9 : certificat TLS",
+        category: "S\xE9curit\xE9",
+        icon: "fas fa-certificate",
+        output: "certificat",
+        description: "Lit le certificat d'un ou plusieurs domaines : \xE9metteur, validit\xE9, jours restants. Id\xE9al pour \xEAtre pr\xE9venu avant l'expiration.",
+        params: [{ name: "hotes", label: "Domaines", required: true, help: "Un domaine, plusieurs s\xE9par\xE9s par des virgules, ou une liste {{\u2026}}" }, { name: "port", label: "Port", type: "int", default: 443 }],
+        run: async (p) => {
+          const hosts = (Array.isArray(p.hotes) ? p.hotes : String(p.hotes).split(",")).map((h) => String(typeof h === "object" ? h.hote || h.domaine || h.url : h).replace(/^https?:\/\//, "").replace(/\/.*$/, "").trim()).filter(Boolean);
+          const out = [];
+          for (const h of hosts) out.push(await certInfo(h, +p.port || 443).catch((e) => ({ hote: h, erreur: e.message, jours_restants: null, valide: false })));
+          return Array.isArray(p.hotes) || hosts.length > 1 ? out : out[0];
+        }
+      },
+      {
+        name: "dzf_dns_mail",
+        label: "S\xE9curit\xE9 : SPF, DMARC, MX d'un domaine",
+        category: "S\xE9curit\xE9",
+        icon: "fas fa-envelope-open-text",
+        output: "dns_mail",
+        description: "V\xE9rifie la configuration anti-usurpation d'un domaine mail : SPF, DMARC (et sa politique), MX, DKIM si tu donnes le s\xE9lecteur.",
+        params: [{ name: "domaine", label: "Domaine", required: true, help: "Ex. ambs-agency.com" }, { name: "selecteur_dkim", label: "S\xE9lecteur DKIM (facultatif)", help: "Ex. default, google, ovh" }],
+        run: async (p) => {
+          const txt = async (n) => (await dns.resolveTxt(n).catch(() => [])).map((x) => x.join(""));
+          const spf = (await txt(p.domaine)).find((t) => t.startsWith("v=spf1")) || "";
+          const dmarc = (await txt(`_dmarc.${p.domaine}`)).find((t) => t.startsWith("v=DMARC1")) || "";
+          const mx = (await dns.resolveMx(p.domaine).catch(() => [])).sort((a, b) => a.priority - b.priority).map((m) => m.exchange);
+          const dkim = p.selecteur_dkim ? (await txt(`${p.selecteur_dkim}._domainkey.${p.domaine}`)).find((t) => /v=DKIM1|p=/.test(t)) || "" : null;
+          const politique = (/p=(\w+)/.exec(dmarc) || [])[1] || "";
+          const conseils = [];
+          if (!spf) conseils.push("Pas de SPF : n'importe qui peut envoyer au nom du domaine.");
+          else if (/\+all/.test(spf)) conseils.push("SPF en +all : il autorise tout le monde.");
+          else if (/\?all/.test(spf)) conseils.push("SPF en ?all : neutre, pr\xE9f\xE9rer ~all ou -all.");
+          if (!dmarc) conseils.push("Pas de DMARC : ajoute au moins v=DMARC1; p=none; rua=mailto:\u2026");
+          else if (politique === "none") conseils.push("DMARC en p=none : il observe sans prot\xE9ger. Passer \xE0 quarantine puis reject.");
+          if (!mx.length) conseils.push("Aucun MX : le domaine ne re\xE7oit pas de mail.");
+          if (dkim === "") conseils.push("DKIM introuvable pour ce s\xE9lecteur.");
+          return { domaine: p.domaine, spf, dmarc, politique_dmarc: politique, mx, dkim, conseils, ok: !conseils.length };
+        }
+      },
+      {
+        name: "dzf_masquer",
+        label: "S\xE9curit\xE9 : masquer les donn\xE9es perso",
+        category: "S\xE9curit\xE9",
+        icon: "fas fa-mask",
+        output: "masque",
+        description: "Remplace e-mails, t\xE9l\xE9phones, IBAN, cartes bancaires et IP dans un texte (ou une liste) avant de l'envoyer \xE0 une IA, un log ou un tiers. RGPD.",
+        params: [
+          { name: "texte", label: "Texte ou liste", required: true },
+          { name: "quoi", label: "\xC0 masquer", default: "email,t\xE9l\xE9phone,iban,carte,ip", help: "Parmi : email, t\xE9l\xE9phone, iban, carte, ip" },
+          { name: "remplacement", label: "Remplacer par", default: "[masqu\xE9]" }
+        ],
+        run: async (p) => {
+          const kinds = String(p.quoi).split(",").map((s) => s.trim()).filter((k) => PII[k]);
+          const one = (t) => kinds.reduce((acc, k) => acc.replace(PII[k], p.remplacement || "[masqu\xE9]"), String(t ?? ""));
+          return Array.isArray(p.texte) ? p.texte.map((x) => typeof x === "object" ? Object.fromEntries(Object.entries(x).map(([k, v]) => [k, typeof v === "string" ? one(v) : v])) : one(x)) : one(p.texte);
+        }
+      },
+      {
+        name: "dzf_detecter_secrets",
+        label: "S\xE9curit\xE9 : d\xE9tecter des secrets",
+        category: "S\xE9curit\xE9",
+        icon: "fas fa-search-dollar",
+        output: "secrets_trouves",
+        description: "Cherche des cl\xE9s d'API, jetons et cl\xE9s priv\xE9es oubli\xE9s dans un texte (code, log, mail, document). Renvoie ce qui est trouv\xE9, masqu\xE9.",
+        params: [{ name: "texte", label: "Texte", required: true, type: "text" }],
+        run: async (p) => {
+          const t = typeof p.texte === "string" ? p.texte : JSON.stringify(p.texte);
+          const found = [];
+          for (const [label, re] of SECRETS) for (const m of t.matchAll(re)) found.push({ type: label, extrait: `${m[0].slice(0, 6)}\u2026${m[0].slice(-4)}`, position: m.index });
+          return { trouve: found.length > 0, nombre: found.length, elements: found.slice(0, 100) };
+        }
+      },
+      {
+        name: "dzf_ip_reputation",
+        label: "S\xE9curit\xE9 : r\xE9putation d'une IP",
+        category: "S\xE9curit\xE9",
+        icon: "fas fa-user-ninja",
+        output: "ip",
+        description: "Score d'abus d'une adresse IP (AbuseIPDB, cl\xE9 gratuite) : utile pour bloquer ou signaler une IP qui attaque tes formulaires ou ton SSH.",
+        params: [{ name: "ip", label: "Adresse IP", required: true }, { name: "secret_cle", label: "Nom du secret de la cl\xE9 AbuseIPDB", default: "ABUSEIPDB_KEY" }, { name: "jours", label: "Sur les N derniers jours", type: "int", default: 90 }],
+        run: async (p, ctx, api) => {
+          const r = await fetch(`https://api.abuseipdb.com/api/v2/check?ipAddress=${encodeURIComponent(p.ip)}&maxAgeInDays=${+p.jours || 90}`, { headers: { Key: await need(api, p.secret_cle), Accept: "application/json" } });
+          const j = await r.json();
+          if (!r.ok) throw new Error(j.errors && j.errors[0] && j.errors[0].detail || `HTTP ${r.status}`);
+          const d = j.data || {};
+          return { ip: d.ipAddress, score: d.abuseConfidenceScore, signalements: d.totalReports, pays: d.countryCode, fai: d.isp, usage: d.usageType, tor: d.isTor };
+        }
+      },
+      {
+        name: "dzf_ports",
+        label: "S\xE9curit\xE9 : ports ouverts",
+        category: "S\xE9curit\xE9",
+        icon: "fas fa-door-open",
+        output: "ports",
+        description: "V\xE9rifie quels ports r\xE9pondent sur un serveur (20 ports max). \xC0 utiliser sur TES serveurs pour voir ce qui est expos\xE9 par erreur (base de donn\xE9es, Redis\u2026).",
+        params: [{ name: "hote", label: "Serveur", required: true }, { name: "ports", label: "Ports", default: "22,80,443,3000,5432,6379,8080,9000", help: "S\xE9par\xE9s par des virgules" }, { name: "delai_ms", label: "Attente par port (ms)", type: "int", default: 1500 }],
+        run: async (p) => {
+          const net = require("net");
+          const ports = String(p.ports).split(",").map((x) => +x).filter((x) => x > 0 && x < 65536).slice(0, 20);
+          const probe = (port) => new Promise((res) => {
+            const s = net.createConnection({ host: p.hote, port, timeout: +p.delai_ms || 1500 });
+            const done = (open) => {
+              s.destroy();
+              res({ port, ouvert: open });
+            };
+            s.on("connect", () => done(true));
+            s.on("timeout", () => done(false));
+            s.on("error", () => done(false));
+          });
+          const r = await Promise.all(ports.map(probe));
+          return { hote: p.hote, ouverts: r.filter((x) => x.ouvert).map((x) => x.port), details: r };
+        }
+      }
+    ];
+  }
+});
+
+// src/blocks/surveillance.js
+var require_surveillance = __commonJS({
+  "src/blocks/surveillance.js"(exports2, module2) {
+    "use strict";
+    var os = require("os");
+    var fs = require("fs");
+    var dns = require("dns").promises;
+    var { asList, pool } = require_engine();
+    var now = () => Number(process.hrtime.bigint() / 1000000n);
+    var pingOne = async (target, p) => {
+      const url = typeof target === "string" ? target : target.url;
+      const t0 = now();
+      try {
+        const ctl = new AbortController();
+        const timer = setTimeout(() => ctl.abort(), (+p.delai_s || 10) * 1e3);
+        const r = await fetch(url, { method: p.methode || "GET", redirect: "follow", signal: ctl.signal, headers: { "User-Agent": "dysizz-flow-monitor/1.0" } });
+        const body = p.contient ? await r.text() : "";
+        clearTimeout(timer);
+        const ms = now() - t0;
+        const okStatus = String(p.codes_ok || "200-399").split(",").some((rg) => {
+          const [a, b] = rg.split("-").map(Number);
+          return r.status >= a && r.status <= (b || a);
+        });
+        const okBody = !p.contient || body.includes(p.contient);
+        const lent = p.lent_ms && ms > +p.lent_ms;
+        return { ...typeof target === "object" ? target : {}, url, statut: r.status, ms, ok: okStatus && okBody, lent: !!lent, etat: !okStatus || !okBody ? "panne" : lent ? "lent" : "ok", raison: !okStatus ? `code ${r.status}` : !okBody ? "texte attendu absent" : lent ? `lent (${ms} ms)` : "" };
+      } catch (e) {
+        return { ...typeof target === "object" ? target : {}, url, statut: 0, ms: now() - t0, ok: false, lent: false, etat: "panne", raison: e.name === "AbortError" ? "d\xE9lai d\xE9pass\xE9" : e.message };
+      }
+    };
+    module2.exports = [
+      {
+        name: "dzf_ping_http",
+        label: "Surveillance : site en ligne ?",
+        category: "Surveillance",
+        icon: "fas fa-heartbeat",
+        output: "sites",
+        timeout: 120,
+        description: "Appelle une ou plusieurs adresses en parall\xE8le : code HTTP, temps de r\xE9ponse, texte attendu. Chaque r\xE9sultat dit \xAB ok \xBB, \xAB lent \xBB ou \xAB panne \xBB avec la raison.",
+        params: [
+          { name: "cibles", label: "Adresses", required: true, help: "Une adresse, plusieurs s\xE9par\xE9es par des virgules, ou une liste {{sites}} (champ url)" },
+          { name: "codes_ok", label: "Codes accept\xE9s", default: "200-399" },
+          { name: "contient", label: "Texte qui doit \xEAtre dans la page (facultatif)" },
+          { name: "lent_ms", label: "Lent au-del\xE0 de (ms)", type: "int", default: 2e3 },
+          { name: "delai_s", label: "Abandon apr\xE8s (secondes)", type: "int", default: 10 },
+          { name: "en_parallele", label: "En m\xEAme temps", type: "int", default: 8 }
+        ],
+        run: async (p) => {
+          const list = Array.isArray(p.cibles) ? p.cibles : String(p.cibles).split(",").map((s) => s.trim()).filter(Boolean);
+          const r = await pool(list, +p.en_parallele || 8, (t) => pingOne(t, p));
+          return Array.isArray(p.cibles) || list.length > 1 ? r : r[0];
+        }
+      },
+      {
+        name: "dzf_dns",
+        label: "Surveillance : r\xE9solution DNS",
+        category: "Surveillance",
+        icon: "fas fa-sitemap",
+        output: "dns",
+        description: "Interroge le DNS d'un domaine (A, AAAA, CNAME, MX, TXT, NS). Pour v\xE9rifier qu'un domaine pointe au bon endroit.",
+        params: [
+          { name: "domaine", label: "Domaine", required: true },
+          { name: "type", label: "Type", type: "select", options: ["A", "AAAA", "CNAME", "MX", "TXT", "NS"], default: "A" },
+          { name: "attendu", label: "Valeur attendue (facultatif)", help: "Ex. l'IP de ton serveur : le r\xE9sultat dit si elle est pr\xE9sente" }
+        ],
+        run: async (p) => {
+          const valeurs = (await dns.resolve(p.domaine, p.type).catch((e) => {
+            throw new Error(`${p.domaine} : ${e.code || e.message}`);
+          })).map((x) => typeof x === "object" ? Array.isArray(x) ? x.join("") : x.exchange || JSON.stringify(x) : x);
+          return { domaine: p.domaine, type: p.type, valeurs, ok: !p.attendu || valeurs.includes(p.attendu) };
+        }
+      },
+      {
+        name: "dzf_port_ouvert",
+        label: "Surveillance : service joignable (TCP)",
+        category: "Surveillance",
+        icon: "fas fa-plug",
+        output: "tcp",
+        description: "V\xE9rifie qu'un service r\xE9pond sur un port (base de donn\xE9es, SMTP, SSH, Redis\u2026) et mesure le temps de connexion.",
+        params: [{ name: "hote", label: "Serveur", required: true }, { name: "port", label: "Port", type: "int", required: true }, { name: "delai_ms", label: "Abandon apr\xE8s (ms)", type: "int", default: 3e3 }],
+        run: async (p) => {
+          const net = require("net");
+          const t0 = now();
+          return new Promise((res) => {
+            const s = net.createConnection({ host: p.hote, port: +p.port, timeout: +p.delai_ms || 3e3 });
+            const done = (ok, raison) => {
+              s.destroy();
+              res({ hote: p.hote, port: +p.port, ok, ms: now() - t0, raison: raison || "" });
+            };
+            s.on("connect", () => done(true));
+            s.on("timeout", () => done(false, "d\xE9lai d\xE9pass\xE9"));
+            s.on("error", (e) => done(false, e.code || e.message));
+          });
+        }
+      },
+      {
+        name: "dzf_sante_serveur",
+        label: "Surveillance : sant\xE9 du serveur Saltcorn",
+        category: "Surveillance",
+        icon: "fas fa-server",
+        output: "serveur",
+        description: "Charge CPU, m\xE9moire, disque, temps de fonctionnement du conteneur Saltcorn qui ex\xE9cute le workflow. Avec des seuils qui disent si \xE7a va.",
+        params: [
+          { name: "chemin_disque", label: "Disque \xE0 mesurer", default: "/" },
+          { name: "seuil_disque", label: "Alerte disque au-del\xE0 de (%)", type: "int", default: 85 },
+          { name: "seuil_memoire", label: "Alerte m\xE9moire au-del\xE0 de (%)", type: "int", default: 90 }
+        ],
+        run: async (p) => {
+          const mem = 100 - Math.round(os.freemem() / os.totalmem() * 100);
+          let disque = null;
+          try {
+            const st = fs.statfsSync(p.chemin_disque || "/");
+            disque = 100 - Math.round(st.bavail / st.blocks * 100);
+          } catch (e) {
+            disque = null;
+          }
+          const charge = os.loadavg()[0];
+          const alertes = [];
+          if (disque !== null && disque > (+p.seuil_disque || 85)) alertes.push(`disque \xE0 ${disque} %`);
+          if (mem > (+p.seuil_memoire || 90)) alertes.push(`m\xE9moire \xE0 ${mem} %`);
+          if (charge > os.cpus().length * 1.5) alertes.push(`charge CPU ${charge.toFixed(2)}`);
+          return { hote: os.hostname(), cpu: os.cpus().length, charge_1min: +charge.toFixed(2), memoire_pct: mem, disque_pct: disque, process_mo: Math.round(process.memoryUsage().rss / 1048576), uptime_h: +(os.uptime() / 3600).toFixed(1), node: process.version, ok: !alertes.length, alertes };
+        }
+      },
+      {
+        name: "dzf_sante_postgres",
+        label: "Surveillance : sant\xE9 de Postgres",
+        category: "Surveillance",
+        icon: "fas fa-database",
+        output: "postgres",
+        description: "Connexions ouvertes (et le maximum), taille de la base, requ\xEAtes qui tournent depuis longtemps, verrous en attente. Lecture seule.",
+        params: [{ name: "requete_longue_s", label: "Requ\xEAte longue au-del\xE0 de (secondes)", type: "int", default: 30 }],
+        run: async (p) => {
+          const db = require("@saltcorn/data/db");
+          if (db.isSQLite) return { ok: true, info: "SQLite : rien \xE0 mesurer" };
+          const one = async (sql, v2 = []) => (await db.query(sql, v2)).rows;
+          const [c] = await one("select count(*)::int as n, (select setting::int from pg_settings where name='max_connections') as max from pg_stat_activity");
+          const [t] = await one("select pg_database_size(current_database())::bigint as octets");
+          const longues = await one("select pid, now() - query_start as duree, left(query, 200) as requete, state from pg_stat_activity where state <> 'idle' and query_start < now() - ($1 || ' seconds')::interval and pid <> pg_backend_pid() order by query_start limit 10", [String(+p.requete_longue_s || 30)]);
+          const [v] = await one("select count(*)::int as n from pg_locks where not granted");
+          const pct = Math.round(c.n / c.max * 100);
+          return { connexions: c.n, max_connexions: c.max, connexions_pct: pct, taille_mo: Math.round(Number(t.octets) / 1048576), requetes_longues: longues.map((r) => ({ ...r, duree: String(r.duree) })), verrous_en_attente: v.n, ok: pct < 80 && !longues.length && v.n === 0 };
+        }
+      },
+      {
+        name: "dzf_battement",
+        label: "Surveillance : battement de c\u0153ur",
+        category: "Surveillance",
+        icon: "fas fa-signal",
+        output: "battement",
+        description: "Pr\xE9vient un service de surveillance externe (Uptime Kuma \xAB push \xBB, Healthchecks, Better Stack\u2026) que le workflow a bien tourn\xE9. S'il ne re\xE7oit plus rien, c'est lui qui t'alerte.",
+        params: [{ name: "url", label: "Adresse de push", required: true, help: "Ex. https://status.mondomaine/api/push/XXXX?status=up&msg=OK" }, { name: "message", label: "Message", default: "OK" }],
+        run: async (p) => {
+          const u = new URL(p.url);
+          if (p.message && !u.searchParams.has("msg")) u.searchParams.set("msg", p.message);
+          const r = await fetch(u, { method: "GET" });
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          return true;
+        }
+      },
+      {
+        name: "dzf_workflows_etat",
+        label: "Surveillance : \xE9tat des workflows",
+        category: "Surveillance",
+        icon: "fas fa-project-diagram",
+        output: "workflows",
+        description: "Compte les ex\xE9cutions de workflows Saltcorn des derni\xE8res heures, par statut, et liste les derni\xE8res en erreur. Pour surveiller ta propre automatisation.",
+        params: [{ name: "heures", label: "Sur les N derni\xE8res heures", type: "int", default: 24 }],
+        run: async (p) => {
+          const db = require("@saltcorn/data/db");
+          const since = new Date(Date.now() - (+p.heures || 24) * 36e5);
+          const WR = require("@saltcorn/data/models/workflow_run");
+          const runs = await WR.find({ started_at: { gt: since } }, { orderBy: "id", orderDesc: true, limit: 2e3 }).catch(() => []);
+          const Trigger = require("@saltcorn/data/models/trigger");
+          const par = {};
+          for (const r of runs) par[r.status] = (par[r.status] || 0) + 1;
+          const erreurs = runs.filter((r) => r.status === "Error").slice(0, 20).map((r) => ({ id: r.id, workflow: (Trigger.findOne({ id: r.trigger_id }) || {}).name, quand: r.started_at, erreur: String(r.error || "").slice(0, 300) }));
+          void db;
+          return { total: runs.length, par_statut: par, erreurs, ok: !erreurs.length };
+        }
+      }
+    ];
+  }
+});
+
+// src/lib/redis.js
 var require_redis = __commonJS({
-  "../src/lib/redis.js"(exports2, module2) {
+  "src/lib/redis.js"(exports2, module2) {
     "use strict";
     var net = require("net");
     var conn = null;
@@ -82507,9 +83416,9 @@ ${s}\r
   }
 });
 
-// ../src/blocks/controle.js
+// src/blocks/controle.js
 var require_controle = __commonJS({
-  "../src/blocks/controle.js"(exports2, module2) {
+  "src/blocks/controle.js"(exports2, module2) {
     "use strict";
     var redis = require_redis();
     var { ensureTables } = require_store();
@@ -82616,12 +83525,12 @@ var require_controle = __commonJS({
           }
           const now = /* @__PURE__ */ new Date();
           await verrous.deleteRows({ nom: p.nom, jusqu_a: { lt: now } });
-          try {
-            await verrous.insertRow({ nom: p.nom, jusqu_a: ttlDate(p.duree || 600), par: `${require("os").hostname()}:${process.pid}` });
-            return true;
-          } catch (e) {
-            return false;
-          }
+          const db = require("@saltcorn/data/db");
+          const par = `${require("os").hostname()}:${process.pid}:${Math.random().toString(36).slice(2, 10)}`;
+          const sch = db.isSQLite ? "" : `"${db.getTenantSchema()}".`;
+          await db.query(`insert ${db.isSQLite ? "or ignore " : ""}into ${sch}dzf_verrous (nom, jusqu_a, par) values ($1, $2, $3)${db.isSQLite ? "" : " on conflict (nom) do nothing"}`, [p.nom, db.isSQLite ? ttlDate(p.duree || 600).toISOString() : ttlDate(p.duree || 600), par]);
+          const mine = await verrous.getRow({ nom: p.nom });
+          return !!(mine && mine.par === par);
         }
       },
       {
@@ -82732,27 +83641,966 @@ var require_controle = __commonJS({
   }
 });
 
-// ../src/blocks/index.js
+// src/blocks/observabilite.js
+var require_observabilite = __commonJS({
+  "src/blocks/observabilite.js"(exports2, module2) {
+    "use strict";
+    var { asList } = require_engine();
+    var { ensureTables } = require_store();
+    module2.exports = [
+      {
+        name: "dzf_metrique",
+        label: "M\xE9trique : enregistrer une valeur",
+        category: "Logs & m\xE9triques",
+        icon: "fas fa-chart-line",
+        output: "metrique",
+        description: "Note une valeur dat\xE9e (ex. temps de r\xE9ponse, nombre de mails, solde) dans la table dzf_mesures, pour la suivre dans le temps et l'afficher en graphique (vue DZ Graphique de dysizz-ui).",
+        params: [
+          { name: "nom", label: "Nom de la m\xE9trique", required: true, help: "Ex. site.web.ms" },
+          { name: "valeur", label: "Valeur (nombre)", required: true, help: "Ex. {{sites.ms}}" },
+          { name: "etiquettes", label: "\xC9tiquettes (JSON, facultatif)", type: "json", help: '{"serveur":"ovh-1"}' }
+        ],
+        run: async (p) => {
+          const T = await ensureTables();
+          const v = Number(p.valeur);
+          if (!Number.isFinite(v)) throw new Error("la valeur n'est pas un nombre");
+          await T.mesures.insertRow({ quand: /* @__PURE__ */ new Date(), nom: String(p.nom).slice(0, 120), valeur: v, etiquettes: p.etiquettes ? JSON.stringify(p.etiquettes) : "" });
+          return v;
+        }
+      },
+      {
+        name: "dzf_metrique_lire",
+        label: "M\xE9trique : lire une p\xE9riode",
+        category: "Logs & m\xE9triques",
+        icon: "fas fa-chart-area",
+        output: "stat",
+        description: "Moyenne, min, max, derni\xE8re valeur et nombre de points d'une m\xE9trique sur les N derni\xE8res heures. Pour d\xE9cider d'une alerte (ex. moyenne > 1500 ms).",
+        params: [{ name: "nom", label: "Nom de la m\xE9trique", required: true }, { name: "heures", label: "Sur les N derni\xE8res heures", type: "int", default: 24 }],
+        run: async (p) => {
+          const T = await ensureTables();
+          const where = { nom: p.nom, quand: { gt: new Date(Date.now() - (+p.heures || 24) * 36e5) } };
+          const r = await T.mesures.aggregationQuery({ moy: { field: "valeur", aggregate: "Avg" }, min: { field: "valeur", aggregate: "Min" }, max: { field: "valeur", aggregate: "Max" }, n: { field: "id", aggregate: "Count" } }, { where });
+          const last = (await T.mesures.getRows(where, { orderBy: "quand", orderDesc: true, limit: 1 }))[0];
+          return { nom: p.nom, moyenne: r && r.moy !== null ? +Number(r.moy).toFixed(3) : null, min: r ? r.min : null, max: r ? r.max : null, points: r ? Number(r.n) : 0, derniere: last ? last.valeur : null };
+        }
+      },
+      {
+        name: "dzf_alerte",
+        label: "Alerte (sans spam)",
+        category: "Logs & m\xE9triques",
+        icon: "fas fa-bell-slash",
+        output: "alerte",
+        description: "Laisse passer une alerte une seule fois par p\xE9riode pour une m\xEAme cl\xE9 (ex. \xAB site X en panne \xBB toutes les 30 min, pas toutes les 5 min). Pr\xE9vient aussi quand \xE7a revient \xE0 la normale.",
+        params: [
+          { name: "cle", label: "Cl\xE9 de l'alerte", required: true, help: "Ex. panne-{{site.url}}" },
+          { name: "probleme", label: "Il y a un probl\xE8me ?", help: "Oui si c'est vrai, un nombre > 0 ou une liste non vide. Ex. {{pannes}}" },
+          { name: "silence_min", label: "Ne pas r\xE9p\xE9ter avant (minutes)", type: "int", default: 30 }
+        ],
+        run: async (p) => {
+          const { kv } = require_controle();
+          const k = `dzf:alerte:${p.cle}`;
+          const prev = await kv.get(k);
+          const now = Date.now();
+          const pb = p.probleme;
+          const bad = pb === true || pb === "true" || typeof pb === "number" && pb > 0 || /^\d+$/.test(String(pb)) && +pb > 0 || Array.isArray(pb) && pb.length > 0;
+          if (bad) {
+            if (prev && prev.actif && now - prev.depuis_envoi < (+p.silence_min || 30) * 6e4) return { envoyer: false, etat: "d\xE9j\xE0 signal\xE9", depuis: prev.debut };
+            await kv.set(k, { actif: true, debut: prev && prev.actif && prev.debut || now, depuis_envoi: now }, 7 * 86400);
+            return { envoyer: true, etat: prev && prev.actif ? "toujours en panne" : "nouveau probl\xE8me", depuis: prev && prev.actif && prev.debut || now };
+          }
+          if (prev && prev.actif) {
+            await kv.set(k, { actif: false }, 86400);
+            return { envoyer: true, etat: "r\xE9tabli", duree_min: Math.round((now - prev.debut) / 6e4) };
+          }
+          return { envoyer: false, etat: "ok" };
+        }
+      },
+      {
+        name: "dzf_logs_saltcorn",
+        label: "Logs : \xE9v\xE9nements et erreurs Saltcorn",
+        category: "Logs & m\xE9triques",
+        icon: "fas fa-scroll",
+        output: "logs",
+        description: "Lit le journal d'\xE9v\xE9nements et le journal des plantages de Saltcorn (connexions, erreurs, d\xE9clencheurs\u2026) des derni\xE8res heures.",
+        params: [
+          { name: "source", label: "Journal", type: "select", options: ["erreurs", "\xE9v\xE9nements"], default: "erreurs" },
+          { name: "heures", label: "Sur les N derni\xE8res heures", type: "int", default: 24 },
+          { name: "contient", label: "Contient (facultatif)" },
+          { name: "limite", label: "Nombre max", type: "int", default: 100 }
+        ],
+        run: async (p) => {
+          const since = new Date(Date.now() - (+p.heures || 24) * 36e5);
+          const lim = Math.min(1e3, +p.limite || 100);
+          const has = (s) => !p.contient || String(s || "").toLowerCase().includes(String(p.contient).toLowerCase());
+          if (p.source === "\xE9v\xE9nements") {
+            const EventLog = require("@saltcorn/data/models/eventlog");
+            const ev = await EventLog.find({ occur_at: { gt: since } }, { orderBy: "id", orderDesc: true, limit: lim * 3 }).catch(() => []);
+            return ev.filter((e) => has(JSON.stringify(e))).slice(0, lim).map((e) => ({ quand: e.occur_at, type: e.event_type, canal: e.channel, utilisateur: e.user_id, details: e.payload }));
+          }
+          const Crash = require("@saltcorn/data/models/crash");
+          const cr = await Crash.find({ occur_at: { gt: since } }, { orderBy: "id", orderDesc: true, limit: lim * 3 }).catch(() => []);
+          return cr.filter((c) => has(c.message + c.stack)).slice(0, lim).map((c) => ({ quand: c.occur_at, message: c.message, url: c.url, utilisateur: c.user_id, pile: String(c.stack || "").slice(0, 600) }));
+        }
+      },
+      {
+        name: "dzf_loki",
+        label: "Logs : envoyer vers Loki / Grafana",
+        category: "Logs & m\xE9triques",
+        icon: "fas fa-stream",
+        output: "loki",
+        description: "Pousse une ou plusieurs lignes de log vers Grafana Loki (auto-h\xE9berg\xE9 ou cloud), avec des \xE9tiquettes. Le standard pour centraliser les logs de tous tes services.",
+        params: [
+          { name: "url", label: "Adresse Loki", default: "http://loki:3100", help: "Sans /loki/api/v1/push" },
+          { name: "lignes", label: "Ligne(s)", required: true, help: "Un texte, ou une liste {{\u2026}} (chaque \xE9l\xE9ment devient une ligne JSON)" },
+          { name: "etiquettes", label: "\xC9tiquettes (JSON)", type: "json", default: '{"app":"saltcorn","source":"dysizz-flow"}' },
+          { name: "secret_auth", label: "Nom du secret user:motdepasse (facultatif)" }
+        ],
+        run: async (p, ctx, api) => {
+          const ns = () => `${Date.now()}000000`;
+          const values = asList(p.lignes).map((l) => [ns(), typeof l === "string" ? l : JSON.stringify(l)]);
+          const headers = { "Content-Type": "application/json" };
+          if (p.secret_auth) headers.Authorization = `Basic ${Buffer.from(await api.secret(p.secret_auth) || "").toString("base64")}`;
+          const r = await fetch(`${String(p.url).replace(/\/$/, "")}/loki/api/v1/push`, { method: "POST", headers, body: JSON.stringify({ streams: [{ stream: p.etiquettes || { app: "saltcorn" }, values }] }) });
+          if (!r.ok) throw new Error(`Loki : HTTP ${r.status} ${(await r.text()).slice(0, 200)}`);
+          return values.length;
+        }
+      },
+      {
+        name: "dzf_nettoyer",
+        label: "Maintenance : supprimer les vieilles lignes",
+        category: "Logs & m\xE9triques",
+        icon: "fas fa-broom",
+        output: "nettoye",
+        description: "Supprime les lignes plus vieilles que N jours d'une table (logs, mesures, historiques), par paquets pour ne pas bloquer la base.",
+        params: [
+          { name: "table", label: "Table", type: "table", required: true },
+          { name: "champ_date", label: "Champ date", required: true, default: "quand" },
+          { name: "jours", label: "Garder les N derniers jours", type: "int", default: 90 },
+          { name: "filtre", label: "Filtre en plus (JSON)", type: "json" }
+        ],
+        run: async (p, ctx, api) => {
+          const t = api.Table.findOne({ name: p.table });
+          if (!t) throw new Error(`table \xAB ${p.table} \xBB introuvable`);
+          if (api.user && api.user.role_id > t.min_role_write) throw new Error("\xE9criture refus\xE9e pour ton r\xF4le");
+          const where = { ...p.filtre || {}, [p.champ_date]: { lt: new Date(Date.now() - Math.max(1, +p.jours || 90) * 864e5) } };
+          const n = await t.countRows(where);
+          await t.deleteRows(where);
+          return n;
+        }
+      }
+    ];
+  }
+});
+
+// src/blocks/taches.js
+var require_taches = __commonJS({
+  "src/blocks/taches.js"(exports2, module2) {
+    "use strict";
+    var { asList, pool } = require_engine();
+    var { ensureTables } = require_store();
+    var redis = require_redis();
+    var SYSTEME = { role_id: 1 };
+    var inTransaction = () => {
+      try {
+        const c = require("@saltcorn/data/db").getRequestContext();
+        return !!(c && c.client);
+      } catch (e) {
+        return false;
+      }
+    };
+    var findWorkflow = (name) => {
+      const Trigger = require("@saltcorn/data/models/trigger");
+      const t = Trigger.findOne({ name });
+      if (!t) throw Object.assign(new Error(`workflow \xAB ${name} \xBB introuvable`), { permanent: true });
+      return t;
+    };
+    var ensureScheduler = async () => {
+      const Trigger = require("@saltcorn/data/models/trigger");
+      if (Trigger.findOne({ name: "dzf_planificateur" })) return;
+      await Trigger.create({ name: "dzf_planificateur", action: "dzf_planifs_executer", when_trigger: "Often", configuration: {}, min_role: 1, description: "dysizz-flow : lance les workflows planifi\xE9s (bloc \xAB Planifier \xBB)" });
+    };
+    var icsDate = (v) => {
+      if (!v) return null;
+      const m = /^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2})(\d{2})(Z)?)?/.exec(v);
+      if (!m) return null;
+      if (!m[4]) return new Date(+m[1], +m[2] - 1, +m[3]);
+      return m[7] ? new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6])) : new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]);
+    };
+    var parseIcs = (txt) => {
+      const lines = String(txt).replace(/\r\n[ \t]/g, "").replace(/\n[ \t]/g, "").split(/\r?\n/);
+      const out = [];
+      let ev = null;
+      for (const l of lines) {
+        if (l === "BEGIN:VEVENT") ev = {};
+        else if (l === "END:VEVENT") {
+          if (ev) out.push(ev);
+          ev = null;
+        } else if (ev) {
+          const i = l.indexOf(":");
+          if (i < 0) continue;
+          const key = l.slice(0, i).split(";")[0].toUpperCase();
+          const val = l.slice(i + 1).replace(/\\n/g, "\n").replace(/\\,/g, ",").replace(/\\;/g, ";");
+          ev[key] = val;
+        }
+      }
+      return out.map((e) => ({ uid: e.UID || "", titre: e.SUMMARY || "", debut: icsDate(e.DTSTART), fin: icsDate(e.DTEND), lieu: e.LOCATION || "", description: e.DESCRIPTION || "", recurrent: !!e.RRULE }));
+    };
+    var icsEsc = (s) => String(s || "").replace(/[\\;,]/g, (c) => `\\${c}`).replace(/\n/g, "\\n");
+    var icsFmt = (d) => new Date(d).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
+    module2.exports = [
+      {
+        name: "dzf_lancer_workflow",
+        label: "Lancer un autre workflow",
+        category: "T\xE2ches & planification",
+        icon: "fas fa-play-circle",
+        output: "sous_workflow",
+        timeout: 300,
+        description: "Lance un workflow Saltcorn par son nom, avec un contexte, et r\xE9cup\xE8re son contexte final. Pour d\xE9couper un gros traitement en petits workflows r\xE9utilisables.",
+        params: [{ name: "workflow", label: "Nom du workflow", required: true }, { name: "contexte", label: "Contexte transmis (JSON)", type: "json", help: 'Ex. {"email":"{{email}}"}. Vide = tout le contexte actuel' }],
+        run: async (p, ctx, api) => {
+          const t = findWorkflow(p.workflow);
+          const r = await t.runWithoutRow({ row: p.contexte || ctx, user: api.user || SYSTEME, req: api.req });
+          return r && typeof r === "object" ? r : { resultat: r };
+        }
+      },
+      {
+        name: "dzf_pour_chaque",
+        label: "Pour chaque \xE9l\xE9ment : lancer un workflow",
+        category: "T\xE2ches & planification",
+        icon: "fas fa-redo",
+        output: "boucle",
+        timeout: 600,
+        description: "Lance un workflow pour chaque \xE9l\xE9ment d'une liste (en parall\xE8le, avec une limite), sans qu'une erreur arr\xEAte les autres. Sortie : reussis, echecs (avec l'erreur) et resultats.",
+        params: [
+          { name: "liste", label: "Liste", required: true, help: "Ex. {{travaux}}" },
+          { name: "workflow", label: "Workflow lanc\xE9 pour chaque \xE9l\xE9ment", required: true },
+          { name: "variable", label: "Nom de l'\xE9l\xE9ment dans le contexte du workflow", default: "item" },
+          { name: "en_parallele", label: "En m\xEAme temps", type: "int", default: 4 },
+          { name: "garder_contexte", label: "Transmettre aussi le contexte actuel", type: "bool", default: false }
+        ],
+        run: async (p, ctx, api) => {
+          const t = findWorkflow(p.workflow);
+          const v = String(p.variable || "item").replace(/[^\w]/g, "") || "item";
+          const reussis = [], echecs = [], resultats = [];
+          const tx = inTransaction();
+          await pool(asList(p.liste), tx ? 1 : Math.max(1, Math.min(32, +p.en_parallele || 4)), async (x, i) => {
+            if (tx) {
+              resultats[i] = await t.runWithoutRow({ row: { ...p.garder_contexte ? ctx : {}, [v]: x, index: i }, user: api.user || SYSTEME, req: api.req });
+              reussis.push(x);
+              return;
+            }
+            try {
+              const r = await t.runWithoutRow({ row: { ...p.garder_contexte ? ctx : {}, [v]: x, index: i }, user: api.user || SYSTEME, req: api.req });
+              reussis.push(x);
+              resultats[i] = r;
+            } catch (e) {
+              echecs.push({ ...x && typeof x === "object" ? x : { valeur: x }, erreur: e.message });
+              resultats[i] = null;
+            }
+          });
+          return { reussis, echecs, resultats, total: reussis.length + echecs.length };
+        }
+      },
+      {
+        name: "dzf_planifier",
+        label: "Planifier un workflow plus tard",
+        category: "T\xE2ches & planification",
+        icon: "fas fa-clock",
+        output: "planifie",
+        description: "Programme un workflow \xE0 une date, ou dans N minutes / heures / jours, avec son contexte. Avec une cl\xE9, une nouvelle planification remplace l'ancienne (ex. une relance par client). Pr\xE9cision : ~5 minutes.",
+        params: [
+          { name: "workflow", label: "Nom du workflow", required: true },
+          { name: "quand", label: "Date (facultatif)", help: "Ex. {{relance_le}}" },
+          { name: "dans", label: "\u2026ou dans", type: "int", default: 60 },
+          { name: "unite", label: "Unit\xE9", type: "select", options: ["minutes", "heures", "jours"], default: "minutes" },
+          { name: "contexte", label: "Contexte (JSON)", type: "json" },
+          { name: "cle", label: "Cl\xE9 unique (facultatif)", help: "Ex. relance-{{id}}" }
+        ],
+        run: async (p) => {
+          findWorkflow(p.workflow);
+          await ensureScheduler();
+          const mult = { minutes: 6e4, heures: 36e5, jours: 864e5 }[p.unite || "minutes"];
+          const quand = p.quand ? new Date(p.quand) : new Date(Date.now() + (+p.dans || 0) * mult);
+          if (isNaN(quand)) throw new Error("date invalide");
+          const { planifs } = await ensureTables();
+          if (p.cle) await planifs.deleteRows({ cle: String(p.cle), etat: "en attente" });
+          const id = await planifs.insertRow({ workflow: p.workflow, quand, contexte: JSON.stringify(p.contexte || {}), etat: "en attente", cle: p.cle ? String(p.cle) : "", essais: 0, message: "" });
+          return { id, quand: quand.toISOString() };
+        }
+      },
+      {
+        name: "dzf_planifs_executer",
+        label: "Planificateur : ex\xE9cuter ce qui est d\xFB",
+        category: "T\xE2ches & planification",
+        icon: "fas fa-cogs",
+        output: "planificateur",
+        timeout: 280,
+        noButton: true,
+        description: "Utilis\xE9 par le workflow syst\xE8me \xAB dzf_planificateur \xBB (toutes les ~5 min). Lance les workflows planifi\xE9s arriv\xE9s \xE0 \xE9ch\xE9ance, 3 essais max. Tu n'as normalement pas \xE0 t'en servir.",
+        params: [{ name: "max", label: "Nombre max par passage", type: "int", default: 50 }],
+        run: async (p, ctx, api) => {
+          const { planifs, verrous } = await ensureTables();
+          await verrous.deleteRows({ nom: "dzf_planificateur", jusqu_a: { lt: /* @__PURE__ */ new Date() } });
+          try {
+            await verrous.insertRow({ nom: "dzf_planificateur", jusqu_a: new Date(Date.now() + 28e4), par: String(process.pid) });
+          } catch (e) {
+            return { deja_en_cours: true };
+          }
+          let ok = 0, ko = 0;
+          try {
+            for (const j of await planifs.getRows({ etat: "en attente", quand: { lt: /* @__PURE__ */ new Date() } }, { orderBy: "quand", limit: +p.max || 50 })) {
+              await planifs.updateRow({ etat: "en cours" }, j.id);
+              try {
+                await findWorkflow(j.workflow).runWithoutRow({ row: JSON.parse(j.contexte || "{}"), user: api.user || SYSTEME });
+                await planifs.updateRow({ etat: "fait", message: "" }, j.id);
+                ok++;
+              } catch (e) {
+                const n = (j.essais || 0) + 1;
+                await planifs.updateRow({ etat: n >= 3 ? "erreur" : "en attente", essais: n, quand: new Date(Date.now() + n * 10 * 6e4), message: String(e.message).slice(0, 500) }, j.id);
+                ko++;
+              }
+            }
+            await planifs.deleteRows({ etat: "fait", quand: { lt: new Date(Date.now() - 30 * 864e5) } });
+          } finally {
+            await verrous.deleteRows({ nom: "dzf_planificateur" });
+          }
+          return { lances: ok, erreurs: ko };
+        }
+      },
+      {
+        name: "dzf_file_ajouter",
+        label: "File d'attente : ajouter",
+        category: "T\xE2ches & planification",
+        icon: "fas fa-inbox",
+        output: "file",
+        description: "Met un ou plusieurs travaux dans une file (Redis si REDIS_URL, sinon une table). Un autre workflow les prend \xE0 son rythme : pour absorber les pics sans tout ralentir.",
+        params: [{ name: "file", label: "Nom de la file", required: true, help: "Ex. envois-whatsapp" }, { name: "travaux", label: "Travail ou liste de travaux", required: true, help: "Ex. {{contacts}}" }],
+        run: async (p) => {
+          const jobs = asList(p.travaux);
+          if (redis.available()) {
+            for (let i = 0; i < jobs.length; i += 500) await redis.cmd(["LPUSH", `dzf:file:${p.file}`, ...jobs.slice(i, i + 500).map((j) => JSON.stringify(j))]);
+            return jobs.length;
+          }
+          const { file } = await ensureTables();
+          for (const j of jobs) await file.insertRow({ file: p.file, charge: JSON.stringify(j), etat: "en attente", cree_le: /* @__PURE__ */ new Date(), essais: 0 });
+          return jobs.length;
+        }
+      },
+      {
+        name: "dzf_file_prendre",
+        label: "File d'attente : prendre",
+        category: "T\xE2ches & planification",
+        icon: "fas fa-dolly",
+        output: "travaux",
+        description: "Prend jusqu'\xE0 N travaux dans une file. Avec la table, les travaux pris depuis plus de 15 min sans \xEAtre termin\xE9s reviennent dans la file (aucun travail perdu si un serveur tombe).",
+        params: [{ name: "file", label: "Nom de la file", required: true }, { name: "nombre", label: "Nombre max", type: "int", default: 20 }],
+        run: async (p) => {
+          const n = Math.max(1, Math.min(1e3, +p.nombre || 20));
+          if (redis.available()) {
+            const out2 = [];
+            for (let i = 0; i < n; i++) {
+              const v = await redis.cmd(["RPOP", `dzf:file:${p.file}`]);
+              if (v === null) break;
+              out2.push(JSON.parse(v));
+            }
+            return out2;
+          }
+          const { file } = await ensureTables();
+          const stale = new Date(Date.now() - 15 * 6e4);
+          for (const r of await file.getRows({ file: p.file, etat: "pris", pris_le: { lt: stale } }, { limit: 500 })) await file.updateRow({ etat: "en attente" }, r.id);
+          const rows = await file.getRows({ file: p.file, etat: "en attente" }, { orderBy: "id", limit: n });
+          const out = [];
+          for (const r of rows) {
+            await file.updateRow({ etat: "pris", pris_le: /* @__PURE__ */ new Date(), essais: (r.essais || 0) + 1 }, r.id);
+            out.push({ ...JSON.parse(r.charge || "null"), __travail: r.id });
+          }
+          return out;
+        }
+      },
+      {
+        name: "dzf_file_terminer",
+        label: "File d'attente : terminer",
+        category: "T\xE2ches & planification",
+        icon: "fas fa-check-double",
+        output: "termines",
+        description: "Marque des travaux pris comme termin\xE9s (ils disparaissent) ou en erreur (ils reviennent dans la file, 5 essais max). Inutile avec Redis.",
+        params: [{ name: "travaux", label: "Travaux termin\xE9s", required: true, help: "Ex. {{travaux}} (champ __travail)" }, { name: "resultat", label: "R\xE9sultat", type: "select", options: ["r\xE9ussi", "erreur"], default: "r\xE9ussi" }],
+        run: async (p) => {
+          if (redis.available()) return 0;
+          const { file } = await ensureTables();
+          let n = 0;
+          for (const j of asList(p.travaux)) {
+            const id = +(j && j.__travail);
+            if (!id) continue;
+            if (p.resultat === "erreur") {
+              const r = await file.getRow({ id });
+              if (r) await file.updateRow({ etat: (r.essais || 0) >= 5 ? "abandonn\xE9" : "en attente" }, id);
+            } else await file.deleteRows({ id });
+            n++;
+          }
+          return n;
+        }
+      },
+      {
+        name: "dzf_ics_lire",
+        label: "Calendrier : lire un agenda (ICS)",
+        category: "T\xE2ches & planification",
+        icon: "far fa-calendar-alt",
+        output: "evenements",
+        timeout: 60,
+        description: "Lit un agenda au format ICS (Google Agenda, Outlook, Nextcloud : lien \xAB adresse secr\xE8te iCal \xBB) et renvoie les \xE9v\xE9nements \xE0 venir.",
+        params: [
+          { name: "url", label: "Adresse ICS ou nom du secret qui la contient", required: true, help: "L'adresse secr\xE8te vaut un mot de passe : mets-la dans le coffre" },
+          { name: "jours", label: "\xC9v\xE9nements des N prochains jours", type: "int", default: 14 },
+          { name: "passes", label: "Inclure les N derniers jours", type: "int", default: 0 }
+        ],
+        run: async (p, ctx, api) => {
+          const url = /^https?:\/\//.test(p.url) ? p.url : await api.secret(p.url);
+          if (!url) throw new Error("adresse ICS introuvable");
+          const r = await fetch(url.replace(/^webcal:/, "https:"));
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          const from = Date.now() - (+p.passes || 0) * 864e5, to = Date.now() + (+p.jours || 14) * 864e5;
+          return parseIcs(await r.text()).filter((e) => e.debut && +e.debut <= to && +(e.fin || e.debut) >= from).sort((a, b) => a.debut - b.debut);
+        }
+      },
+      {
+        name: "dzf_ics_creer",
+        label: "Calendrier : cr\xE9er un \xE9v\xE9nement (ICS)",
+        category: "T\xE2ches & planification",
+        icon: "far fa-calendar-plus",
+        output: "ics",
+        description: "Fabrique un fichier .ics (invitation) \xE0 joindre \xE0 un mail ou \xE0 enregistrer, que tout agenda sait ouvrir.",
+        params: [
+          { name: "titre", label: "Titre", required: true },
+          { name: "debut", label: "D\xE9but", required: true },
+          { name: "fin", label: "Fin (facultatif)" },
+          { name: "lieu", label: "Lieu" },
+          { name: "description", label: "Description", type: "text" }
+        ],
+        run: async (p) => {
+          const d = new Date(p.debut);
+          if (isNaN(d)) throw new Error("date de d\xE9but invalide");
+          const f = p.fin ? new Date(p.fin) : /* @__PURE__ */ new Date(+d + 36e5);
+          return ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//dysizz-flow//FR", "BEGIN:VEVENT", `UID:${require("crypto").randomUUID()}@dysizz`, `DTSTAMP:${icsFmt(/* @__PURE__ */ new Date())}`, `DTSTART:${icsFmt(d)}`, `DTEND:${icsFmt(f)}`, `SUMMARY:${icsEsc(p.titre)}`, p.lieu ? `LOCATION:${icsEsc(p.lieu)}` : "", p.description ? `DESCRIPTION:${icsEsc(p.description)}` : "", "END:VEVENT", "END:VCALENDAR"].filter(Boolean).join("\r\n");
+        }
+      }
+    ];
+    module2.exports.parseIcs = parseIcs;
+  }
+});
+
+// src/blocks/extras.js
+var require_extras = __commonJS({
+  "src/blocks/extras.js"(exports2, module2) {
+    "use strict";
+    var crypto = require("crypto");
+    var { asList, getPath, sanitize } = require_engine();
+    var { plain, safeUrl } = require_core();
+    var need = async (api, name) => {
+      const v = await api.secret(name);
+      if (!v) throw Object.assign(new Error(`secret ${name} introuvable (variable d'environnement ou coffre)`), { permanent: true });
+      return v;
+    };
+    var post = async (url, body, headers = {}) => {
+      const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json", ...headers }, body: JSON.stringify(body) });
+      const t = await r.text();
+      if (!r.ok) throw new Error(`HTTP ${r.status} ${t.slice(0, 200)}`);
+      try {
+        return JSON.parse(t);
+      } catch (e) {
+        return t;
+      }
+    };
+    var kv = () => require_controle().kv;
+    var donnees = [
+      {
+        name: "dzf_table_obtenir",
+        label: "Table : obtenir une ligne",
+        category: "Donn\xE9es",
+        icon: "fas fa-crosshairs",
+        output: "ligne",
+        description: "Lit une seule ligne par son id ou par un filtre (la premi\xE8re trouv\xE9e). Renvoie null si rien.",
+        params: [{ name: "table", label: "Table", type: "table", required: true }, { name: "id", label: "Id (sinon filtre)" }, { name: "filtre", label: "Filtre (JSON)", type: "json" }],
+        run: async (p, ctx, api) => {
+          const t = api.Table.findOne({ name: p.table });
+          if (!t) throw Object.assign(new Error(`table \xAB ${p.table} \xBB introuvable`), { permanent: true });
+          if (api.user && api.user.role_id > t.min_role_read) throw new Error("lecture refus\xE9e pour ton r\xF4le");
+          return sanitize(await t.getRow(p.id ? { id: +p.id } : p.filtre || {}) || null);
+        }
+      },
+      {
+        name: "dzf_table_grouper",
+        label: "Table : regrouper (statistiques)",
+        category: "Donn\xE9es",
+        icon: "fas fa-table",
+        output: "groupes",
+        description: "Compte ou additionne par groupe directement dans la base (rapide m\xEAme sur des millions de lignes) : ex. d\xE9penses par cat\xE9gorie, mails par exp\xE9diteur.",
+        params: [
+          { name: "table", label: "Table", type: "table", required: true },
+          { name: "par", label: "Regrouper par (champ)", required: true },
+          { name: "stat", label: "Calcul", type: "select", options: ["compter", "somme", "moyenne", "min", "max"], default: "compter" },
+          { name: "champ", label: "Champ calcul\xE9 (sauf compter)" },
+          { name: "filtre", label: "Filtre (JSON)", type: "json" }
+        ],
+        run: async (p, ctx, api) => {
+          const t = api.Table.findOne({ name: p.table });
+          if (!t) throw Object.assign(new Error(`table \xAB ${p.table} \xBB introuvable`), { permanent: true });
+          if (api.user && api.user.role_id > t.min_role_read) throw new Error("lecture refus\xE9e pour ton r\xF4le");
+          const agg = { compter: "Count", somme: "Sum", moyenne: "Avg", min: "Min", max: "Max" }[p.stat || "compter"];
+          const rows = await t.aggregationQuery({ valeur: { field: p.stat === "compter" || !p.champ ? "id" : p.champ, aggregate: agg } }, { where: p.filtre || {}, groupBy: p.par });
+          return (rows || []).map((r) => ({ groupe: r[p.par], valeur: Number(r.valeur) })).sort((a, b) => b.valeur - a.valeur);
+        }
+      },
+      {
+        name: "dzf_sql_lecture",
+        label: "SQL : requ\xEAte en lecture seule",
+        category: "Donn\xE9es",
+        icon: "fas fa-terminal",
+        output: "lignes",
+        timeout: 60,
+        description: "Ex\xE9cute une requ\xEAte SELECT sur la base du tenant (jointures, fen\xEAtres, CTE\u2026). Refuse tout ce qui \xE9crit, limite le temps d'ex\xE9cution. R\xE9serv\xE9 aux admins. Param\xE8tres : $1, $2\u2026",
+        params: [
+          { name: "requete", label: "Requ\xEAte SQL", type: "code", required: true, raw: true, default: "select statut, count(*) as n from taches group by statut" },
+          { name: "parametres", label: "Param\xE8tres (JSON liste)", type: "json", help: '["{{id}}"] pour $1' },
+          { name: "limite", label: "Lignes max", type: "int", default: 1e3 },
+          { name: "delai_s", label: "Temps max (secondes)", type: "int", default: 15 }
+        ],
+        run: async (p, ctx, api) => {
+          if (api.user && api.user.role_id !== 1) throw Object.assign(new Error("r\xE9serv\xE9 aux administrateurs"), { permanent: true });
+          const sql = String(p.requete).trim().replace(/;\s*$/, "");
+          if (!/^(select|with)\b/i.test(sql) || /;/.test(sql) || /\b(insert|update|delete|drop|alter|create|truncate|grant|revoke|copy|vacuum|call|do)\b/i.test(sql.replace(/'[^']*'/g, ""))) throw Object.assign(new Error("seulement une requ\xEAte SELECT (ou WITH \u2026 SELECT), sans point-virgule"), { permanent: true });
+          const db = require("@saltcorn/data/db");
+          const params = Array.isArray(p.parametres) ? p.parametres : [];
+          if (db.isSQLite) return sanitize((await db.query(`${sql} limit ${+p.limite || 1e3}`, params)).rows);
+          const client = await db.getClient();
+          try {
+            await client.query("begin read only");
+            await client.query(`set local statement_timeout = ${Math.max(1, Math.min(120, +p.delai_s || 15)) * 1e3}`);
+            await client.query(`set local search_path to "${db.getTenantSchema()}"`);
+            const r = await client.query(`select * from (${sql}) as q limit ${Math.max(1, Math.min(1e5, +p.limite || 1e3))}`, params);
+            await client.query("commit");
+            return sanitize(r.rows);
+          } catch (e) {
+            await client.query("rollback").catch(() => {
+            });
+            throw e;
+          } finally {
+            client.release();
+          }
+        }
+      }
+    ];
+    var reseau = [
+      {
+        name: "dzf_graphql",
+        label: "API : requ\xEAte GraphQL",
+        category: "R\xE9seau",
+        icon: "fas fa-project-diagram",
+        output: "graphql",
+        timeout: 60,
+        description: "Envoie une requ\xEAte GraphQL (GitHub, Shopify, Hasura, Strapi\u2026) avec ses variables et un jeton lu dans les secrets.",
+        params: [
+          { name: "url", label: "Adresse", required: true },
+          { name: "requete", label: "Requ\xEAte", type: "code", required: true, raw: true },
+          { name: "variables", label: "Variables (JSON)", type: "json" },
+          { name: "secret_jeton", label: "Nom du secret du jeton (Bearer)" }
+        ],
+        run: async (p, ctx, api) => {
+          const j = await post(p.url, { query: p.requete, variables: p.variables || {} }, p.secret_jeton ? { Authorization: `Bearer ${await need(api, p.secret_jeton)}` } : {});
+          if (j.errors && j.errors.length) throw new Error(j.errors.map((e) => e.message).join(" \xB7 ").slice(0, 400));
+          return j.data;
+        }
+      },
+      {
+        name: "dzf_telecharger",
+        label: "API : t\xE9l\xE9charger un fichier",
+        category: "R\xE9seau",
+        icon: "fas fa-cloud-download-alt",
+        output: "fichier",
+        timeout: 180,
+        description: "T\xE9l\xE9charge un fichier (PDF, image, export\u2026) depuis une adresse et l'enregistre dans les fichiers Saltcorn (local ou S3). Taille limit\xE9e.",
+        params: [
+          { name: "url", label: "Adresse", required: true },
+          { name: "nom", label: "Nom du fichier (facultatif)" },
+          { name: "dossier", label: "Dossier", default: "/telechargements" },
+          { name: "max_mo", label: "Taille max (Mo)", type: "int", default: 25 },
+          { name: "secret_jeton", label: "Nom du secret du jeton (facultatif)" }
+        ],
+        run: async (p, ctx, api) => {
+          const r = await fetch(p.url, { headers: p.secret_jeton ? { Authorization: `Bearer ${await need(api, p.secret_jeton)}` } : {} });
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          const len = +r.headers.get("content-length") || 0;
+          const max = (+p.max_mo || 25) * 1048576;
+          if (len > max) throw Object.assign(new Error(`fichier trop gros (${Math.round(len / 1048576)} Mo)`), { permanent: true });
+          const buf = Buffer.from(await r.arrayBuffer());
+          if (buf.length > max) throw Object.assign(new Error("fichier trop gros"), { permanent: true });
+          const name = String(p.nom || decodeURIComponent(new URL(r.url).pathname.split("/").pop() || "fichier")).replace(/[^\w.\-]+/g, "_").slice(0, 120);
+          const File = require("@saltcorn/data/models/file");
+          const f = await File.from_contents(name, (r.headers.get("content-type") || "application/octet-stream").split(";")[0], buf, api.user ? api.user.id : null, 1, p.dossier || "/");
+          return { chemin: f.path_to_serve || f.location, nom: name, octets: buf.length, type: r.headers.get("content-type") };
+        }
+      },
+      {
+        name: "dzf_webhook_verifier",
+        label: "API : v\xE9rifier la signature d'un webhook",
+        category: "R\xE9seau",
+        icon: "fas fa-stamp",
+        output: "signature",
+        description: "V\xE9rifie qu'un webhook vient bien de l'exp\xE9diteur (GitHub, Stripe, Meta/WhatsApp, Shopify\u2026) gr\xE2ce \xE0 sa signature HMAC, en temps constant.",
+        params: [
+          { name: "corps", label: "Corps brut re\xE7u", required: true, help: "Ex. {{corps_brut}} (fourni par les points d'API dysizz-flow)" },
+          { name: "signature", label: "Signature re\xE7ue", required: true, help: "Ex. {{entetes.x-hub-signature-256}}" },
+          { name: "secret", label: "Nom du secret partag\xE9", required: true },
+          { name: "algo", label: "Algorithme", type: "select", options: ["sha256", "sha1", "sha512"], default: "sha256" },
+          { name: "format", label: "Format", type: "select", options: ["hex (avec ou sans \xAB sha256= \xBB)", "base64", "stripe (t=\u2026,v1=\u2026)"], default: "hex (avec ou sans \xAB sha256= \xBB)" }
+        ],
+        run: async (p, ctx, api) => {
+          const key = await need(api, p.secret);
+          const body = typeof p.corps === "string" ? p.corps : JSON.stringify(p.corps);
+          let expected, got = String(p.signature || "");
+          if (p.format.startsWith("stripe")) {
+            const parts = Object.fromEntries(got.split(",").map((x) => x.split("=")));
+            expected = crypto.createHmac("sha256", key).update(`${parts.t}.${body}`).digest("hex");
+            got = parts.v1 || "";
+            if (Math.abs(Date.now() / 1e3 - +parts.t) > 300) return { valide: false, raison: "trop ancien" };
+          } else {
+            expected = crypto.createHmac(p.algo, key).update(body).digest(p.format === "base64" ? "base64" : "hex");
+            got = got.replace(/^sha\d+=/, "");
+          }
+          const ok = expected.length === got.length && crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(got));
+          return { valide: ok, raison: ok ? "" : "signature diff\xE9rente" };
+        }
+      },
+      {
+        name: "dzf_page_web",
+        label: "Web : lire une page",
+        category: "R\xE9seau",
+        icon: "fas fa-file-alt",
+        output: "page",
+        timeout: 60,
+        description: "R\xE9cup\xE8re une page web et en extrait le titre, la description, le texte, les liens, les images et les m\xE9ta Open Graph. Respecte les sites : un seul appel, pas d'exploration.",
+        params: [{ name: "url", label: "Adresse", required: true }, { name: "max_texte", label: "Longueur max du texte", type: "int", default: 2e4 }, { name: "liens", label: "Garder les liens", type: "bool", default: true }],
+        run: async (p) => {
+          const r = await fetch(p.url, { headers: { "User-Agent": "Mozilla/5.0 (compatible; dysizz-flow)", Accept: "text/html" }, redirect: "follow" });
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          const html = (await r.text()).slice(0, 3e6);
+          const meta = (n) => {
+            const m = new RegExp(`<meta[^>]+(?:name|property)=["']${n}["'][^>]*content=["']([^"']*)["']`, "i").exec(html) || new RegExp(`<meta[^>]+content=["']([^"']*)["'][^>]*(?:name|property)=["']${n}["']`, "i").exec(html);
+            return m ? plain(m[1]) : "";
+          };
+          const base = r.url;
+          const abs = (u) => {
+            try {
+              return new URL(u, base).href;
+            } catch (e) {
+              return "";
+            }
+          };
+          const links = p.liens === false ? [] : [...html.matchAll(/<a[^>]+href=["']([^"'#]+)["'][^>]*>([\s\S]*?)<\/a>/gi)].slice(0, 500).map((m) => ({ url: safeUrl(abs(m[1])), texte: plain(m[2], 120) })).filter((l) => l.url);
+          return {
+            url: base,
+            statut: r.status,
+            titre: plain((/<title[^>]*>([\s\S]*?)<\/title>/i.exec(html) || [])[1] || "", 300),
+            description: meta("description") || meta("og:description"),
+            image: safeUrl(abs(meta("og:image"))),
+            langue: (/<html[^>]+lang=["']([^"']+)/i.exec(html) || [])[1] || "",
+            texte: plain(html.replace(/<(nav|footer|header|aside)[\s\S]*?<\/\1>/gi, " "), +p.max_texte || 2e4),
+            liens: links
+          };
+        }
+      }
+    ];
+    var messagerie = [
+      {
+        name: "dzf_slack",
+        label: "Slack : envoyer un message",
+        category: "Messagerie",
+        icon: "fab fa-slack",
+        output: "slack",
+        description: "Envoie un message dans un canal Slack via un webhook entrant (l'adresse du webhook est un secret).",
+        params: [{ name: "secret_webhook", label: "Nom du secret du webhook", default: "SLACK_WEBHOOK_URL" }, { name: "texte", label: "Texte (Markdown Slack)", type: "text", required: true }],
+        run: async (p, ctx, api) => {
+          await post(await need(api, p.secret_webhook), { text: String(p.texte).slice(0, 39e3) });
+          return true;
+        }
+      },
+      {
+        name: "dzf_discord",
+        label: "Discord : envoyer un message",
+        category: "Messagerie",
+        icon: "fab fa-discord",
+        output: "discord",
+        description: "Envoie un message dans un salon Discord via un webhook.",
+        params: [{ name: "secret_webhook", label: "Nom du secret du webhook", default: "DISCORD_WEBHOOK_URL" }, { name: "texte", label: "Texte", type: "text", required: true }, { name: "nom", label: "Nom affich\xE9", default: "dysizz" }],
+        run: async (p, ctx, api) => {
+          await post(await need(api, p.secret_webhook), { content: String(p.texte).slice(0, 2e3), username: p.nom || "dysizz" });
+          return true;
+        }
+      },
+      {
+        name: "dzf_teams",
+        label: "Teams : envoyer un message",
+        category: "Messagerie",
+        icon: "fab fa-microsoft",
+        output: "teams",
+        description: "Envoie un message dans un canal Microsoft Teams (workflow \xAB Post to a channel when a webhook request is received \xBB).",
+        params: [{ name: "secret_webhook", label: "Nom du secret du webhook", default: "TEAMS_WEBHOOK_URL" }, { name: "titre", label: "Titre" }, { name: "texte", label: "Texte", type: "text", required: true }],
+        run: async (p, ctx, api) => {
+          await post(await need(api, p.secret_webhook), { type: "message", attachments: [{ contentType: "application/vnd.microsoft.card.adaptive", content: { type: "AdaptiveCard", version: "1.4", body: [...p.titre ? [{ type: "TextBlock", size: "Medium", weight: "Bolder", text: p.titre }] : [], { type: "TextBlock", text: String(p.texte), wrap: true }] } }] });
+          return true;
+        }
+      },
+      {
+        name: "dzf_ntfy",
+        label: "Push mobile (ntfy)",
+        category: "Messagerie",
+        icon: "fas fa-mobile-alt",
+        output: "push",
+        description: "Notification instantan\xE9e sur ton t\xE9l\xE9phone avec ntfy (appli gratuite Android/iOS, serveur public ou auto-h\xE9berg\xE9). Priorit\xE9, \xE9tiquettes et lien au clic.",
+        params: [
+          { name: "serveur", label: "Serveur", default: "https://ntfy.sh" },
+          { name: "sujet", label: "Sujet (topic)", required: true, help: "Choisis un nom long et difficile \xE0 deviner" },
+          { name: "titre", label: "Titre" },
+          { name: "texte", label: "Texte", type: "text", required: true },
+          { name: "priorite", label: "Priorit\xE9", type: "select", options: ["min", "low", "default", "high", "urgent"], default: "default" },
+          { name: "etiquettes", label: "\xC9tiquettes (emoji ntfy)", help: "Ex. warning,computer" },
+          { name: "lien", label: "Lien au clic" },
+          { name: "secret_jeton", label: "Nom du secret du jeton (serveur priv\xE9)" }
+        ],
+        run: async (p, ctx, api) => {
+          const h = { Priority: p.priorite || "default" };
+          if (p.titre) h.Title = encodeURIComponent(p.titre).length === p.titre.length ? p.titre : `=?UTF-8?B?${Buffer.from(p.titre).toString("base64")}?=`;
+          if (p.etiquettes) h.Tags = p.etiquettes;
+          if (p.lien) h.Click = p.lien;
+          if (p.secret_jeton) h.Authorization = `Bearer ${await need(api, p.secret_jeton)}`;
+          const r = await fetch(`${String(p.serveur).replace(/\/$/, "")}/${encodeURIComponent(p.sujet)}`, { method: "POST", headers: h, body: String(p.texte).slice(0, 4e3) });
+          if (!r.ok) throw new Error(`ntfy : HTTP ${r.status}`);
+          return (await r.json().catch(() => ({}))).id || true;
+        }
+      },
+      {
+        name: "dzf_sms",
+        label: "SMS : envoyer (Twilio)",
+        category: "Messagerie",
+        icon: "fas fa-sms",
+        output: "sms",
+        description: "Envoie un SMS avec Twilio (compte et num\xE9ro d'envoi \xE0 cr\xE9er chez Twilio).",
+        params: [
+          { name: "secret_sid", label: "Nom du secret du Account SID", default: "TWILIO_SID" },
+          { name: "secret_jeton", label: "Nom du secret de l'Auth Token", default: "TWILIO_TOKEN" },
+          { name: "de", label: "Num\xE9ro d'envoi (Twilio)", required: true },
+          { name: "a", label: "Destinataire (+33\u2026)", required: true },
+          { name: "texte", label: "Texte", type: "text", required: true }
+        ],
+        run: async (p, ctx, api) => {
+          const sid = await need(api, p.secret_sid), tok = await need(api, p.secret_jeton);
+          const r = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, { method: "POST", headers: { Authorization: `Basic ${Buffer.from(`${sid}:${tok}`).toString("base64")}`, "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ From: p.de, To: p.a, Body: String(p.texte).slice(0, 1600) }) });
+          const j = await r.json();
+          if (!r.ok) throw new Error(j.message || `HTTP ${r.status}`);
+          return j.sid;
+        }
+      }
+    ];
+    var CONN = [
+      { name: "url_base", label: "Adresse de l'API (compatible OpenAI)", default: "http://ollama:11434/v1" },
+      { name: "modele", label: "Mod\xE8le", default: "llama3.1", required: true },
+      { name: "variable_cle", label: "Nom du secret de la cl\xE9 (si besoin)" }
+    ];
+    var chat = async (p, api, messages, json) => {
+      const headers = { "Content-Type": "application/json" };
+      if (p.variable_cle) headers.Authorization = `Bearer ${await need(api, p.variable_cle)}`;
+      const j = await post(`${String(p.url_base).replace(/\/$/, "")}/chat/completions`, { model: p.modele, messages, temperature: 0, ...json ? { response_format: { type: "json_object" } } : {} }, headers);
+      const txt = (((j.choices || [])[0] || {}).message || {}).content || "";
+      if (!json) return txt.trim();
+      try {
+        return JSON.parse(txt.replace(/^```(json)?|```$/g, "").trim());
+      } catch (e) {
+        throw new Error("le mod\xE8le n'a pas renvoy\xE9 du JSON valide");
+      }
+    };
+    var ia = [
+      {
+        name: "dzf_ia_extraire",
+        label: "IA : extraire des informations",
+        category: "IA",
+        icon: "fas fa-highlighter",
+        output: "extrait",
+        timeout: 180,
+        description: "Transforme un texte libre (mail, facture, CV, annonce) en donn\xE9es structur\xE9es : tu donnes les champs voulus, l'IA les remplit (null si absent).",
+        params: [
+          ...CONN,
+          { name: "texte", label: "Texte", required: true, type: "text" },
+          { name: "champs", label: "Champs \xE0 extraire", required: true, help: "Ex. montant (nombre), date (AAAA-MM-JJ), fournisseur, numero_facture" }
+        ],
+        run: async (p, ctx, api) => chat(p, api, [{ role: "system", content: `Extrais du texte ces champs et r\xE9ponds uniquement en JSON avec exactement ces cl\xE9s : ${p.champs}. Mets null si l'information n'est pas dans le texte. N'invente rien.` }, { role: "user", content: String(p.texte).slice(0, 24e3) }], true)
+      },
+      {
+        name: "dzf_ia_traduire",
+        label: "IA : traduire",
+        category: "IA",
+        icon: "fas fa-language",
+        output: "traduction",
+        timeout: 180,
+        description: "Traduit un texte dans la langue voulue en gardant la mise en forme.",
+        params: [...CONN, { name: "texte", label: "Texte", required: true, type: "text" }, { name: "langue", label: "Vers la langue", default: "fran\xE7ais" }],
+        run: async (p, ctx, api) => chat(p, api, [{ role: "system", content: `Traduis en ${p.langue}. Garde la mise en forme. R\xE9ponds seulement avec la traduction.` }, { role: "user", content: String(p.texte).slice(0, 24e3) }], false)
+      },
+      {
+        name: "dzf_ia_vecteur",
+        label: "IA : vecteur (embedding)",
+        category: "IA",
+        icon: "fas fa-vector-square",
+        output: "vecteur",
+        timeout: 120,
+        description: "Calcule le vecteur d'un texte (ou d'une liste de textes) pour la recherche par le sens. Ex. nomic-embed-text avec Ollama.",
+        params: [
+          { name: "url_base", label: "Adresse de l'API", default: "http://ollama:11434/v1" },
+          { name: "modele", label: "Mod\xE8le", default: "nomic-embed-text" },
+          { name: "variable_cle", label: "Nom du secret de la cl\xE9 (si besoin)" },
+          { name: "texte", label: "Texte ou liste", required: true }
+        ],
+        run: async (p, ctx, api) => {
+          const headers = p.variable_cle ? { Authorization: `Bearer ${await need(api, p.variable_cle)}` } : {};
+          const input = Array.isArray(p.texte) ? p.texte.map(String) : String(p.texte);
+          const j = await post(`${String(p.url_base).replace(/\/$/, "")}/embeddings`, { model: p.modele, input }, headers);
+          const v = (j.data || []).map((d) => d.embedding);
+          return Array.isArray(p.texte) ? v : v[0];
+        }
+      },
+      {
+        name: "dzf_similarite",
+        label: "IA : plus proches par le sens",
+        category: "IA",
+        icon: "fas fa-compass",
+        output: "proches",
+        description: "Compare un vecteur \xE0 une liste d'\xE9l\xE9ments qui ont chacun un vecteur (similarit\xE9 cosinus) et renvoie les N plus proches. Base d'une recherche intelligente.",
+        params: [
+          { name: "vecteur", label: "Vecteur cherch\xE9", required: true },
+          { name: "liste", label: "\xC9l\xE9ments", required: true },
+          { name: "champ_vecteur", label: "Champ du vecteur", default: "vecteur" },
+          { name: "n", label: "Combien", type: "int", default: 5 },
+          { name: "seuil", label: "Score minimum (0 \xE0 1)", type: "number", default: 0 }
+        ],
+        run: async (p) => {
+          const q = typeof p.vecteur === "string" ? JSON.parse(p.vecteur) : p.vecteur;
+          const cos = (a, b) => {
+            let d = 0, x = 0, y = 0;
+            for (let i = 0; i < a.length; i++) {
+              d += a[i] * b[i];
+              x += a[i] * a[i];
+              y += b[i] * b[i];
+            }
+            return d / (Math.sqrt(x) * Math.sqrt(y) || 1);
+          };
+          return asList(p.liste).map((it) => {
+            let v = getPath(it, p.champ_vecteur);
+            if (typeof v === "string") v = JSON.parse(v);
+            return { ...it, score: v ? +cos(q, v).toFixed(4) : 0 };
+          }).filter((x) => x.score >= (+p.seuil || 0)).sort((a, b) => b.score - a.score).slice(0, +p.n || 5).map(({ [p.champ_vecteur]: _v, ...rest }) => rest);
+        }
+      }
+    ];
+    var controle = [
+      {
+        name: "dzf_aiguiller",
+        label: "Aiguiller (choisir un chemin)",
+        category: "Contr\xF4le",
+        icon: "fas fa-code-branch",
+        output: "chemin",
+        description: "Renvoie le nom du chemin selon la valeur d'un champ (ex. priorit\xE9 urgente \u2192 \xAB alerte \xBB, normale \u2192 \xAB liste \xBB). \xC0 utiliser dans \xAB \xE9tape suivante \xBB : chemin.",
+        params: [
+          { name: "valeur", label: "Valeur test\xE9e", required: true, help: "Ex. {{priorite}}" },
+          { name: "cas", label: "Cas (JSON)", type: "json", required: true, default: '{"urgente":"alerte","haute":"alerte"}' },
+          { name: "defaut", label: "Sinon", default: "suite" }
+        ],
+        run: async (p) => p.cas && Object.prototype.hasOwnProperty.call(p.cas, String(p.valeur)) ? p.cas[String(p.valeur)] : p.defaut || ""
+      },
+      {
+        name: "dzf_idempotence",
+        label: "D\xE9j\xE0 trait\xE9 ?",
+        category: "Contr\xF4le",
+        icon: "fas fa-redo-alt",
+        output: "deja_traite",
+        description: "Dit si une cl\xE9 a d\xE9j\xE0 \xE9t\xE9 vue r\xE9cemment, puis la note. Pour ne jamais traiter deux fois le m\xEAme \xE9v\xE9nement (webhook re\xE7u en double, relance\u2026).",
+        params: [{ name: "cle", label: "Cl\xE9", required: true, help: "Ex. {{id_evenement}}" }, { name: "duree_h", label: "M\xE9moire (heures)", type: "int", default: 72 }],
+        run: async (p) => {
+          const k = `dzf:vu:${crypto.createHash("sha1").update(String(p.cle)).digest("hex")}`;
+          const seen = await kv().get(k);
+          if (!seen) await kv().set(k, Date.now(), (+p.duree_h || 72) * 3600);
+          return !!seen;
+        }
+      },
+      {
+        name: "dzf_disjoncteur",
+        label: "Disjoncteur",
+        category: "Contr\xF4le",
+        icon: "fas fa-power-off",
+        output: "circuit",
+        description: "Prot\xE8ge un service fragile : apr\xE8s N \xE9checs, on arr\xEAte de l'appeler pendant un moment au lieu d'insister. \xAB v\xE9rifier \xBB avant l'appel (sortie .passe = on peut appeler, .coupe = on attend), \xAB signaler \xBB apr\xE8s.",
+        params: [
+          { name: "action", label: "Action", type: "select", options: ["v\xE9rifier", "signaler un \xE9chec", "signaler un succ\xE8s"], default: "v\xE9rifier" },
+          { name: "nom", label: "Service", required: true, help: "Ex. api-france-travail" },
+          { name: "seuil", label: "\xC9checs avant coupure", type: "int", default: 5 },
+          { name: "pause_min", label: "Coupure (minutes)", type: "int", default: 15 }
+        ],
+        run: async (p) => {
+          const k = `dzf:disj:${p.nom}`;
+          const st = await kv().get(k) || { echecs: 0, jusqu_a: 0 };
+          if (p.action === "signaler un succ\xE8s") {
+            await kv().set(k, { echecs: 0, jusqu_a: 0 }, 86400);
+            return { passe: true, coupe: false };
+          }
+          if (p.action === "signaler un \xE9chec") {
+            st.echecs++;
+            if (st.echecs >= (+p.seuil || 5)) {
+              st.jusqu_a = Date.now() + (+p.pause_min || 15) * 6e4;
+              st.echecs = 0;
+            }
+            await kv().set(k, st, 86400);
+            const passe2 = Date.now() >= st.jusqu_a;
+            return { passe: passe2, coupe: !passe2, echecs: st.echecs };
+          }
+          const passe = Date.now() >= (st.jusqu_a || 0);
+          return { passe, coupe: !passe, reprise: passe ? null : new Date(st.jusqu_a).toISOString() };
+        }
+      }
+    ];
+    module2.exports = [...donnees, ...reseau, ...messagerie, ...ia, ...controle];
+  }
+});
+
+// src/blocks/index.js
 var require_blocks = __commonJS({
-  "../src/blocks/index.js"(exports2, module2) {
+  "src/blocks/index.js"(exports2, module2) {
     "use strict";
     var BLOCKS2 = [
       ...require_donnees(),
       ...require_transformer(),
+      ...require_transformer_plus(),
       ...require_reseau(),
       ...require_messagerie(),
       ...require_ia(),
       ...require_services(),
+      ...require_securite(),
+      ...require_surveillance(),
+      ...require_observabilite(),
+      ...require_taches(),
+      ...require_extras(),
       ...require_controle()
     ];
-    var CATEGORIES = ["Donn\xE9es", "Transformer", "R\xE9seau", "Messagerie", "IA", "Services", "Contr\xF4le", "Mes blocs"];
+    var CATEGORIES = ["Donn\xE9es", "Transformer", "R\xE9seau", "Messagerie", "IA", "Services", "S\xE9curit\xE9", "Surveillance", "Logs & m\xE9triques", "T\xE2ches & planification", "Contr\xF4le", "Extensions", "Mes blocs"];
+    var seen = /* @__PURE__ */ new Set();
+    for (const b of BLOCKS2) {
+      if (seen.has(b.name)) throw new Error(`dysizz-flow : bloc en double ${b.name}`);
+      seen.add(b.name);
+    }
     module2.exports = { BLOCKS: BLOCKS2, CATEGORIES };
   }
 });
 
-// ../src/userblocks.js
+// src/userblocks.js
 var require_userblocks = __commonJS({
-  "../src/userblocks.js"(exports2, module2) {
+  "src/userblocks.js"(exports2, module2) {
     "use strict";
     var { toAction: toAction2 } = require_engine();
     var { ensureTables } = require_store();
@@ -82810,9 +84658,9 @@ var require_userblocks = __commonJS({
   }
 });
 
-// ../src/templates/index.js
+// src/templates/index.js
 var require_templates = __commonJS({
-  "../src/templates/index.js"(exports2, module2) {
+  "src/templates/index.js"(exports2, module2) {
     "use strict";
     var chain = (...steps) => steps.map((s, i) => ({ ...s, next_step: s.next_step !== void 0 ? s.next_step : steps[i + 1] ? steps[i + 1].name : "" }));
     var st = (name, action_name, configuration, o = {}) => ({ name, action_name, configuration, ...o });
@@ -82986,14 +84834,81 @@ var require_templates = __commonJS({
           st("chercher", "dzf_france_travail", { mots_cles: "%%mots%%", departement: "%%departement%%", depuis_jours: 3, sortie: "offres" }),
           st("ranger", "dzf_table_upsert", { table: "%%table%%", liste: "{{offres}}", cle: "ref", sortie: "bilan" })
         )
+      },
+      {
+        key: "surveillance_sites",
+        label: "Surveillance de sites (uptime)",
+        category: "Surveillance",
+        when: "Often",
+        description: "Toutes les 5 minutes : appelle chaque site actif de ta table, note l'\xE9tat et le temps de r\xE9ponse, garde l'historique des temps (dzf_mesures) et te pr\xE9vient une seule fois quand un site tombe, puis quand il revient.",
+        vars: [{ name: "table_sites", label: "Table des sites (champs url unique, actif, etat, ms, raison, verifie_le)", default: "sites" }, { name: "lent_ms", label: "Lent au-del\xE0 de (ms)", default: "2000" }],
+        steps: chain(
+          st("sites", "dzf_table_chercher", { table: "%%table_sites%%", filtre: '{"actif":true}', limite: 500, sortie: "sites" }),
+          st("maintenant", "dzf_dates", { operation: "maintenant", format: "iso", sortie: "maintenant" }),
+          st("appeler", "dzf_ping_http", { cibles: "{{sites}}", lent_ms: "%%lent_ms%%", en_parallele: 8, sortie: "resultats", delai_max: 110 }),
+          st("preparer", "dzf_liste_transformer", { liste: "{{resultats}}", modele: '{"url":"{{item.url}}","etat":"{{item.etat}}","ms":"{{item.ms}}","raison":"{{item.raison}}","verifie_le":"{{maintenant}}"}', sortie: "lignes" }),
+          st("ranger", "dzf_table_upsert", { table: "%%table_sites%%", liste: "{{lignes}}", cle: "url", mettre_a_jour: "etat,ms,raison,verifie_le", sans_declencheurs: true, sortie: "bilan" }),
+          st("pannes", "dzf_liste_filtrer", { liste: "{{resultats}}", champ: "etat", operateur: "=", valeur: "panne", sortie: "pannes" }),
+          st("alerte", "dzf_alerte", { cle: "sites-%%table_sites%%", probleme: "{{pannes}}", silence_min: 60, sortie: "alerte" }),
+          st("prevenir", "dzf_notifier", { qui: "administrateurs", titre: "Sites : {{alerte.etat}}", texte: "{{pannes.length}} site(s) en panne", lien: "/page/%%table_sites%%" }, { only_if: "alerte.envoyer" })
+        )
+      },
+      {
+        key: "sante_plateforme",
+        label: "Sant\xE9 de la plateforme",
+        category: "Surveillance",
+        when: "Hourly",
+        description: "Chaque heure : serveur (disque, m\xE9moire, charge), Postgres (connexions, requ\xEAtes longues, verrous) et workflows en erreur. Mesures gard\xE9es pour les graphiques, alerte sans spam.",
+        vars: [{ name: "seuil_disque", label: "Alerte disque au-del\xE0 de (%)", default: "85" }],
+        steps: chain(
+          st("serveur", "dzf_sante_serveur", { seuil_disque: "%%seuil_disque%%", seuil_memoire: 90, sortie: "serveur" }),
+          st("postgres", "dzf_sante_postgres", { requete_longue_s: 30, sortie: "postgres", si_erreur: "continuer" }),
+          st("workflows", "dzf_workflows_etat", { heures: 1, sortie: "workflows" }),
+          st("mesure_disque", "dzf_metrique", { nom: "serveur.disque_pct", valeur: "{{serveur.disque_pct}}" }, { only_if: "serveur.disque_pct !== null" }),
+          st("mesure_memoire", "dzf_metrique", { nom: "serveur.memoire_pct", valeur: "{{serveur.memoire_pct}}" }),
+          st("bilan", "dzf_definir", { valeurs: '{"problemes":"{{serveur.alertes}}","wf_erreurs":"{{workflows.erreurs}}"}', sortie: "bilan" }),
+          st("alerte", "dzf_alerte", { cle: "plateforme", probleme: "{{serveur.alertes}}", silence_min: 360, sortie: "alerte" }),
+          st("prevenir", "dzf_notifier", { qui: "administrateurs", titre: "Plateforme : {{alerte.etat}}", texte: "{{serveur.alertes}}", lien: "/dysizz-flow/supervision" }, { only_if: "alerte.envoyer" })
+        )
+      },
+      {
+        key: "veille_cve",
+        label: "Veille failles (CVE) \u2192 table",
+        category: "S\xE9curit\xE9",
+        when: "Daily",
+        description: "Chaque jour : cherche les nouvelles failles publi\xE9es (base NVD) pour tes technologies et les range dans une table, sans doublon. Pr\xE9vient pour les critiques.",
+        vars: [{ name: "table_cve", label: "Table des failles (champs id unique, gravite, score, resume, url, publie_le)", default: "failles" }, { name: "mot_cle", label: "Technologie surveill\xE9e", default: "postgresql" }, { name: "gravite", label: "Gravit\xE9 minimale (MEDIUM, HIGH, CRITICAL)", default: "HIGH" }],
+        steps: chain(
+          st("chercher", "dzf_cve", { mot_cle: "%%mot_cle%%", jours: 7, gravite_min: "%%gravite%%", sortie: "failles", delai_max: 90, essais: 2 }),
+          st("nouvelles", "dzf_liste_dedoublonner", { liste: "{{failles}}", cle: "id", table: "%%table_cve%%", sortie: "nouvelles" }),
+          st("ranger", "dzf_table_upsert", { table: "%%table_cve%%", liste: "{{nouvelles}}", cle: "id", sortie: "bilan" }),
+          st("critiques", "dzf_liste_filtrer", { liste: "{{nouvelles}}", champ: "gravite", operateur: "=", valeur: "CRITICAL", sortie: "critiques" }),
+          st("prevenir", "dzf_notifier", { qui: "administrateurs", titre: "{{critiques.length}} faille(s) critique(s) : %%mot_cle%%", lien: "/page/%%table_cve%%" }, { only_if: "critiques.length > 0" })
+        )
+      },
+      {
+        key: "file_de_travaux",
+        label: "File de travaux (worker)",
+        category: "T\xE2ches",
+        when: "Often",
+        description: "Toutes les 5 minutes : prend jusqu'\xE0 N travaux dans une file (dzf_file), lance un workflow pour chacun, et marque r\xE9ussi ou \xE9chou\xE9. Pour traiter de gros volumes sans bloquer, sur un ou plusieurs serveurs.",
+        vars: [{ name: "file", label: "Nom de la file", default: "travaux" }, { name: "workflow", label: "Workflow qui traite UN travail (re\xE7oit \xAB travail \xBB)" }, { name: "nombre", label: "Travaux par passage", default: "20" }],
+        steps: chain(
+          st("verrou", "dzf_verrou", { action: "prendre", nom: "file-%%file%%", duree: 300, sortie: "verrou" }, { next_step: 'verrou ? "prendre" : ""' }),
+          st("prendre", "dzf_file_prendre", { file: "%%file%%", nombre: "%%nombre%%", sortie: "travaux" }),
+          st("traiter", "dzf_pour_chaque", { liste: "{{travaux}}", workflow: "%%workflow%%", variable: "travail", en_parallele: 4, sortie: "boucle" }, { only_if: "travaux.length > 0" }),
+          st("reussis", "dzf_file_terminer", { travaux: "{{boucle.reussis}}", resultat: "r\xE9ussi" }, { only_if: "boucle && boucle.reussis.length > 0" }),
+          st("echecs", "dzf_file_terminer", { travaux: "{{boucle.echecs}}", resultat: "erreur" }, { only_if: "boucle && boucle.echecs.length > 0" }),
+          st("liberer", "dzf_verrou", { action: "lib\xE9rer", nom: "file-%%file%%", sortie: "verrou" })
+        )
       }
     ];
   }
 });
 
-// ../src/templates/install.js
+// src/templates/install.js
 var require_install = __commonJS({
-  "../src/templates/install.js"(exports2, module2) {
+  "src/templates/install.js"(exports2, module2) {
     "use strict";
     var TEMPLATES = require_templates();
     var fill = (v, vars) => {
@@ -83037,9 +84952,58 @@ var require_install = __commonJS({
   }
 });
 
-// ../src/admin.js
+// src/registry.js
+var require_registry = __commonJS({
+  "src/registry.js"(exports2, module2) {
+    "use strict";
+    var { toAction: toAction2 } = require_engine();
+    var { PLUGIN: PLUGIN2 } = require_core();
+    var EXT_RE = /^dzx_[a-z0-9_]{2,50}$/;
+    var EXTERNAL = [];
+    var valid = (b) => b && EXT_RE.test(b.name || "") && typeof b.run === "function" && b.label && Array.isArray(b.params || []);
+    var scanPlugins = () => {
+      let st;
+      try {
+        st = require("@saltcorn/data/db/state").getState();
+      } catch (e) {
+        return [];
+      }
+      if (!st || !st.plugins) return [];
+      const found = [];
+      for (const [pname, plugin] of Object.entries(st.plugins)) {
+        if (pname === PLUGIN2 || !plugin) continue;
+        let list = plugin.dysizz_flow_blocks;
+        try {
+          if (typeof list === "function") list = list();
+        } catch (e) {
+          list = null;
+        }
+        if (!Array.isArray(list)) continue;
+        const { CATEGORIES } = require_blocks();
+        for (const b of list) if (valid(b)) found.push({ ...b, category: CATEGORIES.includes(b.category) && b.category !== "Mes blocs" ? b.category : "Extensions", icon: b.icon || "fas fa-puzzle-piece", description: b.description || "", output: b.output || b.name.slice(4), plugin: pname, external: true });
+      }
+      return found;
+    };
+    var registerExternal2 = () => {
+      let st;
+      try {
+        st = require("@saltcorn/data/db/state").getState();
+      } catch (e) {
+        return 0;
+      }
+      if (!st || !st.actions) return 0;
+      EXTERNAL = scanPlugins();
+      for (const b of EXTERNAL) st.actions[b.name] = toAction2(b);
+      return EXTERNAL.length;
+    };
+    var externalBlocks = () => EXTERNAL;
+    module2.exports = { registerExternal: registerExternal2, externalBlocks, scanPlugins, EXT_RE };
+  }
+});
+
+// src/admin.js
 var require_admin = __commonJS({
-  "../src/admin.js"(exports2, module2) {
+  "src/admin.js"(exports2, module2) {
     "use strict";
     var { esc, isAdmin, denied, VERSION: VERSION2 } = require_core();
     var { BLOCKS: BLOCKS2, CATEGORIES } = require_blocks();
@@ -83052,7 +85016,7 @@ var require_admin = __commonJS({
     var TYPE_LABEL = { texte: "texte court", text: "texte long", int: "nombre entier", number: "nombre", bool: "oui / non", select: "liste de choix", table: "une table", json: "JSON", code: "code", password: "mot de passe" };
     var page = (res, req, title, active, html) => res.sendWrap({ title, requestFluidLayout: true }, {
       above: [{ type: "blank", isHTML: true, contents: `<div class="dzf">
-<nav class="dzf-tabs">${[["", "Biblioth\xE8que", "fas fa-cubes"], ["atelier", "Atelier", "fas fa-tools"], ["modeles", "Mod\xE8les de workflows", "fas fa-project-diagram"], ["journal", "Journal", "fas fa-clipboard-list"]].map(([u, l, i]) => `<a href="/dysizz-flow${u ? "/" + u : ""}" class="${active === u ? "on" : ""}"><i class="${i}"></i>${l}</a>`).join("")}
+<nav class="dzf-tabs">${[["", "Biblioth\xE8que", "fas fa-cubes"], ["atelier", "Atelier", "fas fa-tools"], ["modeles", "Mod\xE8les", "fas fa-project-diagram"], ["api", "Points d'API", "fas fa-plug"], ["coffre", "Coffre", "fas fa-lock"], ["supervision", "Supervision", "fas fa-tachometer-alt"], ["journal", "Journal", "fas fa-clipboard-list"]].map(([u, l, i]) => `<a href="/dysizz-flow${u ? "/" + u : ""}" class="${active === u ? "on" : ""}"><i class="${i}"></i>${l}</a>`).join("")}
 <a href="/actions" class="dzf-ext"><i class="fas fa-external-link-alt"></i>Workflows Saltcorn</a></nav>
 ${flash(req)}${html}</div>`.replace(/\{\{/g, "&#123;&#123;").replace(/\}\}/g, "&#125;&#125;") }]
     });
@@ -83061,7 +85025,11 @@ ${flash(req)}${html}</div>`.replace(/\{\{/g, "&#123;&#123;").replace(/\}\}/g, "&
       return (q.ok ? `<div class="dzf-flash ok">${esc(q.ok)}</div>` : "") + (q.err ? `<div class="dzf-flash ko">${esc(q.err)}</div>` : "");
     };
     var go = (res, url, msg, bad) => res.redirect(`${url}${url.includes("?") ? "&" : "?"}${bad ? "err" : "ok"}=${encodeURIComponent(msg)}`);
-    var allBlocks = async () => [...BLOCKS2, ...await loadUserBlocks().catch(() => [])];
+    var { registerExternal: registerExternal2, externalBlocks } = require_registry();
+    var allBlocks = async () => {
+      registerExternal2();
+      return [...BLOCKS2, ...externalBlocks(), ...await loadUserBlocks().catch(() => [])];
+    };
     var library = async (req, res) => {
       if (!isAdmin(req)) return denied(res);
       const blocks = await allBlocks();
@@ -83074,7 +85042,7 @@ ${flash(req)}${html}</div>`.replace(/\{\{/g, "&#123;&#123;").replace(/\}\}/g, "&
       }).join("");
       page(res, req, "Blocs workflow", "", `
 <div class="dzf-head"><div><h1>Blocs workflow</h1>
-<p>${BLOCKS2.length} blocs int\xE9gr\xE9s, et les tiens. Chaque bloc est une <b>action Saltcorn</b> : ajoute-le comme \xE9tape dans un workflow (Param\xE8tres \u2192 D\xE9clencheurs \u2192 Workflow), sur une table, en planifi\xE9 ou en bouton. Ses r\xE9glages se remplissent dans un formulaire et acceptent des <code>{{variables}}</code> du contexte. Version ${esc(VERSION2)}.</p></div>
+<p>${BLOCKS2.length} blocs int\xE9gr\xE9s${externalBlocks().length ? `, ${externalBlocks().length} apport\xE9s par d'autres plugins` : ""}, et les tiens. Chaque bloc est une <b>action Saltcorn</b> : ajoute-le comme \xE9tape dans un workflow (Param\xE8tres \u2192 D\xE9clencheurs \u2192 Workflow), sur une table, en planifi\xE9 ou en bouton. Ses r\xE9glages se remplissent dans un formulaire et acceptent des <code>{{variables}}</code> du contexte. Version ${esc(VERSION2)}.</p></div>
 <a class="btn btn-primary" href="/dysizz-flow/atelier/nouveau"><i class="fas fa-plus"></i> Cr\xE9er un bloc</a></div>
 <input class="form-control dzf-search" placeholder="Chercher un bloc (ex. mail, table, IA, API\u2026)" oninput="dzfSearch(this.value)">
 ${cards}`);
@@ -83182,8 +85150,16 @@ ${r.nom ? `<h2>Essayer</h2><div class="dzf-try" data-bloc="${esc(PREFIX + r.nom)
 <div><label>Contexte d'entr\xE9e (JSON)</label><textarea class="form-control dzf-mono" rows="6" data-ctx>{}</textarea></div>
 <div class="dzf-try-bar"><button class="btn btn-primary" type="button" onclick="dzfTry(this)"><i class="fas fa-play"></i> Lancer</button><span class="dzf-muted">Enregistre avant d'essayer.</span></div>
 <pre class="dzf-out" data-out>R\xE9sultat ici.</pre></div>` : ""}
+${r.nom ? await versionsHtml(req, r) : ""}
 <input type="hidden" id="dzf-csrf" value="${esc(csrf(req))}">
 <script>window.__dzfTypes=${JSON.stringify(TYPES2.map((t) => [t, TYPE_LABEL[t]]))};</script>`);
+    };
+    var versionsHtml = async (req, r) => {
+      const { versions } = await ensureTables();
+      const vs = await versions.getRows({ nom: r.nom }, { orderBy: "id", orderDesc: true, limit: 30 });
+      return `<h2>Versions <small>(actuelle : v${r.version || 1})</small></h2>
+<table class="dzf-table"><tr><th>Version</th><th>Quand</th><th>Par</th><th></th></tr>
+${vs.map((v) => `<tr><td>v${v.version}</td><td>${esc(new Date(v.quand).toLocaleString("fr-FR"))}</td><td>${esc(v.par || "")}</td><td><form method="post" action="/dysizz-flow/atelier/restaurer">${hidden(req)}<input type="hidden" name="id" value="${v.id}"><button class="btn btn-sm btn-outline-secondary" onclick="return confirm('Remettre la v${v.version} ?')">Remettre</button></form></td></tr>`).join("") || `<tr><td colspan="4" class="dzf-muted">Pas encore d'ancienne version.</td></tr>`}</table>`;
     };
     var save = async (req, res) => {
       if (!isAdmin(req)) return denied(res);
@@ -83206,11 +85182,33 @@ ${r.nom ? `<h2>Essayer</h2><div class="dzf-try" data-bloc="${esc(PREFIX + r.nom)
       const { blocs } = await ensureTables();
       const row = { nom, libelle: String(b.libelle || nom).slice(0, 120), icone: String(b.icone || "fas fa-cube").replace(/[^a-z0-9 -]/gi, "").slice(0, 60), description: String(b.description || "").slice(0, 400), sortie: String(b.sortie || "").replace(/[^\w]/g, "").slice(0, 40), params: JSON.stringify(params), code: String(b.code || ""), actif: b.actif === "on" || b.actif === true || b.actif === "true", categorie: "Mes blocs", maj_le: /* @__PURE__ */ new Date() };
       const old = await blocs.getRow({ nom: b.ancien || nom });
-      if (old) await blocs.updateRow(row, old.id);
-      else if (await blocs.getRow({ nom })) return go(res, "/dysizz-flow/atelier/nouveau", "Ce nom existe d\xE9j\xE0", true);
-      else await blocs.insertRow(row);
+      if (old) {
+        await snapshot(old, req);
+        row.version = (old.version || 1) + 1;
+        await blocs.updateRow(row, old.id);
+      } else if (await blocs.getRow({ nom })) return go(res, "/dysizz-flow/atelier/nouveau", "Ce nom existe d\xE9j\xE0", true);
+      else await blocs.insertRow({ ...row, version: 1 });
       await broadcast();
       go(res, `/dysizz-flow/atelier/${nom}`, `Bloc ${PREFIX}${nom} enregistr\xE9 et disponible dans les workflows.`);
+    };
+    var SNAP = ["nom", "libelle", "icone", "description", "sortie", "params", "code", "actif", "version"];
+    var snapshot = async (old, req) => {
+      const { versions } = await ensureTables();
+      await versions.insertRow({ nom: old.nom, version: old.version || 1, contenu: JSON.stringify(Object.fromEntries(SNAP.map((k) => [k, old[k]]))), quand: /* @__PURE__ */ new Date(), par: req.user && req.user.email || "" });
+      const all = await versions.getRows({ nom: old.nom }, { orderBy: "id", orderDesc: true });
+      for (const v of all.slice(30)) await versions.deleteRows({ id: v.id });
+    };
+    var restore = async (req, res) => {
+      if (!isAdmin(req)) return denied(res);
+      const { blocs, versions } = await ensureTables();
+      const v = await versions.getRow({ id: +(req.body || {}).id });
+      const cur = v && await blocs.getRow({ nom: v.nom });
+      if (!v || !cur) return go(res, "/dysizz-flow/atelier", "Version introuvable", true);
+      const snap = JSON.parse(v.contenu);
+      await snapshot(cur, req);
+      await blocs.updateRow({ ...snap, nom: cur.nom, version: (cur.version || 1) + 1, maj_le: /* @__PURE__ */ new Date() }, cur.id);
+      await broadcast();
+      go(res, `/dysizz-flow/atelier/${cur.nom}`, `Version ${v.version} remise en place (devient la v${(cur.version || 1) + 1})`);
     };
     var remove = async (req, res) => {
       if (!isAdmin(req)) return denied(res);
@@ -83308,14 +85306,295 @@ ${rows.map((r) => `<tr class="${r.ok ? "" : "dzf-bad"}"><td>${esc(new Date(r.qua
       await journal.deleteRows({ quand: { lt: new Date(Date.now() - 7 * 864e5) } });
       go(res, "/dysizz-flow/journal", "Journal nettoy\xE9");
     };
-    module2.exports = { library, blockPage, tryBlock, workshop, editor, save, remove, copyBuiltin, exportBlocks, importBlocks, templates, installTpl, journalPage, purge };
+    module2.exports = { allBlocks, csrf, restore, page, go, hidden, flash, library, blockPage, tryBlock, workshop, editor, save, remove, copyBuiltin, exportBlocks, importBlocks, templates, installTpl, journalPage, purge };
   }
 });
 
-// ../src/generated/assets.js
+// src/expose.js
+var require_expose = __commonJS({
+  "src/expose.js"(exports2, module2) {
+    "use strict";
+    var crypto = require("crypto");
+    var { ensureTables } = require_store();
+    var NOM_RE = /^[a-z0-9][a-z0-9_-]{0,60}$/;
+    var MAX_BODY = 1024 * 1024;
+    var AUTHS = ["aucune", "jeton", "hmac"];
+    var METHODES = ["POST", "GET", "GET et POST"];
+    var CACHE = /* @__PURE__ */ new Map();
+    var findPoint = async (nom) => {
+      const db = require("@saltcorn/data/db");
+      const key = `${db.getTenantSchema()}:${nom}`;
+      const hit = CACHE.get(key);
+      if (hit && hit.t > Date.now() - 3e4) return hit.p;
+      const { points } = await ensureTables();
+      const p = await points.getRow({ nom });
+      CACHE.set(key, { t: Date.now(), p });
+      if (CACHE.size > 500) CACHE.delete(CACHE.keys().next().value);
+      return p;
+    };
+    var forget = () => CACHE.clear();
+    var same = (a, b) => {
+      const x = Buffer.from(String(a || "")), y = Buffer.from(String(b || ""));
+      return x.length === y.length && x.length > 0 && crypto.timingSafeEqual(x, y);
+    };
+    var secretOf = async (name) => {
+      if (!name) return void 0;
+      if (process.env[name]) return process.env[name];
+      const { readSecret } = require_vault();
+      return readSecret(name);
+    };
+    var safeHeaders = (h = {}) => Object.fromEntries(Object.entries(h).filter(([k]) => !/^(cookie|authorization|x-api-key|proxy-authorization)$/i.test(k)).map(([k, v]) => [k, String(v).slice(0, 500)]));
+    var clientIp = (req) => String(req.ip || req.socket && req.socket.remoteAddress || "").replace(/^::ffff:/, "");
+    var PUBLIC = { role_id: 100 };
+    var runAs = async (email) => {
+      if (!email) return PUBLIC;
+      const User = require("@saltcorn/data/models/user");
+      const u = await User.findOne({ email });
+      return u ? u.session_object || u : PUBLIC;
+    };
+    var reply = (res, code, body) => {
+      res.status(code);
+      res.setHeader("Cache-Control", "no-store");
+      res.json(body);
+    };
+    var handle = async (req, res) => {
+      const t0 = Date.now();
+      const nom = String(req.params && req.params.nom || "");
+      try {
+        if (!NOM_RE.test(nom)) return reply(res, 404, { erreur: "introuvable" });
+        const p = await findPoint(nom);
+        if (!p || !p.actif) return reply(res, 404, { erreur: "introuvable" });
+        const m = req.method.toUpperCase();
+        const allowed = p.methode === "GET et POST" ? ["GET", "POST"] : [p.methode || "POST"];
+        if (!allowed.includes(m)) {
+          res.setHeader("Allow", allowed.join(", "));
+          return reply(res, 405, { erreur: "m\xE9thode non autoris\xE9e" });
+        }
+        const lim = +p.limite_minute || 60;
+        const { kv } = require_controle();
+        const n = await kv.incr(`dzf:api:${nom}:${clientIp(req)}:${Math.floor(Date.now() / 6e4)}`, 90);
+        res.setHeader("X-RateLimit-Limit", String(lim));
+        res.setHeader("X-RateLimit-Remaining", String(Math.max(0, lim - n)));
+        if (n > lim) {
+          res.setHeader("Retry-After", "60");
+          return reply(res, 429, { erreur: "trop de requ\xEAtes, r\xE9essaie dans une minute" });
+        }
+        const raw = typeof req.rawBody === "string" ? req.rawBody : Buffer.isBuffer(req.rawBody) ? req.rawBody.toString("utf8") : req.body && Object.keys(req.body).length ? JSON.stringify(req.body) : "";
+        if (raw.length > MAX_BODY) return reply(res, 413, { erreur: "corps trop gros" });
+        if (p.auth === "jeton") {
+          const want = await secretOf(p.secret);
+          const got = String(req.headers.authorization || "").replace(/^Bearer\s+/i, "") || req.headers["x-api-key"];
+          if (!want || !same(got, want)) return reply(res, 401, { erreur: "jeton invalide" });
+        } else if (p.auth === "hmac") {
+          const key2 = await secretOf(p.secret);
+          const got = String(req.headers[String(p.en_tete_signature || "x-signature").toLowerCase()] || "").replace(/^sha256=/, "");
+          const want = key2 && crypto.createHmac("sha256", key2).update(raw).digest("hex");
+          if (!want || !same(got, want)) return reply(res, 401, { erreur: "signature invalide" });
+        } else if (p.auth !== "aucune") return reply(res, 500, { erreur: "point mal configur\xE9" });
+        const Trigger = require("@saltcorn/data/models/trigger");
+        const wf = Trigger.findOne({ name: p.workflow });
+        if (!wf) return reply(res, 500, { erreur: "workflow absent" });
+        let corps = req.body;
+        if ((!corps || !Object.keys(corps).length) && raw) {
+          try {
+            corps = JSON.parse(raw);
+          } catch (e) {
+            corps = raw;
+          }
+        }
+        const ctx = { corps: corps || {}, corps_brut: raw, query: { ...req.query || {} }, entetes: safeHeaders(req.headers), ip: clientIp(req), methode: m, point: nom };
+        const out = await wf.runWithoutRow({ row: ctx, req, user: await runAs(p.executer_en) });
+        const key = String(p.reponse || "").trim();
+        const val = key ? (out || {})[key] : { ok: true };
+        const status = out && Number.isInteger(out.statut_http) && out.statut_http >= 200 && out.statut_http < 600 ? out.statut_http : 200;
+        record(nom, true, Date.now() - t0);
+        return reply(res, status, val === void 0 ? null : val);
+      } catch (e) {
+        record(nom, false, Date.now() - t0, e.message);
+        return reply(res, 500, { erreur: "erreur interne" });
+      }
+    };
+    var record = (nom, ok, ms, message) => {
+      try {
+        const { journal } = require_engine();
+        if (!ok) journal({ bloc: `api:${nom}`, ok: false, duree_ms: ms, message });
+      } catch (e) {
+      }
+    };
+    module2.exports = { handle, forget, NOM_RE, AUTHS, METHODES };
+  }
+});
+
+// src/admin2.js
+var require_admin2 = __commonJS({
+  "src/admin2.js"(exports2, module2) {
+    "use strict";
+    var os = require("os");
+    var { esc, isAdmin, denied } = require_core();
+    var { page, go, hidden } = require_admin();
+    var { ensureTables } = require_store();
+    var { liveMetrics } = require_engine();
+    var expose2 = require_expose();
+    var sel = (name, opts, cur) => `<select class="form-select form-select-sm" name="${name}">${opts.map((o) => `<option ${o === cur ? "selected" : ""}>${esc(o)}</option>`).join("")}</select>`;
+    var workflows = () => {
+      try {
+        return require("@saltcorn/data/models/trigger").find({ action: "Workflow" }).map((t) => t.name).sort();
+      } catch (e) {
+        return [];
+      }
+    };
+    var apiPage = async (req, res) => {
+      if (!isAdmin(req)) return denied(res);
+      const { points } = await ensureTables();
+      const rows = await points.getRows({}, { orderBy: "nom" });
+      const wfs = workflows();
+      const base = `${req.protocol}://${req.get ? req.get("host") : ""}`;
+      const form = (p = {}) => `<form method="post" action="/dysizz-flow/api/save" class="dzf-point">${hidden(req)}<input type="hidden" name="id" value="${p.id || ""}">
+<label>Nom (dans l'adresse)<input class="form-control form-control-sm" name="nom" value="${esc(p.nom || "")}" required pattern="[a-z0-9][a-z0-9_-]{0,60}" placeholder="ex. contact"></label>
+<label>Workflow lanc\xE9${wfs.length ? `<select class="form-select form-select-sm" name="workflow">${wfs.map((w) => `<option ${w === p.workflow ? "selected" : ""}>${esc(w)}</option>`).join("")}</select>` : `<input class="form-control form-control-sm" name="workflow" placeholder="cr\xE9e d'abord un workflow">`}</label>
+<label>M\xE9thode${sel("methode", expose2.METHODES, p.methode || "POST")}</label>
+<label>Protection${sel("auth", expose2.AUTHS, p.auth || "jeton")}</label>
+<label>Secret (nom dans le coffre)<input class="form-control form-control-sm" name="secret" value="${esc(p.secret || "")}" placeholder="ex. API_CONTACT"></label>
+<label>En-t\xEAte de signature (hmac)<input class="form-control form-control-sm" name="en_tete_signature" value="${esc(p.en_tete_signature || "x-signature")}"></label>
+<label>Variable renvoy\xE9e<input class="form-control form-control-sm" name="reponse" value="${esc(p.reponse || "")}" placeholder="vide = {ok:true}"></label>
+<label>Agir au nom de (e-mail, facultatif)<input class="form-control form-control-sm" name="executer_en" value="${esc(p.executer_en || "")}" placeholder="vide = visiteur (public)"></label>
+<label>Requ\xEAtes / minute / IP<input class="form-control form-control-sm" type="number" min="1" max="10000" name="limite_minute" value="${p.limite_minute || 60}"></label>
+<label class="dzf-check"><input type="checkbox" name="actif" ${p.actif !== false ? "checked" : ""}> Actif</label>
+<div class="dzf-save"><button class="btn btn-sm btn-primary">${p.id ? "Enregistrer" : "Cr\xE9er le point"}</button>
+${p.id ? `<button class="btn btn-sm btn-outline-danger" formaction="/dysizz-flow/api/delete" onclick="return confirm('Supprimer ce point ?')">Supprimer</button>` : ""}</div></form>`;
+      page(res, req, "Points d'API", "api", `
+<div class="dzf-head"><div><h1>Points d'API</h1>
+<p>Ouvre une adresse publique qui lance un de tes workflows : webhook de GitHub ou Stripe, formulaire d'un site, appel depuis ton t\xE9l\xE9phone ou un autre service. Le workflow re\xE7oit <code>corps</code>, <code>query</code>, <code>entetes</code>, <code>ip</code>, <code>methode</code> ; il peut mettre <code>statut_http</code> dans son contexte pour choisir le code de r\xE9ponse. Par d\xE9faut il tourne avec les droits d'un visiteur ; pour \xE9crire dans des tables prot\xE9g\xE9es, choisis un compte (id\xE9alement un compte \xAB robot \xBB d\xE9di\xE9, pas le tien).</p>
+<p class="dzf-muted">Protection <b>jeton</b> : en-t\xEAte <code>Authorization: Bearer \u2026</code> ou <code>X-Api-Key</code>. <b>hmac</b> : signature SHA-256 du corps brut (hex, \xAB sha256= \xBB accept\xE9). Les secrets se rangent dans le <a href="/dysizz-flow/coffre">coffre</a> ou en variable d'environnement.</p></div></div>
+${rows.map((p) => `<details class="dzf-box"><summary><b>${esc(p.nom)}</b> <code>${esc(p.methode || "POST")} ${esc(base)}/dzf/api/${esc(p.nom)}</code> \u2192 ${esc(p.workflow || "?")} \xB7 ${esc(p.auth)}${p.actif ? "" : ' \xB7 <span class="dzf-muted">inactif</span>'}</summary>${form(p)}</details>`).join("") || `<p class="dzf-muted">Aucun point pour l'instant.</p>`}
+<h2>Nouveau point</h2>${form()}`);
+    };
+    var apiSave = async (req, res) => {
+      if (!isAdmin(req)) return denied(res);
+      const b = req.body || {};
+      const nom = String(b.nom || "").trim().toLowerCase();
+      if (!expose2.NOM_RE.test(nom)) return go(res, "/dysizz-flow/api", "Nom invalide : minuscules, chiffres, - et _", true);
+      const auth = expose2.AUTHS.includes(b.auth) ? b.auth : "jeton";
+      if (auth !== "aucune" && !String(b.secret || "").trim()) return go(res, "/dysizz-flow/api", "Il faut un nom de secret pour cette protection", true);
+      const row = { nom, workflow: String(b.workflow || "").slice(0, 120), methode: expose2.METHODES.includes(b.methode) ? b.methode : "POST", auth, secret: String(b.secret || "").replace(/[^\w.-]/g, "").slice(0, 80), en_tete_signature: String(b.en_tete_signature || "x-signature").replace(/[^\w-]/g, "").slice(0, 60), reponse: String(b.reponse || "").replace(/[^\w.]/g, "").slice(0, 60), limite_minute: Math.min(1e4, Math.max(1, +b.limite_minute || 60)), actif: b.actif === "on", executer_en: String(b.executer_en || "").trim().slice(0, 120) };
+      if (row.executer_en) {
+        const u = await require("@saltcorn/data/models/user").findOne({ email: row.executer_en });
+        if (!u) return go(res, "/dysizz-flow/api", `Aucun compte ${row.executer_en}`, true);
+      }
+      const { points } = await ensureTables();
+      try {
+        if (b.id) await points.updateRow(row, +b.id);
+        else await points.insertRow(row);
+      } catch (e) {
+        return go(res, "/dysizz-flow/api", `Impossible : ${e.message}`, true);
+      }
+      expose2.forget();
+      go(res, "/dysizz-flow/api", `Point \xAB ${nom} \xBB enregistr\xE9`);
+    };
+    var apiDelete = async (req, res) => {
+      if (!isAdmin(req)) return denied(res);
+      const { points } = await ensureTables();
+      await points.deleteRows({ id: +(req.body || {}).id });
+      expose2.forget();
+      go(res, "/dysizz-flow/api", "Point supprim\xE9");
+    };
+    var vaultPage = async (req, res) => {
+      if (!isAdmin(req)) return denied(res);
+      const { secrets } = await ensureTables();
+      const rows = await secrets.getRows({}, { orderBy: "nom" });
+      const keyOk = !!(process.env.DZF_CLE_COFFRE || process.env.SALTCORN_SESSION_SECRET);
+      page(res, req, "Coffre", "coffre", `
+<div class="dzf-head"><div><h1>Coffre de secrets</h1>
+<p>Mots de passe, cl\xE9s d'API, jetons : rang\xE9s <b>chiffr\xE9s</b> (AES-256-GCM) dans la base. Une sauvegarde de la base ne les montre jamais en clair. Une fois enregistr\xE9, un secret n'est plus jamais r\xE9affich\xE9 : on peut seulement le remplacer ou le supprimer.</p>
+<p class="dzf-muted">Dans les blocs, tu donnes le <b>nom</b> du secret. Une variable d'environnement du m\xEAme nom passe toujours avant le coffre. ${keyOk ? process.env.DZF_CLE_COFFRE ? "Cl\xE9 : DZF_CLE_COFFRE \u2713" : "Cl\xE9 d\xE9riv\xE9e de SALTCORN_SESSION_SECRET. Mieux : d\xE9finis DZF_CLE_COFFRE sur le serveur (et garde-la de c\xF4t\xE9, sans elle les secrets sont perdus)." : '<b class="text-danger">Aucune cl\xE9 : d\xE9finis DZF_CLE_COFFRE sur le serveur.</b>'}</p></div></div>
+<table class="dzf-table"><tr><th>Nom</th><th>Note</th><th>Modifi\xE9</th><th>Env. prioritaire</th><th></th></tr>
+${rows.map((r) => `<tr><td><code>${esc(r.nom)}</code></td><td>${esc(r.note || "")}</td><td>${r.maj_le ? esc(new Date(r.maj_le).toLocaleString("fr-FR")) : ""}</td><td>${process.env[r.nom] ? "oui" : ""}</td><td><form method="post" action="/dysizz-flow/coffre/delete">${hidden(req)}<input type="hidden" name="nom" value="${esc(r.nom)}"><button class="btn btn-sm btn-outline-danger" onclick="return confirm('Supprimer ce secret ?')">Supprimer</button></form></td></tr>`).join("") || '<tr><td colspan="5" class="dzf-muted">Le coffre est vide.</td></tr>'}</table>
+<h2>Ajouter ou remplacer</h2>
+<form method="post" action="/dysizz-flow/coffre/save" class="dzf-point" autocomplete="off">${hidden(req)}
+<label>Nom<input class="form-control form-control-sm" name="nom" required pattern="[A-Za-z_][A-Za-z0-9_.-]{0,79}" placeholder="ex. OVH_IMAP_MDP"></label>
+<label>Valeur<input class="form-control form-control-sm" type="password" name="valeur" required autocomplete="new-password"></label>
+<label>Note (facultatif)<input class="form-control form-control-sm" name="note" placeholder="\xE0 quoi il sert"></label>
+<div class="dzf-save"><button class="btn btn-sm btn-primary"><i class="fas fa-lock"></i> Ranger</button></div></form>`);
+    };
+    var vaultSave = async (req, res) => {
+      if (!isAdmin(req)) return denied(res);
+      const b = req.body || {};
+      const nom = String(b.nom || "").trim();
+      if (!/^[A-Za-z_][A-Za-z0-9_.-]{0,79}$/.test(nom) || !b.valeur) return go(res, "/dysizz-flow/coffre", "Nom ou valeur invalide", true);
+      try {
+        await require_vault().writeSecret(nom, String(b.valeur), String(b.note || "").slice(0, 200));
+      } catch (e) {
+        return go(res, "/dysizz-flow/coffre", e.message, true);
+      }
+      go(res, "/dysizz-flow/coffre", `Secret \xAB ${nom} \xBB rang\xE9`);
+    };
+    var vaultDelete = async (req, res) => {
+      if (!isAdmin(req)) return denied(res);
+      const { secrets } = await ensureTables();
+      await secrets.deleteRows({ nom: String((req.body || {}).nom || "") });
+      go(res, "/dysizz-flow/coffre", "Secret supprim\xE9");
+    };
+    var bar = (v, max, bad) => `<span class="dzf-bar${bad ? " bad" : ""}"><i style="width:${Math.min(100, Math.round(100 * v / (max || 1)))}%"></i></span>`;
+    var monitorPage = async (req, res) => {
+      if (!isAdmin(req)) return denied(res);
+      const T = await ensureTables();
+      const since = new Date(Date.now() - 24 * 36e5);
+      const hist = await T.metriques.getRows({ heure: { gt: since } }, { orderBy: "heure" });
+      const agg = /* @__PURE__ */ new Map();
+      for (const r of [...hist, ...liveMetrics().map((x) => ({ bloc: x.bloc, n: x.n, erreurs: x.erreurs, ms_moyen: Math.round(x.total_ms / x.n), ms_max: x.max_ms }))]) {
+        const a = agg.get(r.bloc) || { n: 0, erreurs: 0, tms: 0, max: 0 };
+        a.n += r.n;
+        a.erreurs += r.erreurs;
+        a.tms += r.ms_moyen * r.n;
+        a.max = Math.max(a.max, r.ms_max);
+        agg.set(r.bloc, a);
+      }
+      const blocs = [...agg.entries()].map(([bloc, a]) => ({ bloc, ...a, moy: Math.round(a.tms / (a.n || 1)) })).sort((x, y) => y.n - x.n);
+      const maxN = Math.max(1, ...blocs.map((b) => b.n));
+      const tot = blocs.reduce((s, b) => s + b.n, 0), err = blocs.reduce((s, b) => s + b.erreurs, 0);
+      let runs = [];
+      try {
+        runs = await require("@saltcorn/data/models/workflow_run").find({ started_at: { gt: since } }, { orderBy: "id", orderDesc: true, limit: 1e3 });
+      } catch (e) {
+        runs = [];
+      }
+      const par = {};
+      for (const r of runs) par[r.status] = (par[r.status] || 0) + 1;
+      const Trigger = require("@saltcorn/data/models/trigger");
+      const errs = runs.filter((r) => r.status === "Error").slice(0, 15);
+      const lastErr = await T.journal.getRows({ ok: false }, { orderBy: "id", orderDesc: true, limit: 15 });
+      const mem = 100 - Math.round(os.freemem() / os.totalmem() * 100);
+      const planifs = await T.planifs.countRows({ etat: "en attente" }).catch(() => 0);
+      const file = await T.file.countRows({ etat: "en attente" }).catch(() => 0);
+      const kpi = (l, v, s) => `<div class="dzf-kpi"><small>${l}</small><b>${v}</b>${s ? `<small>${s}</small>` : ""}</div>`;
+      page(res, req, "Supervision", "supervision", `
+<div class="dzf-head"><div><h1>Supervision</h1><p>Les derni\xE8res 24 h : ex\xE9cutions des blocs, workflows, erreurs, et l'\xE9tat de ce serveur. Les chiffres des blocs sont gard\xE9s par heure dans <code>dzf_metriques</code> (graphique possible avec la vue DZ Graphique de dysizz-ui).</p></div>
+<a class="btn btn-outline-secondary btn-sm" href="/dysizz-flow/supervision"><i class="fas fa-sync"></i> Rafra\xEEchir</a></div>
+<div class="dzf-kpis">
+${kpi("Blocs ex\xE9cut\xE9s", tot.toLocaleString("fr-FR"), `${err} en erreur`)}
+${kpi("Taux d'erreur", tot ? `${(100 * err / tot).toFixed(1)} %` : "\u2014")}
+${kpi("Workflows lanc\xE9s", runs.length.toLocaleString("fr-FR"), Object.entries(par).map(([k, v]) => `${k} ${v}`).join(" \xB7 "))}
+${kpi("En attente", planifs + file, `${planifs} planifi\xE9s \xB7 ${file} en file`)}
+${kpi("Serveur", `${mem} % m\xE9m.`, `charge ${os.loadavg()[0].toFixed(2)} \xB7 ${os.cpus().length} CPU \xB7 ${Math.round(process.memoryUsage().rss / 1048576)} Mo`)}
+</div>
+<h2>Blocs</h2>
+<table class="dzf-table"><tr><th>Bloc</th><th>Ex\xE9cutions</th><th></th><th>Erreurs</th><th>Moyenne</th><th>Max</th></tr>
+${blocs.slice(0, 60).map((b) => `<tr class="${b.erreurs ? "dzf-bad" : ""}"><td><code>${esc(b.bloc)}</code></td><td>${b.n}</td><td>${bar(b.n, maxN, b.erreurs / b.n > 0.1)}</td><td>${b.erreurs}</td><td>${b.moy} ms</td><td>${b.max} ms</td></tr>`).join("") || `<tr><td colspan="6" class="dzf-muted">Rien n'a tourn\xE9 ces derni\xE8res 24 h.</td></tr>`}</table>
+<h2>Workflows en erreur</h2>
+<table class="dzf-table"><tr><th>Quand</th><th>Workflow</th><th>Erreur</th><th></th></tr>
+${errs.map((r) => `<tr class="dzf-bad"><td>${esc(new Date(r.started_at).toLocaleString("fr-FR"))}</td><td>${esc((Trigger.findOne({ id: r.trigger_id }) || {}).name || r.trigger_id)}</td><td>${esc(String(r.error || "").slice(0, 300))}</td><td><a href="/actions/run/${r.id}">d\xE9tail</a></td></tr>`).join("") || '<tr><td colspan="4" class="dzf-muted">Aucun.</td></tr>'}</table>
+<h2>Derni\xE8res erreurs de blocs</h2>
+<table class="dzf-table"><tr><th>Quand</th><th>Bloc</th><th>Message</th></tr>
+${lastErr.map((r) => `<tr><td>${esc(new Date(r.quand).toLocaleString("fr-FR"))}</td><td><code>${esc(r.bloc)}</code></td><td>${esc(r.message || "")}</td></tr>`).join("") || '<tr><td colspan="3" class="dzf-muted">Aucune.</td></tr>'}</table>`);
+    };
+    module2.exports = { apiPage, apiSave, apiDelete, vaultPage, vaultSave, vaultDelete, monitorPage };
+  }
+});
+
+// src/generated/assets.js
 var require_assets = __commonJS({
-  "../src/generated/assets.js"(exports2, module2) {
-    module2.exports = { ASSETS: { "dzf.css": { "src": ".dzf{--f-surface:var(--dz-surface,#fff);--f-s2:var(--dz-surface-2,#f2f2f5);--f-border:var(--dz-border,rgba(0,0,0,.1));--f-text:var(--dz-text,#16161a);--f-mute:var(--dz-text-mute,#777);--f-ink:var(--dz-primary-ink,#4b4bd8);--f-soft:var(--dz-primary-soft,rgba(91,91,240,.12));--f-r:var(--dz-radius,14px);--f-mono:var(--dz-font-mono,ui-monospace,Menlo,monospace);max-width:1280px;margin:0 auto}\n.dzf h1{font-weight:750;letter-spacing:-.02em;display:flex;gap:.6rem;align-items:center}\n.dzf h2{font-size:1.02rem;font-weight:700;margin:1.8rem 0 .8rem}\n.dzf h2 small{color:var(--f-mute);font-weight:500}\n.dzf code{font-family:var(--f-mono);font-size:.82em}\n.dzf-tabs{display:flex;flex-wrap:wrap;gap:.35rem;margin:0 0 1.2rem;padding-bottom:.8rem;border-bottom:1px solid var(--f-border)}\n.dzf-tabs a{display:inline-flex;gap:.5rem;align-items:center;padding:.45rem .9rem;border-radius:99px;color:var(--f-mute)!important;text-decoration:none!important;font-weight:600;font-size:.9rem}\n.dzf-tabs a:hover{background:var(--f-s2);color:var(--f-text)!important}\n.dzf-tabs a.on{background:var(--f-text);color:var(--f-surface)!important}\n.dzf-tabs .dzf-ext{margin-left:auto}\n.dzf-head{display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap;align-items:flex-start}\n.dzf-head p{color:var(--f-mute);max-width:80ch}\n.dzf-actions{display:flex;gap:.5rem;flex-wrap:wrap;align-items:flex-start}\n.dzf-import{display:flex;gap:.4rem}.dzf-import textarea{width:220px}\n.dzf-muted{color:var(--f-mute)}\n.dzf-search{max-width:520px;margin:.5rem 0 1rem;border-radius:12px}\n.dzf-grid{display:grid;gap:.8rem;grid-template-columns:repeat(auto-fill,minmax(min(100%,320px),1fr))}\n.dzf-card{display:flex;gap:.8rem;padding:.95rem 1rem;border-radius:var(--f-r);border:1px solid var(--f-border);background:var(--f-surface);color:var(--f-text)!important;text-decoration:none!important;transition:transform .15s,border-color .15s}\n.dzf-card:hover{transform:translateY(-2px);border-color:var(--f-ink)}\n.dzf-card b{display:block;font-size:.95rem}.dzf-card small{display:block;color:var(--f-mute);line-height:1.4;margin:.2rem 0 .35rem;font-size:.82rem}\n.dzf-card code{color:var(--f-mute);font-size:.72rem}\n.dzf-off{opacity:.55}\n.dzf-ic{width:40px;height:40px;flex:none;border-radius:11px;display:grid;place-items:center;background:var(--f-soft);color:var(--f-ink)}\n.dzf-cat h2 small{font-family:var(--f-mono);font-size:.72rem}\n.dzf-table{width:100%;font-size:.88rem;border-collapse:collapse;background:var(--f-surface);border-radius:12px;overflow:hidden}\n.dzf-table th{font:600 .68rem var(--f-mono);text-transform:uppercase;letter-spacing:.06em;color:var(--f-mute);padding:.55rem .7rem;text-align:left;background:var(--f-s2)}\n.dzf-table td{padding:.55rem .7rem;border-top:1px solid var(--f-border);vertical-align:top}\n.dzf-table .dzf-common td{color:var(--f-mute);font-size:.82rem}\n.dzf-bad td{background:color-mix(in srgb,#e5484d 7%,transparent)}\n.dzf-req{font:600 .62rem var(--f-mono);text-transform:uppercase;color:#e5484d}\n.dzf .dzf-code,.dzf .dzf-out{margin:0;padding:1rem;border-radius:12px;background:#0f1117!important;color:#e6e6ea!important;font:.8rem/1.55 var(--f-mono);white-space:pre-wrap;max-height:520px;overflow:auto}\n.dzf-out.ok{border-left:4px solid #30a46c}.dzf-out.ko{border-left:4px solid #e5484d}\n.dzf-mono{font-family:var(--f-mono)!important;font-size:.82rem!important}\n.dzf-try{display:grid;gap:.8rem;grid-template-columns:1fr 1fr}\n.dzf-try label{font-size:.8rem;font-weight:600;color:var(--f-mute)}\n.dzf-try-bar,.dzf-try .dzf-out{grid-column:1/-1}\n.dzf-try-bar{display:flex;gap:.8rem;align-items:center}\n@media(max-width:760px){.dzf-try{grid-template-columns:1fr}}\n.dzf-flash{padding:.75rem 1rem;border-radius:10px;margin:0 0 1rem;font-size:.9rem}\n.dzf-flash.ok{background:color-mix(in srgb,#30a46c 13%,transparent)}.dzf-flash.ko{background:color-mix(in srgb,#e5484d 13%,transparent)}\n.dzf-ed-grid{display:grid;gap:.8rem 1rem;grid-template-columns:repeat(auto-fill,minmax(240px,1fr))}\n.dzf-ed-grid label{font-size:.8rem;font-weight:600;color:var(--f-mute);display:grid;gap:.25rem}\n.dzf-ed-grid small{font-weight:400}\n.dzf-wide{grid-column:1/-1}\n.dzf-check{display:flex!important;align-items:center;gap:.5rem}\n.dzf-params{display:grid;gap:.4rem;margin-bottom:.6rem}\n.dzf-prm{display:grid;gap:.35rem;grid-template-columns:1fr 1.2fr 1fr 1fr 1fr 1.4fr auto auto auto;align-items:center;padding:.4rem;border-radius:10px;background:var(--f-s2)}\n.dzf-prm .form-control,.dzf-prm .form-select{font-size:.82rem;padding:.3rem .5rem}\n.dzf-req-l{font-size:.78rem;white-space:nowrap;display:flex;gap:.3rem;align-items:center}\n@media(max-width:900px){.dzf-prm{grid-template-columns:1fr 1fr}}\n.dzf-codearea{min-height:320px;tab-size:2}\n.dzf-save{display:flex;gap:.6rem;margin-top:1rem}\n.dzf-tpls{display:grid;gap:.7rem}\n.dzf-tpl{border:1px solid var(--f-border);border-radius:var(--f-r);background:var(--f-surface);padding:.9rem 1rem}\n.dzf-tpl summary{display:flex;gap:.8rem;cursor:pointer;list-style:none}\n.dzf-tpl summary::-webkit-details-marker{display:none}\n.dzf-tpl summary b{display:block}.dzf-tpl summary small{display:block;color:var(--f-mute);margin:.15rem 0}.dzf-tpl summary em{font-style:normal;font:600 .7rem var(--f-mono);color:var(--f-mute)}\n.dzf-steps{margin:1rem 0;padding-left:1.4rem;display:grid;gap:.35rem;font-size:.88rem}\n.dzf-steps i{width:1.3em;color:var(--f-ink);text-align:center;margin-right:.3rem}\n.dzf-steps small{color:var(--f-mute)}\n.dzf-tpl-form{display:grid;gap:.6rem 1rem;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));align-items:end;padding-top:.8rem;border-top:1px dashed var(--f-border)}\n.dzf-tpl-form label{font-size:.8rem;font-weight:600;color:var(--f-mute);display:grid;gap:.25rem}" }, "dzf.js": { "src": `/* dysizz-flow \u2014 script des pages d'administration (aucune d\xE9pendance). */
+  "src/generated/assets.js"(exports2, module2) {
+    module2.exports = { ASSETS: { "dzf.css": { "src": ".dzf{--f-surface:var(--dz-surface,#fff);--f-s2:var(--dz-surface-2,#f2f2f5);--f-border:var(--dz-border,rgba(0,0,0,.1));--f-text:var(--dz-text,#16161a);--f-mute:var(--dz-text-mute,#777);--f-ink:var(--dz-primary-ink,#4b4bd8);--f-soft:var(--dz-primary-soft,rgba(91,91,240,.12));--f-r:var(--dz-radius,14px);--f-mono:var(--dz-font-mono,ui-monospace,Menlo,monospace);max-width:1280px;margin:0 auto}\n.dzf h1{font-weight:750;letter-spacing:-.02em;display:flex;gap:.6rem;align-items:center}\n.dzf h2{font-size:1.02rem;font-weight:700;margin:1.8rem 0 .8rem}\n.dzf h2 small{color:var(--f-mute);font-weight:500}\n.dzf code{font-family:var(--f-mono);font-size:.82em}\n.dzf-tabs{display:flex;flex-wrap:wrap;gap:.35rem;margin:0 0 1.2rem;padding-bottom:.8rem;border-bottom:1px solid var(--f-border)}\n.dzf-tabs a{display:inline-flex;gap:.5rem;align-items:center;padding:.45rem .9rem;border-radius:99px;color:var(--f-mute)!important;text-decoration:none!important;font-weight:600;font-size:.9rem}\n.dzf-tabs a:hover{background:var(--f-s2);color:var(--f-text)!important}\n.dzf-tabs a.on{background:var(--f-text);color:var(--f-surface)!important}\n.dzf-tabs .dzf-ext{margin-left:auto}\n.dzf-head{display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap;align-items:flex-start}\n.dzf-head p{color:var(--f-mute);max-width:80ch}\n.dzf-actions{display:flex;gap:.5rem;flex-wrap:wrap;align-items:flex-start}\n.dzf-import{display:flex;gap:.4rem}.dzf-import textarea{width:220px}\n.dzf-muted{color:var(--f-mute)}\n.dzf-search{max-width:520px;margin:.5rem 0 1rem;border-radius:12px}\n.dzf-grid{display:grid;gap:.8rem;grid-template-columns:repeat(auto-fill,minmax(min(100%,320px),1fr))}\n.dzf-card{display:flex;gap:.8rem;padding:.95rem 1rem;border-radius:var(--f-r);border:1px solid var(--f-border);background:var(--f-surface);color:var(--f-text)!important;text-decoration:none!important;transition:transform .15s,border-color .15s}\n.dzf-card:hover{transform:translateY(-2px);border-color:var(--f-ink)}\n.dzf-card b{display:block;font-size:.95rem}.dzf-card small{display:block;color:var(--f-mute);line-height:1.4;margin:.2rem 0 .35rem;font-size:.82rem}\n.dzf-card code{color:var(--f-mute);font-size:.72rem}\n.dzf-off{opacity:.55}\n.dzf-ic{width:40px;height:40px;flex:none;border-radius:11px;display:grid;place-items:center;background:var(--f-soft);color:var(--f-ink)}\n.dzf-cat h2 small{font-family:var(--f-mono);font-size:.72rem}\n.dzf-table{width:100%;font-size:.88rem;border-collapse:collapse;background:var(--f-surface);border-radius:12px;overflow:hidden}\n.dzf-table th{font:600 .68rem var(--f-mono);text-transform:uppercase;letter-spacing:.06em;color:var(--f-mute);padding:.55rem .7rem;text-align:left;background:var(--f-s2)}\n.dzf-table td{padding:.55rem .7rem;border-top:1px solid var(--f-border);vertical-align:top}\n.dzf-table .dzf-common td{color:var(--f-mute);font-size:.82rem}\n.dzf-bad td{background:color-mix(in srgb,#e5484d 7%,transparent)}\n.dzf-req{font:600 .62rem var(--f-mono);text-transform:uppercase;color:#e5484d}\n.dzf .dzf-code,.dzf .dzf-out{margin:0;padding:1rem;border-radius:12px;background:#0f1117!important;color:#e6e6ea!important;font:.8rem/1.55 var(--f-mono);white-space:pre-wrap;max-height:520px;overflow:auto}\n.dzf-out.ok{border-left:4px solid #30a46c}.dzf-out.ko{border-left:4px solid #e5484d}\n.dzf-mono{font-family:var(--f-mono)!important;font-size:.82rem!important}\n.dzf-try{display:grid;gap:.8rem;grid-template-columns:1fr 1fr}\n.dzf-try label{font-size:.8rem;font-weight:600;color:var(--f-mute)}\n.dzf-try-bar,.dzf-try .dzf-out{grid-column:1/-1}\n.dzf-try-bar{display:flex;gap:.8rem;align-items:center}\n@media(max-width:760px){.dzf-try{grid-template-columns:1fr}}\n.dzf-flash{padding:.75rem 1rem;border-radius:10px;margin:0 0 1rem;font-size:.9rem}\n.dzf-flash.ok{background:color-mix(in srgb,#30a46c 13%,transparent)}.dzf-flash.ko{background:color-mix(in srgb,#e5484d 13%,transparent)}\n.dzf-ed-grid{display:grid;gap:.8rem 1rem;grid-template-columns:repeat(auto-fill,minmax(240px,1fr))}\n.dzf-ed-grid label{font-size:.8rem;font-weight:600;color:var(--f-mute);display:grid;gap:.25rem}\n.dzf-ed-grid small{font-weight:400}\n.dzf-wide{grid-column:1/-1}\n.dzf-check{display:flex!important;align-items:center;gap:.5rem}\n.dzf-params{display:grid;gap:.4rem;margin-bottom:.6rem}\n.dzf-prm{display:grid;gap:.35rem;grid-template-columns:1fr 1.2fr 1fr 1fr 1fr 1.4fr auto auto auto;align-items:center;padding:.4rem;border-radius:10px;background:var(--f-s2)}\n.dzf-prm .form-control,.dzf-prm .form-select{font-size:.82rem;padding:.3rem .5rem}\n.dzf-req-l{font-size:.78rem;white-space:nowrap;display:flex;gap:.3rem;align-items:center}\n@media(max-width:900px){.dzf-prm{grid-template-columns:1fr 1fr}}\n.dzf-codearea{min-height:320px;tab-size:2}\n.dzf-save{display:flex;gap:.6rem;margin-top:1rem}\n.dzf-tpls{display:grid;gap:.7rem}\n.dzf-tpl{border:1px solid var(--f-border);border-radius:var(--f-r);background:var(--f-surface);padding:.9rem 1rem}\n.dzf-tpl summary{display:flex;gap:.8rem;cursor:pointer;list-style:none}\n.dzf-tpl summary::-webkit-details-marker{display:none}\n.dzf-tpl summary b{display:block}.dzf-tpl summary small{display:block;color:var(--f-mute);margin:.15rem 0}.dzf-tpl summary em{font-style:normal;font:600 .7rem var(--f-mono);color:var(--f-mute)}\n.dzf-steps{margin:1rem 0;padding-left:1.4rem;display:grid;gap:.35rem;font-size:.88rem}\n.dzf-steps i{width:1.3em;color:var(--f-ink);text-align:center;margin-right:.3rem}\n.dzf-steps small{color:var(--f-mute)}\n.dzf-tpl-form{display:grid;gap:.6rem 1rem;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));align-items:end;padding-top:.8rem;border-top:1px dashed var(--f-border)}\n.dzf-tpl-form label{font-size:.8rem;font-weight:600;color:var(--f-mute);display:grid;gap:.25rem}\n.dzf-point{display:grid;gap:.7rem;grid-template-columns:repeat(auto-fill,minmax(min(100%,220px),1fr));align-items:end;padding:1rem;border:1px solid var(--f-border);border-radius:var(--f-r);background:var(--f-surface)}\n.dzf-point label{display:flex;flex-direction:column;gap:.25rem;font-size:.82rem;font-weight:600;color:var(--f-mute)}\n.dzf-point .dzf-save{grid-column:1/-1;display:flex;gap:.5rem}\n.dzf-box{border:1px solid var(--f-border);border-radius:var(--f-r);background:var(--f-surface);margin:.5rem 0}\n.dzf-box>summary{padding:.75rem 1rem;cursor:pointer;display:flex;gap:.6rem;flex-wrap:wrap;align-items:center}\n.dzf-box>summary code{overflow-wrap:anywhere}\n.dzf-box .dzf-point{border:0;border-top:1px solid var(--f-border);border-radius:0 0 var(--f-r) var(--f-r)}\n.dzf-kpis{display:grid;gap:.8rem;grid-template-columns:repeat(auto-fill,minmax(min(100%,200px),1fr));margin:1rem 0}\n.dzf-kpi{display:flex;flex-direction:column;gap:.15rem;padding:.9rem 1rem;border:1px solid var(--f-border);border-radius:var(--f-r);background:var(--f-surface)}\n.dzf-kpi small{color:var(--f-mute);font-size:.78rem}\n.dzf-kpi b{font-size:1.5rem;font-weight:750;letter-spacing:-.02em}\n.dzf-bar{display:inline-block;width:120px;height:8px;border-radius:99px;background:var(--f-s2);overflow:hidden;vertical-align:middle}\n.dzf-bar i{display:block;height:100%;background:var(--f-ink);border-radius:99px}\n.dzf-bar.bad i{background:#d9534f}" }, "dzf.js": { "src": `/* dysizz-flow \u2014 script des pages d'administration (aucune d\xE9pendance). */
 (function () {
   "use strict";
   var doc = document;
@@ -83395,12 +85674,15 @@ var require_assets = __commonJS({
   }
 });
 
-// ../src/index.js
+// src/index.js
 var { PLUGIN, VERSION } = require_core();
 var { toAction } = require_engine();
 var { BLOCKS } = require_blocks();
 var { registerUserBlocks } = require_userblocks();
 var admin = require_admin();
+var admin2 = require_admin2();
+var expose = require_expose();
+var { registerExternal } = require_registry();
 var { ASSETS } = require_assets();
 var TYPES = { css: "text/css; charset=utf-8", js: "application/javascript; charset=utf-8" };
 var serveAsset = (req, res) => {
@@ -83423,7 +85705,12 @@ module.exports = {
   /* pas de configuration_workflow : Saltcorn lit alors des valeurs, pas des fonctions */
   actions: ACTIONS,
   /* les blocs perso de l'atelier (table dzf_blocs) sont ajoutés au chargement */
+  /* + les blocs apportés par d'autres plugins (export dysizz_flow_blocks) */
   onLoad: async () => {
+    try {
+      registerExternal();
+    } catch (e) {
+    }
     try {
       await registerUserBlocks();
     } catch (e) {
@@ -83442,6 +85729,19 @@ module.exports = {
     { url: "/dysizz-flow/atelier/:nom", method: "get", callback: withAssets(admin.editor) },
     { url: "/dysizz-flow/modeles", method: "get", callback: withAssets(admin.templates) },
     { url: "/dysizz-flow/modeles/:key", method: "post", callback: admin.installTpl },
+    { url: "/dysizz-flow/atelier/restaurer", method: "post", callback: admin.restore },
+    { url: "/dysizz-flow/api", method: "get", callback: withAssets(admin2.apiPage) },
+    { url: "/dysizz-flow/api/save", method: "post", callback: admin2.apiSave },
+    { url: "/dysizz-flow/api/delete", method: "post", callback: admin2.apiDelete },
+    { url: "/dysizz-flow/coffre", method: "get", callback: withAssets(admin2.vaultPage) },
+    { url: "/dysizz-flow/coffre/save", method: "post", callback: admin2.vaultSave },
+    { url: "/dysizz-flow/coffre/delete", method: "post", callback: admin2.vaultDelete },
+    { url: "/dysizz-flow/supervision", method: "get", callback: withAssets(admin2.monitorPage) },
+    /* exposition publique : pas de jeton CSRF (appelé par d'autres services), protégé par jeton / signature.
+       Saltcorn compare les routes sans CSRF par préfixe : d'où l'entrée « /dzf/api/ ». */
+    { url: "/dzf/api/", method: "post", noCsrf: true, callback: (req, res) => res.status(404).json({ erreur: "introuvable" }) },
+    { url: "/dzf/api/:nom", method: "post", noCsrf: true, callback: expose.handle },
+    { url: "/dzf/api/:nom", method: "get", callback: expose.handle },
     { url: "/dysizz-flow/journal", method: "get", callback: withAssets(admin.journalPage) },
     { url: "/dysizz-flow/journal/vider", method: "post", callback: admin.purge },
     { url: "/dysizz-flow/a/:ver/:file", method: "get", callback: serveAsset }

@@ -3,7 +3,7 @@
 "use strict";
 const { plain } = require("../core");
 
-const secret = (api, name, fallback) => { const v = (name && api.env(name)) || fallback; if (!v) throw new Error(`secret manquant : définis la variable d'environnement ${name} sur le serveur`); return v; };
+const secret = async (api, name) => { const v = await api.secret(name); if (!v) throw Object.assign(new Error(`secret ${name} introuvable : variable d'environnement ou coffre (/dysizz-flow/coffre)`), { permanent: true }); return v; };
 
 const countAttachments = (node) => {
   if (!node) return 0;
@@ -28,7 +28,7 @@ module.exports = [
     run: async (p, ctx, api) => {
       const { ImapFlow } = require("imapflow");
       const { simpleParser } = require("mailparser");
-      const client = new ImapFlow({ host: p.serveur, port: +p.port || 993, secure: (+p.port || 993) === 993, auth: { user: p.utilisateur, pass: secret(api, p.variable_mot_de_passe) }, logger: false, socketTimeout: 60000 });
+      const client = new ImapFlow({ host: p.serveur, port: +p.port || 993, secure: (+p.port || 993) === 993, auth: { user: p.utilisateur, pass: await secret(api, p.variable_mot_de_passe) }, logger: false, socketTimeout: 60000 });
       const out = [];
       await client.connect();
       try {
@@ -93,7 +93,7 @@ module.exports = [
     params: [{ name: "variable_jeton", label: "Variable d'environnement du jeton", default: "TELEGRAM_BOT_TOKEN" }, { name: "chat_id", label: "Chat id", required: true },
       { name: "texte", label: "Texte", type: "text", required: true }, { name: "format", label: "Format", type: "select", options: ["texte", "HTML", "MarkdownV2"], default: "texte" }],
     run: async (p, ctx, api) => {
-      const r = await fetch(`https://api.telegram.org/bot${secret(api, p.variable_jeton)}/sendMessage`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ chat_id: p.chat_id, text: String(p.texte).slice(0, 4000), ...(p.format !== "texte" ? { parse_mode: p.format } : {}) }) });
+      const r = await fetch(`https://api.telegram.org/bot${await secret(api, p.variable_jeton)}/sendMessage`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ chat_id: p.chat_id, text: String(p.texte).slice(0, 4000), ...(p.format !== "texte" ? { parse_mode: p.format } : {}) }) });
       const j = await r.json();
       if (!j.ok) throw new Error(j.description || `HTTP ${r.status}`);
       return j.result && j.result.message_id;
@@ -111,7 +111,7 @@ module.exports = [
       const body = { messaging_product: "whatsapp", to: String(p.a).replace(/\D/g, "") };
       if (p.type === "modèle") Object.assign(body, { type: "template", template: { name: p.modele, language: { code: p.langue || "fr" }, ...(p.variables && p.variables.length ? { components: [{ type: "body", parameters: p.variables.map((t) => ({ type: "text", text: String(t) })) }] } : {}) } });
       else Object.assign(body, { type: "text", text: { body: String(p.texte || "").slice(0, 4096) } });
-      const r = await fetch(`https://graph.facebook.com/${p.version || "v21.0"}/${p.phone_number_id}/messages`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${secret(api, p.variable_jeton)}` }, body: JSON.stringify(body) });
+      const r = await fetch(`https://graph.facebook.com/${p.version || "v21.0"}/${p.phone_number_id}/messages`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${await secret(api, p.variable_jeton)}` }, body: JSON.stringify(body) });
       const j = await r.json();
       if (!r.ok) throw new Error((j.error && j.error.message) || `HTTP ${r.status}`);
       return j.messages && j.messages[0] && j.messages[0].id;

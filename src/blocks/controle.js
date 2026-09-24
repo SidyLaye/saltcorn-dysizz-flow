@@ -74,7 +74,14 @@ module.exports = [
       if (p.action === "libérer") { await verrous.deleteRows({ nom: p.nom }); return true; }
       const now = new Date();
       await verrous.deleteRows({ nom: p.nom, jusqu_a: { lt: now } });
-      try { await verrous.insertRow({ nom: p.nom, jusqu_a: ttlDate(p.duree || 600), par: `${require("os").hostname()}:${process.pid}` }); return true; } catch (e) { return false; }
+      /* insertion « si absent » sans provoquer d'erreur SQL (une erreur attrapée casserait
+         la transaction en cours, ex. quand on teste le workflow depuis Saltcorn) */
+      const db = require("@saltcorn/data/db");
+      const par = `${require("os").hostname()}:${process.pid}:${Math.random().toString(36).slice(2, 10)}`;
+      const sch = db.isSQLite ? "" : `"${db.getTenantSchema()}".`;
+      await db.query(`insert ${db.isSQLite ? "or ignore " : ""}into ${sch}dzf_verrous (nom, jusqu_a, par) values ($1, $2, $3)${db.isSQLite ? "" : " on conflict (nom) do nothing"}`, [p.nom, db.isSQLite ? ttlDate(p.duree || 600).toISOString() : ttlDate(p.duree || 600), par]);
+      const mine = await verrous.getRow({ nom: p.nom });
+      return !!(mine && mine.par === par);
     },
   },
   {

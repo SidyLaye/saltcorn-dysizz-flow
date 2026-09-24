@@ -74,6 +74,8 @@ const COMMON = (b) => [
   { name: "sortie", label: "Ranger le résultat dans", sublabel: "Nom de la variable du contexte que les étapes suivantes liront", type: "String", default: b.output || "resultat" },
   { name: "si_erreur", label: "En cas d'erreur", type: "String", attributes: { options: ["arrêter", "continuer"] }, default: "arrêter", sublabel: "« continuer » range le message dans <sortie>_erreur et passe à la suite" },
   { name: "delai_max", label: "Délai max (secondes)", type: "Integer", default: b.timeout || 30 },
+  { name: "essais", label: "Essais en cas d'échec", sublabel: "1 = pas de nouvel essai. Attente doublée à chaque fois", type: "Integer", default: b.retries || 1 },
+  { name: "pause_essais", label: "Première attente entre deux essais (secondes)", type: "Integer", default: 2 },
 ];
 
 /* ---------- valeurs des réglages ---------- */
@@ -109,6 +111,12 @@ const makeApi = ({ user, req, out }) => ({
   Table: require("@saltcorn/data/models/table"),
   user, req,
   env: (name) => (name ? process.env[name] : undefined),
+  /* secret : variable d'environnement d'abord, sinon le coffre chiffré (table dzf_secrets) */
+  secret: async (name) => {
+    if (!name) return undefined;
+    if (process.env[name]) return process.env[name];
+    return require("./vault").readSecret(name);
+  },
   log: (...a) => { try { require("@saltcorn/data/db/state").getState().log(5, `[dysizz-flow] ${a.join(" ")}`); } catch (e) { /* rien */ } },
 });
 
@@ -121,6 +129,33 @@ const journal = async (row) => {
   } catch (e) { /* le journal ne doit jamais casser un workflow */ }
 };
 
+/* ---------- métriques : comptées en mémoire, écrites une fois par heure et par tenant ---------- */
+const METRICS = new Map(); /* tenant → { heure, blocs: Map(bloc → {n, erreurs, total_ms, max_ms}) } */
+const tenantKey = () => { try { return require("@saltcorn/data/db").getTenantSchema(); } catch (e) { return "public"; } };
+const hourOf = (d = new Date()) => { const x = new Date(d); x.setMinutes(0, 0, 0); return x; };
+const record = async (name, ms, ok) => {
+  const k = tenantKey();
+  const h = +hourOf();
+  let m = METRICS.get(k);
+  if (m && m.heure !== h) { const old = m; m = null; METRICS.delete(k); flush(old).catch(() => {}); }
+  if (!m) { m = { heure: h, blocs: new Map() }; METRICS.set(k, m); }
+  const x = m.blocs.get(name) || { n: 0, erreurs: 0, total_ms: 0, max_ms: 0 };
+  x.n++; if (!ok) x.erreurs++; x.total_ms += ms; x.max_ms = Math.max(x.max_ms, ms);
+  m.blocs.set(name, x);
+};
+const flush = async (m) => {
+  const { ensureTables } = require("./store");
+  const T = await ensureTables();
+  for (const [bloc, x] of m.blocs) {
+    const heure = new Date(m.heure);
+    const ex = await T.metriques.getRow({ heure, bloc });
+    const row = { heure, bloc, n: x.n, erreurs: x.erreurs, ms_moyen: Math.round(x.total_ms / x.n), ms_max: x.max_ms };
+    if (ex) await T.metriques.updateRow({ n: ex.n + x.n, erreurs: ex.erreurs + x.erreurs, ms_moyen: Math.round((ex.ms_moyen * ex.n + x.total_ms) / (ex.n + x.n)), ms_max: Math.max(ex.ms_max, x.max_ms) }, ex.id);
+    else await T.metriques.insertRow(row);
+  }
+};
+const liveMetrics = () => { const m = METRICS.get(tenantKey()); return m ? [...m.blocs.entries()].map(([bloc, x]) => ({ bloc, ...x })) : []; };
+
 /* ---------- bloc → action Saltcorn ---------- */
 const toAction = (b) => ({
   description: `${b.label} — ${b.description}`,
@@ -131,20 +166,30 @@ const toAction = (b) => ({
     const ctx = { ...(row || {}), user: row && row.user ? row.user : user ? { id: user.id, email: user.email, role_id: user.role_id } : undefined };
     const out = configuration.sortie || b.output || "resultat";
     const t0 = Date.now();
-    try {
-      const p = resolveParams(b, configuration, ctx);
-      const res = await withTimeout(Promise.resolve(b.run(p, ctx, makeApi({ user, req, table, mode, out }))), +configuration.delai_max || b.timeout || 30, b.label);
-      if (b.log || configuration.journaliser) await journal({ bloc: b.name, ok: true, duree_ms: Date.now() - t0, message: summarize(res) });
-      /* résultats spéciaux de Saltcorn (notify, error, goto…) : transmis tels quels */
-      if (res && res.__saltcorn) { const { __saltcorn, ...rest } = res; return rest; }
-      /* « fusionner dans le contexte » : les clés vont directement dans le contexte */
-      if (res && res.__merge) return res.__merge;
-      return { [out]: res };
-    } catch (e) {
-      await journal({ bloc: b.name, ok: false, duree_ms: Date.now() - t0, message: e.message });
-      if (configuration.si_erreur === "continuer") return { [out]: null, [`${out}_erreur`]: e.message };
-      throw new Error(`[${b.label}] ${e.message}`);
+    const tries = Math.max(1, Math.min(10, +configuration.essais || b.retries || 1));
+    let lastErr;
+    for (let attempt = 1; attempt <= tries; attempt++) {
+      try {
+        const p = resolveParams(b, configuration, ctx);
+        const res = await withTimeout(Promise.resolve(b.run(p, ctx, makeApi({ user, req, table, mode, out }))), +configuration.delai_max || b.timeout || 30, b.label);
+        await record(b.name, Date.now() - t0, true);
+        if (b.log || configuration.journaliser) await journal({ bloc: b.name, ok: true, duree_ms: Date.now() - t0, message: summarize(res) });
+        /* résultats spéciaux de Saltcorn (notify, error, goto…) : transmis tels quels */
+        if (res && res.__saltcorn) { const { __saltcorn, ...rest } = res; return rest; }
+        /* « fusionner dans le contexte » : les clés vont directement dans le contexte */
+        if (res && res.__merge) return res.__merge;
+        return { [out]: res };
+      } catch (e) {
+        lastErr = e;
+        /* une erreur de réglage ne sert à rien de la réessayer */
+        if (e.permanent || /réglage|JSON invalide|introuvable|refus/i.test(e.message)) break;
+        if (attempt < tries) await new Promise((r) => setTimeout(r, Math.min(60, (+configuration.pause_essais || 2) * 2 ** (attempt - 1)) * 1000));
+      }
     }
+    await record(b.name, Date.now() - t0, false);
+    await journal({ bloc: b.name, ok: false, duree_ms: Date.now() - t0, message: lastErr.message });
+    if (configuration.si_erreur === "continuer") return { [out]: null, [`${out}_erreur`]: lastErr.message };
+    throw new Error(`[${b.label}] ${lastErr.message}`);
   },
 });
 
@@ -165,4 +210,8 @@ const pool = async (items, n, fn) => {
 };
 const asList = (v) => (v === undefined || v === null || v === "" ? [] : Array.isArray(v) ? v : typeof v === "string" && v.trim().startsWith("[") ? parseJSON(v, "liste") : [v]);
 
-module.exports = { interpolate, deep, getPath, parseJSON, toAction, toField, resolveParams, COMMON, pool, asList, withTimeout, makeApi, journal };
+/* jamais de mot de passe, jeton ou empreinte de compte dans le contexte d'un workflow */
+const SENSIBLE = /^(password|reset_password_token|reset_password_expiry|api_token|verification_token|_attributes)$/;
+const sanitize = (v) => (Array.isArray(v) ? v.map(sanitize) : v && typeof v === "object" && !(v instanceof Date) ? Object.fromEntries(Object.entries(v).filter(([k]) => !SENSIBLE.test(k))) : v);
+
+module.exports = { sanitize, liveMetrics, flush, METRICS, interpolate, deep, getPath, parseJSON, toAction, toField, resolveParams, COMMON, pool, asList, withTimeout, makeApi, journal };

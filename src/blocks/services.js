@@ -13,7 +13,7 @@ module.exports = [
       { name: "alternance", label: "Alternance seulement", type: "bool" }, { name: "depuis_jours", label: "Publiées depuis (jours)", type: "int", default: 7 },
     ],
     run: async (p, ctx, api) => {
-      const id = api.env(p.variable_id), secret = api.env(p.variable_secret);
+      const id = await api.secret(p.variable_id), secret = await api.secret(p.variable_secret);
       if (!id || !secret) throw new Error(`variables ${p.variable_id} / ${p.variable_secret} absentes du serveur`);
       const tr = await fetch("https://entreprise.francetravail.fr/connexion/oauth2/access_token?realm=%2Fpartenaire", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ grant_type: "client_credentials", client_id: id, client_secret: secret, scope: "api_offresdemploiv2 o2dsoffre" }) });
       const tj = await tr.json().catch(() => ({}));

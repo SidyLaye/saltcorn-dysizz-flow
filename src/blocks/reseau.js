@@ -3,13 +3,13 @@
 const { asList, pool } = require("../engine");
 const { parseFeed, resolveYoutube, youtubeFeed, httpGet } = require("../lib/feeds");
 
-const secret = (api, name) => { const v = api.env(name); if (name && !v) throw new Error(`variable d'environnement ${name} absente du serveur`); return v; };
+const secret = async (api, name) => { const v = await api.secret(name); if (name && !v) throw Object.assign(new Error(`secret ${name} introuvable (variable d'environnement ou coffre)`), { permanent: true }); return v; };
 
 const request = async (p, api) => {
   const headers = { Accept: "application/json, text/plain, */*", ...(p.entetes || {}) };
-  if (p.auth === "Bearer (variable d'env)") headers.Authorization = `Bearer ${secret(api, p.variable_secret)}`;
-  if (p.auth === "Basic (variable d'env user:motdepasse)") headers.Authorization = `Basic ${Buffer.from(secret(api, p.variable_secret)).toString("base64")}`;
-  if (p.auth === "En-tête perso (variable d'env)") headers[p.nom_entete || "X-API-Key"] = secret(api, p.variable_secret);
+  if (p.auth === "Bearer (secret)") headers.Authorization = `Bearer ${await secret(api, p.variable_secret)}`;
+  if (p.auth === "Basic (secret user:motdepasse)") headers.Authorization = `Basic ${Buffer.from(await secret(api, p.variable_secret)).toString("base64")}`;
+  if (p.auth === "En-tête perso (secret)") headers[p.nom_entete || "X-API-Key"] = await secret(api, p.variable_secret);
   let body;
   if (p.corps !== undefined && p.corps !== "" && !["GET", "HEAD"].includes(p.methode)) {
     if (p.type_corps === "formulaire") { body = new URLSearchParams(p.corps).toString(); headers["Content-Type"] = "application/x-www-form-urlencoded"; }
@@ -33,8 +33,8 @@ module.exports = [
       { name: "entetes", label: "En-têtes (JSON)", type: "json" },
       { name: "corps", label: "Corps (JSON ou texte)", type: "json" },
       { name: "type_corps", label: "Type du corps", type: "select", options: ["json", "formulaire", "texte"], default: "json" },
-      { name: "auth", label: "Authentification", type: "select", options: ["aucune", "Bearer (variable d'env)", "Basic (variable d'env user:motdepasse)", "En-tête perso (variable d'env)"], default: "aucune" },
-      { name: "variable_secret", label: "Variable d'environnement du secret", help: "Ex. MON_API_TOKEN" },
+      { name: "auth", label: "Authentification", type: "select", options: ["aucune", "Bearer (secret)", "Basic (secret user:motdepasse)", "En-tête perso (secret)"], default: "aucune" },
+      { name: "variable_secret", label: "Nom du secret (variable d'env. ou coffre)", help: "Ex. MON_API_TOKEN" },
       { name: "nom_entete", label: "Nom de l'en-tête perso", default: "X-API-Key" },
       { name: "reponse", label: "Réponse", type: "select", options: ["json", "texte"], default: "json" },
       { name: "essais", label: "Essais max", type: "int", default: 3 },

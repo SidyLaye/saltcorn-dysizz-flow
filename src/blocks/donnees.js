@@ -1,6 +1,6 @@
 /* Blocs « Données » : lire et écrire dans les tables Saltcorn, vite et sans doublon. */
 "use strict";
-const { asList } = require("../engine");
+const { asList, sanitize } = require("../engine");
 
 const T = (api, name) => {
   const t = api.Table.findOne({ name });
@@ -22,7 +22,7 @@ module.exports = [
     params: [{ name: "table", label: "Table", type: "table", required: true }, FILTRE,
       { name: "tri", label: "Trier par (champ)", default: "id" }, { name: "decroissant", label: "Ordre décroissant", type: "bool" },
       { name: "limite", label: "Nombre max de lignes", type: "int", default: 200 }],
-    run: async (p, ctx, api) => needRead(T(api, p.table), api).getRows(p.filtre || {}, { orderBy: p.tri || "id", orderDesc: !!p.decroissant, limit: Math.min(+p.limite || 200, 10000) }),
+    run: async (p, ctx, api) => sanitize(await needRead(T(api, p.table), api).getRows(p.filtre || {}, { orderBy: p.tri || "id", orderDesc: !!p.decroissant, limit: Math.min(+p.limite || 200, 10000) })),
   },
   {
     name: "dzf_table_compter", label: "Table : compter ou additionner", category: "Données", icon: "fas fa-calculator", output: "total",

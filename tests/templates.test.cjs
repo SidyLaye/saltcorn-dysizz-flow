@@ -13,7 +13,7 @@ for (const t of TEMPLATES) {
   for (const s of t.steps) {
     assert(known.has(s.action_name), `${t.key} : bloc inconnu ${s.action_name}`);
     const b = BLOCKS.find((x) => x.name === s.action_name);
-    if (b) for (const k of Object.keys(s.configuration)) assert(["sortie", "si_erreur", "delai_max", "journaliser"].includes(k) || (b.params || []).some((p) => p.name === k), `${t.key}.${s.name} : réglage ${k} inconnu pour ${b.name}`);
+    if (b) for (const k of Object.keys(s.configuration)) assert(["sortie", "si_erreur", "delai_max", "journaliser", "essais", "pause_essais"].includes(k) || (b.params || []).some((p) => p.name === k), `${t.key}.${s.name} : réglage ${k} inconnu pour ${b.name}`);
     if (s.next_step && !s.next_step.includes("?")) assert(names.has(s.next_step), `${t.key}.${s.name} → ${s.next_step}`);
   }
   const vars = Object.fromEntries((t.vars || []).map((v) => [v.name, v.default || "x"]));

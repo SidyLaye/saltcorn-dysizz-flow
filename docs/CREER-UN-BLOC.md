@@ -44,3 +44,14 @@ Règles :
 - `raw: true` sur un réglage qui contient des `{{item.x}}` à remplacer par le bloc lui-même.
 - Renvoyer `{ __merge: {...} }` pour écrire plusieurs variables dans le contexte.
 - Un test dans `tests/engine.test.cjs` si le bloc transforme des données.
+
+## Depuis un autre plugin
+
+Un plugin Saltcorn peut exporter `dysizz_flow_blocks` (une liste de blocs au même format que ceux de `src/blocks`). Les noms commencent par `dzx_`. dysizz-flow les trouve au démarrage et quand tu ouvres la bibliothèque. Voir le README.
+
+## Bonnes pratiques
+
+- Une erreur qui ne sert à rien de réessayer (réglage faux, droit refusé) : `throw Object.assign(new Error("…"), { permanent: true })`.
+- Les secrets : `await api.secret("NOM")` (variable d'environnement, sinon coffre). Jamais de secret dans un réglage en clair.
+- Pas d'erreur SQL attrapée puis ignorée : dans une transaction, elle casse tout ce qui suit. Vérifie avant d'écrire.
+- Parallélisme borné avec `pool(liste, n, fn)` du moteur.

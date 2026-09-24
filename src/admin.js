@@ -18,7 +18,7 @@ const TYPE_LABEL = { texte: "texte court", text: "texte long", int: "nombre enti
 
 const page = (res, req, title, active, html) => res.sendWrap({ title, requestFluidLayout: true }, {
   above: [{ type: "blank", isHTML: true, contents: `<div class="dzf">
-<nav class="dzf-tabs">${[["", "Bibliothèque", "fas fa-cubes"], ["atelier", "Atelier", "fas fa-tools"], ["modeles", "Modèles de workflows", "fas fa-project-diagram"], ["journal", "Journal", "fas fa-clipboard-list"]]
+<nav class="dzf-tabs">${[["", "Bibliothèque", "fas fa-cubes"], ["atelier", "Atelier", "fas fa-tools"], ["modeles", "Modèles", "fas fa-project-diagram"], ["api", "Points d'API", "fas fa-plug"], ["coffre", "Coffre", "fas fa-lock"], ["supervision", "Supervision", "fas fa-tachometer-alt"], ["journal", "Journal", "fas fa-clipboard-list"]]
     .map(([u, l, i]) => `<a href="/dysizz-flow${u ? "/" + u : ""}" class="${active === u ? "on" : ""}"><i class="${i}"></i>${l}</a>`).join("")}
 <a href="/actions" class="dzf-ext"><i class="fas fa-external-link-alt"></i>Workflows Saltcorn</a></nav>
 ${flash(req)}${html}</div>`.replace(/\{\{/g, "&#123;&#123;").replace(/\}\}/g, "&#125;&#125;") }],
@@ -30,7 +30,9 @@ const flash = (req) => {
 };
 const go = (res, url, msg, bad) => res.redirect(`${url}${url.includes("?") ? "&" : "?"}${bad ? "err" : "ok"}=${encodeURIComponent(msg)}`);
 
-const allBlocks = async () => [...BLOCKS, ...(await loadUserBlocks().catch(() => []))];
+const { registerExternal, externalBlocks } = require("./registry");
+/* intégrés + apportés par d'autres plugins + les tiens */
+const allBlocks = async () => { registerExternal(); return [...BLOCKS, ...externalBlocks(), ...(await loadUserBlocks().catch(() => []))]; };
 
 /* ---------- bibliothèque ---------- */
 const library = async (req, res) => {
@@ -45,7 +47,7 @@ const library = async (req, res) => {
   }).join("");
   page(res, req, "Blocs workflow", "", `
 <div class="dzf-head"><div><h1>Blocs workflow</h1>
-<p>${BLOCKS.length} blocs intégrés, et les tiens. Chaque bloc est une <b>action Saltcorn</b> : ajoute-le comme étape dans un workflow (Paramètres → Déclencheurs → Workflow), sur une table, en planifié ou en bouton. Ses réglages se remplissent dans un formulaire et acceptent des <code>{{variables}}</code> du contexte. Version ${esc(VERSION)}.</p></div>
+<p>${BLOCKS.length} blocs intégrés${externalBlocks().length ? `, ${externalBlocks().length} apportés par d'autres plugins` : ""}, et les tiens. Chaque bloc est une <b>action Saltcorn</b> : ajoute-le comme étape dans un workflow (Paramètres → Déclencheurs → Workflow), sur une table, en planifié ou en bouton. Ses réglages se remplissent dans un formulaire et acceptent des <code>{{variables}}</code> du contexte. Version ${esc(VERSION)}.</p></div>
 <a class="btn btn-primary" href="/dysizz-flow/atelier/nouveau"><i class="fas fa-plus"></i> Créer un bloc</a></div>
 <input class="form-control dzf-search" placeholder="Chercher un bloc (ex. mail, table, IA, API…)" oninput="dzfSearch(this.value)">
 ${cards}`);
@@ -145,8 +147,17 @@ ${r.nom ? `<h2>Essayer</h2><div class="dzf-try" data-bloc="${esc(PREFIX + r.nom)
 <div><label>Contexte d'entrée (JSON)</label><textarea class="form-control dzf-mono" rows="6" data-ctx>{}</textarea></div>
 <div class="dzf-try-bar"><button class="btn btn-primary" type="button" onclick="dzfTry(this)"><i class="fas fa-play"></i> Lancer</button><span class="dzf-muted">Enregistre avant d'essayer.</span></div>
 <pre class="dzf-out" data-out>Résultat ici.</pre></div>` : ""}
+${r.nom ? await versionsHtml(req, r) : ""}
 <input type="hidden" id="dzf-csrf" value="${esc(csrf(req))}">
 <script>window.__dzfTypes=${JSON.stringify(TYPES.map((t) => [t, TYPE_LABEL[t]]))};</script>`);
+};
+
+const versionsHtml = async (req, r) => {
+  const { versions } = await ensureTables();
+  const vs = await versions.getRows({ nom: r.nom }, { orderBy: "id", orderDesc: true, limit: 30 });
+  return `<h2>Versions <small>(actuelle : v${r.version || 1})</small></h2>
+<table class="dzf-table"><tr><th>Version</th><th>Quand</th><th>Par</th><th></th></tr>
+${vs.map((v) => `<tr><td>v${v.version}</td><td>${esc(new Date(v.quand).toLocaleString("fr-FR"))}</td><td>${esc(v.par || "")}</td><td><form method="post" action="/dysizz-flow/atelier/restaurer">${hidden(req)}<input type="hidden" name="id" value="${v.id}"><button class="btn btn-sm btn-outline-secondary" onclick="return confirm('Remettre la v${v.version} ?')">Remettre</button></form></td></tr>`).join("") || '<tr><td colspan="4" class="dzf-muted">Pas encore d\'ancienne version.</td></tr>'}</table>`;
 };
 
 const save = async (req, res) => {
@@ -162,9 +173,34 @@ const save = async (req, res) => {
   const { blocs } = await ensureTables();
   const row = { nom, libelle: String(b.libelle || nom).slice(0, 120), icone: String(b.icone || "fas fa-cube").replace(/[^a-z0-9 -]/gi, "").slice(0, 60), description: String(b.description || "").slice(0, 400), sortie: String(b.sortie || "").replace(/[^\w]/g, "").slice(0, 40), params: JSON.stringify(params), code: String(b.code || ""), actif: b.actif === "on" || b.actif === true || b.actif === "true", categorie: "Mes blocs", maj_le: new Date() };
   const old = await blocs.getRow({ nom: b.ancien || nom });
-  if (old) await blocs.updateRow(row, old.id); else if (await blocs.getRow({ nom })) return go(res, "/dysizz-flow/atelier/nouveau", "Ce nom existe déjà", true); else await blocs.insertRow(row);
+  if (old) {
+    /* on garde l'ancienne version avant d'écraser (les 30 dernières) */
+    await snapshot(old, req);
+    row.version = (old.version || 1) + 1;
+    await blocs.updateRow(row, old.id);
+  } else if (await blocs.getRow({ nom })) return go(res, "/dysizz-flow/atelier/nouveau", "Ce nom existe déjà", true); else await blocs.insertRow({ ...row, version: 1 });
   await broadcast();
   go(res, `/dysizz-flow/atelier/${nom}`, `Bloc ${PREFIX}${nom} enregistré et disponible dans les workflows.`);
+};
+
+const SNAP = ["nom", "libelle", "icone", "description", "sortie", "params", "code", "actif", "version"];
+const snapshot = async (old, req) => {
+  const { versions } = await ensureTables();
+  await versions.insertRow({ nom: old.nom, version: old.version || 1, contenu: JSON.stringify(Object.fromEntries(SNAP.map((k) => [k, old[k]]))), quand: new Date(), par: (req.user && req.user.email) || "" });
+  const all = await versions.getRows({ nom: old.nom }, { orderBy: "id", orderDesc: true });
+  for (const v of all.slice(30)) await versions.deleteRows({ id: v.id });
+};
+const restore = async (req, res) => {
+  if (!isAdmin(req)) return denied(res);
+  const { blocs, versions } = await ensureTables();
+  const v = await versions.getRow({ id: +(req.body || {}).id });
+  const cur = v && (await blocs.getRow({ nom: v.nom }));
+  if (!v || !cur) return go(res, "/dysizz-flow/atelier", "Version introuvable", true);
+  const snap = JSON.parse(v.contenu);
+  await snapshot(cur, req);
+  await blocs.updateRow({ ...snap, nom: cur.nom, version: (cur.version || 1) + 1, maj_le: new Date() }, cur.id);
+  await broadcast();
+  go(res, `/dysizz-flow/atelier/${cur.nom}`, `Version ${v.version} remise en place (devient la v${(cur.version || 1) + 1})`);
 };
 
 const remove = async (req, res) => {
@@ -264,4 +300,4 @@ const purge = async (req, res) => {
   go(res, "/dysizz-flow/journal", "Journal nettoyé");
 };
 
-module.exports = { library, blockPage, tryBlock, workshop, editor, save, remove, copyBuiltin, exportBlocks, importBlocks, templates, installTpl, journalPage, purge };
+module.exports = { allBlocks, csrf, restore, page, go, hidden, flash, library, blockPage, tryBlock, workshop, editor, save, remove, copyBuiltin, exportBlocks, importBlocks, templates, installTpl, journalPage, purge };

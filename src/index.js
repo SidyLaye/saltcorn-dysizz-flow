@@ -9,6 +9,9 @@ const { toAction } = require("./engine");
 const { BLOCKS } = require("./blocks");
 const { registerUserBlocks } = require("./userblocks");
 const admin = require("./admin");
+const admin2 = require("./admin2");
+const expose = require("./expose");
+const { registerExternal } = require("./registry");
 const { ASSETS } = require("./generated/assets");
 
 const TYPES = { css: "text/css; charset=utf-8", js: "application/javascript; charset=utf-8" };
@@ -36,7 +39,11 @@ module.exports = {
   /* pas de configuration_workflow : Saltcorn lit alors des valeurs, pas des fonctions */
   actions: ACTIONS,
   /* les blocs perso de l'atelier (table dzf_blocs) sont ajoutés au chargement */
-  onLoad: async () => { try { await registerUserBlocks(); } catch (e) { /* table pas encore créée : normal au 1er démarrage */ } },
+  /* + les blocs apportés par d'autres plugins (export dysizz_flow_blocks) */
+  onLoad: async () => {
+    try { registerExternal(); } catch (e) { /* rien */ }
+    try { await registerUserBlocks(); } catch (e) { /* table pas encore créée : normal au 1er démarrage */ }
+  },
   routes: [
     { url: "/dysizz-flow", method: "get", callback: withAssets(admin.library) },
     { url: "/dysizz-flow/bloc/:name", method: "get", callback: withAssets(admin.blockPage) },
@@ -50,6 +57,19 @@ module.exports = {
     { url: "/dysizz-flow/atelier/:nom", method: "get", callback: withAssets(admin.editor) },
     { url: "/dysizz-flow/modeles", method: "get", callback: withAssets(admin.templates) },
     { url: "/dysizz-flow/modeles/:key", method: "post", callback: admin.installTpl },
+    { url: "/dysizz-flow/atelier/restaurer", method: "post", callback: admin.restore },
+    { url: "/dysizz-flow/api", method: "get", callback: withAssets(admin2.apiPage) },
+    { url: "/dysizz-flow/api/save", method: "post", callback: admin2.apiSave },
+    { url: "/dysizz-flow/api/delete", method: "post", callback: admin2.apiDelete },
+    { url: "/dysizz-flow/coffre", method: "get", callback: withAssets(admin2.vaultPage) },
+    { url: "/dysizz-flow/coffre/save", method: "post", callback: admin2.vaultSave },
+    { url: "/dysizz-flow/coffre/delete", method: "post", callback: admin2.vaultDelete },
+    { url: "/dysizz-flow/supervision", method: "get", callback: withAssets(admin2.monitorPage) },
+    /* exposition publique : pas de jeton CSRF (appelé par d'autres services), protégé par jeton / signature.
+       Saltcorn compare les routes sans CSRF par préfixe : d'où l'entrée « /dzf/api/ ». */
+    { url: "/dzf/api/", method: "post", noCsrf: true, callback: (req, res) => res.status(404).json({ erreur: "introuvable" }) },
+    { url: "/dzf/api/:nom", method: "post", noCsrf: true, callback: expose.handle },
+    { url: "/dzf/api/:nom", method: "get", callback: expose.handle },
     { url: "/dysizz-flow/journal", method: "get", callback: withAssets(admin.journalPage) },
     { url: "/dysizz-flow/journal/vider", method: "post", callback: admin.purge },
     { url: "/dysizz-flow/a/:ver/:file", method: "get", callback: serveAsset },

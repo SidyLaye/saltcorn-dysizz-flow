@@ -11,7 +11,7 @@ const CONN = [
 
 const chat = async (p, api, messages, json) => {
   const headers = { "Content-Type": "application/json" };
-  if (p.variable_cle) { const k = api.env(p.variable_cle); if (!k) throw new Error(`variable ${p.variable_cle} absente`); headers.Authorization = `Bearer ${k}`; }
+  if (p.variable_cle) { const k = await api.secret(p.variable_cle); if (!k) throw Object.assign(new Error(`secret ${p.variable_cle} introuvable`), { permanent: true }); headers.Authorization = `Bearer ${k}`; }
   const r = await fetch(`${String(p.url_base).replace(/\/$/, "")}/chat/completions`, {
     method: "POST", headers,
     body: JSON.stringify({ model: p.modele, messages, temperature: p.temperature ?? 0.2, ...(json ? { response_format: { type: "json_object" } } : {}) }),
