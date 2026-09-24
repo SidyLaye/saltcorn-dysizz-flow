@@ -45,9 +45,9 @@ const B = (n) => BLOCKS.find((b) => b.name === n);
   const names = new Set();
   for (const b of BLOCKS) {
     for (const k of ["name", "label", "category", "icon", "description", "run"]) assert(b[k], `${b.name} : ${k}`);
-    assert(/^dzf_[a-z_]+$/.test(b.name), b.name);
+    assert(/^dzf_[a-z0-9_]+$/.test(b.name), b.name);
     assert(!names.has(b.name), `${b.name} en double`); names.add(b.name);
-    for (const p of b.params || []) assert(/^[a-z_]+$/.test(p.name), `${b.name}.${p.name}`);
+    for (const p of b.params || []) assert(/^[a-z][a-z0-9_]*$/.test(p.name), `${b.name}.${p.name}`);
   }
   console.log(`moteur OK, ${BLOCKS.length} blocs`);
 })().catch((e) => { console.error(e); process.exit(1); });

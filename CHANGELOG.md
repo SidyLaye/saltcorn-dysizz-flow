@@ -1,5 +1,14 @@
 # Journal des versions
 
+## 2.3.0
+
+- **79 nouveaux blocs (182 en tout)**, du plus simple au plus poussé : stockage (S3 signé v4, ZIP, WebDAV, IPFS), documents (PDF sans service externe, Gotenberg, Excel, Word avec modèles, QR SEPA, OCR/Tika), IA avancée (images, voix, vision, agent avec outils, RAG), blockchain (Ethereum et compatibles avec signature des transactions, Bitcoin, cours), DevOps (GitHub, GitLab, Docker, Dokploy, Kubernetes, Cloudflare, OVHcloud), données externes (PostgreSQL, Meilisearch, Elasticsearch, Qdrant, ClickHouse, InfluxDB, Supabase, Airtable, Notion, Google Sheets, Baserow, NocoDB), objets connectés (MQTT, WebSocket, Home Assistant), pratique (météo, adresses, itinéraires, jours fériés, SIRENE, change, Wikipédia, IBAN/TVA, cron, Stripe), messageries libres (Matrix, Mattermost, Gotify, Pushover, Signal).
+- Résultats fichiers au choix : fichier Saltcorn ou base64 passé au bloc suivant (ex. Excel → S3, QR → PDF).
+- Catalogue : météo du matin, export Excel vers S3, PDF à chaque facture (avec QR de paiement), suivi d'un portefeuille crypto, assistant IA pour les pages (crée aussi son point d'API).
+- Points d'API : nouvelle protection « session » (utilisateur connecté, anti-CSRF) pour les widgets des pages.
+- Les réglages d'un bloc peuvent s'afficher selon un autre réglage (showIf).
+- Cryptographie blockchain : @noble/curves et @noble/hashes (audités), inclus au build.
+
 ## 2.2.0
 
 - **Emploi : chercher dans plusieurs sources** (`dzf_emplois`) : France Travail, Adzuna, Jooble (clés gratuites), Arbeitnow, Remotive, RemoteOK, Jobicy, Himalayas (sans clé), flux RSS. Filtre mots-clés / lieu / télétravail / alternance / date, dédoublonnage, bilan par source.

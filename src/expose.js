@@ -6,6 +6,8 @@
      - jeton       : en-tête « Authorization: Bearer <jeton> » ou « X-Api-Key »
      - hmac        : signature HMAC-SHA256 du corps brut dans un en-tête
                      (GitHub, Stripe, Shopify… ou tes propres services)
+     - session     : utilisateur connecté (widgets chat IA, formulaires des pages),
+                     le workflow tourne avec ses droits
    + limite de requêtes par minute et par adresse IP, taille de corps limitée,
    comparaison en temps constant, jamais de détail d'erreur interne renvoyé. */
 "use strict";
@@ -14,7 +16,7 @@ const { ensureTables } = require("./store");
 
 const NOM_RE = /^[a-z0-9][a-z0-9_-]{0,60}$/;
 const MAX_BODY = 1024 * 1024;
-const AUTHS = ["aucune", "jeton", "hmac"];
+const AUTHS = ["aucune", "jeton", "hmac", "session"];
 const METHODES = ["POST", "GET", "GET et POST"];
 
 /* petite mémoire des points pour ne pas relire la table à chaque appel (30 s) */
@@ -88,6 +90,13 @@ const handle = async (req, res) => {
       const got = String(req.headers[String(p.en_tete_signature || "x-signature").toLowerCase()] || "").replace(/^sha256=/, "");
       const want = key && crypto.createHmac("sha256", key).update(raw).digest("hex");
       if (!want || !same(got, want)) return reply(res, 401, { erreur: "signature invalide" });
+    } else if (p.auth === "session") {
+      /* utilisateur connecté (widgets des pages) : en-tête maison + même origine,
+         ce qu'un autre site ne peut pas envoyer sans autorisation CORS (anti-CSRF) */
+      if (!req.user || !req.user.id) return reply(res, 401, { erreur: "connecte-toi d'abord" });
+      if (req.headers["x-requested-with"] !== "dysizz") return reply(res, 403, { erreur: "en-tête X-Requested-With manquant" });
+      const origin = req.headers.origin || req.headers.referer;
+      if (origin) { try { if (new URL(origin).host !== req.headers.host) return reply(res, 403, { erreur: "origine refusée" }); } catch (e) { return reply(res, 403, { erreur: "origine refusée" }); } }
     } else if (p.auth !== "aucune") return reply(res, 500, { erreur: "point mal configuré" });
 
     const Trigger = require("@saltcorn/data/models/trigger");
@@ -95,10 +104,10 @@ const handle = async (req, res) => {
     if (!wf) return reply(res, 500, { erreur: "workflow absent" });
     let corps = req.body;
     if ((!corps || !Object.keys(corps).length) && raw) { try { corps = JSON.parse(raw); } catch (e) { corps = raw; } }
-    const ctx = { corps: corps || {}, corps_brut: raw, query: { ...(req.query || {}) }, entetes: safeHeaders(req.headers), ip: clientIp(req), methode: m, point: nom };
+    const ctx = { corps: corps || {}, corps_brut: raw, query: { ...(req.query || {}) }, entetes: safeHeaders(req.headers), ip: clientIp(req), methode: m, point: nom, ...(p.auth === "session" ? { utilisateur: { id: req.user.id, email: req.user.email, role_id: req.user.role_id } } : {}) };
     /* Avec quels droits ? Par défaut ceux d'un visiteur (public). Pour écrire dans des
        tables protégées, le point peut agir au nom d'un compte précis (ex. un compte « robot »). */
-    const out = await wf.runWithoutRow({ row: ctx, req, user: await runAs(p.executer_en) });
+    const out = await wf.runWithoutRow({ row: ctx, req, user: p.auth === "session" ? req.user : await runAs(p.executer_en) });
     const key = String(p.reponse || "").trim();
     const val = key ? (out || {})[key] : { ok: true };
     const status = out && Number.isInteger(out.statut_http) && out.statut_http >= 200 && out.statut_http < 600 ? out.statut_http : 200;

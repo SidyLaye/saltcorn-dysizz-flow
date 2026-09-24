@@ -1,4 +1,4 @@
-/* dysizz-flow 2.2.0 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.3.0 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.2.0" : "dev";
+    var VERSION2 = true ? "2.3.0" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -209,7 +209,7 @@ var require_engine = __commonJS({
       return (await Table.find({})).map((t) => t.name).filter((n) => n !== "users").sort();
     };
     var toField = async (p) => {
-      const base = { name: p.name, label: p.label || p.name, sublabel: p.help || "", required: !!p.required, default: p.default };
+      const base = { name: p.name, label: p.label || p.name, sublabel: p.help || "", required: !!p.required, default: p.default, ...p.showIf ? { showIf: p.showIf } : {} };
       switch (p.type) {
         case "int":
           return { ...base, type: "Integer" };
@@ -82989,6 +82989,9325 @@ var require_emplois = __commonJS({
   }
 });
 
+// src/lib/s3.js
+var require_s3 = __commonJS({
+  "src/lib/s3.js"(exports2, module2) {
+    "use strict";
+    var crypto = require("crypto");
+    var hmac = (k, s) => crypto.createHmac("sha256", k).update(s).digest();
+    var sha = (b) => crypto.createHash("sha256").update(b).digest("hex");
+    var enc = (s) => encodeURIComponent(s).replace(/[!'()*]/g, (c) => "%" + c.charCodeAt(0).toString(16).toUpperCase());
+    var encPath = (k) => String(k).split("/").map(enc).join("/");
+    var target = (cfg, key = "") => {
+      const u = new URL(cfg.endpoint || `https://s3.${cfg.region || "us-east-1"}.amazonaws.com`);
+      const k = String(key).replace(/^\/+/, "");
+      if (cfg.style === "domaine" && cfg.bucket) {
+        u.hostname = `${cfg.bucket}.${u.hostname}`;
+        u.pathname = "/" + encPath(k);
+      } else u.pathname = (u.pathname.replace(/\/$/, "") + "/" + (cfg.bucket ? enc(cfg.bucket) + "/" : "") + encPath(k)).replace(/\/+/g, "/");
+      return u;
+    };
+    var scope = (cfg, date) => `${date.slice(0, 8)}/${cfg.region || "us-east-1"}/s3/aws4_request`;
+    var skey = (cfg, date) => hmac(hmac(hmac(hmac("AWS4" + cfg.secret, date.slice(0, 8)), cfg.region || "us-east-1"), "s3"), "aws4_request");
+    var canonQuery = (q) => Object.keys(q).sort().map((k) => `${enc(k)}=${enc(q[k] ?? "")}`).join("&");
+    var amzDate = (d = /* @__PURE__ */ new Date()) => d.toISOString().replace(/[:-]|\.\d{3}/g, "");
+    var request = async (cfg, method, key, { query = {}, body, headers = {} } = {}) => {
+      const u = target(cfg, key);
+      const date = amzDate();
+      const payload = body ? sha(body) : sha("");
+      const h = { host: u.host, "x-amz-date": date, "x-amz-content-sha256": payload, ...Object.fromEntries(Object.entries(headers).map(([k, v]) => [k.toLowerCase(), String(v)])) };
+      const names = Object.keys(h).sort();
+      const creq = [method, u.pathname, canonQuery(query), names.map((n) => `${n}:${String(h[n]).trim()}
+`).join(""), names.join(";"), payload].join("\n");
+      const sts = ["AWS4-HMAC-SHA256", date, scope(cfg, date), sha(creq)].join("\n");
+      const sig = crypto.createHmac("sha256", skey(cfg, date)).update(sts).digest("hex");
+      const qs = canonQuery(query);
+      const { host, ...send } = h;
+      const r = await fetch(u.origin + u.pathname + (qs ? "?" + qs : ""), { method, body, headers: { ...send, Authorization: `AWS4-HMAC-SHA256 Credential=${cfg.access}/${scope(cfg, date)}, SignedHeaders=${names.join(";")}, Signature=${sig}` } });
+      if (!r.ok && !(method === "DELETE" && r.status === 404)) {
+        const t = await r.text();
+        const code = (t.match(/<Code>([^<]+)/) || [])[1], msg = (t.match(/<Message>([^<]+)/) || [])[1];
+        throw Object.assign(new Error(`S3 : HTTP ${r.status}${code ? ` ${code}` : ""}${msg ? ` \u2014 ${msg}` : ""}`), { permanent: [403, 400, 404].includes(r.status) });
+      }
+      return r;
+    };
+    var presign = (cfg, method, key, secondes = 3600) => {
+      const u = target(cfg, key);
+      const date = amzDate();
+      const q = { "X-Amz-Algorithm": "AWS4-HMAC-SHA256", "X-Amz-Credential": `${cfg.access}/${scope(cfg, date)}`, "X-Amz-Date": date, "X-Amz-Expires": String(Math.min(604800, Math.max(1, +secondes || 3600))), "X-Amz-SignedHeaders": "host" };
+      const creq = [method, u.pathname, canonQuery(q), `host:${u.host}
+`, "host", "UNSIGNED-PAYLOAD"].join("\n");
+      const sig = crypto.createHmac("sha256", skey(cfg, date)).update(["AWS4-HMAC-SHA256", date, scope(cfg, date), sha(creq)].join("\n")).digest("hex");
+      return `${u.origin}${u.pathname}?${canonQuery(q)}&X-Amz-Signature=${sig}`;
+    };
+    var xmlVal = (s, tag) => {
+      const m = s.match(new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`));
+      return m ? m[1].replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'") : void 0;
+    };
+    var list = async (cfg, prefix = "", max = 1e3) => {
+      const out = [], dossiers = /* @__PURE__ */ new Set();
+      let token;
+      do {
+        const q = { "list-type": "2", prefix, delimiter: "/", "max-keys": String(Math.min(1e3, max - out.length)) };
+        if (token) q["continuation-token"] = token;
+        const t = await (await request(cfg, "GET", "", { query: q })).text();
+        for (const c of t.match(/<Contents>[\s\S]*?<\/Contents>/g) || []) out.push({ cle: xmlVal(c, "Key"), octets: +xmlVal(c, "Size"), modifie: xmlVal(c, "LastModified"), etag: String(xmlVal(c, "ETag") || "").replace(/"/g, "") });
+        for (const c of t.match(/<CommonPrefixes>[\s\S]*?<\/CommonPrefixes>/g) || []) dossiers.add(xmlVal(c, "Prefix"));
+        token = xmlVal(t, "IsTruncated") === "true" ? xmlVal(t, "NextContinuationToken") : null;
+      } while (token && out.length < max);
+      return { fichiers: out, dossiers: [...dossiers] };
+    };
+    module2.exports = { request, presign, list, target, sha };
+  }
+});
+
+// src/lib/zip.js
+var require_zip = __commonJS({
+  "src/lib/zip.js"(exports2, module2) {
+    "use strict";
+    var zlib = require("zlib");
+    var CRC = (() => {
+      const t = new Int32Array(256);
+      for (let n = 0; n < 256; n++) {
+        let c = n;
+        for (let k = 0; k < 8; k++) c = c & 1 ? 3988292384 ^ c >>> 1 : c >>> 1;
+        t[n] = c;
+      }
+      return t;
+    })();
+    var crc32 = (buf) => {
+      let c = -1;
+      for (let i = 0; i < buf.length; i++) c = CRC[(c ^ buf[i]) & 255] ^ c >>> 8;
+      return (c ^ -1) >>> 0;
+    };
+    var writeZip = (files, { store = false } = {}) => {
+      const parts = [], central = [];
+      let offset = 0;
+      const d = /* @__PURE__ */ new Date(), dosTime = d.getHours() << 11 | d.getMinutes() << 5 | d.getSeconds() >> 1, dosDate = d.getFullYear() - 1980 << 9 | d.getMonth() + 1 << 5 | d.getDate();
+      for (const f of files) {
+        const name = Buffer.from(String(f.nom).replace(/^\/+/, ""), "utf8");
+        const raw = Buffer.isBuffer(f.contenu) ? f.contenu : Buffer.from(String(f.contenu ?? ""), "utf8");
+        const comp = store ? raw : zlib.deflateRawSync(raw, { level: 6 });
+        const method = store ? 0 : 8, crc = crc32(raw);
+        const lh = Buffer.alloc(30);
+        lh.writeUInt32LE(67324752, 0);
+        lh.writeUInt16LE(20, 4);
+        lh.writeUInt16LE(2048, 6);
+        lh.writeUInt16LE(method, 8);
+        lh.writeUInt16LE(dosTime, 10);
+        lh.writeUInt16LE(dosDate, 12);
+        lh.writeUInt32LE(crc, 14);
+        lh.writeUInt32LE(comp.length, 18);
+        lh.writeUInt32LE(raw.length, 22);
+        lh.writeUInt16LE(name.length, 26);
+        lh.writeUInt16LE(0, 28);
+        parts.push(lh, name, comp);
+        const ch = Buffer.alloc(46);
+        ch.writeUInt32LE(33639248, 0);
+        ch.writeUInt16LE(20, 4);
+        ch.writeUInt16LE(20, 6);
+        ch.writeUInt16LE(2048, 8);
+        ch.writeUInt16LE(method, 10);
+        ch.writeUInt16LE(dosTime, 12);
+        ch.writeUInt16LE(dosDate, 14);
+        ch.writeUInt32LE(crc, 16);
+        ch.writeUInt32LE(comp.length, 20);
+        ch.writeUInt32LE(raw.length, 24);
+        ch.writeUInt16LE(name.length, 28);
+        ch.writeUInt32LE(offset, 42);
+        central.push(ch, name);
+        offset += 30 + name.length + comp.length;
+      }
+      const cd = Buffer.concat(central);
+      const end = Buffer.alloc(22);
+      end.writeUInt32LE(101010256, 0);
+      end.writeUInt16LE(files.length, 8);
+      end.writeUInt16LE(files.length, 10);
+      end.writeUInt32LE(cd.length, 12);
+      end.writeUInt32LE(offset, 16);
+      return Buffer.concat([...parts, cd, end]);
+    };
+    var readZip = (buf, { max = 5e3, maxSize = 200 * 1024 * 1024 } = {}) => {
+      let e = buf.length - 22;
+      while (e >= 0 && buf.readUInt32LE(e) !== 101010256) e--;
+      if (e < 0) throw new Error("ce n'est pas une archive ZIP");
+      const n = buf.readUInt16LE(e + 10);
+      let p = buf.readUInt32LE(e + 16);
+      const out = [];
+      let total = 0;
+      for (let i = 0; i < n && i < max; i++) {
+        if (buf.readUInt32LE(p) !== 33639248) break;
+        const method = buf.readUInt16LE(p + 10), csize = buf.readUInt32LE(p + 20), usize = buf.readUInt32LE(p + 24);
+        const nl = buf.readUInt16LE(p + 28), el = buf.readUInt16LE(p + 30), cl = buf.readUInt16LE(p + 32), lo = buf.readUInt32LE(p + 42);
+        const nom = buf.slice(p + 46, p + 46 + nl).toString("utf8");
+        p += 46 + nl + el + cl;
+        if (nom.endsWith("/")) continue;
+        total += usize;
+        if (total > maxSize) throw new Error("archive trop grosse une fois d\xE9compress\xE9e (bombe ZIP ?)");
+        const lnl = buf.readUInt16LE(lo + 26), lel = buf.readUInt16LE(lo + 28);
+        const data = buf.slice(lo + 30 + lnl + lel, lo + 30 + lnl + lel + csize);
+        out.push({ nom, contenu: method === 8 ? zlib.inflateRawSync(data) : data });
+      }
+      return out;
+    };
+    module2.exports = { writeZip, readZip, crc32 };
+  }
+});
+
+// src/lib/fichiers.js
+var require_fichiers = __commonJS({
+  "src/lib/fichiers.js"(exports2, module2) {
+    "use strict";
+    var MAX = 50 * 1024 * 1024;
+    var charger = async (src, { max = MAX, texte = true } = {}) => {
+      if (src && typeof src === "object" && !Buffer.isBuffer(src)) {
+        if (src.base64 !== void 0) return { nom: src.nom || "fichier", type: src.type || "application/octet-stream", buf: Buffer.from(String(src.base64), "base64") };
+        if (src.chemin) return charger(src.chemin, { max, texte });
+      }
+      if (Buffer.isBuffer(src)) return { nom: "fichier", type: "application/octet-stream", buf: src };
+      const s = String(src ?? "");
+      const m = s.match(/^data:([^;,]+)?(;base64)?,(.*)$/s);
+      if (m) return { nom: "fichier", type: m[1] || "application/octet-stream", buf: m[2] ? Buffer.from(m[3], "base64") : Buffer.from(decodeURIComponent(m[3])) };
+      if (/^https?:\/\//i.test(s)) {
+        const r = await fetch(s, { headers: { "User-Agent": "dysizz-flow/2" } });
+        if (!r.ok) throw new Error(`t\xE9l\xE9chargement : HTTP ${r.status}`);
+        const len = +r.headers.get("content-length") || 0;
+        if (len > max) throw Object.assign(new Error("fichier trop gros"), { permanent: true });
+        const buf = Buffer.from(await r.arrayBuffer());
+        if (buf.length > max) throw Object.assign(new Error("fichier trop gros"), { permanent: true });
+        return { nom: decodeURIComponent(new URL(r.url).pathname.split("/").pop() || "fichier"), type: (r.headers.get("content-type") || "application/octet-stream").split(";")[0], buf };
+      }
+      try {
+        const File = require("@saltcorn/data/models/file");
+        const f = s && !s.includes("\n") && s.length < 400 ? await File.findOne(s.replace(/^\/files\/serve\//, "")) : null;
+        if (f) {
+          if (f.size_kb && f.size_kb * 1024 > max) throw Object.assign(new Error("fichier trop gros"), { permanent: true });
+          return { nom: f.filename, type: f.mimetype || "application/octet-stream", buf: await f.get_contents() };
+        }
+      } catch (e) {
+        if (e.permanent) throw e;
+      }
+      if (!texte) throw Object.assign(new Error(`fichier \xAB ${s.slice(0, 80)} \xBB introuvable`), { permanent: true });
+      return { nom: "texte.txt", type: "text/plain", buf: Buffer.from(s, "utf8") };
+    };
+    var propre = (n) => String(n || "fichier").replace(/[^\w.\-]+/g, "_").replace(/^\.+/, "").slice(0, 120) || "fichier";
+    var enregistrer = async (api, nom, type, buf, { dossier = "/", role = 1 } = {}) => {
+      const File = require("@saltcorn/data/models/file");
+      const n = propre(nom);
+      const f = await File.from_contents(n, type || "application/octet-stream", buf, api.user ? api.user.id : null, +role || 1, dossier || "/");
+      return { chemin: f.path_to_serve || f.location, nom: n, octets: buf.length, type };
+    };
+    var sortie = async (api, p, nom, type, buf) => p.sortie_fichier === "base64 (dans le workflow)" ? { nom: propre(nom), type, octets: buf.length, base64: buf.toString("base64") } : enregistrer(api, nom, type, buf, { dossier: p.dossier, role: p.role_lecture });
+    var PARAMS_SORTIE = [
+      { name: "sortie_fichier", label: "R\xE9sultat", type: "select", options: ["fichier Saltcorn", "base64 (dans le workflow)"], default: "fichier Saltcorn" },
+      { name: "dossier", label: "Dossier (fichier Saltcorn)", default: "/", showIf: { sortie_fichier: "fichier Saltcorn" } },
+      { name: "role_lecture", label: "Lisible par le r\xF4le (1 = admin)", type: "int", default: 1, showIf: { sortie_fichier: "fichier Saltcorn" } }
+    ];
+    var MIME = { txt: "text/plain", csv: "text/csv", json: "application/json", html: "text/html", xml: "application/xml", pdf: "application/pdf", png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp", svg: "image/svg+xml", zip: "application/zip", md: "text/markdown", mp3: "audio/mpeg", mp4: "video/mp4", xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", glb: "model/gltf-binary", gltf: "model/gltf+json" };
+    var mimeDe = (nom) => MIME[String(nom).split(".").pop().toLowerCase()] || "application/octet-stream";
+    module2.exports = { charger, enregistrer, sortie, propre, PARAMS_SORTIE, mimeDe, MAX };
+  }
+});
+
+// src/blocks/stockage.js
+var require_stockage = __commonJS({
+  "src/blocks/stockage.js"(exports2, module2) {
+    "use strict";
+    var crypto = require("crypto");
+    var s3 = require_s3();
+    var { writeZip, readZip } = require_zip();
+    var { charger, sortie, PARAMS_SORTIE, mimeDe, propre } = require_fichiers();
+    var need = async (api, name) => {
+      const v = await api.secret(name);
+      if (!v) throw Object.assign(new Error(`secret ${name} introuvable (variable d'environnement ou coffre)`), { permanent: true });
+      return v;
+    };
+    var perm = (m) => Object.assign(new Error(m), { permanent: true });
+    var S3P = [
+      { name: "point", label: "Adresse du service S3", default: "https://s3.gra.io.cloud.ovh.net", help: "AWS : https://s3.eu-west-3.amazonaws.com \xB7 OVH : https://s3.gra.io.cloud.ovh.net \xB7 Scaleway : https://s3.fr-par.scw.cloud \xB7 MinIO : https://minio.mondomaine.fr" },
+      { name: "region", label: "R\xE9gion", default: "gra", help: "Ex. eu-west-3, gra, fr-par, auto (R2)" },
+      { name: "seau", label: "Bucket (seau)", required: true },
+      { name: "cles", label: "Secret des cl\xE9s", default: "S3_CLES", help: "Nom d'un secret du coffre contenant \xAB CL\xC9_D_ACC\xC8S:CL\xC9_SECR\xC8TE \xBB" },
+      { name: "style", label: "Adresse du bucket", type: "select", options: ["chemin", "domaine"], default: "chemin", help: "\xAB chemin \xBB marche partout (MinIO, OVH\u2026). \xAB domaine \xBB : bucket.s3\u2026" }
+    ];
+    var cfgS3 = async (p, api) => {
+      const raw = await need(api, p.cles || "S3_CLES");
+      const i = raw.indexOf(":");
+      if (i < 1) throw perm(`le secret ${p.cles} doit \xEAtre \xAB CL\xC9_D_ACC\xC8S:CL\xC9_SECR\xC8TE \xBB`);
+      return { endpoint: p.point, region: p.region || "us-east-1", bucket: p.seau, access: raw.slice(0, i).trim(), secret: raw.slice(i + 1).trim(), style: p.style };
+    };
+    var WEBDAV = [
+      { name: "adresse", label: "Adresse WebDAV", required: true, help: "Nextcloud : https://cloud.exemple.fr/remote.php/dav/files/UTILISATEUR/" },
+      { name: "identifiants", label: "Secret des identifiants", default: "WEBDAV", help: "Secret du coffre \xAB utilisateur:mot_de_passe \xBB (mot de passe d'application conseill\xE9)" }
+    ];
+    var davAuth = async (p, api) => "Basic " + Buffer.from(await need(api, p.identifiants || "WEBDAV")).toString("base64");
+    var davUrl = (base, chemin) => String(base).replace(/\/?$/, "/") + String(chemin || "").replace(/^\/+/, "").split("/").map(encodeURIComponent).join("/");
+    module2.exports = [
+      /* ---------------- S3 ---------------- */
+      {
+        name: "dzf_s3_lister",
+        label: "S3 : lister un dossier",
+        category: "Stockage",
+        icon: "fas fa-bucket",
+        output: "s3_liste",
+        timeout: 60,
+        description: "Liste les fichiers d'un bucket S3 (AWS, OVH, Scaleway, MinIO, Cloudflare R2\u2026) sous un pr\xE9fixe, avec taille et date.",
+        params: [...S3P, { name: "prefixe", label: "Dossier (pr\xE9fixe)", default: "", help: "Ex. factures/2026/" }, { name: "max", label: "Nombre max", type: "int", default: 1e3 }],
+        run: async (p, ctx, api) => s3.list(await cfgS3(p, api), p.prefixe || "", Math.min(1e4, +p.max || 1e3))
+      },
+      {
+        name: "dzf_s3_envoyer",
+        label: "S3 : envoyer un fichier",
+        category: "Stockage",
+        icon: "fas fa-cloud-upload-alt",
+        output: "s3_envoi",
+        timeout: 300,
+        description: "D\xE9pose un fichier dans un bucket S3. Source : un fichier Saltcorn, une URL, un base64 venu d'un autre bloc ou du texte.",
+        params: [
+          ...S3P,
+          { name: "source", label: "Fichier \xE0 envoyer", required: true, help: "Ex. {{facture.chemin}}, https://\u2026, {{archive}} ou du texte" },
+          { name: "cle", label: "Nom dans le bucket", help: "Ex. factures/{{numero}}.pdf \u2014 vide = nom d'origine" },
+          { name: "public", label: "Lisible par tous (public-read)", type: "bool", default: false }
+        ],
+        run: async (p, ctx, api) => {
+          const cfg = await cfgS3(p, api);
+          const f = await charger(p.source);
+          const key = String(p.cle || f.nom).replace(/^\/+/, "");
+          const type = f.type && f.type !== "application/octet-stream" ? f.type : mimeDe(key);
+          const r = await s3.request(cfg, "PUT", key, { body: f.buf, headers: { "content-type": type, ...p.public ? { "x-amz-acl": "public-read" } : {} } });
+          return { cle: key, octets: f.buf.length, type, etag: String(r.headers.get("etag") || "").replace(/"/g, ""), url: s3.target(cfg, key).toString() };
+        }
+      },
+      {
+        name: "dzf_s3_lire",
+        label: "S3 : r\xE9cup\xE9rer un fichier",
+        category: "Stockage",
+        icon: "fas fa-cloud-download-alt",
+        output: "s3_fichier",
+        timeout: 300,
+        description: "T\xE9l\xE9charge un fichier d'un bucket S3 : en fichier Saltcorn, en base64 pour le bloc suivant, ou en texte.",
+        params: [...S3P, { name: "cle", label: "Nom dans le bucket", required: true }, { name: "en_texte", label: "Lire comme texte (CSV, JSON\u2026)", type: "bool", default: false }, ...PARAMS_SORTIE],
+        run: async (p, ctx, api) => {
+          const cfg = await cfgS3(p, api);
+          const r = await s3.request(cfg, "GET", p.cle);
+          const buf = Buffer.from(await r.arrayBuffer());
+          const type = (r.headers.get("content-type") || mimeDe(p.cle)).split(";")[0];
+          if (p.en_texte) {
+            const t = buf.toString("utf8");
+            if (/json/.test(type) || /\.json$/i.test(p.cle)) {
+              try {
+                return JSON.parse(t);
+              } catch (e) {
+              }
+            }
+            return t;
+          }
+          return sortie(api, p, String(p.cle).split("/").pop(), type, buf);
+        }
+      },
+      {
+        name: "dzf_s3_supprimer",
+        label: "S3 : supprimer un fichier",
+        category: "Stockage",
+        icon: "fas fa-trash-alt",
+        output: "s3_suppression",
+        description: "Supprime un fichier d'un bucket S3 (sans erreur s'il n'existe d\xE9j\xE0 plus).",
+        params: [...S3P, { name: "cle", label: "Nom dans le bucket", required: true }],
+        run: async (p, ctx, api) => {
+          await s3.request(await cfgS3(p, api), "DELETE", p.cle);
+          return { supprime: p.cle };
+        }
+      },
+      {
+        name: "dzf_s3_lien",
+        label: "S3 : lien temporaire",
+        category: "Stockage",
+        icon: "fas fa-link",
+        output: "s3_lien",
+        description: "Fabrique un lien sign\xE9 valable un temps limit\xE9 : pour t\xE9l\xE9charger un fichier priv\xE9, ou pour qu'un navigateur d\xE9pose un fichier directement dans le bucket.",
+        params: [...S3P, { name: "cle", label: "Nom dans le bucket", required: true }, { name: "usage", label: "Pour", type: "select", options: ["t\xE9l\xE9charger", "d\xE9poser"], default: "t\xE9l\xE9charger" }, { name: "duree", label: "Valable (minutes)", type: "int", default: 60 }],
+        run: async (p, ctx, api) => ({ url: s3.presign(await cfgS3(p, api), p.usage === "d\xE9poser" ? "PUT" : "GET", p.cle, (+p.duree || 60) * 60), expire: new Date(Date.now() + (+p.duree || 60) * 6e4).toISOString() })
+      },
+      {
+        name: "dzf_s3_copier",
+        label: "S3 : copier / d\xE9placer",
+        category: "Stockage",
+        icon: "fas fa-copy",
+        output: "s3_copie",
+        timeout: 120,
+        description: "Copie un fichier \xE0 l'int\xE9rieur du bucket (ou d'un bucket \xE0 l'autre sur le m\xEAme service), et le supprime \xE0 l'origine si \xAB d\xE9placer \xBB.",
+        params: [...S3P, { name: "de", label: "Depuis (nom)", required: true }, { name: "vers", label: "Vers (nom)", required: true }, { name: "seau_source", label: "Bucket source (si diff\xE9rent)" }, { name: "deplacer", label: "D\xE9placer (supprimer l'original)", type: "bool", default: false }],
+        run: async (p, ctx, api) => {
+          const cfg = await cfgS3(p, api);
+          const src = `/${p.seau_source || p.seau}/${String(p.de).replace(/^\/+/, "")}`.split("/").map(encodeURIComponent).join("/");
+          await s3.request(cfg, "PUT", p.vers, { headers: { "x-amz-copy-source": src } });
+          if (p.deplacer) await s3.request({ ...cfg, bucket: p.seau_source || p.seau }, "DELETE", p.de);
+          return { de: p.de, vers: p.vers, deplace: !!p.deplacer };
+        }
+      },
+      /* ---------------- ZIP ---------------- */
+      {
+        name: "dzf_zip",
+        label: "ZIP : cr\xE9er une archive",
+        category: "Stockage",
+        icon: "fas fa-file-archive",
+        output: "archive",
+        timeout: 300,
+        description: "Met plusieurs fichiers dans un .zip. Chaque \xE9l\xE9ment : un chemin de fichier Saltcorn, une URL, {nom, base64} ou {nom, contenu} (texte).",
+        params: [
+          { name: "fichiers", label: "Fichiers (liste)", type: "json", required: true, help: 'Ex. {{factures}} ou [{"nom":"lisez-moi.txt","contenu":"Bonjour"}, "https://\u2026/logo.png"]' },
+          { name: "nom", label: "Nom de l'archive", default: "archive.zip" },
+          ...PARAMS_SORTIE
+        ],
+        run: async (p, ctx, api) => {
+          let list = p.fichiers;
+          if (typeof list === "string") {
+            try {
+              list = JSON.parse(list);
+            } catch (e) {
+              list = [list];
+            }
+          }
+          if (!Array.isArray(list)) list = [list];
+          if (list.length > 2e3) throw perm("trop de fichiers (2000 max)");
+          const files = [], seen = /* @__PURE__ */ new Set();
+          for (const it of list) {
+            let nom2, buf;
+            if (it && typeof it === "object" && it.contenu !== void 0 && it.base64 === void 0) {
+              nom2 = it.nom || "fichier.txt";
+              buf = Buffer.from(typeof it.contenu === "string" ? it.contenu : JSON.stringify(it.contenu, null, 1));
+            } else {
+              const f = await charger(it, { texte: false });
+              nom2 = it && it.nom || f.nom;
+              buf = f.buf;
+            }
+            nom2 = String(nom2).replace(/\.\.+\//g, "").replace(/^\/+/, "");
+            let n = nom2, i = 1;
+            while (seen.has(n)) n = nom2.replace(/(\.[^.]*)?$/, (x) => `-${i++}${x || ""}`);
+            seen.add(n);
+            files.push({ nom: n, contenu: buf });
+          }
+          const nom = /\.zip$/i.test(p.nom || "") ? p.nom : `${p.nom || "archive"}.zip`;
+          return sortie(api, p, nom, "application/zip", writeZip(files));
+        }
+      },
+      {
+        name: "dzf_dezipper",
+        label: "ZIP : ouvrir une archive",
+        category: "Stockage",
+        icon: "fas fa-box-open",
+        output: "contenu_zip",
+        timeout: 300,
+        description: "Ouvre un .zip et rend la liste de ses fichiers (texte lisible directement, sinon base64 ou fichiers Saltcorn). Prot\xE9g\xE9 contre les \xAB bombes ZIP \xBB.",
+        params: [
+          { name: "archive", label: "Archive", required: true, help: "Chemin Saltcorn, URL ou {{archive}}" },
+          { name: "filtre", label: "Garder seulement (motif)", help: "Ex. .csv ou factures/" },
+          { name: "max_mo", label: "Taille max d\xE9compress\xE9e (Mo)", type: "int", default: 200 },
+          ...PARAMS_SORTIE
+        ],
+        run: async (p, ctx, api) => {
+          const f = await charger(p.archive, { texte: false });
+          const items = readZip(f.buf, { maxSize: Math.min(2e3, +p.max_mo || 200) * 1024 * 1024 }).filter((x) => !p.filtre || x.nom.includes(p.filtre));
+          const TXT = /\.(txt|csv|json|md|xml|html?|ya?ml|ini|log|svg|js|css|tsv)$/i;
+          const out = [];
+          for (const x of items) {
+            const base = { nom: x.nom, octets: x.contenu.length };
+            if (TXT.test(x.nom) && x.contenu.length < 2e6) out.push({ ...base, texte: x.contenu.toString("utf8") });
+            else out.push({ ...base, ...await sortie(api, p, x.nom.split("/").pop(), mimeDe(x.nom), x.contenu) });
+          }
+          return out;
+        }
+      },
+      /* ---------------- WebDAV ---------------- */
+      {
+        name: "dzf_webdav",
+        label: "WebDAV : fichiers (Nextcloud, kDrive\u2026)",
+        category: "Stockage",
+        icon: "fas fa-folder-open",
+        output: "webdav",
+        timeout: 300,
+        description: "Lister, lire, envoyer, supprimer ou cr\xE9er un dossier sur un stockage WebDAV : Nextcloud, ownCloud, Infomaniak kDrive, Synology, Box\u2026",
+        params: [
+          ...WEBDAV,
+          { name: "action", label: "Action", type: "select", options: ["lister", "lire", "envoyer", "supprimer", "cr\xE9er un dossier"], default: "lister" },
+          { name: "chemin", label: "Chemin", default: "", help: "Ex. Documents/Factures/2026.pdf" },
+          { name: "source", label: "Fichier \xE0 envoyer", showIf: { action: "envoyer" }, help: "Chemin Saltcorn, URL, {{archive}} ou texte" },
+          ...PARAMS_SORTIE
+        ],
+        run: async (p, ctx, api) => {
+          const Authorization = await davAuth(p, api);
+          const url = davUrl(p.adresse, p.chemin);
+          const go = async (method, opt = {}) => {
+            const r = await fetch(url, { method, ...opt, headers: { Authorization, ...opt.headers || {} } });
+            if (!r.ok && r.status !== 207) throw Object.assign(new Error(`WebDAV : HTTP ${r.status}`), { permanent: [401, 403, 404].includes(r.status) });
+            return r;
+          };
+          if (p.action === "lister") {
+            const t = await (await go("PROPFIND", { headers: { Depth: "1", "Content-Type": "application/xml" }, body: '<?xml version="1.0"?><d:propfind xmlns:d="DAV:"><d:prop><d:getcontentlength/><d:getlastmodified/><d:resourcetype/><d:getcontenttype/></d:prop></d:propfind>' })).text();
+            const base = decodeURIComponent(new URL(url).pathname).replace(/\/$/, "");
+            return (t.match(/<(\w+:)?response[\s>][\s\S]*?<\/(\w+:)?response>/g) || []).map((b) => {
+              const g = (tag) => {
+                const m = b.match(new RegExp(`<(?:\\w+:)?${tag}[^>]*>([\\s\\S]*?)</(?:\\w+:)?${tag}>`));
+                return m ? m[1] : "";
+              };
+              const href = decodeURIComponent(g("href"));
+              return { nom: href.replace(/\/$/, "").split("/").pop(), chemin: href, dossier: /collection/.test(g("resourcetype")), octets: +g("getcontentlength") || 0, modifie: g("getlastmodified"), type: g("getcontenttype") };
+            }).filter((x) => x.chemin.replace(/\/$/, "") !== base);
+          }
+          if (p.action === "lire") {
+            const r = await go("GET");
+            return sortie(api, p, String(p.chemin).split("/").pop(), (r.headers.get("content-type") || mimeDe(p.chemin)).split(";")[0], Buffer.from(await r.arrayBuffer()));
+          }
+          if (p.action === "envoyer") {
+            const f = await charger(p.source);
+            await go("PUT", { body: f.buf, headers: { "Content-Type": f.type } });
+            return { envoye: p.chemin, octets: f.buf.length };
+          }
+          if (p.action === "supprimer") {
+            await go("DELETE");
+            return { supprime: p.chemin };
+          }
+          await go("MKCOL");
+          return { cree: p.chemin };
+        }
+      },
+      /* ---------------- IPFS ---------------- */
+      {
+        name: "dzf_ipfs",
+        label: "IPFS : publier ou lire",
+        category: "Stockage",
+        icon: "fas fa-cubes",
+        output: "ipfs",
+        timeout: 180,
+        description: "Publie un fichier sur IPFS (stockage d\xE9centralis\xE9, adresse = empreinte du contenu) via Pinata, Filebase ou ton propre n\u0153ud Kubo, ou lit un fichier par son CID.",
+        params: [
+          { name: "action", label: "Action", type: "select", options: ["publier", "lire"], default: "publier" },
+          { name: "service", label: "Service", type: "select", options: ["Pinata", "n\u0153ud Kubo (API)"], default: "Pinata", showIf: { action: "publier" } },
+          { name: "cle", label: "Secret (jeton Pinata ou \xAB utilisateur:mdp \xBB du n\u0153ud)", default: "PINATA_JWT", showIf: { action: "publier" } },
+          { name: "noeud", label: "Adresse de l'API du n\u0153ud Kubo", default: "http://ipfs:5001", showIf: { service: "n\u0153ud Kubo (API)" } },
+          { name: "source", label: "Fichier \xE0 publier", showIf: { action: "publier" } },
+          { name: "nom", label: "Nom", showIf: { action: "publier" } },
+          { name: "cid", label: "CID \xE0 lire", showIf: { action: "lire" } },
+          { name: "passerelle", label: "Passerelle de lecture", default: "https://ipfs.io/ipfs/", showIf: { action: "lire" } },
+          ...PARAMS_SORTIE
+        ],
+        run: async (p, ctx, api) => {
+          if (p.action === "lire") {
+            const cid2 = String(p.cid || "").replace(/^ipfs:\/\//, "").trim();
+            if (!/^[a-zA-Z0-9]{20,}(\/.*)?$/.test(cid2)) throw perm("CID invalide");
+            const r = await fetch(String(p.passerelle || "https://ipfs.io/ipfs/").replace(/\/?$/, "/") + cid2);
+            if (!r.ok) throw new Error(`IPFS : HTTP ${r.status}`);
+            const type = (r.headers.get("content-type") || "application/octet-stream").split(";")[0];
+            const buf = Buffer.from(await r.arrayBuffer());
+            if (/json|text/.test(type) && buf.length < 2e6) {
+              const t = buf.toString("utf8");
+              try {
+                return JSON.parse(t);
+              } catch (e) {
+                return t;
+              }
+            }
+            return sortie(api, p, cid2.split("/").pop(), type, buf);
+          }
+          const f = await charger(p.source);
+          const nom = propre(p.nom || f.nom);
+          const fd = new FormData();
+          fd.append("file", new Blob([f.buf], { type: f.type }), nom);
+          let cid;
+          if (p.service === "Pinata") {
+            const r = await fetch("https://api.pinata.cloud/pinning/pinFileToIPFS", { method: "POST", headers: { Authorization: `Bearer ${await need(api, p.cle || "PINATA_JWT")}` }, body: fd });
+            const j = await r.json().catch(() => ({}));
+            if (!r.ok) throw new Error(`Pinata : HTTP ${r.status} ${JSON.stringify(j).slice(0, 200)}`);
+            cid = j.IpfsHash;
+          } else {
+            const sec = await api.secret(p.cle);
+            const r = await fetch(String(p.noeud).replace(/\/$/, "") + "/api/v0/add?pin=true&cid-version=1", { method: "POST", body: fd, headers: sec ? { Authorization: "Basic " + Buffer.from(sec).toString("base64") } : {} });
+            if (!r.ok) throw new Error(`IPFS : HTTP ${r.status}`);
+            cid = (await r.json()).Hash;
+          }
+          return { cid, url: `ipfs://${cid}`, passerelle: `https://ipfs.io/ipfs/${cid}`, octets: f.buf.length };
+        }
+      },
+      /* ---------------- conversions ---------------- */
+      {
+        name: "dzf_base64",
+        label: "Fichier : base64, empreinte, taille",
+        category: "Stockage",
+        icon: "fas fa-exchange-alt",
+        output: "conversion",
+        description: "Transforme un fichier ou un texte : en base64 / depuis base64, data: URI, ou calcule son empreinte (SHA-256, MD5\u2026) pour v\xE9rifier qu'il n'a pas chang\xE9.",
+        params: [
+          { name: "source", label: "Fichier ou texte", required: true },
+          { name: "operation", label: "Op\xE9ration", type: "select", options: ["vers base64", "depuis base64 (texte)", "depuis base64 (fichier)", "data: URI", "empreinte"], default: "vers base64" },
+          { name: "algo", label: "Algorithme", type: "select", options: ["sha256", "sha512", "sha1", "md5"], default: "sha256", showIf: { operation: "empreinte" } },
+          { name: "nom", label: "Nom du fichier", default: "fichier.bin", showIf: { operation: "depuis base64 (fichier)" } },
+          ...PARAMS_SORTIE
+        ],
+        run: async (p, ctx, api) => {
+          if (p.operation.startsWith("depuis base64")) {
+            const buf = Buffer.from(String(p.source && p.source.base64 !== void 0 ? p.source.base64 : p.source).replace(/^data:[^,]*,/, ""), "base64");
+            return p.operation.endsWith("(texte)") ? buf.toString("utf8") : sortie(api, p, p.nom, mimeDe(p.nom), buf);
+          }
+          const f = await charger(p.source);
+          if (p.operation === "empreinte") return { algo: p.algo, hex: crypto.createHash(p.algo).update(f.buf).digest("hex"), octets: f.buf.length };
+          if (p.operation === "data: URI") return `data:${f.type};base64,${f.buf.toString("base64")}`;
+          return { nom: f.nom, type: f.type, octets: f.buf.length, base64: f.buf.toString("base64") };
+        }
+      }
+    ];
+  }
+});
+
+// src/lib/pdf.js
+var require_pdf = __commonJS({
+  "src/lib/pdf.js"(exports2, module2) {
+    "use strict";
+    var zlib = require("zlib");
+    var WIN = { "\u20AC": 128, "\u201A": 130, "\u201E": 132, "\u2026": 133, "\u2018": 145, "\u2019": 146, "\u201C": 147, "\u201D": 148, "\u2022": 149, "\u2013": 150, "\u2014": 151, "\u2122": 153, "\u0153": 156, "\u0152": 140, "\u0178": 159 };
+    var winBytes = (s) => Buffer.from([...String(s)].map((c) => {
+      const k = c.codePointAt(0);
+      if (WIN[c]) return WIN[c];
+      if (k < 256) return k;
+      return 63;
+    }));
+    var pdfStr = (s) => "(" + winBytes(s).toString("latin1").replace(/[\\()]/g, (c) => "\\" + c).replace(/\r/g, "\\r") + ")";
+    var HW = [278, 278, 355, 556, 556, 889, 667, 191, 333, 333, 389, 584, 278, 333, 278, 278, 556, 556, 556, 556, 556, 556, 556, 556, 556, 556, 278, 278, 584, 584, 584, 556, 1015, 667, 667, 722, 722, 667, 611, 778, 722, 278, 500, 667, 556, 833, 722, 778, 667, 778, 722, 667, 611, 722, 667, 944, 667, 667, 611, 278, 278, 278, 469, 556, 333, 556, 556, 500, 556, 556, 278, 556, 556, 222, 222, 500, 222, 833, 556, 556, 556, 556, 333, 500, 278, 556, 500, 722, 500, 500, 500, 334, 260, 334, 584];
+    var width = (s, size, bold) => [...String(s)].reduce((w, c) => {
+      const k = c.codePointAt(0);
+      const base = k >= 32 && k < 127 ? HW[k - 32] : /[àâäéèêëîïôöùûüç]/i.test(c) ? 556 : 600;
+      return w + base * (bold ? 1.05 : 1);
+    }, 0) * size / 1e3;
+    var wrap = (text, size, bold, max) => {
+      const out = [];
+      for (const para of String(text ?? "").split("\n")) {
+        let line = "";
+        for (const w of para.split(/\s+/)) {
+          if (!w) continue;
+          const t = line ? line + " " + w : w;
+          if (width(t, size, bold) <= max) line = t;
+          else {
+            if (line) out.push(line);
+            line = w;
+            while (width(line, size, bold) > max && line.length > 1) {
+              let i = line.length;
+              while (i > 1 && width(line.slice(0, i), size, bold) > max) i--;
+              out.push(line.slice(0, i));
+              line = line.slice(i);
+            }
+          }
+        }
+        out.push(line);
+      }
+      return out;
+    };
+    var imageObj = (buf) => {
+      if (buf[0] === 255 && buf[1] === 216) {
+        let i = 2, w = 0, h = 0, comp = 3;
+        while (i < buf.length) {
+          if (buf[i] !== 255) {
+            i++;
+            continue;
+          }
+          const m = buf[i + 1];
+          const len = buf.readUInt16BE(i + 2);
+          if (m >= 192 && m <= 207 && ![196, 200, 204].includes(m)) {
+            h = buf.readUInt16BE(i + 5);
+            w = buf.readUInt16BE(i + 7);
+            comp = buf[i + 9];
+            break;
+          }
+          i += 2 + len;
+        }
+        return { w, h, dict: `/Type /XObject /Subtype /Image /Width ${w} /Height ${h} /ColorSpace /${comp === 1 ? "DeviceGray" : comp === 4 ? "DeviceCMYK" : "DeviceRGB"} /BitsPerComponent 8 /Filter /DCTDecode`, data: buf };
+      }
+      if (buf.readUInt32BE(0) === 2303741511) {
+        let i = 8, w, h, bit, ct, inter;
+        const idat = [];
+        while (i < buf.length) {
+          const len = buf.readUInt32BE(i), type = buf.toString("latin1", i + 4, i + 8), d = buf.slice(i + 8, i + 8 + len);
+          if (type === "IHDR") {
+            w = d.readUInt32BE(0);
+            h = d.readUInt32BE(4);
+            bit = d[8];
+            ct = d[9];
+            inter = d[12];
+          }
+          if (type === "IDAT") idat.push(d);
+          i += 12 + len;
+        }
+        if (bit !== 8 || inter || ![0, 2, 6].includes(ct)) throw new Error("PNG non g\xE9r\xE9 (8 bits, non entrelac\xE9, gris/RVB/RVBA seulement)");
+        const ch = ct === 6 ? 4 : ct === 2 ? 3 : 1, raw = zlib.inflateSync(Buffer.concat(idat)), stride = w * ch;
+        const px = Buffer.alloc(h * stride);
+        let prev = Buffer.alloc(stride);
+        for (let y = 0; y < h; y++) {
+          const f = raw[y * (stride + 1)], line = raw.slice(y * (stride + 1) + 1, (y + 1) * (stride + 1)), cur = Buffer.alloc(stride);
+          for (let x = 0; x < stride; x++) {
+            const a = x >= ch ? cur[x - ch] : 0, b = prev[x], c = x >= ch ? prev[x - ch] : 0;
+            let v = line[x];
+            if (f === 1) v += a;
+            else if (f === 2) v += b;
+            else if (f === 3) v += a + b >> 1;
+            else if (f === 4) {
+              const p = a + b - c, pa = Math.abs(p - a), pb = Math.abs(p - b), pc = Math.abs(p - c);
+              v += pa <= pb && pa <= pc ? a : pb <= pc ? b : c;
+            }
+            cur[x] = v & 255;
+          }
+          cur.copy(px, y * stride);
+          prev = cur;
+        }
+        const col = ch === 1 ? 1 : 3, rgb = Buffer.alloc(w * h * col), alpha = ch === 4 ? Buffer.alloc(w * h) : null;
+        for (let k = 0; k < w * h; k++) {
+          for (let c = 0; c < col; c++) rgb[k * col + c] = px[k * ch + c];
+          if (alpha) alpha[k] = px[k * ch + 3];
+        }
+        return { w, h, dict: `/Type /XObject /Subtype /Image /Width ${w} /Height ${h} /ColorSpace /${col === 1 ? "DeviceGray" : "DeviceRGB"} /BitsPerComponent 8 /Filter /FlateDecode`, data: zlib.deflateSync(rgb), alpha: alpha && zlib.deflateSync(alpha) };
+      }
+      throw new Error("image non g\xE9r\xE9e (JPEG ou PNG)");
+    };
+    var hexColor = (c, dflt = "0 0 0") => {
+      const m = String(c || "").match(/^#?([0-9a-f]{6})$/i);
+      if (!m) return dflt;
+      const n = parseInt(m[1], 16);
+      return `${((n >> 16) / 255).toFixed(3)} ${((n >> 8 & 255) / 255).toFixed(3)} ${((n & 255) / 255).toFixed(3)}`;
+    };
+    var ecrirePdf = async (blocs, opts = {}, loadImage) => {
+      const W = 595.28, H = 841.89, M = 56, CW = W - 2 * M;
+      const pages = [];
+      let ops = [], y = H - M;
+      const images = [];
+      const accent = hexColor(opts.couleur, "0.141 0.388 0.922");
+      const newPage = () => {
+        pages.push(ops);
+        ops = [];
+        y = H - M;
+      };
+      const need = (h) => {
+        if (y - h < M + 20) newPage();
+      };
+      const text = (s, x, size, bold, color = "0 0 0") => ops.push(`BT ${color} rg /${bold ? "F2" : "F1"} ${size} Tf ${x.toFixed(2)} ${y.toFixed(2)} Td ${pdfStr(s)} Tj ET`);
+      const para = (s, size = 10.5, bold = false, color, indent = 0, gap = 6) => {
+        const lh = size * 1.4;
+        for (const l of wrap(s, size, bold, CW - indent)) {
+          need(lh);
+          y -= lh;
+          text(l, M + indent, size, bold, color);
+        }
+        y -= gap;
+      };
+      for (const b0 of blocs || []) {
+        const b = typeof b0 === "string" ? { texte: b0 } : b0 || {};
+        if (b.titre !== void 0) {
+          y -= 6;
+          para(b.titre, 20, true, accent, 0, 10);
+        } else if (b.t2 !== void 0) {
+          y -= 4;
+          para(b.t2, 14, true, "0.15 0.15 0.15", 0, 6);
+        } else if (b.texte !== void 0) para(b.texte, +b.taille || 10.5, !!b.gras, b.couleur ? hexColor(b.couleur) : void 0);
+        else if (b.petit !== void 0) para(b.petit, 8.5, false, "0.4 0.4 0.4");
+        else if (b.liste) {
+          for (const it of b.liste) {
+            const ls = wrap(String(it), 10.5, false, CW - 16);
+            ls.forEach((l, i) => {
+              need(14.7);
+              y -= 14.7;
+              if (!i) text("\u2022", M + 4, 10.5, false, accent);
+              text(l, M + 16, 10.5);
+            });
+          }
+          y -= 6;
+        } else if (b.ligne) {
+          need(10);
+          y -= 5;
+          ops.push(`0.85 0.85 0.85 RG 0.8 w ${M} ${y} m ${W - M} ${y} l S`);
+          y -= 8;
+        } else if (b.saut) newPage();
+        else if (b.tableau) {
+          const rows = b.tableau;
+          if (!rows.length) continue;
+          const cols = Math.max(...rows.map((r) => r.length));
+          const cw = CW / cols, size = +b.taille || 9, lh = size * 1.35;
+          rows.forEach((r, ri) => {
+            const cells = [...Array(cols)].map((_, ci) => wrap(r[ci] ?? "", size, ri === 0, cw - 8));
+            const h = Math.max(...cells.map((c) => c.length)) * lh + 6;
+            need(h);
+            if (ri === 0) ops.push(`${accent} rg ${M} ${(y - h).toFixed(2)} ${CW} ${h.toFixed(2)} re f`);
+            else if (ri % 2 === 0) ops.push(`0.96 0.97 0.98 rg ${M} ${(y - h).toFixed(2)} ${CW} ${h.toFixed(2)} re f`);
+            const y0 = y;
+            cells.forEach((c, ci) => {
+              y = y0 - 3;
+              c.forEach((l) => {
+                y -= lh;
+                const right = ri > 0 && /^-?[\d\s.,]+(%|€|\s?€)?$/.test(String(r[ci] ?? ""));
+                text(l, right ? M + (ci + 1) * cw - 4 - width(l, size) : M + ci * cw + 4, size, ri === 0, ri === 0 ? "1 1 1" : "0.1 0.1 0.1");
+              });
+            });
+            y = y0 - h;
+          });
+          y -= 10;
+        } else if (b.image) {
+          try {
+            const buf = await loadImage(b.image);
+            const img = imageObj(buf);
+            const id = images.push(img);
+            let w = Math.min(CW, +b.largeur || img.w * 0.75), h = w * img.h / img.w;
+            if (h > H - 2 * M - 40) {
+              h = H - 2 * M - 40;
+              w = h * img.w / img.h;
+            }
+            need(h + 6);
+            y -= h;
+            const x = b.aligner === "gauche" ? M : b.aligner === "droite" ? W - M - w : M + (CW - w) / 2;
+            ops.push(`q ${w.toFixed(2)} 0 0 ${h.toFixed(2)} ${x.toFixed(2)} ${y.toFixed(2)} cm /Im${id} Do Q`);
+            y -= 8;
+            if (b.legende) para(b.legende, 8.5, false, "0.4 0.4 0.4");
+          } catch (e) {
+            para(`[image : ${e.message}]`, 8.5, false, "0.7 0 0");
+          }
+        }
+      }
+      pages.push(ops);
+      const objs = [];
+      const add = (s) => objs.push(s) - 1 + 1;
+      const catalog = add(null), pagesId = add(null), f1 = add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>"), f2 = add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>");
+      const imgIds = images.map((im) => {
+        let smask = "";
+        if (im.alpha) {
+          const a = add({ dict: `/Type /XObject /Subtype /Image /Width ${im.w} /Height ${im.h} /ColorSpace /DeviceGray /BitsPerComponent 8 /Filter /FlateDecode`, data: im.alpha });
+          smask = ` /SMask ${a} 0 R`;
+        }
+        return add({ dict: im.dict + smask, data: im.data });
+      });
+      const xo = imgIds.length ? `/XObject << ${imgIds.map((id, i) => `/Im${i + 1} ${id} 0 R`).join(" ")} >>` : "";
+      const kids = pages.map((o, i) => {
+        const foot = opts.pied !== false ? `BT 0.55 0.55 0.55 rg /F1 8 Tf ${M} 30 Td ${pdfStr(`${opts.pied || opts.titre || ""}`)} Tj ET BT 0.55 0.55 0.55 rg /F1 8 Tf ${W - M - 30} 30 Td ${pdfStr(`${i + 1} / ${pages.length}`)} Tj ET` : "";
+        const content = add({ dict: "/Filter /FlateDecode", data: zlib.deflateSync(Buffer.from([...o, foot].join("\n"), "latin1")) });
+        return add(`<< /Type /Page /Parent ${pagesId} 0 R /MediaBox [0 0 ${W} ${H}] /Resources << /Font << /F1 ${f1} 0 R /F2 ${f2} 0 R >> ${xo} >> /Contents ${content} 0 R >>`);
+      });
+      objs[catalog - 1] = `<< /Type /Catalog /Pages ${pagesId} 0 R >>`;
+      objs[pagesId - 1] = `<< /Type /Pages /Kids [${kids.map((k) => `${k} 0 R`).join(" ")}] /Count ${kids.length} >>`;
+      const info = add(`<< /Producer (dysizz-flow) /Title ${pdfStr(opts.titre || "")} /Author ${pdfStr(opts.auteur || "")} /CreationDate (D:${(/* @__PURE__ */ new Date()).toISOString().replace(/[-:T]/g, "").slice(0, 14)}Z) >>`);
+      const parts = [Buffer.from("%PDF-1.4\n%\xE2\xE3\xCF\xD3\n", "latin1")];
+      const offs = [];
+      let len = parts[0].length;
+      objs.forEach((o, i) => {
+        const head = Buffer.from(`${i + 1} 0 obj
+`, "latin1");
+        const body = typeof o === "string" ? Buffer.from(o + "\n", "latin1") : Buffer.concat([Buffer.from(`<< ${o.dict} /Length ${o.data.length} >>
+stream
+`, "latin1"), o.data, Buffer.from("\nendstream\n", "latin1")]);
+        const tail = Buffer.from("endobj\n", "latin1");
+        offs.push(len);
+        parts.push(head, body, tail);
+        len += head.length + body.length + tail.length;
+      });
+      const xref = `xref
+0 ${objs.length + 1}
+0000000000 65535 f 
+${offs.map((o) => String(o).padStart(10, "0") + " 00000 n \n").join("")}trailer
+<< /Size ${objs.length + 1} /Root ${catalog} 0 R /Info ${info} 0 R >>
+startxref
+${len}
+%%EOF
+`;
+      parts.push(Buffer.from(xref, "latin1"));
+      return Buffer.concat(parts);
+    };
+    var mdBlocs = (md) => {
+      const out = [];
+      let list = null, table = null;
+      const flush = () => {
+        if (list) {
+          out.push({ liste: list });
+          list = null;
+        }
+        if (table) {
+          out.push({ tableau: table });
+          table = null;
+        }
+      };
+      const clean = (s) => s.replace(/\*\*(.+?)\*\*/g, "$1").replace(/__(.+?)__/g, "$1").replace(/`([^`]+)`/g, "$1").replace(/\[([^\]]+)\]\(([^)]+)\)/g, "$1 ($2)");
+      for (const raw of String(md || "").split(/\r?\n/)) {
+        const l = raw.trimEnd();
+        let m;
+        if (/^\|.*\|$/.test(l.trim())) {
+          if (/^\|[\s:|-]+\|$/.test(l.trim())) continue;
+          if (list) flush();
+          (table = table || []).push(l.trim().slice(1, -1).split("|").map((c) => clean(c.trim())));
+          continue;
+        }
+        if (m = l.match(/^\s*(?:[-*+]|\d+[.)])\s+(.*)/)) {
+          if (table) flush();
+          (list = list || []).push(clean(m[1]));
+          continue;
+        }
+        flush();
+        if (m = l.match(/^#\s+(.*)/)) out.push({ titre: clean(m[1]) });
+        else if (m = l.match(/^#{2,6}\s+(.*)/)) out.push({ t2: clean(m[1]) });
+        else if (m = l.match(/^!\[([^\]]*)\]\(([^)]+)\)/)) out.push({ image: m[2], legende: m[1] });
+        else if (/^(-{3,}|\*{3,})$/.test(l.trim())) out.push({ ligne: true });
+        else if (/^<!--\s*saut\s*-->$/i.test(l.trim())) out.push({ saut: true });
+        else if (l.trim()) {
+          const last = out[out.length - 1];
+          if (last && last.texte !== void 0 && !last._fin) last.texte += " " + clean(l.trim());
+          else out.push({ texte: clean(l.trim()) });
+        } else if (out.length) out[out.length - 1]._fin = true;
+      }
+      flush();
+      return out.map(({ _fin, ...b }) => b);
+    };
+    var unesc = (s) => s.replace(/\\([nrtbf()\\]|[0-7]{1,3})/g, (_, c) => ({ n: "\n", r: "\r", t: "	", b: "\b", f: "\f", "(": "(", ")": ")", "\\": "\\" })[c] ?? String.fromCharCode(parseInt(c, 8)));
+    var lireTextePdf = (buf, max = 2e6) => {
+      const s = buf.toString("latin1");
+      const out = [];
+      const re = /stream\r?\n/g;
+      let m;
+      while (m = re.exec(s)) {
+        const start = m.index + m[0].length, end = s.indexOf("endstream", start);
+        if (end < 0) break;
+        const dictStart = s.lastIndexOf("<<", m.index), dict = s.slice(dictStart, m.index);
+        if (/\/Subtype\s*\/Image|\/Type\s*\/XObject|\/Length1|\/FontFile/.test(dict)) continue;
+        let data = buf.slice(start, end);
+        if (/FlateDecode/.test(dict)) {
+          try {
+            data = zlib.inflateSync(data);
+          } catch (e) {
+            try {
+              data = zlib.inflateSync(data.slice(0, data.length - 2));
+            } catch (x) {
+              continue;
+            }
+          }
+        }
+        const c = data.toString("latin1");
+        if (!/T[Jj*']|Tf/.test(c)) continue;
+        let line = "";
+        for (const t of c.matchAll(/\[((?:\\.|[^\]])*)\]\s*TJ|\(((?:\\.|[^\\)])*)\)\s*(?:Tj|'|")|(T\*|Td|TD|Tm|ET)/g)) {
+          if (t[3]) {
+            if (t[3] !== "Tm" || line) {
+              out.push(line);
+              line = "";
+            }
+            continue;
+          }
+          if (t[2] !== void 0) line += unesc(t[2]);
+          else for (const part of t[1].matchAll(/\(((?:\\.|[^\\)])*)\)|(-?\d+\.?\d*)/g)) {
+            if (part[1] !== void 0) line += unesc(part[1]);
+            else if (+part[2] < -200) line += " ";
+          }
+        }
+        if (line) out.push(line);
+        if (out.join("").length > max) break;
+      }
+      const bytes = out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+      return Buffer.from(bytes, "latin1").toString("latin1").replace(/[\x80-\x9f]/g, (c) => Object.keys(WIN).find((k) => WIN[k] === c.charCodeAt(0)) || c);
+    };
+    module2.exports = { ecrirePdf, mdBlocs, lireTextePdf, wrap, width };
+  }
+});
+
+// src/lib/xlsx.js
+var require_xlsx = __commonJS({
+  "src/lib/xlsx.js"(exports2, module2) {
+    "use strict";
+    var { writeZip, readZip } = require_zip();
+    var x = (s) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, "");
+    var unx = (s) => String(s ?? "").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(+n)).replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCodePoint(parseInt(n, 16))).replace(/&amp;/g, "&");
+    var col = (n) => {
+      let s = "";
+      n++;
+      while (n) {
+        const m = (n - 1) % 26;
+        s = String.fromCharCode(65 + m) + s;
+        n = Math.floor((n - 1) / 26);
+      }
+      return s;
+    };
+    var colIdx = (s) => [...s].reduce((a, c) => a * 26 + c.charCodeAt(0) - 64, 0) - 1;
+    var EPOCH = Date.UTC(1899, 11, 30);
+    var isDate = (v) => v instanceof Date || typeof v === "string" && /^\d{4}-\d{2}-\d{2}(T[\d:.]+Z?)?$/.test(v);
+    var ecrireXlsx = (feuilles) => {
+      const list = Array.isArray(feuilles) ? feuilles : Object.entries(feuilles).map(([nom, lignes]) => ({ nom, lignes }));
+      const sheets = list.map((f, i) => {
+        let rows = f.lignes || [];
+        if (rows.length && !Array.isArray(rows[0])) {
+          const keys = [...new Set(rows.flatMap((r) => Object.keys(r || {})))];
+          rows = [keys, ...rows.map((r) => keys.map((k) => r[k]))];
+        }
+        const widths = [];
+        const xml = rows.map((r, ri) => `<row r="${ri + 1}">${(r || []).map((v, ci) => {
+          const ref = `${col(ci)}${ri + 1}`, st = ri === 0 && f.entete !== false ? ' s="1"' : "";
+          widths[ci] = Math.min(60, Math.max(widths[ci] || 8, String(v ?? "").length + 2));
+          if (v === null || v === void 0 || v === "") return "";
+          if (typeof v === "number" && isFinite(v)) return `<c r="${ref}"${st}><v>${v}</v></c>`;
+          if (typeof v === "boolean") return `<c r="${ref}" t="b"${st}><v>${v ? 1 : 0}</v></c>`;
+          if (isDate(v) && ri > 0) {
+            const d = new Date(v);
+            if (!isNaN(d)) return `<c r="${ref}" s="2"><v>${(d.getTime() - EPOCH) / 864e5}</v></c>`;
+          }
+          if (typeof v === "string" && v.startsWith("=")) return `<c r="${ref}"${st}><f>${x(v.slice(1))}</f></c>`;
+          return `<c r="${ref}" t="inlineStr"${st}><is><t xml:space="preserve">${x(typeof v === "object" ? JSON.stringify(v) : v)}</t></is></c>`;
+        }).join("")}</row>`).join("");
+        const cols = widths.length ? `<cols>${widths.map((w, i2) => `<col min="${i2 + 1}" max="${i2 + 1}" width="${w}" customWidth="1"/>`).join("")}</cols>` : "";
+        const freeze = rows.length > 1 && f.entete !== false ? '<sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>' : "";
+        const filter = rows.length > 1 && f.entete !== false && rows[0].length ? `<autoFilter ref="A1:${col(rows[0].length - 1)}${rows.length}"/>` : "";
+        return { nom: String(f.nom || `Feuille${i + 1}`).replace(/[\\/?*[\]:]/g, " ").slice(0, 31), xml: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">${freeze}${cols}<sheetData>${xml}</sheetData>${filter}</worksheet>` };
+      });
+      const files = [
+        { nom: "[Content_Types].xml", contenu: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>${sheets.map((_, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join("")}</Types>` },
+        { nom: "_rels/.rels", contenu: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>` },
+        { nom: "xl/workbook.xml", contenu: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>${sheets.map((s, i) => `<sheet name="${x(s.nom)}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join("")}</sheets></workbook>` },
+        { nom: "xl/_rels/workbook.xml.rels", contenu: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${sheets.map((_, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`).join("")}<Relationship Id="rId${sheets.length + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>` },
+        { nom: "xl/styles.xml", contenu: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><numFmts count="1"><numFmt numFmtId="164" formatCode="dd/mm/yyyy hh:mm"/></numFmts><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font></fonts><fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF2563EB"/></patternFill></fill></fills><borders count="1"><border/></borders><cellStyleXfs count="1"><xf/></cellStyleXfs><cellXfs count="3"><xf/><xf fontId="1" fillId="2" applyFont="1" applyFill="1"/><xf numFmtId="164" applyNumberFormat="1"/></cellXfs></styleSheet>` },
+        ...sheets.map((s, i) => ({ nom: `xl/worksheets/sheet${i + 1}.xml`, contenu: s.xml }))
+      ];
+      return writeZip(files);
+    };
+    var lireXlsx = (buf, { maxLignes = 1e5 } = {}) => {
+      const z = Object.fromEntries(readZip(buf).map((f) => [f.nom, f.contenu.toString("utf8")]));
+      if (!z["xl/workbook.xml"]) throw Object.assign(new Error("ce n'est pas un fichier Excel .xlsx"), { permanent: true });
+      const shared = [...(z["xl/sharedStrings.xml"] || "").matchAll(/<si>([\s\S]*?)<\/si>/g)].map((m) => unx([...m[1].matchAll(/<t[^>]*>([\s\S]*?)<\/t>/g)].map((t) => t[1]).join("")));
+      const fmts = {};
+      for (const m of (z["xl/styles.xml"] || "").matchAll(/<numFmt numFmtId="(\d+)" formatCode="([^"]*)"/g)) fmts[m[1]] = m[2];
+      const xfs = [...((z["xl/styles.xml"] || "").match(/<cellXfs[^>]*>([\s\S]*?)<\/cellXfs>/) || ["", ""])[1].matchAll(/<xf [^>]*?numFmtId="(\d+)"|<xf(?![^>]*numFmtId)[^>]*>/g)].map((m) => +(m[1] || 0));
+      const dateStyle = (s) => {
+        const id = xfs[+s];
+        return id >= 14 && id <= 22 || id >= 45 && id <= 47 || fmts[id] && /[dmy]/i.test(fmts[id].replace(/\[[^\]]*\]|"[^"]*"/g, ""));
+      };
+      const attr = (tag, a) => (tag.match(new RegExp(`\\s${a}="([^"]*)"`)) || [])[1];
+      const rels = Object.fromEntries([...(z["xl/_rels/workbook.xml.rels"] || "").matchAll(/<Relationship [^>]*>/g)].map((m) => [attr(m[0], "Id"), attr(m[0], "Target")]));
+      const feuilles = [...z["xl/workbook.xml"].matchAll(/<sheet [^>]*>/g)].map((t) => [null, attr(t[0], "name"), attr(t[0], "r:id")]).filter((m) => rels[m[2]]).map((m) => {
+        const path = "xl/" + rels[m[2]].replace(/^\/?xl\//, "").replace(/^\//, "");
+        const xml = z[path] || "";
+        const lignes = [];
+        for (const r of xml.matchAll(/<row [^>]*?r="(\d+)"[^>]*>([\s\S]*?)<\/row>|<row [^>]*?r="(\d+)"[^>]*\/>/g)) {
+          if (lignes.length >= maxLignes) break;
+          const ri = +(r[1] || r[3]) - 1, row = [];
+          for (const c of (r[2] || "").matchAll(/<c ([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g)) {
+            const at = c[1], ref = (at.match(/r="([A-Z]+)\d+"/) || [])[1], t = (at.match(/t="(\w+)"/) || [])[1], s = (at.match(/s="(\d+)"/) || [])[1];
+            const v = ((c[2] || "").match(/<v>([\s\S]*?)<\/v>/) || [])[1];
+            let val = null;
+            const fo = ((c[2] || "").match(/<f>([\s\S]*?)<\/f>/) || [])[1];
+            if (v === void 0 && fo) val = "=" + unx(fo);
+            else if (t === "s") val = shared[+v];
+            else if (t === "inlineStr") val = unx([...(c[2] || "").matchAll(/<t[^>]*>([\s\S]*?)<\/t>/g)].map((y) => y[1]).join(""));
+            else if (t === "b") val = v === "1";
+            else if (t === "str" || t === "e") val = unx(v ?? "");
+            else if (v !== void 0) {
+              val = Number(v);
+              if (s && dateStyle(s)) val = new Date(EPOCH + val * 864e5).toISOString().replace(/T00:00:00\.000Z$/, "");
+            }
+            row[ref ? colIdx(ref) : row.length] = val;
+          }
+          lignes[ri] = [...row].map((v) => v === void 0 ? null : v);
+        }
+        return { nom: unx(m[1]), lignes: [...lignes].map((l) => l || []) };
+      });
+      return { feuilles };
+    };
+    var lireDocx = (buf) => {
+      const z = Object.fromEntries(readZip(buf).filter((f) => /^word\/document\.xml$/.test(f.nom)).map((f) => [f.nom, f.contenu.toString("utf8")]));
+      const d = z["word/document.xml"];
+      if (!d) throw Object.assign(new Error("ce n'est pas un fichier Word .docx"), { permanent: true });
+      return unx(d.replace(/<w:tab\/>/g, "	").replace(/<w:br[^>]*\/>/g, "\n").replace(/<\/w:tc>/g, "	").replace(/<\/w:p>/g, "\n").replace(/<[^>]+>/g, "")).replace(/\t\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+    };
+    var ecrireDocx = (texte) => {
+      const run = (s) => s.split(/(\*\*[^*]+\*\*)/).filter(Boolean).map((p) => p.startsWith("**") ? `<w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">${x(p.slice(2, -2))}</w:t></w:r>` : `<w:r><w:t xml:space="preserve">${x(p)}</w:t></w:r>`).join("");
+      const body = String(texte || "").split(/\r?\n/).map((l) => {
+        let m;
+        if (m = l.match(/^(#{1,3})\s+(.*)/)) return `<w:p><w:pPr><w:pStyle w:val="Heading${m[1].length}"/></w:pPr>${run(m[2])}</w:p>`;
+        if (m = l.match(/^\s*[-*•]\s+(.*)/)) return `<w:p><w:pPr><w:pStyle w:val="ListParagraph"/><w:ind w:left="360" w:hanging="360"/></w:pPr><w:r><w:t xml:space="preserve">\u2022 </w:t></w:r>${run(m[1])}</w:p>`;
+        return `<w:p>${run(l)}</w:p>`;
+      }).join("");
+      const W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"';
+      const st = (id, name, sz) => `<w:style w:type="paragraph" w:styleId="${id}"><w:name w:val="${name}"/><w:basedOn w:val="Normal"/><w:pPr><w:spacing w:before="240" w:after="120"/></w:pPr><w:rPr><w:b/><w:color w:val="2563EB"/><w:sz w:val="${sz}"/></w:rPr></w:style>`;
+      return writeZip([
+        { nom: "[Content_Types].xml", contenu: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/></Types>' },
+        { nom: "_rels/.rels", contenu: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>' },
+        { nom: "word/_rels/document.xml.rels", contenu: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>' },
+        { nom: "word/styles.xml", contenu: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles ${W}><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri"/><w:sz w:val="22"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:after="120" w:line="276" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style>${st("Heading1", "heading 1", 36)}${st("Heading2", "heading 2", 28)}${st("Heading3", "heading 3", 24)}<w:style w:type="paragraph" w:styleId="ListParagraph"><w:name w:val="List Paragraph"/><w:basedOn w:val="Normal"/></w:style></w:styles>` },
+        { nom: "word/document.xml", contenu: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document ${W}><w:body>${body}<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1134" w:right="1134" w:bottom="1134" w:left="1134" w:header="708" w:footer="708" w:gutter="0"/></w:sectPr></w:body></w:document>` }
+      ]);
+    };
+    module2.exports = { ecrireXlsx, lireXlsx, lireDocx, ecrireDocx };
+  }
+});
+
+// tools/node_modules/qrcode-generator/qrcode.js
+var require_qrcode = __commonJS({
+  "tools/node_modules/qrcode-generator/qrcode.js"(exports2, module2) {
+    var qrcode = (function() {
+      var qrcode2 = function(typeNumber, errorCorrectionLevel) {
+        var PAD0 = 236;
+        var PAD1 = 17;
+        var _typeNumber = typeNumber;
+        var _errorCorrectionLevel = QRErrorCorrectionLevel[errorCorrectionLevel];
+        var _modules = null;
+        var _moduleCount = 0;
+        var _dataCache = null;
+        var _dataList = [];
+        var _this = {};
+        var makeImpl = function(test, maskPattern) {
+          _moduleCount = _typeNumber * 4 + 17;
+          _modules = (function(moduleCount) {
+            var modules = new Array(moduleCount);
+            for (var row = 0; row < moduleCount; row += 1) {
+              modules[row] = new Array(moduleCount);
+              for (var col = 0; col < moduleCount; col += 1) {
+                modules[row][col] = null;
+              }
+            }
+            return modules;
+          })(_moduleCount);
+          setupPositionProbePattern(0, 0);
+          setupPositionProbePattern(_moduleCount - 7, 0);
+          setupPositionProbePattern(0, _moduleCount - 7);
+          setupPositionAdjustPattern();
+          setupTimingPattern();
+          setupTypeInfo(test, maskPattern);
+          if (_typeNumber >= 7) {
+            setupTypeNumber(test);
+          }
+          if (_dataCache == null) {
+            _dataCache = createData(_typeNumber, _errorCorrectionLevel, _dataList);
+          }
+          mapData(_dataCache, maskPattern);
+        };
+        var setupPositionProbePattern = function(row, col) {
+          for (var r = -1; r <= 7; r += 1) {
+            if (row + r <= -1 || _moduleCount <= row + r) continue;
+            for (var c = -1; c <= 7; c += 1) {
+              if (col + c <= -1 || _moduleCount <= col + c) continue;
+              if (0 <= r && r <= 6 && (c == 0 || c == 6) || 0 <= c && c <= 6 && (r == 0 || r == 6) || 2 <= r && r <= 4 && 2 <= c && c <= 4) {
+                _modules[row + r][col + c] = true;
+              } else {
+                _modules[row + r][col + c] = false;
+              }
+            }
+          }
+        };
+        var getBestMaskPattern = function() {
+          var minLostPoint = 0;
+          var pattern = 0;
+          for (var i = 0; i < 8; i += 1) {
+            makeImpl(true, i);
+            var lostPoint = QRUtil.getLostPoint(_this);
+            if (i == 0 || minLostPoint > lostPoint) {
+              minLostPoint = lostPoint;
+              pattern = i;
+            }
+          }
+          return pattern;
+        };
+        var setupTimingPattern = function() {
+          for (var r = 8; r < _moduleCount - 8; r += 1) {
+            if (_modules[r][6] != null) {
+              continue;
+            }
+            _modules[r][6] = r % 2 == 0;
+          }
+          for (var c = 8; c < _moduleCount - 8; c += 1) {
+            if (_modules[6][c] != null) {
+              continue;
+            }
+            _modules[6][c] = c % 2 == 0;
+          }
+        };
+        var setupPositionAdjustPattern = function() {
+          var pos = QRUtil.getPatternPosition(_typeNumber);
+          for (var i = 0; i < pos.length; i += 1) {
+            for (var j = 0; j < pos.length; j += 1) {
+              var row = pos[i];
+              var col = pos[j];
+              if (_modules[row][col] != null) {
+                continue;
+              }
+              for (var r = -2; r <= 2; r += 1) {
+                for (var c = -2; c <= 2; c += 1) {
+                  if (r == -2 || r == 2 || c == -2 || c == 2 || r == 0 && c == 0) {
+                    _modules[row + r][col + c] = true;
+                  } else {
+                    _modules[row + r][col + c] = false;
+                  }
+                }
+              }
+            }
+          }
+        };
+        var setupTypeNumber = function(test) {
+          var bits = QRUtil.getBCHTypeNumber(_typeNumber);
+          for (var i = 0; i < 18; i += 1) {
+            var mod = !test && (bits >> i & 1) == 1;
+            _modules[Math.floor(i / 3)][i % 3 + _moduleCount - 8 - 3] = mod;
+          }
+          for (var i = 0; i < 18; i += 1) {
+            var mod = !test && (bits >> i & 1) == 1;
+            _modules[i % 3 + _moduleCount - 8 - 3][Math.floor(i / 3)] = mod;
+          }
+        };
+        var setupTypeInfo = function(test, maskPattern) {
+          var data = _errorCorrectionLevel << 3 | maskPattern;
+          var bits = QRUtil.getBCHTypeInfo(data);
+          for (var i = 0; i < 15; i += 1) {
+            var mod = !test && (bits >> i & 1) == 1;
+            if (i < 6) {
+              _modules[i][8] = mod;
+            } else if (i < 8) {
+              _modules[i + 1][8] = mod;
+            } else {
+              _modules[_moduleCount - 15 + i][8] = mod;
+            }
+          }
+          for (var i = 0; i < 15; i += 1) {
+            var mod = !test && (bits >> i & 1) == 1;
+            if (i < 8) {
+              _modules[8][_moduleCount - i - 1] = mod;
+            } else if (i < 9) {
+              _modules[8][15 - i - 1 + 1] = mod;
+            } else {
+              _modules[8][15 - i - 1] = mod;
+            }
+          }
+          _modules[_moduleCount - 8][8] = !test;
+        };
+        var mapData = function(data, maskPattern) {
+          var inc = -1;
+          var row = _moduleCount - 1;
+          var bitIndex = 7;
+          var byteIndex = 0;
+          var maskFunc = QRUtil.getMaskFunction(maskPattern);
+          for (var col = _moduleCount - 1; col > 0; col -= 2) {
+            if (col == 6) col -= 1;
+            while (true) {
+              for (var c = 0; c < 2; c += 1) {
+                if (_modules[row][col - c] == null) {
+                  var dark = false;
+                  if (byteIndex < data.length) {
+                    dark = (data[byteIndex] >>> bitIndex & 1) == 1;
+                  }
+                  var mask = maskFunc(row, col - c);
+                  if (mask) {
+                    dark = !dark;
+                  }
+                  _modules[row][col - c] = dark;
+                  bitIndex -= 1;
+                  if (bitIndex == -1) {
+                    byteIndex += 1;
+                    bitIndex = 7;
+                  }
+                }
+              }
+              row += inc;
+              if (row < 0 || _moduleCount <= row) {
+                row -= inc;
+                inc = -inc;
+                break;
+              }
+            }
+          }
+        };
+        var createBytes = function(buffer, rsBlocks) {
+          var offset = 0;
+          var maxDcCount = 0;
+          var maxEcCount = 0;
+          var dcdata = new Array(rsBlocks.length);
+          var ecdata = new Array(rsBlocks.length);
+          for (var r = 0; r < rsBlocks.length; r += 1) {
+            var dcCount = rsBlocks[r].dataCount;
+            var ecCount = rsBlocks[r].totalCount - dcCount;
+            maxDcCount = Math.max(maxDcCount, dcCount);
+            maxEcCount = Math.max(maxEcCount, ecCount);
+            dcdata[r] = new Array(dcCount);
+            for (var i = 0; i < dcdata[r].length; i += 1) {
+              dcdata[r][i] = 255 & buffer.getBuffer()[i + offset];
+            }
+            offset += dcCount;
+            var rsPoly = QRUtil.getErrorCorrectPolynomial(ecCount);
+            var rawPoly = qrPolynomial(dcdata[r], rsPoly.getLength() - 1);
+            var modPoly = rawPoly.mod(rsPoly);
+            ecdata[r] = new Array(rsPoly.getLength() - 1);
+            for (var i = 0; i < ecdata[r].length; i += 1) {
+              var modIndex = i + modPoly.getLength() - ecdata[r].length;
+              ecdata[r][i] = modIndex >= 0 ? modPoly.getAt(modIndex) : 0;
+            }
+          }
+          var totalCodeCount = 0;
+          for (var i = 0; i < rsBlocks.length; i += 1) {
+            totalCodeCount += rsBlocks[i].totalCount;
+          }
+          var data = new Array(totalCodeCount);
+          var index = 0;
+          for (var i = 0; i < maxDcCount; i += 1) {
+            for (var r = 0; r < rsBlocks.length; r += 1) {
+              if (i < dcdata[r].length) {
+                data[index] = dcdata[r][i];
+                index += 1;
+              }
+            }
+          }
+          for (var i = 0; i < maxEcCount; i += 1) {
+            for (var r = 0; r < rsBlocks.length; r += 1) {
+              if (i < ecdata[r].length) {
+                data[index] = ecdata[r][i];
+                index += 1;
+              }
+            }
+          }
+          return data;
+        };
+        var createData = function(typeNumber2, errorCorrectionLevel2, dataList) {
+          var rsBlocks = QRRSBlock.getRSBlocks(typeNumber2, errorCorrectionLevel2);
+          var buffer = qrBitBuffer();
+          for (var i = 0; i < dataList.length; i += 1) {
+            var data = dataList[i];
+            buffer.put(data.getMode(), 4);
+            buffer.put(data.getLength(), QRUtil.getLengthInBits(data.getMode(), typeNumber2));
+            data.write(buffer);
+          }
+          var totalDataCount = 0;
+          for (var i = 0; i < rsBlocks.length; i += 1) {
+            totalDataCount += rsBlocks[i].dataCount;
+          }
+          if (buffer.getLengthInBits() > totalDataCount * 8) {
+            throw "code length overflow. (" + buffer.getLengthInBits() + ">" + totalDataCount * 8 + ")";
+          }
+          if (buffer.getLengthInBits() + 4 <= totalDataCount * 8) {
+            buffer.put(0, 4);
+          }
+          while (buffer.getLengthInBits() % 8 != 0) {
+            buffer.putBit(false);
+          }
+          while (true) {
+            if (buffer.getLengthInBits() >= totalDataCount * 8) {
+              break;
+            }
+            buffer.put(PAD0, 8);
+            if (buffer.getLengthInBits() >= totalDataCount * 8) {
+              break;
+            }
+            buffer.put(PAD1, 8);
+          }
+          return createBytes(buffer, rsBlocks);
+        };
+        _this.addData = function(data, mode) {
+          mode = mode || "Byte";
+          var newData = null;
+          switch (mode) {
+            case "Numeric":
+              newData = qrNumber(data);
+              break;
+            case "Alphanumeric":
+              newData = qrAlphaNum(data);
+              break;
+            case "Byte":
+              newData = qr8BitByte(data);
+              break;
+            case "Kanji":
+              newData = qrKanji(data);
+              break;
+            default:
+              throw "mode:" + mode;
+          }
+          _dataList.push(newData);
+          _dataCache = null;
+        };
+        _this.isDark = function(row, col) {
+          if (row < 0 || _moduleCount <= row || col < 0 || _moduleCount <= col) {
+            throw row + "," + col;
+          }
+          return _modules[row][col];
+        };
+        _this.getModuleCount = function() {
+          return _moduleCount;
+        };
+        _this.make = function() {
+          if (_typeNumber < 1) {
+            var typeNumber2 = 1;
+            for (; typeNumber2 < 40; typeNumber2++) {
+              var rsBlocks = QRRSBlock.getRSBlocks(typeNumber2, _errorCorrectionLevel);
+              var buffer = qrBitBuffer();
+              for (var i = 0; i < _dataList.length; i++) {
+                var data = _dataList[i];
+                buffer.put(data.getMode(), 4);
+                buffer.put(data.getLength(), QRUtil.getLengthInBits(data.getMode(), typeNumber2));
+                data.write(buffer);
+              }
+              var totalDataCount = 0;
+              for (var i = 0; i < rsBlocks.length; i++) {
+                totalDataCount += rsBlocks[i].dataCount;
+              }
+              if (buffer.getLengthInBits() <= totalDataCount * 8) {
+                break;
+              }
+            }
+            _typeNumber = typeNumber2;
+          }
+          makeImpl(false, getBestMaskPattern());
+        };
+        _this.createTableTag = function(cellSize, margin) {
+          cellSize = cellSize || 2;
+          margin = typeof margin == "undefined" ? cellSize * 4 : margin;
+          var qrHtml = "";
+          qrHtml += '<table style="';
+          qrHtml += " border-width: 0px; border-style: none;";
+          qrHtml += " border-collapse: collapse;";
+          qrHtml += " padding: 0px; margin: " + margin + "px;";
+          qrHtml += '">';
+          qrHtml += "<tbody>";
+          for (var r = 0; r < _this.getModuleCount(); r += 1) {
+            qrHtml += "<tr>";
+            for (var c = 0; c < _this.getModuleCount(); c += 1) {
+              qrHtml += '<td style="';
+              qrHtml += " border-width: 0px; border-style: none;";
+              qrHtml += " border-collapse: collapse;";
+              qrHtml += " padding: 0px; margin: 0px;";
+              qrHtml += " width: " + cellSize + "px;";
+              qrHtml += " height: " + cellSize + "px;";
+              qrHtml += " background-color: ";
+              qrHtml += _this.isDark(r, c) ? "#000000" : "#ffffff";
+              qrHtml += ";";
+              qrHtml += '"/>';
+            }
+            qrHtml += "</tr>";
+          }
+          qrHtml += "</tbody>";
+          qrHtml += "</table>";
+          return qrHtml;
+        };
+        _this.createSvgTag = function(cellSize, margin, alt, title) {
+          var opts = {};
+          if (typeof arguments[0] == "object") {
+            opts = arguments[0];
+            cellSize = opts.cellSize;
+            margin = opts.margin;
+            alt = opts.alt;
+            title = opts.title;
+          }
+          cellSize = cellSize || 2;
+          margin = typeof margin == "undefined" ? cellSize * 4 : margin;
+          alt = typeof alt === "string" ? { text: alt } : alt || {};
+          alt.text = alt.text || null;
+          alt.id = alt.text ? alt.id || "qrcode-description" : null;
+          title = typeof title === "string" ? { text: title } : title || {};
+          title.text = title.text || null;
+          title.id = title.text ? title.id || "qrcode-title" : null;
+          var size = _this.getModuleCount() * cellSize + margin * 2;
+          var c, mc, r, mr, qrSvg = "", rect;
+          rect = "l" + cellSize + ",0 0," + cellSize + " -" + cellSize + ",0 0,-" + cellSize + "z ";
+          qrSvg += '<svg version="1.1" xmlns="http://www.w3.org/2000/svg"';
+          qrSvg += !opts.scalable ? ' width="' + size + 'px" height="' + size + 'px"' : "";
+          qrSvg += ' viewBox="0 0 ' + size + " " + size + '" ';
+          qrSvg += ' preserveAspectRatio="xMinYMin meet"';
+          qrSvg += title.text || alt.text ? ' role="img" aria-labelledby="' + escapeXml([title.id, alt.id].join(" ").trim()) + '"' : "";
+          qrSvg += ">";
+          qrSvg += title.text ? '<title id="' + escapeXml(title.id) + '">' + escapeXml(title.text) + "</title>" : "";
+          qrSvg += alt.text ? '<description id="' + escapeXml(alt.id) + '">' + escapeXml(alt.text) + "</description>" : "";
+          qrSvg += '<rect width="100%" height="100%" fill="white" cx="0" cy="0"/>';
+          qrSvg += '<path d="';
+          for (r = 0; r < _this.getModuleCount(); r += 1) {
+            mr = r * cellSize + margin;
+            for (c = 0; c < _this.getModuleCount(); c += 1) {
+              if (_this.isDark(r, c)) {
+                mc = c * cellSize + margin;
+                qrSvg += "M" + mc + "," + mr + rect;
+              }
+            }
+          }
+          qrSvg += '" stroke="transparent" fill="black"/>';
+          qrSvg += "</svg>";
+          return qrSvg;
+        };
+        _this.createDataURL = function(cellSize, margin) {
+          cellSize = cellSize || 2;
+          margin = typeof margin == "undefined" ? cellSize * 4 : margin;
+          var size = _this.getModuleCount() * cellSize + margin * 2;
+          var min = margin;
+          var max = size - margin;
+          return createDataURL(size, size, function(x, y) {
+            if (min <= x && x < max && min <= y && y < max) {
+              var c = Math.floor((x - min) / cellSize);
+              var r = Math.floor((y - min) / cellSize);
+              return _this.isDark(r, c) ? 0 : 1;
+            } else {
+              return 1;
+            }
+          });
+        };
+        _this.createImgTag = function(cellSize, margin, alt) {
+          cellSize = cellSize || 2;
+          margin = typeof margin == "undefined" ? cellSize * 4 : margin;
+          var size = _this.getModuleCount() * cellSize + margin * 2;
+          var img = "";
+          img += "<img";
+          img += ' src="';
+          img += _this.createDataURL(cellSize, margin);
+          img += '"';
+          img += ' width="';
+          img += size;
+          img += '"';
+          img += ' height="';
+          img += size;
+          img += '"';
+          if (alt) {
+            img += ' alt="';
+            img += escapeXml(alt);
+            img += '"';
+          }
+          img += "/>";
+          return img;
+        };
+        var escapeXml = function(s) {
+          var escaped = "";
+          for (var i = 0; i < s.length; i += 1) {
+            var c = s.charAt(i);
+            switch (c) {
+              case "<":
+                escaped += "&lt;";
+                break;
+              case ">":
+                escaped += "&gt;";
+                break;
+              case "&":
+                escaped += "&amp;";
+                break;
+              case '"':
+                escaped += "&quot;";
+                break;
+              default:
+                escaped += c;
+                break;
+            }
+          }
+          return escaped;
+        };
+        var _createHalfASCII = function(margin) {
+          var cellSize = 1;
+          margin = typeof margin == "undefined" ? cellSize * 2 : margin;
+          var size = _this.getModuleCount() * cellSize + margin * 2;
+          var min = margin;
+          var max = size - margin;
+          var y, x, r1, r2, p;
+          var blocks = {
+            "\u2588\u2588": "\u2588",
+            "\u2588 ": "\u2580",
+            " \u2588": "\u2584",
+            "  ": " "
+          };
+          var blocksLastLineNoMargin = {
+            "\u2588\u2588": "\u2580",
+            "\u2588 ": "\u2580",
+            " \u2588": " ",
+            "  ": " "
+          };
+          var ascii = "";
+          for (y = 0; y < size; y += 2) {
+            r1 = Math.floor((y - min) / cellSize);
+            r2 = Math.floor((y + 1 - min) / cellSize);
+            for (x = 0; x < size; x += 1) {
+              p = "\u2588";
+              if (min <= x && x < max && min <= y && y < max && _this.isDark(r1, Math.floor((x - min) / cellSize))) {
+                p = " ";
+              }
+              if (min <= x && x < max && min <= y + 1 && y + 1 < max && _this.isDark(r2, Math.floor((x - min) / cellSize))) {
+                p += " ";
+              } else {
+                p += "\u2588";
+              }
+              ascii += margin < 1 && y + 1 >= max ? blocksLastLineNoMargin[p] : blocks[p];
+            }
+            ascii += "\n";
+          }
+          if (size % 2 && margin > 0) {
+            return ascii.substring(0, ascii.length - size - 1) + Array(size + 1).join("\u2580");
+          }
+          return ascii.substring(0, ascii.length - 1);
+        };
+        _this.createASCII = function(cellSize, margin) {
+          cellSize = cellSize || 1;
+          if (cellSize < 2) {
+            return _createHalfASCII(margin);
+          }
+          cellSize -= 1;
+          margin = typeof margin == "undefined" ? cellSize * 2 : margin;
+          var size = _this.getModuleCount() * cellSize + margin * 2;
+          var min = margin;
+          var max = size - margin;
+          var y, x, r, p;
+          var white = Array(cellSize + 1).join("\u2588\u2588");
+          var black = Array(cellSize + 1).join("  ");
+          var ascii = "";
+          var line = "";
+          for (y = 0; y < size; y += 1) {
+            r = Math.floor((y - min) / cellSize);
+            line = "";
+            for (x = 0; x < size; x += 1) {
+              p = 1;
+              if (min <= x && x < max && min <= y && y < max && _this.isDark(r, Math.floor((x - min) / cellSize))) {
+                p = 0;
+              }
+              line += p ? white : black;
+            }
+            for (r = 0; r < cellSize; r += 1) {
+              ascii += line + "\n";
+            }
+          }
+          return ascii.substring(0, ascii.length - 1);
+        };
+        _this.renderTo2dContext = function(context, cellSize) {
+          cellSize = cellSize || 2;
+          var length = _this.getModuleCount();
+          for (var row = 0; row < length; row++) {
+            for (var col = 0; col < length; col++) {
+              context.fillStyle = _this.isDark(row, col) ? "black" : "white";
+              context.fillRect(row * cellSize, col * cellSize, cellSize, cellSize);
+            }
+          }
+        };
+        return _this;
+      };
+      qrcode2.stringToBytesFuncs = {
+        "default": function(s) {
+          var bytes = [];
+          for (var i = 0; i < s.length; i += 1) {
+            var c = s.charCodeAt(i);
+            bytes.push(c & 255);
+          }
+          return bytes;
+        }
+      };
+      qrcode2.stringToBytes = qrcode2.stringToBytesFuncs["default"];
+      qrcode2.createStringToBytes = function(unicodeData, numChars) {
+        var unicodeMap = (function() {
+          var bin = base64DecodeInputStream(unicodeData);
+          var read = function() {
+            var b = bin.read();
+            if (b == -1) throw "eof";
+            return b;
+          };
+          var count = 0;
+          var unicodeMap2 = {};
+          while (true) {
+            var b0 = bin.read();
+            if (b0 == -1) break;
+            var b1 = read();
+            var b2 = read();
+            var b3 = read();
+            var k = String.fromCharCode(b0 << 8 | b1);
+            var v = b2 << 8 | b3;
+            unicodeMap2[k] = v;
+            count += 1;
+          }
+          if (count != numChars) {
+            throw count + " != " + numChars;
+          }
+          return unicodeMap2;
+        })();
+        var unknownChar = "?".charCodeAt(0);
+        return function(s) {
+          var bytes = [];
+          for (var i = 0; i < s.length; i += 1) {
+            var c = s.charCodeAt(i);
+            if (c < 128) {
+              bytes.push(c);
+            } else {
+              var b = unicodeMap[s.charAt(i)];
+              if (typeof b == "number") {
+                if ((b & 255) == b) {
+                  bytes.push(b);
+                } else {
+                  bytes.push(b >>> 8);
+                  bytes.push(b & 255);
+                }
+              } else {
+                bytes.push(unknownChar);
+              }
+            }
+          }
+          return bytes;
+        };
+      };
+      var QRMode = {
+        MODE_NUMBER: 1 << 0,
+        MODE_ALPHA_NUM: 1 << 1,
+        MODE_8BIT_BYTE: 1 << 2,
+        MODE_KANJI: 1 << 3
+      };
+      var QRErrorCorrectionLevel = {
+        L: 1,
+        M: 0,
+        Q: 3,
+        H: 2
+      };
+      var QRMaskPattern = {
+        PATTERN000: 0,
+        PATTERN001: 1,
+        PATTERN010: 2,
+        PATTERN011: 3,
+        PATTERN100: 4,
+        PATTERN101: 5,
+        PATTERN110: 6,
+        PATTERN111: 7
+      };
+      var QRUtil = (function() {
+        var PATTERN_POSITION_TABLE = [
+          [],
+          [6, 18],
+          [6, 22],
+          [6, 26],
+          [6, 30],
+          [6, 34],
+          [6, 22, 38],
+          [6, 24, 42],
+          [6, 26, 46],
+          [6, 28, 50],
+          [6, 30, 54],
+          [6, 32, 58],
+          [6, 34, 62],
+          [6, 26, 46, 66],
+          [6, 26, 48, 70],
+          [6, 26, 50, 74],
+          [6, 30, 54, 78],
+          [6, 30, 56, 82],
+          [6, 30, 58, 86],
+          [6, 34, 62, 90],
+          [6, 28, 50, 72, 94],
+          [6, 26, 50, 74, 98],
+          [6, 30, 54, 78, 102],
+          [6, 28, 54, 80, 106],
+          [6, 32, 58, 84, 110],
+          [6, 30, 58, 86, 114],
+          [6, 34, 62, 90, 118],
+          [6, 26, 50, 74, 98, 122],
+          [6, 30, 54, 78, 102, 126],
+          [6, 26, 52, 78, 104, 130],
+          [6, 30, 56, 82, 108, 134],
+          [6, 34, 60, 86, 112, 138],
+          [6, 30, 58, 86, 114, 142],
+          [6, 34, 62, 90, 118, 146],
+          [6, 30, 54, 78, 102, 126, 150],
+          [6, 24, 50, 76, 102, 128, 154],
+          [6, 28, 54, 80, 106, 132, 158],
+          [6, 32, 58, 84, 110, 136, 162],
+          [6, 26, 54, 82, 110, 138, 166],
+          [6, 30, 58, 86, 114, 142, 170]
+        ];
+        var G15 = 1 << 10 | 1 << 8 | 1 << 5 | 1 << 4 | 1 << 2 | 1 << 1 | 1 << 0;
+        var G18 = 1 << 12 | 1 << 11 | 1 << 10 | 1 << 9 | 1 << 8 | 1 << 5 | 1 << 2 | 1 << 0;
+        var G15_MASK = 1 << 14 | 1 << 12 | 1 << 10 | 1 << 4 | 1 << 1;
+        var _this = {};
+        var getBCHDigit = function(data) {
+          var digit = 0;
+          while (data != 0) {
+            digit += 1;
+            data >>>= 1;
+          }
+          return digit;
+        };
+        _this.getBCHTypeInfo = function(data) {
+          var d = data << 10;
+          while (getBCHDigit(d) - getBCHDigit(G15) >= 0) {
+            d ^= G15 << getBCHDigit(d) - getBCHDigit(G15);
+          }
+          return (data << 10 | d) ^ G15_MASK;
+        };
+        _this.getBCHTypeNumber = function(data) {
+          var d = data << 12;
+          while (getBCHDigit(d) - getBCHDigit(G18) >= 0) {
+            d ^= G18 << getBCHDigit(d) - getBCHDigit(G18);
+          }
+          return data << 12 | d;
+        };
+        _this.getPatternPosition = function(typeNumber) {
+          return PATTERN_POSITION_TABLE[typeNumber - 1];
+        };
+        _this.getMaskFunction = function(maskPattern) {
+          switch (maskPattern) {
+            case QRMaskPattern.PATTERN000:
+              return function(i, j) {
+                return (i + j) % 2 == 0;
+              };
+            case QRMaskPattern.PATTERN001:
+              return function(i, j) {
+                return i % 2 == 0;
+              };
+            case QRMaskPattern.PATTERN010:
+              return function(i, j) {
+                return j % 3 == 0;
+              };
+            case QRMaskPattern.PATTERN011:
+              return function(i, j) {
+                return (i + j) % 3 == 0;
+              };
+            case QRMaskPattern.PATTERN100:
+              return function(i, j) {
+                return (Math.floor(i / 2) + Math.floor(j / 3)) % 2 == 0;
+              };
+            case QRMaskPattern.PATTERN101:
+              return function(i, j) {
+                return i * j % 2 + i * j % 3 == 0;
+              };
+            case QRMaskPattern.PATTERN110:
+              return function(i, j) {
+                return (i * j % 2 + i * j % 3) % 2 == 0;
+              };
+            case QRMaskPattern.PATTERN111:
+              return function(i, j) {
+                return (i * j % 3 + (i + j) % 2) % 2 == 0;
+              };
+            default:
+              throw "bad maskPattern:" + maskPattern;
+          }
+        };
+        _this.getErrorCorrectPolynomial = function(errorCorrectLength) {
+          var a = qrPolynomial([1], 0);
+          for (var i = 0; i < errorCorrectLength; i += 1) {
+            a = a.multiply(qrPolynomial([1, QRMath.gexp(i)], 0));
+          }
+          return a;
+        };
+        _this.getLengthInBits = function(mode, type) {
+          if (1 <= type && type < 10) {
+            switch (mode) {
+              case QRMode.MODE_NUMBER:
+                return 10;
+              case QRMode.MODE_ALPHA_NUM:
+                return 9;
+              case QRMode.MODE_8BIT_BYTE:
+                return 8;
+              case QRMode.MODE_KANJI:
+                return 8;
+              default:
+                throw "mode:" + mode;
+            }
+          } else if (type < 27) {
+            switch (mode) {
+              case QRMode.MODE_NUMBER:
+                return 12;
+              case QRMode.MODE_ALPHA_NUM:
+                return 11;
+              case QRMode.MODE_8BIT_BYTE:
+                return 16;
+              case QRMode.MODE_KANJI:
+                return 10;
+              default:
+                throw "mode:" + mode;
+            }
+          } else if (type < 41) {
+            switch (mode) {
+              case QRMode.MODE_NUMBER:
+                return 14;
+              case QRMode.MODE_ALPHA_NUM:
+                return 13;
+              case QRMode.MODE_8BIT_BYTE:
+                return 16;
+              case QRMode.MODE_KANJI:
+                return 12;
+              default:
+                throw "mode:" + mode;
+            }
+          } else {
+            throw "type:" + type;
+          }
+        };
+        _this.getLostPoint = function(qrcode3) {
+          var moduleCount = qrcode3.getModuleCount();
+          var lostPoint = 0;
+          for (var row = 0; row < moduleCount; row += 1) {
+            for (var col = 0; col < moduleCount; col += 1) {
+              var sameCount = 0;
+              var dark = qrcode3.isDark(row, col);
+              for (var r = -1; r <= 1; r += 1) {
+                if (row + r < 0 || moduleCount <= row + r) {
+                  continue;
+                }
+                for (var c = -1; c <= 1; c += 1) {
+                  if (col + c < 0 || moduleCount <= col + c) {
+                    continue;
+                  }
+                  if (r == 0 && c == 0) {
+                    continue;
+                  }
+                  if (dark == qrcode3.isDark(row + r, col + c)) {
+                    sameCount += 1;
+                  }
+                }
+              }
+              if (sameCount > 5) {
+                lostPoint += 3 + sameCount - 5;
+              }
+            }
+          }
+          ;
+          for (var row = 0; row < moduleCount - 1; row += 1) {
+            for (var col = 0; col < moduleCount - 1; col += 1) {
+              var count = 0;
+              if (qrcode3.isDark(row, col)) count += 1;
+              if (qrcode3.isDark(row + 1, col)) count += 1;
+              if (qrcode3.isDark(row, col + 1)) count += 1;
+              if (qrcode3.isDark(row + 1, col + 1)) count += 1;
+              if (count == 0 || count == 4) {
+                lostPoint += 3;
+              }
+            }
+          }
+          for (var row = 0; row < moduleCount; row += 1) {
+            for (var col = 0; col < moduleCount - 6; col += 1) {
+              if (qrcode3.isDark(row, col) && !qrcode3.isDark(row, col + 1) && qrcode3.isDark(row, col + 2) && qrcode3.isDark(row, col + 3) && qrcode3.isDark(row, col + 4) && !qrcode3.isDark(row, col + 5) && qrcode3.isDark(row, col + 6)) {
+                lostPoint += 40;
+              }
+            }
+          }
+          for (var col = 0; col < moduleCount; col += 1) {
+            for (var row = 0; row < moduleCount - 6; row += 1) {
+              if (qrcode3.isDark(row, col) && !qrcode3.isDark(row + 1, col) && qrcode3.isDark(row + 2, col) && qrcode3.isDark(row + 3, col) && qrcode3.isDark(row + 4, col) && !qrcode3.isDark(row + 5, col) && qrcode3.isDark(row + 6, col)) {
+                lostPoint += 40;
+              }
+            }
+          }
+          var darkCount = 0;
+          for (var col = 0; col < moduleCount; col += 1) {
+            for (var row = 0; row < moduleCount; row += 1) {
+              if (qrcode3.isDark(row, col)) {
+                darkCount += 1;
+              }
+            }
+          }
+          var ratio = Math.abs(100 * darkCount / moduleCount / moduleCount - 50) / 5;
+          lostPoint += ratio * 10;
+          return lostPoint;
+        };
+        return _this;
+      })();
+      var QRMath = (function() {
+        var EXP_TABLE = new Array(256);
+        var LOG_TABLE = new Array(256);
+        for (var i = 0; i < 8; i += 1) {
+          EXP_TABLE[i] = 1 << i;
+        }
+        for (var i = 8; i < 256; i += 1) {
+          EXP_TABLE[i] = EXP_TABLE[i - 4] ^ EXP_TABLE[i - 5] ^ EXP_TABLE[i - 6] ^ EXP_TABLE[i - 8];
+        }
+        for (var i = 0; i < 255; i += 1) {
+          LOG_TABLE[EXP_TABLE[i]] = i;
+        }
+        var _this = {};
+        _this.glog = function(n) {
+          if (n < 1) {
+            throw "glog(" + n + ")";
+          }
+          return LOG_TABLE[n];
+        };
+        _this.gexp = function(n) {
+          while (n < 0) {
+            n += 255;
+          }
+          while (n >= 256) {
+            n -= 255;
+          }
+          return EXP_TABLE[n];
+        };
+        return _this;
+      })();
+      function qrPolynomial(num, shift) {
+        if (typeof num.length == "undefined") {
+          throw num.length + "/" + shift;
+        }
+        var _num = (function() {
+          var offset = 0;
+          while (offset < num.length && num[offset] == 0) {
+            offset += 1;
+          }
+          var _num2 = new Array(num.length - offset + shift);
+          for (var i = 0; i < num.length - offset; i += 1) {
+            _num2[i] = num[i + offset];
+          }
+          return _num2;
+        })();
+        var _this = {};
+        _this.getAt = function(index) {
+          return _num[index];
+        };
+        _this.getLength = function() {
+          return _num.length;
+        };
+        _this.multiply = function(e) {
+          var num2 = new Array(_this.getLength() + e.getLength() - 1);
+          for (var i = 0; i < _this.getLength(); i += 1) {
+            for (var j = 0; j < e.getLength(); j += 1) {
+              num2[i + j] ^= QRMath.gexp(QRMath.glog(_this.getAt(i)) + QRMath.glog(e.getAt(j)));
+            }
+          }
+          return qrPolynomial(num2, 0);
+        };
+        _this.mod = function(e) {
+          if (_this.getLength() - e.getLength() < 0) {
+            return _this;
+          }
+          var ratio = QRMath.glog(_this.getAt(0)) - QRMath.glog(e.getAt(0));
+          var num2 = new Array(_this.getLength());
+          for (var i = 0; i < _this.getLength(); i += 1) {
+            num2[i] = _this.getAt(i);
+          }
+          for (var i = 0; i < e.getLength(); i += 1) {
+            num2[i] ^= QRMath.gexp(QRMath.glog(e.getAt(i)) + ratio);
+          }
+          return qrPolynomial(num2, 0).mod(e);
+        };
+        return _this;
+      }
+      ;
+      var QRRSBlock = (function() {
+        var RS_BLOCK_TABLE = [
+          // L
+          // M
+          // Q
+          // H
+          // 1
+          [1, 26, 19],
+          [1, 26, 16],
+          [1, 26, 13],
+          [1, 26, 9],
+          // 2
+          [1, 44, 34],
+          [1, 44, 28],
+          [1, 44, 22],
+          [1, 44, 16],
+          // 3
+          [1, 70, 55],
+          [1, 70, 44],
+          [2, 35, 17],
+          [2, 35, 13],
+          // 4
+          [1, 100, 80],
+          [2, 50, 32],
+          [2, 50, 24],
+          [4, 25, 9],
+          // 5
+          [1, 134, 108],
+          [2, 67, 43],
+          [2, 33, 15, 2, 34, 16],
+          [2, 33, 11, 2, 34, 12],
+          // 6
+          [2, 86, 68],
+          [4, 43, 27],
+          [4, 43, 19],
+          [4, 43, 15],
+          // 7
+          [2, 98, 78],
+          [4, 49, 31],
+          [2, 32, 14, 4, 33, 15],
+          [4, 39, 13, 1, 40, 14],
+          // 8
+          [2, 121, 97],
+          [2, 60, 38, 2, 61, 39],
+          [4, 40, 18, 2, 41, 19],
+          [4, 40, 14, 2, 41, 15],
+          // 9
+          [2, 146, 116],
+          [3, 58, 36, 2, 59, 37],
+          [4, 36, 16, 4, 37, 17],
+          [4, 36, 12, 4, 37, 13],
+          // 10
+          [2, 86, 68, 2, 87, 69],
+          [4, 69, 43, 1, 70, 44],
+          [6, 43, 19, 2, 44, 20],
+          [6, 43, 15, 2, 44, 16],
+          // 11
+          [4, 101, 81],
+          [1, 80, 50, 4, 81, 51],
+          [4, 50, 22, 4, 51, 23],
+          [3, 36, 12, 8, 37, 13],
+          // 12
+          [2, 116, 92, 2, 117, 93],
+          [6, 58, 36, 2, 59, 37],
+          [4, 46, 20, 6, 47, 21],
+          [7, 42, 14, 4, 43, 15],
+          // 13
+          [4, 133, 107],
+          [8, 59, 37, 1, 60, 38],
+          [8, 44, 20, 4, 45, 21],
+          [12, 33, 11, 4, 34, 12],
+          // 14
+          [3, 145, 115, 1, 146, 116],
+          [4, 64, 40, 5, 65, 41],
+          [11, 36, 16, 5, 37, 17],
+          [11, 36, 12, 5, 37, 13],
+          // 15
+          [5, 109, 87, 1, 110, 88],
+          [5, 65, 41, 5, 66, 42],
+          [5, 54, 24, 7, 55, 25],
+          [11, 36, 12, 7, 37, 13],
+          // 16
+          [5, 122, 98, 1, 123, 99],
+          [7, 73, 45, 3, 74, 46],
+          [15, 43, 19, 2, 44, 20],
+          [3, 45, 15, 13, 46, 16],
+          // 17
+          [1, 135, 107, 5, 136, 108],
+          [10, 74, 46, 1, 75, 47],
+          [1, 50, 22, 15, 51, 23],
+          [2, 42, 14, 17, 43, 15],
+          // 18
+          [5, 150, 120, 1, 151, 121],
+          [9, 69, 43, 4, 70, 44],
+          [17, 50, 22, 1, 51, 23],
+          [2, 42, 14, 19, 43, 15],
+          // 19
+          [3, 141, 113, 4, 142, 114],
+          [3, 70, 44, 11, 71, 45],
+          [17, 47, 21, 4, 48, 22],
+          [9, 39, 13, 16, 40, 14],
+          // 20
+          [3, 135, 107, 5, 136, 108],
+          [3, 67, 41, 13, 68, 42],
+          [15, 54, 24, 5, 55, 25],
+          [15, 43, 15, 10, 44, 16],
+          // 21
+          [4, 144, 116, 4, 145, 117],
+          [17, 68, 42],
+          [17, 50, 22, 6, 51, 23],
+          [19, 46, 16, 6, 47, 17],
+          // 22
+          [2, 139, 111, 7, 140, 112],
+          [17, 74, 46],
+          [7, 54, 24, 16, 55, 25],
+          [34, 37, 13],
+          // 23
+          [4, 151, 121, 5, 152, 122],
+          [4, 75, 47, 14, 76, 48],
+          [11, 54, 24, 14, 55, 25],
+          [16, 45, 15, 14, 46, 16],
+          // 24
+          [6, 147, 117, 4, 148, 118],
+          [6, 73, 45, 14, 74, 46],
+          [11, 54, 24, 16, 55, 25],
+          [30, 46, 16, 2, 47, 17],
+          // 25
+          [8, 132, 106, 4, 133, 107],
+          [8, 75, 47, 13, 76, 48],
+          [7, 54, 24, 22, 55, 25],
+          [22, 45, 15, 13, 46, 16],
+          // 26
+          [10, 142, 114, 2, 143, 115],
+          [19, 74, 46, 4, 75, 47],
+          [28, 50, 22, 6, 51, 23],
+          [33, 46, 16, 4, 47, 17],
+          // 27
+          [8, 152, 122, 4, 153, 123],
+          [22, 73, 45, 3, 74, 46],
+          [8, 53, 23, 26, 54, 24],
+          [12, 45, 15, 28, 46, 16],
+          // 28
+          [3, 147, 117, 10, 148, 118],
+          [3, 73, 45, 23, 74, 46],
+          [4, 54, 24, 31, 55, 25],
+          [11, 45, 15, 31, 46, 16],
+          // 29
+          [7, 146, 116, 7, 147, 117],
+          [21, 73, 45, 7, 74, 46],
+          [1, 53, 23, 37, 54, 24],
+          [19, 45, 15, 26, 46, 16],
+          // 30
+          [5, 145, 115, 10, 146, 116],
+          [19, 75, 47, 10, 76, 48],
+          [15, 54, 24, 25, 55, 25],
+          [23, 45, 15, 25, 46, 16],
+          // 31
+          [13, 145, 115, 3, 146, 116],
+          [2, 74, 46, 29, 75, 47],
+          [42, 54, 24, 1, 55, 25],
+          [23, 45, 15, 28, 46, 16],
+          // 32
+          [17, 145, 115],
+          [10, 74, 46, 23, 75, 47],
+          [10, 54, 24, 35, 55, 25],
+          [19, 45, 15, 35, 46, 16],
+          // 33
+          [17, 145, 115, 1, 146, 116],
+          [14, 74, 46, 21, 75, 47],
+          [29, 54, 24, 19, 55, 25],
+          [11, 45, 15, 46, 46, 16],
+          // 34
+          [13, 145, 115, 6, 146, 116],
+          [14, 74, 46, 23, 75, 47],
+          [44, 54, 24, 7, 55, 25],
+          [59, 46, 16, 1, 47, 17],
+          // 35
+          [12, 151, 121, 7, 152, 122],
+          [12, 75, 47, 26, 76, 48],
+          [39, 54, 24, 14, 55, 25],
+          [22, 45, 15, 41, 46, 16],
+          // 36
+          [6, 151, 121, 14, 152, 122],
+          [6, 75, 47, 34, 76, 48],
+          [46, 54, 24, 10, 55, 25],
+          [2, 45, 15, 64, 46, 16],
+          // 37
+          [17, 152, 122, 4, 153, 123],
+          [29, 74, 46, 14, 75, 47],
+          [49, 54, 24, 10, 55, 25],
+          [24, 45, 15, 46, 46, 16],
+          // 38
+          [4, 152, 122, 18, 153, 123],
+          [13, 74, 46, 32, 75, 47],
+          [48, 54, 24, 14, 55, 25],
+          [42, 45, 15, 32, 46, 16],
+          // 39
+          [20, 147, 117, 4, 148, 118],
+          [40, 75, 47, 7, 76, 48],
+          [43, 54, 24, 22, 55, 25],
+          [10, 45, 15, 67, 46, 16],
+          // 40
+          [19, 148, 118, 6, 149, 119],
+          [18, 75, 47, 31, 76, 48],
+          [34, 54, 24, 34, 55, 25],
+          [20, 45, 15, 61, 46, 16]
+        ];
+        var qrRSBlock = function(totalCount, dataCount) {
+          var _this2 = {};
+          _this2.totalCount = totalCount;
+          _this2.dataCount = dataCount;
+          return _this2;
+        };
+        var _this = {};
+        var getRsBlockTable = function(typeNumber, errorCorrectionLevel) {
+          switch (errorCorrectionLevel) {
+            case QRErrorCorrectionLevel.L:
+              return RS_BLOCK_TABLE[(typeNumber - 1) * 4 + 0];
+            case QRErrorCorrectionLevel.M:
+              return RS_BLOCK_TABLE[(typeNumber - 1) * 4 + 1];
+            case QRErrorCorrectionLevel.Q:
+              return RS_BLOCK_TABLE[(typeNumber - 1) * 4 + 2];
+            case QRErrorCorrectionLevel.H:
+              return RS_BLOCK_TABLE[(typeNumber - 1) * 4 + 3];
+            default:
+              return void 0;
+          }
+        };
+        _this.getRSBlocks = function(typeNumber, errorCorrectionLevel) {
+          var rsBlock = getRsBlockTable(typeNumber, errorCorrectionLevel);
+          if (typeof rsBlock == "undefined") {
+            throw "bad rs block @ typeNumber:" + typeNumber + "/errorCorrectionLevel:" + errorCorrectionLevel;
+          }
+          var length = rsBlock.length / 3;
+          var list = [];
+          for (var i = 0; i < length; i += 1) {
+            var count = rsBlock[i * 3 + 0];
+            var totalCount = rsBlock[i * 3 + 1];
+            var dataCount = rsBlock[i * 3 + 2];
+            for (var j = 0; j < count; j += 1) {
+              list.push(qrRSBlock(totalCount, dataCount));
+            }
+          }
+          return list;
+        };
+        return _this;
+      })();
+      var qrBitBuffer = function() {
+        var _buffer = [];
+        var _length = 0;
+        var _this = {};
+        _this.getBuffer = function() {
+          return _buffer;
+        };
+        _this.getAt = function(index) {
+          var bufIndex = Math.floor(index / 8);
+          return (_buffer[bufIndex] >>> 7 - index % 8 & 1) == 1;
+        };
+        _this.put = function(num, length) {
+          for (var i = 0; i < length; i += 1) {
+            _this.putBit((num >>> length - i - 1 & 1) == 1);
+          }
+        };
+        _this.getLengthInBits = function() {
+          return _length;
+        };
+        _this.putBit = function(bit) {
+          var bufIndex = Math.floor(_length / 8);
+          if (_buffer.length <= bufIndex) {
+            _buffer.push(0);
+          }
+          if (bit) {
+            _buffer[bufIndex] |= 128 >>> _length % 8;
+          }
+          _length += 1;
+        };
+        return _this;
+      };
+      var qrNumber = function(data) {
+        var _mode = QRMode.MODE_NUMBER;
+        var _data = data;
+        var _this = {};
+        _this.getMode = function() {
+          return _mode;
+        };
+        _this.getLength = function(buffer) {
+          return _data.length;
+        };
+        _this.write = function(buffer) {
+          var data2 = _data;
+          var i = 0;
+          while (i + 2 < data2.length) {
+            buffer.put(strToNum(data2.substring(i, i + 3)), 10);
+            i += 3;
+          }
+          if (i < data2.length) {
+            if (data2.length - i == 1) {
+              buffer.put(strToNum(data2.substring(i, i + 1)), 4);
+            } else if (data2.length - i == 2) {
+              buffer.put(strToNum(data2.substring(i, i + 2)), 7);
+            }
+          }
+        };
+        var strToNum = function(s) {
+          var num = 0;
+          for (var i = 0; i < s.length; i += 1) {
+            num = num * 10 + chatToNum(s.charAt(i));
+          }
+          return num;
+        };
+        var chatToNum = function(c) {
+          if ("0" <= c && c <= "9") {
+            return c.charCodeAt(0) - "0".charCodeAt(0);
+          }
+          throw "illegal char :" + c;
+        };
+        return _this;
+      };
+      var qrAlphaNum = function(data) {
+        var _mode = QRMode.MODE_ALPHA_NUM;
+        var _data = data;
+        var _this = {};
+        _this.getMode = function() {
+          return _mode;
+        };
+        _this.getLength = function(buffer) {
+          return _data.length;
+        };
+        _this.write = function(buffer) {
+          var s = _data;
+          var i = 0;
+          while (i + 1 < s.length) {
+            buffer.put(
+              getCode(s.charAt(i)) * 45 + getCode(s.charAt(i + 1)),
+              11
+            );
+            i += 2;
+          }
+          if (i < s.length) {
+            buffer.put(getCode(s.charAt(i)), 6);
+          }
+        };
+        var getCode = function(c) {
+          if ("0" <= c && c <= "9") {
+            return c.charCodeAt(0) - "0".charCodeAt(0);
+          } else if ("A" <= c && c <= "Z") {
+            return c.charCodeAt(0) - "A".charCodeAt(0) + 10;
+          } else {
+            switch (c) {
+              case " ":
+                return 36;
+              case "$":
+                return 37;
+              case "%":
+                return 38;
+              case "*":
+                return 39;
+              case "+":
+                return 40;
+              case "-":
+                return 41;
+              case ".":
+                return 42;
+              case "/":
+                return 43;
+              case ":":
+                return 44;
+              default:
+                throw "illegal char :" + c;
+            }
+          }
+        };
+        return _this;
+      };
+      var qr8BitByte = function(data) {
+        var _mode = QRMode.MODE_8BIT_BYTE;
+        var _data = data;
+        var _bytes = qrcode2.stringToBytes(data);
+        var _this = {};
+        _this.getMode = function() {
+          return _mode;
+        };
+        _this.getLength = function(buffer) {
+          return _bytes.length;
+        };
+        _this.write = function(buffer) {
+          for (var i = 0; i < _bytes.length; i += 1) {
+            buffer.put(_bytes[i], 8);
+          }
+        };
+        return _this;
+      };
+      var qrKanji = function(data) {
+        var _mode = QRMode.MODE_KANJI;
+        var _data = data;
+        var stringToBytes = qrcode2.stringToBytesFuncs["SJIS"];
+        if (!stringToBytes) {
+          throw "sjis not supported.";
+        }
+        !(function(c, code) {
+          var test = stringToBytes(c);
+          if (test.length != 2 || (test[0] << 8 | test[1]) != code) {
+            throw "sjis not supported.";
+          }
+        })("\u53CB", 38726);
+        var _bytes = stringToBytes(data);
+        var _this = {};
+        _this.getMode = function() {
+          return _mode;
+        };
+        _this.getLength = function(buffer) {
+          return ~~(_bytes.length / 2);
+        };
+        _this.write = function(buffer) {
+          var data2 = _bytes;
+          var i = 0;
+          while (i + 1 < data2.length) {
+            var c = (255 & data2[i]) << 8 | 255 & data2[i + 1];
+            if (33088 <= c && c <= 40956) {
+              c -= 33088;
+            } else if (57408 <= c && c <= 60351) {
+              c -= 49472;
+            } else {
+              throw "illegal char at " + (i + 1) + "/" + c;
+            }
+            c = (c >>> 8 & 255) * 192 + (c & 255);
+            buffer.put(c, 13);
+            i += 2;
+          }
+          if (i < data2.length) {
+            throw "illegal char at " + (i + 1);
+          }
+        };
+        return _this;
+      };
+      var byteArrayOutputStream = function() {
+        var _bytes = [];
+        var _this = {};
+        _this.writeByte = function(b) {
+          _bytes.push(b & 255);
+        };
+        _this.writeShort = function(i) {
+          _this.writeByte(i);
+          _this.writeByte(i >>> 8);
+        };
+        _this.writeBytes = function(b, off, len) {
+          off = off || 0;
+          len = len || b.length;
+          for (var i = 0; i < len; i += 1) {
+            _this.writeByte(b[i + off]);
+          }
+        };
+        _this.writeString = function(s) {
+          for (var i = 0; i < s.length; i += 1) {
+            _this.writeByte(s.charCodeAt(i));
+          }
+        };
+        _this.toByteArray = function() {
+          return _bytes;
+        };
+        _this.toString = function() {
+          var s = "";
+          s += "[";
+          for (var i = 0; i < _bytes.length; i += 1) {
+            if (i > 0) {
+              s += ",";
+            }
+            s += _bytes[i];
+          }
+          s += "]";
+          return s;
+        };
+        return _this;
+      };
+      var base64EncodeOutputStream = function() {
+        var _buffer = 0;
+        var _buflen = 0;
+        var _length = 0;
+        var _base64 = "";
+        var _this = {};
+        var writeEncoded = function(b) {
+          _base64 += String.fromCharCode(encode(b & 63));
+        };
+        var encode = function(n) {
+          if (n < 0) {
+          } else if (n < 26) {
+            return 65 + n;
+          } else if (n < 52) {
+            return 97 + (n - 26);
+          } else if (n < 62) {
+            return 48 + (n - 52);
+          } else if (n == 62) {
+            return 43;
+          } else if (n == 63) {
+            return 47;
+          }
+          throw "n:" + n;
+        };
+        _this.writeByte = function(n) {
+          _buffer = _buffer << 8 | n & 255;
+          _buflen += 8;
+          _length += 1;
+          while (_buflen >= 6) {
+            writeEncoded(_buffer >>> _buflen - 6);
+            _buflen -= 6;
+          }
+        };
+        _this.flush = function() {
+          if (_buflen > 0) {
+            writeEncoded(_buffer << 6 - _buflen);
+            _buffer = 0;
+            _buflen = 0;
+          }
+          if (_length % 3 != 0) {
+            var padlen = 3 - _length % 3;
+            for (var i = 0; i < padlen; i += 1) {
+              _base64 += "=";
+            }
+          }
+        };
+        _this.toString = function() {
+          return _base64;
+        };
+        return _this;
+      };
+      var base64DecodeInputStream = function(str) {
+        var _str = str;
+        var _pos = 0;
+        var _buffer = 0;
+        var _buflen = 0;
+        var _this = {};
+        _this.read = function() {
+          while (_buflen < 8) {
+            if (_pos >= _str.length) {
+              if (_buflen == 0) {
+                return -1;
+              }
+              throw "unexpected end of file./" + _buflen;
+            }
+            var c = _str.charAt(_pos);
+            _pos += 1;
+            if (c == "=") {
+              _buflen = 0;
+              return -1;
+            } else if (c.match(/^\s$/)) {
+              continue;
+            }
+            _buffer = _buffer << 6 | decode(c.charCodeAt(0));
+            _buflen += 6;
+          }
+          var n = _buffer >>> _buflen - 8 & 255;
+          _buflen -= 8;
+          return n;
+        };
+        var decode = function(c) {
+          if (65 <= c && c <= 90) {
+            return c - 65;
+          } else if (97 <= c && c <= 122) {
+            return c - 97 + 26;
+          } else if (48 <= c && c <= 57) {
+            return c - 48 + 52;
+          } else if (c == 43) {
+            return 62;
+          } else if (c == 47) {
+            return 63;
+          } else {
+            throw "c:" + c;
+          }
+        };
+        return _this;
+      };
+      var gifImage = function(width, height) {
+        var _width = width;
+        var _height = height;
+        var _data = new Array(width * height);
+        var _this = {};
+        _this.setPixel = function(x, y, pixel) {
+          _data[y * _width + x] = pixel;
+        };
+        _this.write = function(out) {
+          out.writeString("GIF87a");
+          out.writeShort(_width);
+          out.writeShort(_height);
+          out.writeByte(128);
+          out.writeByte(0);
+          out.writeByte(0);
+          out.writeByte(0);
+          out.writeByte(0);
+          out.writeByte(0);
+          out.writeByte(255);
+          out.writeByte(255);
+          out.writeByte(255);
+          out.writeString(",");
+          out.writeShort(0);
+          out.writeShort(0);
+          out.writeShort(_width);
+          out.writeShort(_height);
+          out.writeByte(0);
+          var lzwMinCodeSize = 2;
+          var raster = getLZWRaster(lzwMinCodeSize);
+          out.writeByte(lzwMinCodeSize);
+          var offset = 0;
+          while (raster.length - offset > 255) {
+            out.writeByte(255);
+            out.writeBytes(raster, offset, 255);
+            offset += 255;
+          }
+          out.writeByte(raster.length - offset);
+          out.writeBytes(raster, offset, raster.length - offset);
+          out.writeByte(0);
+          out.writeString(";");
+        };
+        var bitOutputStream = function(out) {
+          var _out = out;
+          var _bitLength = 0;
+          var _bitBuffer = 0;
+          var _this2 = {};
+          _this2.write = function(data, length) {
+            if (data >>> length != 0) {
+              throw "length over";
+            }
+            while (_bitLength + length >= 8) {
+              _out.writeByte(255 & (data << _bitLength | _bitBuffer));
+              length -= 8 - _bitLength;
+              data >>>= 8 - _bitLength;
+              _bitBuffer = 0;
+              _bitLength = 0;
+            }
+            _bitBuffer = data << _bitLength | _bitBuffer;
+            _bitLength = _bitLength + length;
+          };
+          _this2.flush = function() {
+            if (_bitLength > 0) {
+              _out.writeByte(_bitBuffer);
+            }
+          };
+          return _this2;
+        };
+        var getLZWRaster = function(lzwMinCodeSize) {
+          var clearCode = 1 << lzwMinCodeSize;
+          var endCode = (1 << lzwMinCodeSize) + 1;
+          var bitLength = lzwMinCodeSize + 1;
+          var table = lzwTable();
+          for (var i = 0; i < clearCode; i += 1) {
+            table.add(String.fromCharCode(i));
+          }
+          table.add(String.fromCharCode(clearCode));
+          table.add(String.fromCharCode(endCode));
+          var byteOut = byteArrayOutputStream();
+          var bitOut = bitOutputStream(byteOut);
+          bitOut.write(clearCode, bitLength);
+          var dataIndex = 0;
+          var s = String.fromCharCode(_data[dataIndex]);
+          dataIndex += 1;
+          while (dataIndex < _data.length) {
+            var c = String.fromCharCode(_data[dataIndex]);
+            dataIndex += 1;
+            if (table.contains(s + c)) {
+              s = s + c;
+            } else {
+              bitOut.write(table.indexOf(s), bitLength);
+              if (table.size() < 4095) {
+                if (table.size() == 1 << bitLength) {
+                  bitLength += 1;
+                }
+                table.add(s + c);
+              }
+              s = c;
+            }
+          }
+          bitOut.write(table.indexOf(s), bitLength);
+          bitOut.write(endCode, bitLength);
+          bitOut.flush();
+          return byteOut.toByteArray();
+        };
+        var lzwTable = function() {
+          var _map = {};
+          var _size = 0;
+          var _this2 = {};
+          _this2.add = function(key) {
+            if (_this2.contains(key)) {
+              throw "dup key:" + key;
+            }
+            _map[key] = _size;
+            _size += 1;
+          };
+          _this2.size = function() {
+            return _size;
+          };
+          _this2.indexOf = function(key) {
+            return _map[key];
+          };
+          _this2.contains = function(key) {
+            return typeof _map[key] != "undefined";
+          };
+          return _this2;
+        };
+        return _this;
+      };
+      var createDataURL = function(width, height, getPixel) {
+        var gif = gifImage(width, height);
+        for (var y = 0; y < height; y += 1) {
+          for (var x = 0; x < width; x += 1) {
+            gif.setPixel(x, y, getPixel(x, y));
+          }
+        }
+        var b = byteArrayOutputStream();
+        gif.write(b);
+        var base64 = base64EncodeOutputStream();
+        var bytes = b.toByteArray();
+        for (var i = 0; i < bytes.length; i += 1) {
+          base64.writeByte(bytes[i]);
+        }
+        base64.flush();
+        return "data:image/gif;base64," + base64;
+      };
+      return qrcode2;
+    })();
+    !(function() {
+      qrcode.stringToBytesFuncs["UTF-8"] = function(s) {
+        function toUTF8Array(str) {
+          var utf8 = [];
+          for (var i = 0; i < str.length; i++) {
+            var charcode = str.charCodeAt(i);
+            if (charcode < 128) utf8.push(charcode);
+            else if (charcode < 2048) {
+              utf8.push(
+                192 | charcode >> 6,
+                128 | charcode & 63
+              );
+            } else if (charcode < 55296 || charcode >= 57344) {
+              utf8.push(
+                224 | charcode >> 12,
+                128 | charcode >> 6 & 63,
+                128 | charcode & 63
+              );
+            } else {
+              i++;
+              charcode = 65536 + ((charcode & 1023) << 10 | str.charCodeAt(i) & 1023);
+              utf8.push(
+                240 | charcode >> 18,
+                128 | charcode >> 12 & 63,
+                128 | charcode >> 6 & 63,
+                128 | charcode & 63
+              );
+            }
+          }
+          return utf8;
+        }
+        return toUTF8Array(s);
+      };
+    })();
+    (function(factory) {
+      if (typeof define === "function" && define.amd) {
+        define([], factory);
+      } else if (typeof exports2 === "object") {
+        module2.exports = factory();
+      }
+    })(function() {
+      return qrcode;
+    });
+  }
+});
+
+// src/blocks/documents.js
+var require_documents = __commonJS({
+  "src/blocks/documents.js"(exports2, module2) {
+    "use strict";
+    var { charger, sortie, PARAMS_SORTIE } = require_fichiers();
+    var { ecrirePdf, mdBlocs, lireTextePdf } = require_pdf();
+    var { ecrireXlsx, lireXlsx, lireDocx, ecrireDocx } = require_xlsx();
+    var { readZip, writeZip } = require_zip();
+    var { getPath } = require_engine();
+    var perm = (m) => Object.assign(new Error(m), { permanent: true });
+    var list = (v) => {
+      if (typeof v === "string") {
+        try {
+          return JSON.parse(v);
+        } catch (e) {
+          return null;
+        }
+      }
+      return v;
+    };
+    var esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+    var mdHtml = (md) => {
+      const inl = (s) => esc(s).replace(/`([^`]+)`/g, "<code>$1</code>").replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>").replace(/(^|[^*])\*([^*\s][^*]*?)\*/g, "$1<em>$2</em>").replace(/!\[([^\]]*)\]\((https?:[^)\s]+)\)/g, '<img src="$2" alt="$1">').replace(/\[([^\]]+)\]\((https?:[^)\s]+|mailto:[^)\s]+|\/[^)\s]*)\)/g, '<a href="$2">$1</a>');
+      const out = [];
+      let list2 = null, code = null, table = null, para = [];
+      const flushP = () => {
+        if (para.length) {
+          out.push(`<p>${inl(para.join(" "))}</p>`);
+          para = [];
+        }
+      };
+      const flushL = () => {
+        if (list2) {
+          out.push(`<${list2.t}>${list2.items.map((i) => `<li>${inl(i)}</li>`).join("")}</${list2.t}>`);
+          list2 = null;
+        }
+      };
+      const flushT = () => {
+        if (table) {
+          out.push(`<table><thead><tr>${table[0].map((c) => `<th>${inl(c)}</th>`).join("")}</tr></thead><tbody>${table.slice(1).map((r) => `<tr>${r.map((c) => `<td>${inl(c)}</td>`).join("")}</tr>`).join("")}</tbody></table>`);
+          table = null;
+        }
+      };
+      for (const l of String(md || "").split(/\r?\n/)) {
+        if (code !== null) {
+          if (/^```/.test(l)) {
+            out.push(`<pre><code>${esc(code.join("\n"))}</code></pre>`);
+            code = null;
+          } else code.push(l);
+          continue;
+        }
+        if (/^```/.test(l)) {
+          flushP();
+          flushL();
+          flushT();
+          code = [];
+          continue;
+        }
+        let m;
+        if (/^\|.*\|\s*$/.test(l)) {
+          flushP();
+          flushL();
+          if (/^\|[\s:|-]+\|\s*$/.test(l)) continue;
+          (table = table || []).push(l.trim().slice(1, -1).split("|").map((c) => c.trim()));
+          continue;
+        }
+        flushT();
+        if (m = l.match(/^(#{1,6})\s+(.*)/)) {
+          flushP();
+          flushL();
+          out.push(`<h${m[1].length}>${inl(m[2])}</h${m[1].length}>`);
+        } else if (m = l.match(/^\s*([-*+]|\d+[.)])\s+(.*)/)) {
+          flushP();
+          const t = /\d/.test(m[1]) ? "ol" : "ul";
+          if (list2 && list2.t !== t) flushL();
+          (list2 = list2 || { t, items: [] }).items.push(m[2]);
+        } else if (m = l.match(/^>\s?(.*)/)) {
+          flushP();
+          flushL();
+          out.push(`<blockquote>${inl(m[1])}</blockquote>`);
+        } else if (/^(-{3,}|\*{3,})\s*$/.test(l)) {
+          flushP();
+          flushL();
+          out.push("<hr>");
+        } else if (!l.trim()) {
+          flushP();
+          flushL();
+        } else para.push(l.trim());
+      }
+      flushP();
+      flushL();
+      flushT();
+      if (code !== null) out.push(`<pre><code>${esc(code.join("\n"))}</code></pre>`);
+      return out.join("\n");
+    };
+    var gotenberg = async (p, api, route, form) => {
+      const base = String(p.gotenberg || process.env.GOTENBERG_URL || "http://gotenberg:3000").replace(/\/$/, "");
+      const r = await fetch(base + route, { method: "POST", body: form });
+      if (!r.ok) throw new Error(`Gotenberg : HTTP ${r.status} ${(await r.text()).slice(0, 200)}`);
+      return Buffer.from(await r.arrayBuffer());
+    };
+    var tika = async (p, buf, type, accept = "text/plain") => {
+      const base = String(p.tika || process.env.TIKA_URL || "http://tika:9998").replace(/\/$/, "");
+      const r = await fetch(`${base}/tika`, { method: "PUT", body: buf, headers: { Accept: accept, "Content-Type": type || "application/octet-stream", ...p.ocr_langue ? { "X-Tika-OCRLanguage": p.ocr_langue } : {}, ...p.ocr === false ? { "X-Tika-PDFOcrStrategy": "no_ocr" } : {} } });
+      if (!r.ok) throw new Error(`Tika : HTTP ${r.status}`);
+      return (await r.text()).trim();
+    };
+    var epc = (p) => ["BCD", "002", "1", "SCT", p.bic || "", String(p.beneficiaire || "").slice(0, 70), String(p.iban || "").replace(/\s/g, ""), p.montant ? `EUR${Number(p.montant).toFixed(2)}` : "", "", "", String(p.reference || "").slice(0, 140)].join("\n");
+    var pngGris = (w, h, raw) => {
+      const { crc32 } = require_zip();
+      const zl = require("zlib");
+      const chunk = (t, d) => {
+        const l = Buffer.alloc(4);
+        l.writeUInt32BE(d.length);
+        const td = Buffer.concat([Buffer.from(t, "latin1"), d]);
+        const c = Buffer.alloc(4);
+        c.writeUInt32BE(crc32(td));
+        return Buffer.concat([l, td, c]);
+      };
+      const ih = Buffer.alloc(13);
+      ih.writeUInt32BE(w, 0);
+      ih.writeUInt32BE(h, 4);
+      ih[8] = 8;
+      ih[9] = 0;
+      return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk("IHDR", ih), chunk("IDAT", zl.deflateSync(raw, { level: 9 })), chunk("IEND", Buffer.alloc(0))]);
+    };
+    var wifiEsc = (s) => String(s || "").replace(/([\\;,:"])/g, "\\$1");
+    module2.exports = [
+      {
+        name: "dzf_pdf_creer",
+        label: "PDF : cr\xE9er un document",
+        category: "Documents",
+        icon: "fas fa-file-pdf",
+        output: "pdf",
+        timeout: 120,
+        description: "Fabrique un PDF propre (A4, titres, listes, tableaux, images, pied de page num\xE9rot\xE9) \xE0 partir de Markdown ou d'une liste de blocs. Sans service externe. Id\xE9al pour devis, factures, rapports, attestations.",
+        params: [
+          { name: "format", label: "\xC9crit en", type: "select", options: ["Markdown", "blocs (JSON)"], default: "Markdown" },
+          { name: "contenu", label: "Contenu", type: "text", required: true, default: "# Rapport du {{date}}\n\nBonjour {{nom}},\n\n| \xC9l\xE9ment | Valeur |\n|---|---|\n| Total | {{total}} \u20AC |", help: 'Markdown : # titre, ## sous-titre, - liste, | tableau |, ![l\xE9gende](image), --- ligne, <!-- saut --> nouvelle page. Blocs : [{"titre":\u2026},{"texte":\u2026},{"tableau":[[\u2026]]},{"image":\u2026}]' },
+          { name: "titre", label: "Titre du document (propri\xE9t\xE9s, pied de page)" },
+          { name: "auteur", label: "Auteur" },
+          { name: "couleur", label: "Couleur d'accent", default: "#2563eb" },
+          { name: "nom", label: "Nom du fichier", default: "document.pdf" },
+          ...PARAMS_SORTIE
+        ],
+        run: async (p, ctx, api) => {
+          const blocs = p.format === "Markdown" ? mdBlocs(p.contenu) : list(p.contenu);
+          if (!Array.isArray(blocs)) throw perm("les blocs doivent \xEAtre une liste JSON");
+          const buf = await ecrirePdf(blocs, { titre: p.titre, auteur: p.auteur, couleur: p.couleur }, async (src) => (await charger(src, { texte: false, max: 15e6 })).buf);
+          return sortie(api, p, /\.pdf$/i.test(p.nom || "") ? p.nom : `${p.nom || "document"}.pdf`, "application/pdf", buf);
+        }
+      },
+      {
+        name: "dzf_pdf_convertir",
+        label: "PDF : convertir (HTML, page web, Word, Excel\u2026)",
+        category: "Documents",
+        icon: "fas fa-print",
+        output: "pdf",
+        timeout: 180,
+        description: "Rendu PDF fid\xE8le avec Gotenberg (conteneur Docker gratuit, Chrome + LibreOffice) : ton HTML/CSS, une page web, ou un fichier Office. Aussi : fusionner plusieurs PDF.",
+        params: [
+          { name: "source_type", label: "\xC0 partir de", type: "select", options: ["HTML", "page web (URL)", "fichier Office (docx, xlsx, pptx, odt\u2026)", "fusionner des PDF"], default: "HTML" },
+          { name: "source", label: "HTML, URL, fichier ou liste de PDF", type: "text", required: true },
+          { name: "paysage", label: "Paysage", type: "bool", default: false },
+          { name: "gotenberg", label: "Adresse Gotenberg", default: "http://gotenberg:3000", help: "Ajoute au compose : image gotenberg/gotenberg:8" },
+          { name: "nom", label: "Nom du fichier", default: "document.pdf" },
+          ...PARAMS_SORTIE
+        ],
+        run: async (p, ctx, api) => {
+          const fd = new FormData();
+          let route;
+          if (p.source_type === "HTML") {
+            route = "/forms/chromium/convert/html";
+            fd.append("files", new Blob([String(p.source)], { type: "text/html" }), "index.html");
+          } else if (p.source_type.startsWith("page web")) {
+            if (!/^https?:\/\//.test(p.source)) throw perm("URL http(s) attendue");
+            route = "/forms/chromium/convert/url";
+            fd.append("url", p.source);
+          } else if (p.source_type.startsWith("fichier")) {
+            route = "/forms/libreoffice/convert";
+            const f = await charger(p.source, { texte: false });
+            fd.append("files", new Blob([f.buf], { type: f.type }), f.nom);
+          } else {
+            route = "/forms/pdfengines/merge";
+            const l = list(p.source);
+            if (!Array.isArray(l)) throw perm("liste de PDF attendue");
+            let i = 0;
+            for (const s of l) {
+              const f = await charger(s, { texte: false });
+              fd.append("files", new Blob([f.buf], { type: "application/pdf" }), `${String(++i).padStart(3, "0")}.pdf`);
+            }
+          }
+          if (p.paysage && route.includes("chromium")) fd.append("landscape", "true");
+          if (p.paysage && route.includes("libreoffice")) fd.append("landscape", "true");
+          return sortie(api, p, /\.pdf$/i.test(p.nom || "") ? p.nom : "document.pdf", "application/pdf", await gotenberg(p, api, route, fd));
+        }
+      },
+      {
+        name: "dzf_document_texte",
+        label: "Documents : extraire le texte",
+        category: "Documents",
+        icon: "fas fa-file-alt",
+        output: "texte",
+        timeout: 180,
+        description: "R\xE9cup\xE8re le texte d'un PDF, Word, Excel ou de n'importe quel fichier. Int\xE9gr\xE9 pour PDF/Word/Excel simples ; Apache Tika pour tout le reste, y compris les scans (OCR).",
+        params: [
+          { name: "fichier", label: "Fichier", required: true, help: "Chemin Saltcorn, URL ou {{fichier}}" },
+          { name: "moteur", label: "Moteur", type: "select", options: ["automatique", "int\xE9gr\xE9", "Apache Tika (+ OCR)"], default: "automatique" },
+          { name: "tika", label: "Adresse Tika", default: "http://tika:9998", help: "Image apache/tika:latest-full pour l'OCR" },
+          { name: "ocr_langue", label: "Langue OCR", default: "fra+eng" },
+          { name: "max", label: "Caract\xE8res max", type: "int", default: 2e5 }
+        ],
+        run: async (p, ctx, api) => {
+          const f = await charger(p.fichier, { texte: false });
+          const ext = String(f.nom).split(".").pop().toLowerCase();
+          let t = "";
+          if (p.moteur !== "Apache Tika (+ OCR)") {
+            try {
+              if (ext === "pdf" || f.type === "application/pdf") t = lireTextePdf(f.buf);
+              else if (ext === "docx") t = lireDocx(f.buf);
+              else if (ext === "xlsx") t = lireXlsx(f.buf).feuilles.map((s) => `# ${s.nom}
+` + s.lignes.map((l) => l.map((v) => v ?? "").join("	")).join("\n")).join("\n\n");
+              else if (/^text\/|json|xml|csv/.test(f.type) || ["txt", "csv", "md", "json", "xml", "html"].includes(ext)) t = f.buf.toString("utf8");
+            } catch (e) {
+              if (p.moteur === "int\xE9gr\xE9") throw e;
+            }
+          }
+          if ((!t || t.replace(/\s/g, "").length < 20) && p.moteur !== "int\xE9gr\xE9") t = await tika(p, f.buf, f.type);
+          return String(t).slice(0, +p.max || 2e5);
+        }
+      },
+      {
+        name: "dzf_excel_ecrire",
+        label: "Excel : cr\xE9er un fichier .xlsx",
+        category: "Documents",
+        icon: "fas fa-file-excel",
+        output: "excel",
+        timeout: 120,
+        description: "Transforme une liste (ex. les lignes d'une table) en vrai fichier Excel : en-t\xEAte color\xE9, filtres, colonnes ajust\xE9es, dates et nombres reconnus. Plusieurs feuilles possibles.",
+        params: [
+          { name: "donnees", label: "Donn\xE9es", type: "json", required: true, help: `Ex. {{clients}} (liste d'objets) ou {"Clients": {{clients}}, "Factures": {{factures}}} pour plusieurs feuilles` },
+          { name: "colonnes", label: "Colonnes \xE0 garder (facultatif)", help: "Ex. nom, email, ville" },
+          { name: "nom", label: "Nom du fichier", default: "export.xlsx" },
+          ...PARAMS_SORTIE
+        ],
+        run: async (p, ctx, api) => {
+          let d = list(p.donnees);
+          if (!d) throw perm("donn\xE9es JSON invalides");
+          if (Array.isArray(d)) d = { Feuille1: d };
+          const cols = p.colonnes ? String(p.colonnes).split(",").map((s) => s.trim()).filter(Boolean) : null;
+          if (cols) {
+            for (const k of Object.keys(d)) if (Array.isArray(d[k]) && d[k].length && !Array.isArray(d[k][0])) d[k] = d[k].map((r) => Object.fromEntries(cols.map((c) => [c, getPath(r, c)])));
+          }
+          return sortie(api, p, /\.xlsx$/i.test(p.nom || "") ? p.nom : `${p.nom || "export"}.xlsx`, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", ecrireXlsx(d));
+        }
+      },
+      {
+        name: "dzf_excel_lire",
+        label: "Excel : lire un fichier .xlsx",
+        category: "Documents",
+        icon: "fas fa-table",
+        output: "lignes",
+        timeout: 120,
+        description: "Lit un fichier Excel et rend ses lignes comme une liste d'objets (la 1re ligne donne les noms), pr\xEAte pour \xAB Table : ajouter \xBB ou \xAB Pour chaque \xBB.",
+        params: [{ name: "fichier", label: "Fichier .xlsx", required: true }, { name: "feuille", label: "Feuille (nom ou num\xE9ro)", default: "1" }, { name: "entete", label: "La 1re ligne contient les noms", type: "bool", default: true }, { name: "max", label: "Lignes max", type: "int", default: 5e4 }],
+        run: async (p) => {
+          const f = await charger(p.fichier, { texte: false });
+          const { feuilles } = lireXlsx(f.buf, { maxLignes: +p.max || 5e4 });
+          const s = /^\d+$/.test(String(p.feuille || "1")) ? feuilles[+p.feuille - 1] : feuilles.find((x) => x.nom === p.feuille);
+          if (!s) throw perm(`feuille \xAB ${p.feuille} \xBB introuvable (feuilles : ${feuilles.map((x) => x.nom).join(", ")})`);
+          const rows = s.lignes.filter((l) => l.some((v) => v !== null && v !== ""));
+          if (!p.entete) return rows;
+          const keys = (rows[0] || []).map((k, i) => String(k ?? `col${i + 1}`).trim());
+          return rows.slice(1).map((r) => Object.fromEntries(keys.map((k, i) => [k, r[i] ?? null])));
+        }
+      },
+      {
+        name: "dzf_word",
+        label: "Word : cr\xE9er, lire ou remplir un mod\xE8le",
+        category: "Documents",
+        icon: "fas fa-file-word",
+        output: "word",
+        timeout: 120,
+        description: "Cr\xE9e un .docx depuis du texte (# titres, - listes, **gras**), lit le texte d'un .docx, ou remplit un mod\xE8le Word contenant des {{champs}} (contrats, courriers\u2026) en gardant sa mise en page.",
+        params: [
+          { name: "action", label: "Action", type: "select", options: ["cr\xE9er", "lire", "remplir un mod\xE8le"], default: "cr\xE9er" },
+          { name: "contenu", label: "Texte", type: "text", showIf: { action: "cr\xE9er" } },
+          { name: "fichier", label: "Fichier .docx (ou mod\xE8le)", help: "Chemin Saltcorn ou URL" },
+          { name: "valeurs", label: "Valeurs du mod\xE8le", type: "json", raw: true, showIf: { action: "remplir un mod\xE8le" }, help: 'Vide = tout le contexte. Ex. {"nom":"{{client.nom}}"}' },
+          { name: "nom", label: "Nom du fichier", default: "document.docx" },
+          ...PARAMS_SORTIE
+        ],
+        run: async (p, ctx, api) => {
+          const DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+          const nom = /\.docx$/i.test(p.nom || "") ? p.nom : "document.docx";
+          if (p.action === "cr\xE9er") return sortie(api, p, nom, DOCX, ecrireDocx(p.contenu));
+          const f = await charger(p.fichier, { texte: false });
+          if (p.action === "lire") return lireDocx(f.buf);
+          let vals = p.valeurs ? list(p.valeurs) : ctx;
+          if (p.valeurs && vals) vals = require_engine().deep(vals, ctx);
+          const x = (s) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+          const files = readZip(f.buf).map((e) => {
+            if (!/^word\/(document|header\d*|footer\d*)\.xml$/.test(e.nom)) return e;
+            let xml = e.contenu.toString("utf8");
+            xml = xml.replace(/<w:p[ >][\s\S]*?<\/w:p>/g, (para) => {
+              const text = [...para.matchAll(/<w:t(?: [^>]*)?>([^<]*)<\/w:t>/g)].map((m) => m[1]).join("");
+              if (!/\{\{[^}]+\}\}/.test(text)) return para;
+              let first = true;
+              return para.replace(/<w:t(?: [^>]*)?>([^<]*)<\/w:t>/g, () => {
+                if (!first) return "<w:t></w:t>";
+                first = false;
+                return `<w:t xml:space="preserve">${text}</w:t>`;
+              });
+            });
+            xml = xml.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_, k) => x(getPath(vals, k)).replace(/\n/g, '</w:t><w:br/><w:t xml:space="preserve">'));
+            return { nom: e.nom, contenu: Buffer.from(xml, "utf8") };
+          });
+          return sortie(api, p, nom, DOCX, writeZip(files));
+        }
+      },
+      {
+        name: "dzf_qr",
+        label: "QR code",
+        category: "Documents",
+        icon: "fas fa-qrcode",
+        output: "qr",
+        description: "G\xE9n\xE8re un QR code : lien, texte, Wi-Fi (se connecter en scannant), carte de visite, ou virement SEPA pr\xEAt \xE0 payer depuis une appli bancaire. Rend une image SVG utilisable partout (mail, PDF, page).",
+        params: [
+          { name: "type", label: "Type", type: "select", options: ["lien ou texte", "Wi-Fi", "carte de visite", "virement SEPA"], default: "lien ou texte" },
+          { name: "texte", label: "Lien ou texte", showIf: { type: "lien ou texte" } },
+          { name: "ssid", label: "Nom du Wi-Fi", showIf: { type: "Wi-Fi" } },
+          { name: "mdp_wifi", label: "Secret du mot de passe Wi-Fi", showIf: { type: "Wi-Fi" } },
+          { name: "nom_contact", label: "Nom", showIf: { type: "carte de visite" } },
+          { name: "tel", label: "T\xE9l\xE9phone", showIf: { type: "carte de visite" } },
+          { name: "email", label: "E-mail", showIf: { type: "carte de visite" } },
+          { name: "societe", label: "Soci\xE9t\xE9", showIf: { type: "carte de visite" } },
+          { name: "beneficiaire", label: "B\xE9n\xE9ficiaire", showIf: { type: "virement SEPA" } },
+          { name: "iban", label: "IBAN", showIf: { type: "virement SEPA" } },
+          { name: "bic", label: "BIC", showIf: { type: "virement SEPA" } },
+          { name: "montant", label: "Montant (\u20AC)", showIf: { type: "virement SEPA" } },
+          { name: "reference", label: "R\xE9f\xE9rence", showIf: { type: "virement SEPA" } },
+          { name: "taille", label: "Taille (px)", type: "int", default: 256 },
+          { name: "correction", label: "Robustesse", type: "select", options: ["M", "L", "Q", "H"], default: "M" }
+        ],
+        run: async (p, ctx, api) => {
+          const qrcode = require_qrcode();
+          let data;
+          if (p.type === "Wi-Fi") data = `WIFI:T:WPA;S:${wifiEsc(p.ssid)};P:${wifiEsc(p.mdp_wifi ? await api.secret(p.mdp_wifi) : "")};;`;
+          else if (p.type === "carte de visite") data = ["BEGIN:VCARD", "VERSION:3.0", `FN:${p.nom_contact || ""}`, p.societe ? `ORG:${p.societe}` : "", p.tel ? `TEL:${p.tel}` : "", p.email ? `EMAIL:${p.email}` : "", "END:VCARD"].filter(Boolean).join("\n");
+          else if (p.type === "virement SEPA") data = epc(p);
+          else data = String(p.texte ?? "");
+          if (!data) throw perm("rien \xE0 encoder");
+          qrcode.stringToBytes = qrcode.stringToBytesFuncs["UTF-8"];
+          const q = qrcode(0, p.correction || "M");
+          q.addData(data, "Byte");
+          q.make();
+          const n = q.getModuleCount(), size = Math.max(64, Math.min(2048, +p.taille || 256)), cell = size / (n + 8);
+          let path = "";
+          for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (q.isDark(r, c)) path += `M${((c + 4) * cell).toFixed(2)} ${((r + 4) * cell).toFixed(2)}h${cell.toFixed(2)}v${cell.toFixed(2)}h-${cell.toFixed(2)}z`;
+          const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}"><rect width="100%" height="100%" fill="#fff"/><path d="${path}" fill="#000"/></svg>`;
+          const px = Math.max(1, Math.floor(size / (n + 8))), dim = (n + 8) * px, raw = Buffer.alloc(dim * (dim + 1), 255);
+          for (let y = 0; y < dim; y++) {
+            raw[y * (dim + 1)] = 0;
+            const r = Math.floor(y / px) - 4;
+            if (r < 0 || r >= n) continue;
+            for (let xx = 0; xx < dim; xx++) {
+              const c = Math.floor(xx / px) - 4;
+              if (c >= 0 && c < n && q.isDark(r, c)) raw[y * (dim + 1) + 1 + xx] = 0;
+            }
+          }
+          const png = pngGris(dim, dim, raw);
+          return { svg, data_uri: `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`, png: { nom: "qr.png", type: "image/png", base64: png.toString("base64") }, png_data_uri: `data:image/png;base64,${png.toString("base64")}`, contenu: p.type === "Wi-Fi" ? "(Wi-Fi)" : data };
+        }
+      },
+      {
+        name: "dzf_markdown",
+        label: "Markdown \u2192 HTML",
+        category: "Documents",
+        icon: "fab fa-markdown",
+        output: "html",
+        description: "Convertit du Markdown (titres, listes, tableaux, liens, code) en HTML propre et s\xFBr, pour un mail, une page ou un PDF.",
+        params: [{ name: "markdown", label: "Markdown", type: "text", required: true }, { name: "style", label: "Ajouter une mise en forme simple (pour les mails)", type: "bool", default: false }],
+        run: async (p) => {
+          const html = mdHtml(p.markdown);
+          return p.style ? `<div style="font-family:system-ui,Segoe UI,Arial,sans-serif;font-size:15px;line-height:1.55;color:#1f2937;max-width:680px"><style>table{border-collapse:collapse}td,th{border:1px solid #e5e7eb;padding:6px 10px}th{background:#f3f4f6}code{background:#f3f4f6;padding:1px 4px;border-radius:4px}pre{background:#111827;color:#e5e7eb;padding:12px;border-radius:8px;overflow:auto}blockquote{border-left:3px solid #d1d5db;margin:0;padding-left:12px;color:#4b5563}</style>${html}</div>` : html;
+        }
+      }
+    ];
+    module2.exports.mdHtml = mdHtml;
+  }
+});
+
+// src/blocks/ia_plus.js
+var require_ia_plus = __commonJS({
+  "src/blocks/ia_plus.js"(exports2, module2) {
+    "use strict";
+    var { getPath, asList } = require_engine();
+    var { charger, sortie, PARAMS_SORTIE } = require_fichiers();
+    var perm = (m) => Object.assign(new Error(m), { permanent: true });
+    var CONN = (url = "http://ollama:11434/v1", modele = "llama3.1") => [
+      { name: "url_base", label: "Adresse de l'API (compatible OpenAI)", default: url, help: "Ollama : http://ollama:11434/v1 \xB7 OpenAI : https://api.openai.com/v1 \xB7 Groq : https://api.groq.com/openai/v1 \xB7 Mistral : https://api.mistral.ai/v1" },
+      { name: "modele", label: "Mod\xE8le", default: modele, required: true },
+      { name: "variable_cle", label: "Nom du secret de la cl\xE9 (si besoin)", help: "Ex. OPENAI_API_KEY. Vide pour Ollama" }
+    ];
+    var auth = async (p, api) => {
+      if (!p.variable_cle) return {};
+      const k = await api.secret(p.variable_cle);
+      if (!k) throw perm(`secret ${p.variable_cle} introuvable`);
+      return { Authorization: `Bearer ${k}` };
+    };
+    var base = (p) => String(p.url_base).replace(/\/$/, "");
+    var postJ = async (url, body, headers) => {
+      const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json", ...headers }, body: JSON.stringify(body) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error && (j.error.message || j.error) || `HTTP ${r.status}`);
+      return j;
+    };
+    var chat = async (p, api, messages, extra = {}) => (await postJ(`${base(p)}/chat/completions`, { model: p.modele, messages, temperature: p.temperature ?? 0.2, ...extra }, await auth(p, api))).choices[0].message;
+    var embed = async (p, api, input) => (await postJ(`${String(p.url_vecteurs || p.url_base).replace(/\/$/, "")}/embeddings`, { model: p.modele_vecteurs || "nomic-embed-text", input }, await auth(p, api))).data.map((d) => d.embedding);
+    var cos = (a, b) => {
+      let d = 0, x = 0, y = 0;
+      for (let i = 0; i < a.length; i++) {
+        d += a[i] * b[i];
+        x += a[i] * a[i];
+        y += b[i] * b[i];
+      }
+      return d / (Math.sqrt(x) * Math.sqrt(y) || 1);
+    };
+    var imgUri = async (src) => {
+      const f = await charger(src, { texte: false, max: 2e7 });
+      return `data:${f.type.startsWith("image/") ? f.type : "image/jpeg"};base64,${f.buf.toString("base64")}`;
+    };
+    var decouper = (t, taille = 1200, recouvrement = 150) => {
+      const parts = String(t || "").split(/\n\s*\n/).flatMap((p) => p.length > taille ? p.match(/[^.!?\n]+[.!?]*\s*/g) || [p] : [p]);
+      const out = [];
+      let cur = "";
+      for (const s of parts) {
+        if ((cur + "\n\n" + s).length > taille && cur) {
+          out.push(cur.trim());
+          cur = cur.slice(-recouvrement) + " " + s;
+        } else cur = cur ? cur + "\n\n" + s : s;
+        while (cur.length > taille * 1.5) {
+          out.push(cur.slice(0, taille).trim());
+          cur = cur.slice(taille - recouvrement);
+        }
+      }
+      if (cur.trim()) out.push(cur.trim());
+      return out;
+    };
+    module2.exports = [
+      {
+        name: "dzf_ia_image",
+        label: "IA : cr\xE9er une image",
+        category: "IA",
+        icon: "fas fa-palette",
+        output: "image",
+        timeout: 300,
+        description: "Cr\xE9e une image \xE0 partir d'une description (illustration d'article, visuel de post, avatar\u2026). API compatible OpenAI : OpenAI, LocalAI, Together\u2026",
+        params: [
+          ...CONN("https://api.openai.com/v1", "gpt-image-1"),
+          { name: "description", label: "Description de l'image", type: "text", required: true },
+          { name: "taille", label: "Taille", type: "select", options: ["1024x1024", "1536x1024", "1024x1536", "512x512"], default: "1024x1024" },
+          { name: "nom", label: "Nom du fichier", default: "image.png" },
+          ...PARAMS_SORTIE
+        ],
+        run: async (p, ctx, api) => {
+          const j = await postJ(`${base(p)}/images/generations`, { model: p.modele, prompt: String(p.description), size: p.taille, n: 1 }, await auth(p, api));
+          const d = (j.data || [])[0] || {};
+          const buf = d.b64_json ? Buffer.from(d.b64_json, "base64") : d.url ? (await charger(d.url, { texte: false })).buf : null;
+          if (!buf) throw new Error("pas d'image re\xE7ue");
+          return sortie(api, p, p.nom || "image.png", "image/png", buf);
+        }
+      },
+      {
+        name: "dzf_ia_transcrire",
+        label: "IA : transcrire un audio ou une vid\xE9o",
+        category: "IA",
+        icon: "fas fa-microphone-alt",
+        output: "transcription",
+        timeout: 600,
+        description: "Transforme une r\xE9union, un message vocal ou une vid\xE9o en texte (Whisper). Local avec speaches/LocalAI, ou Groq / OpenAI.",
+        params: [
+          ...CONN("https://api.groq.com/openai/v1", "whisper-large-v3"),
+          { name: "fichier", label: "Fichier audio/vid\xE9o", required: true, help: "mp3, m4a, wav, ogg, webm, mp4 (25 Mo max chez la plupart)" },
+          { name: "langue", label: "Langue", default: "fr" },
+          { name: "horodatage", label: "Avec les temps de chaque phrase", type: "bool", default: false }
+        ],
+        run: async (p, ctx, api) => {
+          const f = await charger(p.fichier, { texte: false, max: 1e8 });
+          const fd = new FormData();
+          fd.append("file", new Blob([f.buf], { type: f.type }), f.nom);
+          fd.append("model", p.modele);
+          if (p.langue) fd.append("language", p.langue);
+          fd.append("response_format", p.horodatage ? "verbose_json" : "json");
+          const r = await fetch(`${base(p)}/audio/transcriptions`, { method: "POST", headers: await auth(p, api), body: fd });
+          const j = await r.json().catch(() => ({}));
+          if (!r.ok) throw new Error(j.error && (j.error.message || j.error) || `HTTP ${r.status}`);
+          return p.horodatage ? { texte: j.text, segments: (j.segments || []).map((s) => ({ debut: s.start, fin: s.end, texte: s.text })) } : j.text;
+        }
+      },
+      {
+        name: "dzf_ia_voix",
+        label: "IA : lire un texte \xE0 voix haute",
+        category: "IA",
+        icon: "fas fa-volume-up",
+        output: "audio",
+        timeout: 300,
+        description: "Transforme un texte en fichier audio (mp3) : r\xE9sum\xE9 du matin en podcast, message vocal, accessibilit\xE9. Local avec Kokoro/speaches, ou OpenAI.",
+        params: [
+          ...CONN("http://speaches:8000/v1", "tts-1"),
+          { name: "texte", label: "Texte", type: "text", required: true },
+          { name: "voix", label: "Voix", default: "alloy" },
+          { name: "vitesse", label: "Vitesse", type: "number", default: 1 },
+          { name: "nom", label: "Nom du fichier", default: "audio.mp3" },
+          ...PARAMS_SORTIE
+        ],
+        run: async (p, ctx, api) => {
+          const r = await fetch(`${base(p)}/audio/speech`, { method: "POST", headers: { "Content-Type": "application/json", ...await auth(p, api) }, body: JSON.stringify({ model: p.modele, input: String(p.texte).slice(0, 4096), voice: p.voix || "alloy", speed: +p.vitesse || 1, response_format: "mp3" }) });
+          if (!r.ok) throw new Error(`synth\xE8se vocale : HTTP ${r.status} ${(await r.text()).slice(0, 200)}`);
+          return sortie(api, p, p.nom || "audio.mp3", "audio/mpeg", Buffer.from(await r.arrayBuffer()));
+        }
+      },
+      {
+        name: "dzf_ia_vision",
+        label: "IA : comprendre une image (vision, OCR)",
+        category: "IA",
+        icon: "fas fa-eye",
+        output: "vision",
+        timeout: 300,
+        description: "D\xE9crit une photo, lit le texte d'un ticket ou d'une facture scann\xE9e (OCR), ou en sort des champs en JSON (montant, date, fournisseur\u2026). Mod\xE8les : llava, qwen2.5vl (Ollama), gpt-4o-mini\u2026",
+        params: [
+          ...CONN("http://ollama:11434/v1", "qwen2.5vl"),
+          { name: "image", label: "Image", required: true, help: "Chemin Saltcorn, URL ou {{photo}}" },
+          { name: "mode", label: "Je veux", type: "select", options: ["une description", "le texte (OCR)", "des champs (JSON)", "r\xE9ponse \xE0 ma question"], default: "une description" },
+          { name: "champs", label: "Champs \xE0 extraire", showIf: { mode: "des champs (JSON)" }, default: "fournisseur, date, montant_ttc, tva", help: "S\xE9par\xE9s par des virgules" },
+          { name: "question", label: "Question", showIf: { mode: "r\xE9ponse \xE0 ma question" } }
+        ],
+        run: async (p, ctx, api) => {
+          const consigne = { "une description": "D\xE9cris cette image en fran\xE7ais, en 2 \xE0 4 phrases.", "le texte (OCR)": "Recopie tout le texte visible sur l'image, fid\xE8lement, en gardant les retours \xE0 la ligne. Rien d'autre.", "des champs (JSON)": `Lis l'image et r\xE9ponds en JSON avec exactement ces cl\xE9s : ${p.champs}. Mets null si absent. Nombres sans unit\xE9, dates AAAA-MM-JJ.`, "r\xE9ponse \xE0 ma question": String(p.question || "") }[p.mode];
+          const m = await chat({ ...p, temperature: 0 }, api, [{ role: "user", content: [{ type: "text", text: consigne }, { type: "image_url", image_url: { url: await imgUri(p.image) } }] }], p.mode === "des champs (JSON)" ? { response_format: { type: "json_object" } } : {});
+          const t = String(m.content || "").trim();
+          if (p.mode !== "des champs (JSON)") return t;
+          try {
+            return JSON.parse(t.replace(/^```(json)?|```$/g, "").trim());
+          } catch (e) {
+            throw new Error("le mod\xE8le n'a pas renvoy\xE9 du JSON valide");
+          }
+        }
+      },
+      {
+        name: "dzf_ia_agent",
+        label: "IA : agent avec outils",
+        category: "IA",
+        icon: "fas fa-user-astronaut",
+        output: "agent",
+        timeout: 600,
+        description: "Un assistant qui raisonne et agit : il peut chercher dans tes tables, lire une page web, et lancer tes workflows (cr\xE9er une t\xE2che, envoyer un mail\u2026) jusqu'\xE0 avoir r\xE9pondu. Tu choisis ses outils.",
+        params: [
+          ...CONN("http://ollama:11434/v1", "qwen2.5"),
+          { name: "consigne", label: "Demande", type: "text", required: true, help: "Ex. {{message}} re\xE7u sur Telegram" },
+          { name: "systeme", label: "R\xF4le", type: "text", default: "Tu es l'assistant personnel de l'utilisateur. Tu r\xE9ponds en fran\xE7ais, bri\xE8vement. Utilise les outils quand c'est utile, n'invente rien." },
+          { name: "tables", label: "Tables consultables (lecture seule)", help: "S\xE9par\xE9es par des virgules. Ex. taches, contacts" },
+          { name: "workflows", label: "Workflows qu'il peut lancer", help: "Noms s\xE9par\xE9s par des virgules. Il re\xE7oit leurs param\xE8tres en JSON." },
+          { name: "web", label: "Peut lire des pages web", type: "bool", default: false },
+          { name: "etapes_max", label: "\xC9tapes max", type: "int", default: 6 }
+        ],
+        run: async (p, ctx, api) => {
+          const Trigger = require("@saltcorn/data/models/trigger");
+          const tables = String(p.tables || "").split(",").map((s) => s.trim()).filter(Boolean);
+          const wfs = String(p.workflows || "").split(",").map((s) => s.trim()).filter(Boolean);
+          const tools = [];
+          const impl = {};
+          if (tables.length) {
+            tools.push({ type: "function", function: { name: "chercher_table", description: `Cherche des lignes dans une table. Tables : ${tables.join(", ")}`, parameters: { type: "object", properties: { table: { type: "string", enum: tables }, filtre: { type: "object", description: "\xE9galit\xE9s champ: valeur (facultatif)" }, texte: { type: "string", description: "mot \xE0 chercher dans les champs texte (facultatif)" } }, required: ["table"] } } });
+            impl.chercher_table = async ({ table, filtre, texte }) => {
+              if (!tables.includes(table)) return "table non autoris\xE9e";
+              const t = api.Table.findOne({ name: table });
+              if (!t) return "table introuvable";
+              if (api.user && api.user.role_id > t.min_role_read) return "lecture refus\xE9e";
+              const names = new Set(t.getFields().map((f) => f.name));
+              const where = Object.fromEntries(Object.entries(filtre || {}).filter(([k]) => names.has(k)));
+              let rows = await t.getRows(where, { limit: 200, orderBy: "id", orderDesc: true });
+              if (texte) {
+                const q = String(texte).toLowerCase();
+                rows = rows.filter((r) => JSON.stringify(r).toLowerCase().includes(q));
+              }
+              return JSON.stringify(rows.slice(0, 20)).slice(0, 8e3);
+            };
+          }
+          for (const w of wfs) {
+            const fn = "wf_" + w.replace(/[^\w]/g, "_").slice(0, 50);
+            tools.push({ type: "function", function: { name: fn, description: `Lance le workflow \xAB ${w} \xBB${Trigger.findOne({ name: w })?.description ? ` : ${Trigger.findOne({ name: w }).description}` : ""}`, parameters: { type: "object", properties: {}, additionalProperties: true } } });
+            impl[fn] = async (args) => {
+              const t = Trigger.findOne({ name: w });
+              if (!t) return "workflow introuvable";
+              const r = await t.runWithoutRow({ row: args || {}, user: api.user, req: api.req });
+              return JSON.stringify(r ?? "fait").slice(0, 4e3);
+            };
+          }
+          if (p.web) {
+            tools.push({ type: "function", function: { name: "lire_page", description: "Lit le texte d'une page web", parameters: { type: "object", properties: { url: { type: "string" } }, required: ["url"] } } });
+            impl.lire_page = async ({ url }) => {
+              if (!/^https?:\/\//.test(url)) return "URL invalide";
+              const r = await fetch(url, { headers: { "User-Agent": "dysizz-flow/2" } });
+              return require_core().plain(await r.text()).slice(0, 8e3);
+            };
+          }
+          const messages = [{ role: "system", content: p.systeme || "" }, { role: "user", content: String(p.consigne) }];
+          const trace = [];
+          for (let i = 0; i < Math.min(15, +p.etapes_max || 6); i++) {
+            const m = await chat(p, api, messages, tools.length ? { tools } : {});
+            messages.push(m);
+            if (!m.tool_calls || !m.tool_calls.length) return { reponse: String(m.content || "").trim(), etapes: trace };
+            for (const c of m.tool_calls) {
+              let args = {};
+              try {
+                args = JSON.parse(c.function.arguments || "{}");
+              } catch (e) {
+              }
+              let res;
+              try {
+                res = impl[c.function.name] ? await impl[c.function.name](args) : "outil inconnu";
+              } catch (e) {
+                res = `erreur : ${e.message}`;
+              }
+              trace.push({ outil: c.function.name, arguments: args, resultat: String(res).slice(0, 300) });
+              messages.push({ role: "tool", tool_call_id: c.id, name: c.function.name, content: String(res) });
+            }
+          }
+          return { reponse: "Je n'ai pas fini dans le nombre d'\xE9tapes permis.", etapes: trace };
+        }
+      },
+      {
+        name: "dzf_ia_decouper",
+        label: "IA : d\xE9couper un texte en morceaux",
+        category: "IA",
+        icon: "fas fa-cut",
+        output: "morceaux",
+        description: "Coupe un long texte (PDF, page, livre) en morceaux qui se chevauchent un peu, pour les ranger avec leur vecteur et les retrouver ensuite par le sens.",
+        params: [{ name: "texte", label: "Texte", required: true }, { name: "taille", label: "Taille d'un morceau (caract\xE8res)", type: "int", default: 1200 }, { name: "recouvrement", label: "Chevauchement", type: "int", default: 150 }, { name: "source", label: "Source (copi\xE9e dans chaque morceau)", help: "Ex. {{fichier.nom}}" }],
+        run: async (p) => decouper(p.texte, Math.max(200, +p.taille || 1200), Math.max(0, +p.recouvrement || 0)).map((t, i) => ({ n: i + 1, texte: t, source: p.source || "" }))
+      },
+      {
+        name: "dzf_ia_rag",
+        label: "IA : r\xE9pondre avec mes documents",
+        category: "IA",
+        icon: "fas fa-book-reader",
+        output: "reponse",
+        timeout: 300,
+        description: "Pose une question : l'IA cherche les passages les plus proches dans ta table de morceaux (texte + vecteur) et r\xE9pond en citant ses sources. Ton \xAB ChatGPT \xBB sur tes propres documents.",
+        params: [
+          ...CONN(),
+          { name: "modele_vecteurs", label: "Mod\xE8le de vecteurs", default: "nomic-embed-text" },
+          { name: "question", label: "Question", required: true },
+          { name: "table", label: "Table des morceaux", type: "table", required: true },
+          { name: "champ_texte", label: "Champ texte", default: "texte" },
+          { name: "champ_vecteur", label: "Champ vecteur", default: "vecteur" },
+          { name: "champ_source", label: "Champ source", default: "source" },
+          { name: "filtre", label: "Filtre (JSON)", type: "json" },
+          { name: "n", label: "Passages utilis\xE9s", type: "int", default: 5 }
+        ],
+        run: async (p, ctx, api) => {
+          const t = api.Table.findOne({ name: p.table });
+          if (!t) throw perm(`table \xAB ${p.table} \xBB introuvable`);
+          if (api.user && api.user.role_id > t.min_role_read) throw perm("lecture refus\xE9e pour ton r\xF4le");
+          const [q] = await embed(p, api, [String(p.question)]);
+          const rows = await t.getRows(p.filtre || {}, { limit: 2e4 });
+          const best = rows.map((r) => {
+            let v = r[p.champ_vecteur];
+            if (typeof v === "string") {
+              try {
+                v = JSON.parse(v);
+              } catch (e) {
+                v = null;
+              }
+            }
+            return { r, s: Array.isArray(v) ? cos(q, v) : 0 };
+          }).sort((a, b) => b.s - a.s).slice(0, Math.min(20, +p.n || 5));
+          const ctxTxt = best.map((b, i) => `[${i + 1}] (${b.r[p.champ_source] || "?"}) ${String(b.r[p.champ_texte] || "").slice(0, 2500)}`).join("\n\n");
+          const m = await chat(p, api, [{ role: "system", content: "R\xE9ponds en fran\xE7ais \xE0 partir des extraits fournis uniquement. Cite les num\xE9ros [1], [2]\u2026 Si la r\xE9ponse n'y est pas, dis-le." }, { role: "user", content: `Extraits :
+${ctxTxt}
+
+Question : ${p.question}` }]);
+          return { reponse: String(m.content || "").trim(), sources: best.map((b, i) => ({ n: i + 1, source: b.r[p.champ_source] || "", score: +b.s.toFixed(3), id: b.r.id })) };
+        }
+      },
+      {
+        name: "dzf_traduire",
+        label: "Traduire (DeepL ou LibreTranslate)",
+        category: "IA",
+        icon: "fas fa-language",
+        output: "traduction",
+        timeout: 120,
+        description: "Traduction de qualit\xE9 sans mod\xE8le d'IA : DeepL (cl\xE9 gratuite 500 000 caract\xE8res/mois) ou LibreTranslate (libre, h\xE9bergeable chez toi). Texte ou liste.",
+        params: [
+          { name: "service", label: "Service", type: "select", options: ["DeepL", "LibreTranslate"], default: "LibreTranslate" },
+          { name: "texte", label: "Texte ou liste", required: true },
+          { name: "champ", label: "Champ \xE0 traduire (si liste)", default: "titre" },
+          { name: "vers", label: "Vers la langue", default: "fr" },
+          { name: "cle", label: "Secret de la cl\xE9", default: "DEEPL_KEY" },
+          { name: "adresse", label: "Adresse LibreTranslate", default: "http://libretranslate:5000", showIf: { service: "LibreTranslate" } }
+        ],
+        run: async (p, ctx, api) => {
+          const isList = Array.isArray(p.texte);
+          const src = isList ? asList(p.texte).map((it) => String(getPath(it, p.champ) ?? "")) : [String(p.texte)];
+          let out;
+          if (p.service === "DeepL") {
+            const k = await api.secret(p.cle);
+            if (!k) throw perm(`secret ${p.cle} introuvable`);
+            const j = await postJ(k.endsWith(":fx") ? "https://api-free.deepl.com/v2/translate" : "https://api.deepl.com/v2/translate", { text: src, target_lang: String(p.vers).toUpperCase() }, { Authorization: `DeepL-Auth-Key ${k}` });
+            out = j.translations.map((t) => t.text);
+          } else {
+            const k = await api.secret(p.cle);
+            out = [];
+            for (const s of src) out.push((await postJ(`${String(p.adresse).replace(/\/$/, "")}/translate`, { q: s, source: "auto", target: p.vers, format: "text", ...k ? { api_key: k } : {} }, {})).translatedText);
+          }
+          return isList ? asList(p.texte).map((it, i) => ({ ...it, [`${p.champ}_${p.vers}`]: out[i] })) : out[0];
+        }
+      }
+    ];
+    module2.exports.decouper = decouper;
+  }
+});
+
+// tools/node_modules/@noble/hashes/cryptoNode.js
+var require_cryptoNode = __commonJS({
+  "tools/node_modules/@noble/hashes/cryptoNode.js"(exports2) {
+    "use strict";
+    Object.defineProperty(exports2, "__esModule", { value: true });
+    exports2.crypto = void 0;
+    var nc = require("node:crypto");
+    exports2.crypto = nc && typeof nc === "object" && "webcrypto" in nc ? nc.webcrypto : nc && typeof nc === "object" && "randomBytes" in nc ? nc : void 0;
+  }
+});
+
+// tools/node_modules/@noble/hashes/utils.js
+var require_utils2 = __commonJS({
+  "tools/node_modules/@noble/hashes/utils.js"(exports2) {
+    "use strict";
+    Object.defineProperty(exports2, "__esModule", { value: true });
+    exports2.wrapXOFConstructorWithOpts = exports2.wrapConstructorWithOpts = exports2.wrapConstructor = exports2.Hash = exports2.nextTick = exports2.swap32IfBE = exports2.byteSwapIfBE = exports2.swap8IfBE = exports2.isLE = void 0;
+    exports2.isBytes = isBytes;
+    exports2.anumber = anumber;
+    exports2.abytes = abytes;
+    exports2.ahash = ahash;
+    exports2.aexists = aexists;
+    exports2.aoutput = aoutput;
+    exports2.u8 = u8;
+    exports2.u32 = u32;
+    exports2.clean = clean;
+    exports2.createView = createView;
+    exports2.rotr = rotr;
+    exports2.rotl = rotl;
+    exports2.byteSwap = byteSwap;
+    exports2.byteSwap32 = byteSwap32;
+    exports2.bytesToHex = bytesToHex;
+    exports2.hexToBytes = hexToBytes;
+    exports2.asyncLoop = asyncLoop;
+    exports2.utf8ToBytes = utf8ToBytes;
+    exports2.bytesToUtf8 = bytesToUtf8;
+    exports2.toBytes = toBytes;
+    exports2.kdfInputToBytes = kdfInputToBytes;
+    exports2.concatBytes = concatBytes;
+    exports2.checkOpts = checkOpts;
+    exports2.createHasher = createHasher;
+    exports2.createOptHasher = createOptHasher;
+    exports2.createXOFer = createXOFer;
+    exports2.randomBytes = randomBytes;
+    var crypto_1 = require_cryptoNode();
+    function isBytes(a) {
+      return a instanceof Uint8Array || ArrayBuffer.isView(a) && a.constructor.name === "Uint8Array";
+    }
+    function anumber(n) {
+      if (!Number.isSafeInteger(n) || n < 0)
+        throw new Error("positive integer expected, got " + n);
+    }
+    function abytes(b, ...lengths) {
+      if (!isBytes(b))
+        throw new Error("Uint8Array expected");
+      if (lengths.length > 0 && !lengths.includes(b.length))
+        throw new Error("Uint8Array expected of length " + lengths + ", got length=" + b.length);
+    }
+    function ahash(h) {
+      if (typeof h !== "function" || typeof h.create !== "function")
+        throw new Error("Hash should be wrapped by utils.createHasher");
+      anumber(h.outputLen);
+      anumber(h.blockLen);
+    }
+    function aexists(instance, checkFinished = true) {
+      if (instance.destroyed)
+        throw new Error("Hash instance has been destroyed");
+      if (checkFinished && instance.finished)
+        throw new Error("Hash#digest() has already been called");
+    }
+    function aoutput(out, instance) {
+      abytes(out);
+      const min = instance.outputLen;
+      if (out.length < min) {
+        throw new Error("digestInto() expects output buffer of length at least " + min);
+      }
+    }
+    function u8(arr) {
+      return new Uint8Array(arr.buffer, arr.byteOffset, arr.byteLength);
+    }
+    function u32(arr) {
+      return new Uint32Array(arr.buffer, arr.byteOffset, Math.floor(arr.byteLength / 4));
+    }
+    function clean(...arrays) {
+      for (let i = 0; i < arrays.length; i++) {
+        arrays[i].fill(0);
+      }
+    }
+    function createView(arr) {
+      return new DataView(arr.buffer, arr.byteOffset, arr.byteLength);
+    }
+    function rotr(word, shift) {
+      return word << 32 - shift | word >>> shift;
+    }
+    function rotl(word, shift) {
+      return word << shift | word >>> 32 - shift >>> 0;
+    }
+    exports2.isLE = (() => new Uint8Array(new Uint32Array([287454020]).buffer)[0] === 68)();
+    function byteSwap(word) {
+      return word << 24 & 4278190080 | word << 8 & 16711680 | word >>> 8 & 65280 | word >>> 24 & 255;
+    }
+    exports2.swap8IfBE = exports2.isLE ? (n) => n : (n) => byteSwap(n);
+    exports2.byteSwapIfBE = exports2.swap8IfBE;
+    function byteSwap32(arr) {
+      for (let i = 0; i < arr.length; i++) {
+        arr[i] = byteSwap(arr[i]);
+      }
+      return arr;
+    }
+    exports2.swap32IfBE = exports2.isLE ? (u) => u : byteSwap32;
+    var hasHexBuiltin = /* @__PURE__ */ (() => (
+      // @ts-ignore
+      typeof Uint8Array.from([]).toHex === "function" && typeof Uint8Array.fromHex === "function"
+    ))();
+    var hexes = /* @__PURE__ */ Array.from({ length: 256 }, (_, i) => i.toString(16).padStart(2, "0"));
+    function bytesToHex(bytes) {
+      abytes(bytes);
+      if (hasHexBuiltin)
+        return bytes.toHex();
+      let hex = "";
+      for (let i = 0; i < bytes.length; i++) {
+        hex += hexes[bytes[i]];
+      }
+      return hex;
+    }
+    var asciis = { _0: 48, _9: 57, A: 65, F: 70, a: 97, f: 102 };
+    function asciiToBase16(ch) {
+      if (ch >= asciis._0 && ch <= asciis._9)
+        return ch - asciis._0;
+      if (ch >= asciis.A && ch <= asciis.F)
+        return ch - (asciis.A - 10);
+      if (ch >= asciis.a && ch <= asciis.f)
+        return ch - (asciis.a - 10);
+      return;
+    }
+    function hexToBytes(hex) {
+      if (typeof hex !== "string")
+        throw new Error("hex string expected, got " + typeof hex);
+      if (hasHexBuiltin)
+        return Uint8Array.fromHex(hex);
+      const hl = hex.length;
+      const al = hl / 2;
+      if (hl % 2)
+        throw new Error("hex string expected, got unpadded hex of length " + hl);
+      const array = new Uint8Array(al);
+      for (let ai = 0, hi = 0; ai < al; ai++, hi += 2) {
+        const n1 = asciiToBase16(hex.charCodeAt(hi));
+        const n2 = asciiToBase16(hex.charCodeAt(hi + 1));
+        if (n1 === void 0 || n2 === void 0) {
+          const char = hex[hi] + hex[hi + 1];
+          throw new Error('hex string expected, got non-hex character "' + char + '" at index ' + hi);
+        }
+        array[ai] = n1 * 16 + n2;
+      }
+      return array;
+    }
+    var nextTick = async () => {
+    };
+    exports2.nextTick = nextTick;
+    async function asyncLoop(iters, tick, cb) {
+      let ts = Date.now();
+      for (let i = 0; i < iters; i++) {
+        cb(i);
+        const diff = Date.now() - ts;
+        if (diff >= 0 && diff < tick)
+          continue;
+        await (0, exports2.nextTick)();
+        ts += diff;
+      }
+    }
+    function utf8ToBytes(str) {
+      if (typeof str !== "string")
+        throw new Error("string expected");
+      return new Uint8Array(new TextEncoder().encode(str));
+    }
+    function bytesToUtf8(bytes) {
+      return new TextDecoder().decode(bytes);
+    }
+    function toBytes(data) {
+      if (typeof data === "string")
+        data = utf8ToBytes(data);
+      abytes(data);
+      return data;
+    }
+    function kdfInputToBytes(data) {
+      if (typeof data === "string")
+        data = utf8ToBytes(data);
+      abytes(data);
+      return data;
+    }
+    function concatBytes(...arrays) {
+      let sum = 0;
+      for (let i = 0; i < arrays.length; i++) {
+        const a = arrays[i];
+        abytes(a);
+        sum += a.length;
+      }
+      const res = new Uint8Array(sum);
+      for (let i = 0, pad = 0; i < arrays.length; i++) {
+        const a = arrays[i];
+        res.set(a, pad);
+        pad += a.length;
+      }
+      return res;
+    }
+    function checkOpts(defaults, opts) {
+      if (opts !== void 0 && {}.toString.call(opts) !== "[object Object]")
+        throw new Error("options should be object or undefined");
+      const merged = Object.assign(defaults, opts);
+      return merged;
+    }
+    var Hash = class {
+    };
+    exports2.Hash = Hash;
+    function createHasher(hashCons) {
+      const hashC = (msg) => hashCons().update(toBytes(msg)).digest();
+      const tmp = hashCons();
+      hashC.outputLen = tmp.outputLen;
+      hashC.blockLen = tmp.blockLen;
+      hashC.create = () => hashCons();
+      return hashC;
+    }
+    function createOptHasher(hashCons) {
+      const hashC = (msg, opts) => hashCons(opts).update(toBytes(msg)).digest();
+      const tmp = hashCons({});
+      hashC.outputLen = tmp.outputLen;
+      hashC.blockLen = tmp.blockLen;
+      hashC.create = (opts) => hashCons(opts);
+      return hashC;
+    }
+    function createXOFer(hashCons) {
+      const hashC = (msg, opts) => hashCons(opts).update(toBytes(msg)).digest();
+      const tmp = hashCons({});
+      hashC.outputLen = tmp.outputLen;
+      hashC.blockLen = tmp.blockLen;
+      hashC.create = (opts) => hashCons(opts);
+      return hashC;
+    }
+    exports2.wrapConstructor = createHasher;
+    exports2.wrapConstructorWithOpts = createOptHasher;
+    exports2.wrapXOFConstructorWithOpts = createXOFer;
+    function randomBytes(bytesLength = 32) {
+      if (crypto_1.crypto && typeof crypto_1.crypto.getRandomValues === "function") {
+        return crypto_1.crypto.getRandomValues(new Uint8Array(bytesLength));
+      }
+      if (crypto_1.crypto && typeof crypto_1.crypto.randomBytes === "function") {
+        return Uint8Array.from(crypto_1.crypto.randomBytes(bytesLength));
+      }
+      throw new Error("crypto.getRandomValues must be defined");
+    }
+  }
+});
+
+// tools/node_modules/@noble/hashes/_md.js
+var require_md = __commonJS({
+  "tools/node_modules/@noble/hashes/_md.js"(exports2) {
+    "use strict";
+    Object.defineProperty(exports2, "__esModule", { value: true });
+    exports2.SHA512_IV = exports2.SHA384_IV = exports2.SHA224_IV = exports2.SHA256_IV = exports2.HashMD = void 0;
+    exports2.setBigUint64 = setBigUint64;
+    exports2.Chi = Chi;
+    exports2.Maj = Maj;
+    var utils_ts_1 = require_utils2();
+    function setBigUint64(view, byteOffset, value, isLE) {
+      if (typeof view.setBigUint64 === "function")
+        return view.setBigUint64(byteOffset, value, isLE);
+      const _32n = BigInt(32);
+      const _u32_max = BigInt(4294967295);
+      const wh = Number(value >> _32n & _u32_max);
+      const wl = Number(value & _u32_max);
+      const h = isLE ? 4 : 0;
+      const l = isLE ? 0 : 4;
+      view.setUint32(byteOffset + h, wh, isLE);
+      view.setUint32(byteOffset + l, wl, isLE);
+    }
+    function Chi(a, b, c) {
+      return a & b ^ ~a & c;
+    }
+    function Maj(a, b, c) {
+      return a & b ^ a & c ^ b & c;
+    }
+    var HashMD = class extends utils_ts_1.Hash {
+      constructor(blockLen, outputLen, padOffset, isLE) {
+        super();
+        this.finished = false;
+        this.length = 0;
+        this.pos = 0;
+        this.destroyed = false;
+        this.blockLen = blockLen;
+        this.outputLen = outputLen;
+        this.padOffset = padOffset;
+        this.isLE = isLE;
+        this.buffer = new Uint8Array(blockLen);
+        this.view = (0, utils_ts_1.createView)(this.buffer);
+      }
+      update(data) {
+        (0, utils_ts_1.aexists)(this);
+        data = (0, utils_ts_1.toBytes)(data);
+        (0, utils_ts_1.abytes)(data);
+        const { view, buffer, blockLen } = this;
+        const len = data.length;
+        for (let pos = 0; pos < len; ) {
+          const take = Math.min(blockLen - this.pos, len - pos);
+          if (take === blockLen) {
+            const dataView = (0, utils_ts_1.createView)(data);
+            for (; blockLen <= len - pos; pos += blockLen)
+              this.process(dataView, pos);
+            continue;
+          }
+          buffer.set(data.subarray(pos, pos + take), this.pos);
+          this.pos += take;
+          pos += take;
+          if (this.pos === blockLen) {
+            this.process(view, 0);
+            this.pos = 0;
+          }
+        }
+        this.length += data.length;
+        this.roundClean();
+        return this;
+      }
+      digestInto(out) {
+        (0, utils_ts_1.aexists)(this);
+        (0, utils_ts_1.aoutput)(out, this);
+        this.finished = true;
+        const { buffer, view, blockLen, isLE } = this;
+        let { pos } = this;
+        buffer[pos++] = 128;
+        (0, utils_ts_1.clean)(this.buffer.subarray(pos));
+        if (this.padOffset > blockLen - pos) {
+          this.process(view, 0);
+          pos = 0;
+        }
+        for (let i = pos; i < blockLen; i++)
+          buffer[i] = 0;
+        setBigUint64(view, blockLen - 8, BigInt(this.length * 8), isLE);
+        this.process(view, 0);
+        const oview = (0, utils_ts_1.createView)(out);
+        const len = this.outputLen;
+        if (len % 4)
+          throw new Error("_sha2: outputLen should be aligned to 32bit");
+        const outLen = len / 4;
+        const state = this.get();
+        if (outLen > state.length)
+          throw new Error("_sha2: outputLen bigger than state");
+        for (let i = 0; i < outLen; i++)
+          oview.setUint32(4 * i, state[i], isLE);
+      }
+      digest() {
+        const { buffer, outputLen } = this;
+        this.digestInto(buffer);
+        const res = buffer.slice(0, outputLen);
+        this.destroy();
+        return res;
+      }
+      _cloneInto(to) {
+        to || (to = new this.constructor());
+        to.set(...this.get());
+        const { blockLen, buffer, length, finished, destroyed, pos } = this;
+        to.destroyed = destroyed;
+        to.finished = finished;
+        to.length = length;
+        to.pos = pos;
+        if (length % blockLen)
+          to.buffer.set(buffer);
+        return to;
+      }
+      clone() {
+        return this._cloneInto();
+      }
+    };
+    exports2.HashMD = HashMD;
+    exports2.SHA256_IV = Uint32Array.from([
+      1779033703,
+      3144134277,
+      1013904242,
+      2773480762,
+      1359893119,
+      2600822924,
+      528734635,
+      1541459225
+    ]);
+    exports2.SHA224_IV = Uint32Array.from([
+      3238371032,
+      914150663,
+      812702999,
+      4144912697,
+      4290775857,
+      1750603025,
+      1694076839,
+      3204075428
+    ]);
+    exports2.SHA384_IV = Uint32Array.from([
+      3418070365,
+      3238371032,
+      1654270250,
+      914150663,
+      2438529370,
+      812702999,
+      355462360,
+      4144912697,
+      1731405415,
+      4290775857,
+      2394180231,
+      1750603025,
+      3675008525,
+      1694076839,
+      1203062813,
+      3204075428
+    ]);
+    exports2.SHA512_IV = Uint32Array.from([
+      1779033703,
+      4089235720,
+      3144134277,
+      2227873595,
+      1013904242,
+      4271175723,
+      2773480762,
+      1595750129,
+      1359893119,
+      2917565137,
+      2600822924,
+      725511199,
+      528734635,
+      4215389547,
+      1541459225,
+      327033209
+    ]);
+  }
+});
+
+// tools/node_modules/@noble/hashes/_u64.js
+var require_u64 = __commonJS({
+  "tools/node_modules/@noble/hashes/_u64.js"(exports2) {
+    "use strict";
+    Object.defineProperty(exports2, "__esModule", { value: true });
+    exports2.toBig = exports2.shrSL = exports2.shrSH = exports2.rotrSL = exports2.rotrSH = exports2.rotrBL = exports2.rotrBH = exports2.rotr32L = exports2.rotr32H = exports2.rotlSL = exports2.rotlSH = exports2.rotlBL = exports2.rotlBH = exports2.add5L = exports2.add5H = exports2.add4L = exports2.add4H = exports2.add3L = exports2.add3H = void 0;
+    exports2.add = add;
+    exports2.fromBig = fromBig;
+    exports2.split = split;
+    var U32_MASK64 = /* @__PURE__ */ BigInt(2 ** 32 - 1);
+    var _32n = /* @__PURE__ */ BigInt(32);
+    function fromBig(n, le = false) {
+      if (le)
+        return { h: Number(n & U32_MASK64), l: Number(n >> _32n & U32_MASK64) };
+      return { h: Number(n >> _32n & U32_MASK64) | 0, l: Number(n & U32_MASK64) | 0 };
+    }
+    function split(lst, le = false) {
+      const len = lst.length;
+      let Ah = new Uint32Array(len);
+      let Al = new Uint32Array(len);
+      for (let i = 0; i < len; i++) {
+        const { h, l } = fromBig(lst[i], le);
+        [Ah[i], Al[i]] = [h, l];
+      }
+      return [Ah, Al];
+    }
+    var toBig = (h, l) => BigInt(h >>> 0) << _32n | BigInt(l >>> 0);
+    exports2.toBig = toBig;
+    var shrSH = (h, _l, s) => h >>> s;
+    exports2.shrSH = shrSH;
+    var shrSL = (h, l, s) => h << 32 - s | l >>> s;
+    exports2.shrSL = shrSL;
+    var rotrSH = (h, l, s) => h >>> s | l << 32 - s;
+    exports2.rotrSH = rotrSH;
+    var rotrSL = (h, l, s) => h << 32 - s | l >>> s;
+    exports2.rotrSL = rotrSL;
+    var rotrBH = (h, l, s) => h << 64 - s | l >>> s - 32;
+    exports2.rotrBH = rotrBH;
+    var rotrBL = (h, l, s) => h >>> s - 32 | l << 64 - s;
+    exports2.rotrBL = rotrBL;
+    var rotr32H = (_h, l) => l;
+    exports2.rotr32H = rotr32H;
+    var rotr32L = (h, _l) => h;
+    exports2.rotr32L = rotr32L;
+    var rotlSH = (h, l, s) => h << s | l >>> 32 - s;
+    exports2.rotlSH = rotlSH;
+    var rotlSL = (h, l, s) => l << s | h >>> 32 - s;
+    exports2.rotlSL = rotlSL;
+    var rotlBH = (h, l, s) => l << s - 32 | h >>> 64 - s;
+    exports2.rotlBH = rotlBH;
+    var rotlBL = (h, l, s) => h << s - 32 | l >>> 64 - s;
+    exports2.rotlBL = rotlBL;
+    function add(Ah, Al, Bh, Bl) {
+      const l = (Al >>> 0) + (Bl >>> 0);
+      return { h: Ah + Bh + (l / 2 ** 32 | 0) | 0, l: l | 0 };
+    }
+    var add3L = (Al, Bl, Cl) => (Al >>> 0) + (Bl >>> 0) + (Cl >>> 0);
+    exports2.add3L = add3L;
+    var add3H = (low, Ah, Bh, Ch) => Ah + Bh + Ch + (low / 2 ** 32 | 0) | 0;
+    exports2.add3H = add3H;
+    var add4L = (Al, Bl, Cl, Dl) => (Al >>> 0) + (Bl >>> 0) + (Cl >>> 0) + (Dl >>> 0);
+    exports2.add4L = add4L;
+    var add4H = (low, Ah, Bh, Ch, Dh) => Ah + Bh + Ch + Dh + (low / 2 ** 32 | 0) | 0;
+    exports2.add4H = add4H;
+    var add5L = (Al, Bl, Cl, Dl, El) => (Al >>> 0) + (Bl >>> 0) + (Cl >>> 0) + (Dl >>> 0) + (El >>> 0);
+    exports2.add5L = add5L;
+    var add5H = (low, Ah, Bh, Ch, Dh, Eh) => Ah + Bh + Ch + Dh + Eh + (low / 2 ** 32 | 0) | 0;
+    exports2.add5H = add5H;
+    var u64 = {
+      fromBig,
+      split,
+      toBig,
+      shrSH,
+      shrSL,
+      rotrSH,
+      rotrSL,
+      rotrBH,
+      rotrBL,
+      rotr32H,
+      rotr32L,
+      rotlSH,
+      rotlSL,
+      rotlBH,
+      rotlBL,
+      add,
+      add3L,
+      add3H,
+      add4L,
+      add4H,
+      add5H,
+      add5L
+    };
+    exports2.default = u64;
+  }
+});
+
+// tools/node_modules/@noble/hashes/sha2.js
+var require_sha2 = __commonJS({
+  "tools/node_modules/@noble/hashes/sha2.js"(exports2) {
+    "use strict";
+    Object.defineProperty(exports2, "__esModule", { value: true });
+    exports2.sha512_224 = exports2.sha512_256 = exports2.sha384 = exports2.sha512 = exports2.sha224 = exports2.sha256 = exports2.SHA512_256 = exports2.SHA512_224 = exports2.SHA384 = exports2.SHA512 = exports2.SHA224 = exports2.SHA256 = void 0;
+    var _md_ts_1 = require_md();
+    var u64 = require_u64();
+    var utils_ts_1 = require_utils2();
+    var SHA256_K = /* @__PURE__ */ Uint32Array.from([
+      1116352408,
+      1899447441,
+      3049323471,
+      3921009573,
+      961987163,
+      1508970993,
+      2453635748,
+      2870763221,
+      3624381080,
+      310598401,
+      607225278,
+      1426881987,
+      1925078388,
+      2162078206,
+      2614888103,
+      3248222580,
+      3835390401,
+      4022224774,
+      264347078,
+      604807628,
+      770255983,
+      1249150122,
+      1555081692,
+      1996064986,
+      2554220882,
+      2821834349,
+      2952996808,
+      3210313671,
+      3336571891,
+      3584528711,
+      113926993,
+      338241895,
+      666307205,
+      773529912,
+      1294757372,
+      1396182291,
+      1695183700,
+      1986661051,
+      2177026350,
+      2456956037,
+      2730485921,
+      2820302411,
+      3259730800,
+      3345764771,
+      3516065817,
+      3600352804,
+      4094571909,
+      275423344,
+      430227734,
+      506948616,
+      659060556,
+      883997877,
+      958139571,
+      1322822218,
+      1537002063,
+      1747873779,
+      1955562222,
+      2024104815,
+      2227730452,
+      2361852424,
+      2428436474,
+      2756734187,
+      3204031479,
+      3329325298
+    ]);
+    var SHA256_W = /* @__PURE__ */ new Uint32Array(64);
+    var SHA256 = class extends _md_ts_1.HashMD {
+      constructor(outputLen = 32) {
+        super(64, outputLen, 8, false);
+        this.A = _md_ts_1.SHA256_IV[0] | 0;
+        this.B = _md_ts_1.SHA256_IV[1] | 0;
+        this.C = _md_ts_1.SHA256_IV[2] | 0;
+        this.D = _md_ts_1.SHA256_IV[3] | 0;
+        this.E = _md_ts_1.SHA256_IV[4] | 0;
+        this.F = _md_ts_1.SHA256_IV[5] | 0;
+        this.G = _md_ts_1.SHA256_IV[6] | 0;
+        this.H = _md_ts_1.SHA256_IV[7] | 0;
+      }
+      get() {
+        const { A, B, C, D, E, F, G, H } = this;
+        return [A, B, C, D, E, F, G, H];
+      }
+      // prettier-ignore
+      set(A, B, C, D, E, F, G, H) {
+        this.A = A | 0;
+        this.B = B | 0;
+        this.C = C | 0;
+        this.D = D | 0;
+        this.E = E | 0;
+        this.F = F | 0;
+        this.G = G | 0;
+        this.H = H | 0;
+      }
+      process(view, offset) {
+        for (let i = 0; i < 16; i++, offset += 4)
+          SHA256_W[i] = view.getUint32(offset, false);
+        for (let i = 16; i < 64; i++) {
+          const W15 = SHA256_W[i - 15];
+          const W2 = SHA256_W[i - 2];
+          const s0 = (0, utils_ts_1.rotr)(W15, 7) ^ (0, utils_ts_1.rotr)(W15, 18) ^ W15 >>> 3;
+          const s1 = (0, utils_ts_1.rotr)(W2, 17) ^ (0, utils_ts_1.rotr)(W2, 19) ^ W2 >>> 10;
+          SHA256_W[i] = s1 + SHA256_W[i - 7] + s0 + SHA256_W[i - 16] | 0;
+        }
+        let { A, B, C, D, E, F, G, H } = this;
+        for (let i = 0; i < 64; i++) {
+          const sigma1 = (0, utils_ts_1.rotr)(E, 6) ^ (0, utils_ts_1.rotr)(E, 11) ^ (0, utils_ts_1.rotr)(E, 25);
+          const T1 = H + sigma1 + (0, _md_ts_1.Chi)(E, F, G) + SHA256_K[i] + SHA256_W[i] | 0;
+          const sigma0 = (0, utils_ts_1.rotr)(A, 2) ^ (0, utils_ts_1.rotr)(A, 13) ^ (0, utils_ts_1.rotr)(A, 22);
+          const T2 = sigma0 + (0, _md_ts_1.Maj)(A, B, C) | 0;
+          H = G;
+          G = F;
+          F = E;
+          E = D + T1 | 0;
+          D = C;
+          C = B;
+          B = A;
+          A = T1 + T2 | 0;
+        }
+        A = A + this.A | 0;
+        B = B + this.B | 0;
+        C = C + this.C | 0;
+        D = D + this.D | 0;
+        E = E + this.E | 0;
+        F = F + this.F | 0;
+        G = G + this.G | 0;
+        H = H + this.H | 0;
+        this.set(A, B, C, D, E, F, G, H);
+      }
+      roundClean() {
+        (0, utils_ts_1.clean)(SHA256_W);
+      }
+      destroy() {
+        this.set(0, 0, 0, 0, 0, 0, 0, 0);
+        (0, utils_ts_1.clean)(this.buffer);
+      }
+    };
+    exports2.SHA256 = SHA256;
+    var SHA224 = class extends SHA256 {
+      constructor() {
+        super(28);
+        this.A = _md_ts_1.SHA224_IV[0] | 0;
+        this.B = _md_ts_1.SHA224_IV[1] | 0;
+        this.C = _md_ts_1.SHA224_IV[2] | 0;
+        this.D = _md_ts_1.SHA224_IV[3] | 0;
+        this.E = _md_ts_1.SHA224_IV[4] | 0;
+        this.F = _md_ts_1.SHA224_IV[5] | 0;
+        this.G = _md_ts_1.SHA224_IV[6] | 0;
+        this.H = _md_ts_1.SHA224_IV[7] | 0;
+      }
+    };
+    exports2.SHA224 = SHA224;
+    var K512 = /* @__PURE__ */ (() => u64.split([
+      "0x428a2f98d728ae22",
+      "0x7137449123ef65cd",
+      "0xb5c0fbcfec4d3b2f",
+      "0xe9b5dba58189dbbc",
+      "0x3956c25bf348b538",
+      "0x59f111f1b605d019",
+      "0x923f82a4af194f9b",
+      "0xab1c5ed5da6d8118",
+      "0xd807aa98a3030242",
+      "0x12835b0145706fbe",
+      "0x243185be4ee4b28c",
+      "0x550c7dc3d5ffb4e2",
+      "0x72be5d74f27b896f",
+      "0x80deb1fe3b1696b1",
+      "0x9bdc06a725c71235",
+      "0xc19bf174cf692694",
+      "0xe49b69c19ef14ad2",
+      "0xefbe4786384f25e3",
+      "0x0fc19dc68b8cd5b5",
+      "0x240ca1cc77ac9c65",
+      "0x2de92c6f592b0275",
+      "0x4a7484aa6ea6e483",
+      "0x5cb0a9dcbd41fbd4",
+      "0x76f988da831153b5",
+      "0x983e5152ee66dfab",
+      "0xa831c66d2db43210",
+      "0xb00327c898fb213f",
+      "0xbf597fc7beef0ee4",
+      "0xc6e00bf33da88fc2",
+      "0xd5a79147930aa725",
+      "0x06ca6351e003826f",
+      "0x142929670a0e6e70",
+      "0x27b70a8546d22ffc",
+      "0x2e1b21385c26c926",
+      "0x4d2c6dfc5ac42aed",
+      "0x53380d139d95b3df",
+      "0x650a73548baf63de",
+      "0x766a0abb3c77b2a8",
+      "0x81c2c92e47edaee6",
+      "0x92722c851482353b",
+      "0xa2bfe8a14cf10364",
+      "0xa81a664bbc423001",
+      "0xc24b8b70d0f89791",
+      "0xc76c51a30654be30",
+      "0xd192e819d6ef5218",
+      "0xd69906245565a910",
+      "0xf40e35855771202a",
+      "0x106aa07032bbd1b8",
+      "0x19a4c116b8d2d0c8",
+      "0x1e376c085141ab53",
+      "0x2748774cdf8eeb99",
+      "0x34b0bcb5e19b48a8",
+      "0x391c0cb3c5c95a63",
+      "0x4ed8aa4ae3418acb",
+      "0x5b9cca4f7763e373",
+      "0x682e6ff3d6b2b8a3",
+      "0x748f82ee5defb2fc",
+      "0x78a5636f43172f60",
+      "0x84c87814a1f0ab72",
+      "0x8cc702081a6439ec",
+      "0x90befffa23631e28",
+      "0xa4506cebde82bde9",
+      "0xbef9a3f7b2c67915",
+      "0xc67178f2e372532b",
+      "0xca273eceea26619c",
+      "0xd186b8c721c0c207",
+      "0xeada7dd6cde0eb1e",
+      "0xf57d4f7fee6ed178",
+      "0x06f067aa72176fba",
+      "0x0a637dc5a2c898a6",
+      "0x113f9804bef90dae",
+      "0x1b710b35131c471b",
+      "0x28db77f523047d84",
+      "0x32caab7b40c72493",
+      "0x3c9ebe0a15c9bebc",
+      "0x431d67c49c100d4c",
+      "0x4cc5d4becb3e42b6",
+      "0x597f299cfc657e2a",
+      "0x5fcb6fab3ad6faec",
+      "0x6c44198c4a475817"
+    ].map((n) => BigInt(n))))();
+    var SHA512_Kh = /* @__PURE__ */ (() => K512[0])();
+    var SHA512_Kl = /* @__PURE__ */ (() => K512[1])();
+    var SHA512_W_H = /* @__PURE__ */ new Uint32Array(80);
+    var SHA512_W_L = /* @__PURE__ */ new Uint32Array(80);
+    var SHA512 = class extends _md_ts_1.HashMD {
+      constructor(outputLen = 64) {
+        super(128, outputLen, 16, false);
+        this.Ah = _md_ts_1.SHA512_IV[0] | 0;
+        this.Al = _md_ts_1.SHA512_IV[1] | 0;
+        this.Bh = _md_ts_1.SHA512_IV[2] | 0;
+        this.Bl = _md_ts_1.SHA512_IV[3] | 0;
+        this.Ch = _md_ts_1.SHA512_IV[4] | 0;
+        this.Cl = _md_ts_1.SHA512_IV[5] | 0;
+        this.Dh = _md_ts_1.SHA512_IV[6] | 0;
+        this.Dl = _md_ts_1.SHA512_IV[7] | 0;
+        this.Eh = _md_ts_1.SHA512_IV[8] | 0;
+        this.El = _md_ts_1.SHA512_IV[9] | 0;
+        this.Fh = _md_ts_1.SHA512_IV[10] | 0;
+        this.Fl = _md_ts_1.SHA512_IV[11] | 0;
+        this.Gh = _md_ts_1.SHA512_IV[12] | 0;
+        this.Gl = _md_ts_1.SHA512_IV[13] | 0;
+        this.Hh = _md_ts_1.SHA512_IV[14] | 0;
+        this.Hl = _md_ts_1.SHA512_IV[15] | 0;
+      }
+      // prettier-ignore
+      get() {
+        const { Ah, Al, Bh, Bl, Ch, Cl, Dh, Dl, Eh, El, Fh, Fl, Gh, Gl, Hh, Hl } = this;
+        return [Ah, Al, Bh, Bl, Ch, Cl, Dh, Dl, Eh, El, Fh, Fl, Gh, Gl, Hh, Hl];
+      }
+      // prettier-ignore
+      set(Ah, Al, Bh, Bl, Ch, Cl, Dh, Dl, Eh, El, Fh, Fl, Gh, Gl, Hh, Hl) {
+        this.Ah = Ah | 0;
+        this.Al = Al | 0;
+        this.Bh = Bh | 0;
+        this.Bl = Bl | 0;
+        this.Ch = Ch | 0;
+        this.Cl = Cl | 0;
+        this.Dh = Dh | 0;
+        this.Dl = Dl | 0;
+        this.Eh = Eh | 0;
+        this.El = El | 0;
+        this.Fh = Fh | 0;
+        this.Fl = Fl | 0;
+        this.Gh = Gh | 0;
+        this.Gl = Gl | 0;
+        this.Hh = Hh | 0;
+        this.Hl = Hl | 0;
+      }
+      process(view, offset) {
+        for (let i = 0; i < 16; i++, offset += 4) {
+          SHA512_W_H[i] = view.getUint32(offset);
+          SHA512_W_L[i] = view.getUint32(offset += 4);
+        }
+        for (let i = 16; i < 80; i++) {
+          const W15h = SHA512_W_H[i - 15] | 0;
+          const W15l = SHA512_W_L[i - 15] | 0;
+          const s0h = u64.rotrSH(W15h, W15l, 1) ^ u64.rotrSH(W15h, W15l, 8) ^ u64.shrSH(W15h, W15l, 7);
+          const s0l = u64.rotrSL(W15h, W15l, 1) ^ u64.rotrSL(W15h, W15l, 8) ^ u64.shrSL(W15h, W15l, 7);
+          const W2h = SHA512_W_H[i - 2] | 0;
+          const W2l = SHA512_W_L[i - 2] | 0;
+          const s1h = u64.rotrSH(W2h, W2l, 19) ^ u64.rotrBH(W2h, W2l, 61) ^ u64.shrSH(W2h, W2l, 6);
+          const s1l = u64.rotrSL(W2h, W2l, 19) ^ u64.rotrBL(W2h, W2l, 61) ^ u64.shrSL(W2h, W2l, 6);
+          const SUMl = u64.add4L(s0l, s1l, SHA512_W_L[i - 7], SHA512_W_L[i - 16]);
+          const SUMh = u64.add4H(SUMl, s0h, s1h, SHA512_W_H[i - 7], SHA512_W_H[i - 16]);
+          SHA512_W_H[i] = SUMh | 0;
+          SHA512_W_L[i] = SUMl | 0;
+        }
+        let { Ah, Al, Bh, Bl, Ch, Cl, Dh, Dl, Eh, El, Fh, Fl, Gh, Gl, Hh, Hl } = this;
+        for (let i = 0; i < 80; i++) {
+          const sigma1h = u64.rotrSH(Eh, El, 14) ^ u64.rotrSH(Eh, El, 18) ^ u64.rotrBH(Eh, El, 41);
+          const sigma1l = u64.rotrSL(Eh, El, 14) ^ u64.rotrSL(Eh, El, 18) ^ u64.rotrBL(Eh, El, 41);
+          const CHIh = Eh & Fh ^ ~Eh & Gh;
+          const CHIl = El & Fl ^ ~El & Gl;
+          const T1ll = u64.add5L(Hl, sigma1l, CHIl, SHA512_Kl[i], SHA512_W_L[i]);
+          const T1h = u64.add5H(T1ll, Hh, sigma1h, CHIh, SHA512_Kh[i], SHA512_W_H[i]);
+          const T1l = T1ll | 0;
+          const sigma0h = u64.rotrSH(Ah, Al, 28) ^ u64.rotrBH(Ah, Al, 34) ^ u64.rotrBH(Ah, Al, 39);
+          const sigma0l = u64.rotrSL(Ah, Al, 28) ^ u64.rotrBL(Ah, Al, 34) ^ u64.rotrBL(Ah, Al, 39);
+          const MAJh = Ah & Bh ^ Ah & Ch ^ Bh & Ch;
+          const MAJl = Al & Bl ^ Al & Cl ^ Bl & Cl;
+          Hh = Gh | 0;
+          Hl = Gl | 0;
+          Gh = Fh | 0;
+          Gl = Fl | 0;
+          Fh = Eh | 0;
+          Fl = El | 0;
+          ({ h: Eh, l: El } = u64.add(Dh | 0, Dl | 0, T1h | 0, T1l | 0));
+          Dh = Ch | 0;
+          Dl = Cl | 0;
+          Ch = Bh | 0;
+          Cl = Bl | 0;
+          Bh = Ah | 0;
+          Bl = Al | 0;
+          const All = u64.add3L(T1l, sigma0l, MAJl);
+          Ah = u64.add3H(All, T1h, sigma0h, MAJh);
+          Al = All | 0;
+        }
+        ({ h: Ah, l: Al } = u64.add(this.Ah | 0, this.Al | 0, Ah | 0, Al | 0));
+        ({ h: Bh, l: Bl } = u64.add(this.Bh | 0, this.Bl | 0, Bh | 0, Bl | 0));
+        ({ h: Ch, l: Cl } = u64.add(this.Ch | 0, this.Cl | 0, Ch | 0, Cl | 0));
+        ({ h: Dh, l: Dl } = u64.add(this.Dh | 0, this.Dl | 0, Dh | 0, Dl | 0));
+        ({ h: Eh, l: El } = u64.add(this.Eh | 0, this.El | 0, Eh | 0, El | 0));
+        ({ h: Fh, l: Fl } = u64.add(this.Fh | 0, this.Fl | 0, Fh | 0, Fl | 0));
+        ({ h: Gh, l: Gl } = u64.add(this.Gh | 0, this.Gl | 0, Gh | 0, Gl | 0));
+        ({ h: Hh, l: Hl } = u64.add(this.Hh | 0, this.Hl | 0, Hh | 0, Hl | 0));
+        this.set(Ah, Al, Bh, Bl, Ch, Cl, Dh, Dl, Eh, El, Fh, Fl, Gh, Gl, Hh, Hl);
+      }
+      roundClean() {
+        (0, utils_ts_1.clean)(SHA512_W_H, SHA512_W_L);
+      }
+      destroy() {
+        (0, utils_ts_1.clean)(this.buffer);
+        this.set(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+      }
+    };
+    exports2.SHA512 = SHA512;
+    var SHA384 = class extends SHA512 {
+      constructor() {
+        super(48);
+        this.Ah = _md_ts_1.SHA384_IV[0] | 0;
+        this.Al = _md_ts_1.SHA384_IV[1] | 0;
+        this.Bh = _md_ts_1.SHA384_IV[2] | 0;
+        this.Bl = _md_ts_1.SHA384_IV[3] | 0;
+        this.Ch = _md_ts_1.SHA384_IV[4] | 0;
+        this.Cl = _md_ts_1.SHA384_IV[5] | 0;
+        this.Dh = _md_ts_1.SHA384_IV[6] | 0;
+        this.Dl = _md_ts_1.SHA384_IV[7] | 0;
+        this.Eh = _md_ts_1.SHA384_IV[8] | 0;
+        this.El = _md_ts_1.SHA384_IV[9] | 0;
+        this.Fh = _md_ts_1.SHA384_IV[10] | 0;
+        this.Fl = _md_ts_1.SHA384_IV[11] | 0;
+        this.Gh = _md_ts_1.SHA384_IV[12] | 0;
+        this.Gl = _md_ts_1.SHA384_IV[13] | 0;
+        this.Hh = _md_ts_1.SHA384_IV[14] | 0;
+        this.Hl = _md_ts_1.SHA384_IV[15] | 0;
+      }
+    };
+    exports2.SHA384 = SHA384;
+    var T224_IV = /* @__PURE__ */ Uint32Array.from([
+      2352822216,
+      424955298,
+      1944164710,
+      2312950998,
+      502970286,
+      855612546,
+      1738396948,
+      1479516111,
+      258812777,
+      2077511080,
+      2011393907,
+      79989058,
+      1067287976,
+      1780299464,
+      286451373,
+      2446758561
+    ]);
+    var T256_IV = /* @__PURE__ */ Uint32Array.from([
+      573645204,
+      4230739756,
+      2673172387,
+      3360449730,
+      596883563,
+      1867755857,
+      2520282905,
+      1497426621,
+      2519219938,
+      2827943907,
+      3193839141,
+      1401305490,
+      721525244,
+      746961066,
+      246885852,
+      2177182882
+    ]);
+    var SHA512_224 = class extends SHA512 {
+      constructor() {
+        super(28);
+        this.Ah = T224_IV[0] | 0;
+        this.Al = T224_IV[1] | 0;
+        this.Bh = T224_IV[2] | 0;
+        this.Bl = T224_IV[3] | 0;
+        this.Ch = T224_IV[4] | 0;
+        this.Cl = T224_IV[5] | 0;
+        this.Dh = T224_IV[6] | 0;
+        this.Dl = T224_IV[7] | 0;
+        this.Eh = T224_IV[8] | 0;
+        this.El = T224_IV[9] | 0;
+        this.Fh = T224_IV[10] | 0;
+        this.Fl = T224_IV[11] | 0;
+        this.Gh = T224_IV[12] | 0;
+        this.Gl = T224_IV[13] | 0;
+        this.Hh = T224_IV[14] | 0;
+        this.Hl = T224_IV[15] | 0;
+      }
+    };
+    exports2.SHA512_224 = SHA512_224;
+    var SHA512_256 = class extends SHA512 {
+      constructor() {
+        super(32);
+        this.Ah = T256_IV[0] | 0;
+        this.Al = T256_IV[1] | 0;
+        this.Bh = T256_IV[2] | 0;
+        this.Bl = T256_IV[3] | 0;
+        this.Ch = T256_IV[4] | 0;
+        this.Cl = T256_IV[5] | 0;
+        this.Dh = T256_IV[6] | 0;
+        this.Dl = T256_IV[7] | 0;
+        this.Eh = T256_IV[8] | 0;
+        this.El = T256_IV[9] | 0;
+        this.Fh = T256_IV[10] | 0;
+        this.Fl = T256_IV[11] | 0;
+        this.Gh = T256_IV[12] | 0;
+        this.Gl = T256_IV[13] | 0;
+        this.Hh = T256_IV[14] | 0;
+        this.Hl = T256_IV[15] | 0;
+      }
+    };
+    exports2.SHA512_256 = SHA512_256;
+    exports2.sha256 = (0, utils_ts_1.createHasher)(() => new SHA256());
+    exports2.sha224 = (0, utils_ts_1.createHasher)(() => new SHA224());
+    exports2.sha512 = (0, utils_ts_1.createHasher)(() => new SHA512());
+    exports2.sha384 = (0, utils_ts_1.createHasher)(() => new SHA384());
+    exports2.sha512_256 = (0, utils_ts_1.createHasher)(() => new SHA512_256());
+    exports2.sha512_224 = (0, utils_ts_1.createHasher)(() => new SHA512_224());
+  }
+});
+
+// tools/node_modules/@noble/hashes/hmac.js
+var require_hmac = __commonJS({
+  "tools/node_modules/@noble/hashes/hmac.js"(exports2) {
+    "use strict";
+    Object.defineProperty(exports2, "__esModule", { value: true });
+    exports2.hmac = exports2.HMAC = void 0;
+    var utils_ts_1 = require_utils2();
+    var HMAC = class extends utils_ts_1.Hash {
+      constructor(hash, _key) {
+        super();
+        this.finished = false;
+        this.destroyed = false;
+        (0, utils_ts_1.ahash)(hash);
+        const key = (0, utils_ts_1.toBytes)(_key);
+        this.iHash = hash.create();
+        if (typeof this.iHash.update !== "function")
+          throw new Error("Expected instance of class which extends utils.Hash");
+        this.blockLen = this.iHash.blockLen;
+        this.outputLen = this.iHash.outputLen;
+        const blockLen = this.blockLen;
+        const pad = new Uint8Array(blockLen);
+        pad.set(key.length > blockLen ? hash.create().update(key).digest() : key);
+        for (let i = 0; i < pad.length; i++)
+          pad[i] ^= 54;
+        this.iHash.update(pad);
+        this.oHash = hash.create();
+        for (let i = 0; i < pad.length; i++)
+          pad[i] ^= 54 ^ 92;
+        this.oHash.update(pad);
+        (0, utils_ts_1.clean)(pad);
+      }
+      update(buf) {
+        (0, utils_ts_1.aexists)(this);
+        this.iHash.update(buf);
+        return this;
+      }
+      digestInto(out) {
+        (0, utils_ts_1.aexists)(this);
+        (0, utils_ts_1.abytes)(out, this.outputLen);
+        this.finished = true;
+        this.iHash.digestInto(out);
+        this.oHash.update(out);
+        this.oHash.digestInto(out);
+        this.destroy();
+      }
+      digest() {
+        const out = new Uint8Array(this.oHash.outputLen);
+        this.digestInto(out);
+        return out;
+      }
+      _cloneInto(to) {
+        to || (to = Object.create(Object.getPrototypeOf(this), {}));
+        const { oHash, iHash, finished, destroyed, blockLen, outputLen } = this;
+        to = to;
+        to.finished = finished;
+        to.destroyed = destroyed;
+        to.blockLen = blockLen;
+        to.outputLen = outputLen;
+        to.oHash = oHash._cloneInto(to.oHash);
+        to.iHash = iHash._cloneInto(to.iHash);
+        return to;
+      }
+      clone() {
+        return this._cloneInto();
+      }
+      destroy() {
+        this.destroyed = true;
+        this.oHash.destroy();
+        this.iHash.destroy();
+      }
+    };
+    exports2.HMAC = HMAC;
+    var hmac = (hash, key, message) => new HMAC(hash, key).update(message).digest();
+    exports2.hmac = hmac;
+    exports2.hmac.create = (hash, key) => new HMAC(hash, key);
+  }
+});
+
+// tools/node_modules/@noble/curves/utils.js
+var require_utils3 = __commonJS({
+  "tools/node_modules/@noble/curves/utils.js"(exports2) {
+    "use strict";
+    Object.defineProperty(exports2, "__esModule", { value: true });
+    exports2.notImplemented = exports2.bitMask = exports2.utf8ToBytes = exports2.randomBytes = exports2.isBytes = exports2.hexToBytes = exports2.concatBytes = exports2.bytesToUtf8 = exports2.bytesToHex = exports2.anumber = exports2.abytes = void 0;
+    exports2.abool = abool;
+    exports2._abool2 = _abool2;
+    exports2._abytes2 = _abytes2;
+    exports2.numberToHexUnpadded = numberToHexUnpadded;
+    exports2.hexToNumber = hexToNumber;
+    exports2.bytesToNumberBE = bytesToNumberBE;
+    exports2.bytesToNumberLE = bytesToNumberLE;
+    exports2.numberToBytesBE = numberToBytesBE;
+    exports2.numberToBytesLE = numberToBytesLE;
+    exports2.numberToVarBytesBE = numberToVarBytesBE;
+    exports2.ensureBytes = ensureBytes;
+    exports2.equalBytes = equalBytes;
+    exports2.copyBytes = copyBytes;
+    exports2.asciiToBytes = asciiToBytes;
+    exports2.inRange = inRange;
+    exports2.aInRange = aInRange;
+    exports2.bitLen = bitLen;
+    exports2.bitGet = bitGet;
+    exports2.bitSet = bitSet;
+    exports2.createHmacDrbg = createHmacDrbg;
+    exports2.validateObject = validateObject;
+    exports2.isHash = isHash;
+    exports2._validateObject = _validateObject;
+    exports2.memoized = memoized;
+    var utils_js_1 = require_utils2();
+    var utils_js_2 = require_utils2();
+    Object.defineProperty(exports2, "abytes", { enumerable: true, get: function() {
+      return utils_js_2.abytes;
+    } });
+    Object.defineProperty(exports2, "anumber", { enumerable: true, get: function() {
+      return utils_js_2.anumber;
+    } });
+    Object.defineProperty(exports2, "bytesToHex", { enumerable: true, get: function() {
+      return utils_js_2.bytesToHex;
+    } });
+    Object.defineProperty(exports2, "bytesToUtf8", { enumerable: true, get: function() {
+      return utils_js_2.bytesToUtf8;
+    } });
+    Object.defineProperty(exports2, "concatBytes", { enumerable: true, get: function() {
+      return utils_js_2.concatBytes;
+    } });
+    Object.defineProperty(exports2, "hexToBytes", { enumerable: true, get: function() {
+      return utils_js_2.hexToBytes;
+    } });
+    Object.defineProperty(exports2, "isBytes", { enumerable: true, get: function() {
+      return utils_js_2.isBytes;
+    } });
+    Object.defineProperty(exports2, "randomBytes", { enumerable: true, get: function() {
+      return utils_js_2.randomBytes;
+    } });
+    Object.defineProperty(exports2, "utf8ToBytes", { enumerable: true, get: function() {
+      return utils_js_2.utf8ToBytes;
+    } });
+    var _0n = /* @__PURE__ */ BigInt(0);
+    var _1n = /* @__PURE__ */ BigInt(1);
+    function abool(title, value) {
+      if (typeof value !== "boolean")
+        throw new Error(title + " boolean expected, got " + value);
+    }
+    function _abool2(value, title = "") {
+      if (typeof value !== "boolean") {
+        const prefix = title && `"${title}"`;
+        throw new Error(prefix + "expected boolean, got type=" + typeof value);
+      }
+      return value;
+    }
+    function _abytes2(value, length, title = "") {
+      const bytes = (0, utils_js_1.isBytes)(value);
+      const len = value?.length;
+      const needsLen = length !== void 0;
+      if (!bytes || needsLen && len !== length) {
+        const prefix = title && `"${title}" `;
+        const ofLen = needsLen ? ` of length ${length}` : "";
+        const got = bytes ? `length=${len}` : `type=${typeof value}`;
+        throw new Error(prefix + "expected Uint8Array" + ofLen + ", got " + got);
+      }
+      return value;
+    }
+    function numberToHexUnpadded(num) {
+      const hex = num.toString(16);
+      return hex.length & 1 ? "0" + hex : hex;
+    }
+    function hexToNumber(hex) {
+      if (typeof hex !== "string")
+        throw new Error("hex string expected, got " + typeof hex);
+      return hex === "" ? _0n : BigInt("0x" + hex);
+    }
+    function bytesToNumberBE(bytes) {
+      return hexToNumber((0, utils_js_1.bytesToHex)(bytes));
+    }
+    function bytesToNumberLE(bytes) {
+      (0, utils_js_1.abytes)(bytes);
+      return hexToNumber((0, utils_js_1.bytesToHex)(Uint8Array.from(bytes).reverse()));
+    }
+    function numberToBytesBE(n, len) {
+      return (0, utils_js_1.hexToBytes)(n.toString(16).padStart(len * 2, "0"));
+    }
+    function numberToBytesLE(n, len) {
+      return numberToBytesBE(n, len).reverse();
+    }
+    function numberToVarBytesBE(n) {
+      return (0, utils_js_1.hexToBytes)(numberToHexUnpadded(n));
+    }
+    function ensureBytes(title, hex, expectedLength) {
+      let res;
+      if (typeof hex === "string") {
+        try {
+          res = (0, utils_js_1.hexToBytes)(hex);
+        } catch (e) {
+          throw new Error(title + " must be hex string or Uint8Array, cause: " + e);
+        }
+      } else if ((0, utils_js_1.isBytes)(hex)) {
+        res = Uint8Array.from(hex);
+      } else {
+        throw new Error(title + " must be hex string or Uint8Array");
+      }
+      const len = res.length;
+      if (typeof expectedLength === "number" && len !== expectedLength)
+        throw new Error(title + " of length " + expectedLength + " expected, got " + len);
+      return res;
+    }
+    function equalBytes(a, b) {
+      if (a.length !== b.length)
+        return false;
+      let diff = 0;
+      for (let i = 0; i < a.length; i++)
+        diff |= a[i] ^ b[i];
+      return diff === 0;
+    }
+    function copyBytes(bytes) {
+      return Uint8Array.from(bytes);
+    }
+    function asciiToBytes(ascii) {
+      return Uint8Array.from(ascii, (c, i) => {
+        const charCode = c.charCodeAt(0);
+        if (c.length !== 1 || charCode > 127) {
+          throw new Error(`string contains non-ASCII character "${ascii[i]}" with code ${charCode} at position ${i}`);
+        }
+        return charCode;
+      });
+    }
+    var isPosBig = (n) => typeof n === "bigint" && _0n <= n;
+    function inRange(n, min, max) {
+      return isPosBig(n) && isPosBig(min) && isPosBig(max) && min <= n && n < max;
+    }
+    function aInRange(title, n, min, max) {
+      if (!inRange(n, min, max))
+        throw new Error("expected valid " + title + ": " + min + " <= n < " + max + ", got " + n);
+    }
+    function bitLen(n) {
+      let len;
+      for (len = 0; n > _0n; n >>= _1n, len += 1)
+        ;
+      return len;
+    }
+    function bitGet(n, pos) {
+      return n >> BigInt(pos) & _1n;
+    }
+    function bitSet(n, pos, value) {
+      return n | (value ? _1n : _0n) << BigInt(pos);
+    }
+    var bitMask = (n) => (_1n << BigInt(n)) - _1n;
+    exports2.bitMask = bitMask;
+    function createHmacDrbg(hashLen, qByteLen, hmacFn) {
+      if (typeof hashLen !== "number" || hashLen < 2)
+        throw new Error("hashLen must be a number");
+      if (typeof qByteLen !== "number" || qByteLen < 2)
+        throw new Error("qByteLen must be a number");
+      if (typeof hmacFn !== "function")
+        throw new Error("hmacFn must be a function");
+      const u8n = (len) => new Uint8Array(len);
+      const u8of = (byte) => Uint8Array.of(byte);
+      let v = u8n(hashLen);
+      let k = u8n(hashLen);
+      let i = 0;
+      const reset = () => {
+        v.fill(1);
+        k.fill(0);
+        i = 0;
+      };
+      const h = (...b) => hmacFn(k, v, ...b);
+      const reseed = (seed = u8n(0)) => {
+        k = h(u8of(0), seed);
+        v = h();
+        if (seed.length === 0)
+          return;
+        k = h(u8of(1), seed);
+        v = h();
+      };
+      const gen = () => {
+        if (i++ >= 1e3)
+          throw new Error("drbg: tried 1000 values");
+        let len = 0;
+        const out = [];
+        while (len < qByteLen) {
+          v = h();
+          const sl = v.slice();
+          out.push(sl);
+          len += v.length;
+        }
+        return (0, utils_js_1.concatBytes)(...out);
+      };
+      const genUntil = (seed, pred) => {
+        reset();
+        reseed(seed);
+        let res = void 0;
+        while (!(res = pred(gen())))
+          reseed();
+        reset();
+        return res;
+      };
+      return genUntil;
+    }
+    var validatorFns = {
+      bigint: (val) => typeof val === "bigint",
+      function: (val) => typeof val === "function",
+      boolean: (val) => typeof val === "boolean",
+      string: (val) => typeof val === "string",
+      stringOrUint8Array: (val) => typeof val === "string" || (0, utils_js_1.isBytes)(val),
+      isSafeInteger: (val) => Number.isSafeInteger(val),
+      array: (val) => Array.isArray(val),
+      field: (val, object) => object.Fp.isValid(val),
+      hash: (val) => typeof val === "function" && Number.isSafeInteger(val.outputLen)
+    };
+    function validateObject(object, validators, optValidators = {}) {
+      const checkField = (fieldName, type, isOptional) => {
+        const checkVal = validatorFns[type];
+        if (typeof checkVal !== "function")
+          throw new Error("invalid validator function");
+        const val = object[fieldName];
+        if (isOptional && val === void 0)
+          return;
+        if (!checkVal(val, object)) {
+          throw new Error("param " + String(fieldName) + " is invalid. Expected " + type + ", got " + val);
+        }
+      };
+      for (const [fieldName, type] of Object.entries(validators))
+        checkField(fieldName, type, false);
+      for (const [fieldName, type] of Object.entries(optValidators))
+        checkField(fieldName, type, true);
+      return object;
+    }
+    function isHash(val) {
+      return typeof val === "function" && Number.isSafeInteger(val.outputLen);
+    }
+    function _validateObject(object, fields, optFields = {}) {
+      if (!object || typeof object !== "object")
+        throw new Error("expected valid options object");
+      function checkField(fieldName, expectedType, isOpt) {
+        const val = object[fieldName];
+        if (isOpt && val === void 0)
+          return;
+        const current = typeof val;
+        if (current !== expectedType || val === null)
+          throw new Error(`param "${fieldName}" is invalid: expected ${expectedType}, got ${current}`);
+      }
+      Object.entries(fields).forEach(([k, v]) => checkField(k, v, false));
+      Object.entries(optFields).forEach(([k, v]) => checkField(k, v, true));
+    }
+    var notImplemented = () => {
+      throw new Error("not implemented");
+    };
+    exports2.notImplemented = notImplemented;
+    function memoized(fn) {
+      const map = /* @__PURE__ */ new WeakMap();
+      return (arg, ...args) => {
+        const val = map.get(arg);
+        if (val !== void 0)
+          return val;
+        const computed = fn(arg, ...args);
+        map.set(arg, computed);
+        return computed;
+      };
+    }
+  }
+});
+
+// tools/node_modules/@noble/curves/abstract/modular.js
+var require_modular = __commonJS({
+  "tools/node_modules/@noble/curves/abstract/modular.js"(exports2) {
+    "use strict";
+    Object.defineProperty(exports2, "__esModule", { value: true });
+    exports2.isNegativeLE = void 0;
+    exports2.mod = mod;
+    exports2.pow = pow;
+    exports2.pow2 = pow2;
+    exports2.invert = invert;
+    exports2.tonelliShanks = tonelliShanks;
+    exports2.FpSqrt = FpSqrt;
+    exports2.validateField = validateField;
+    exports2.FpPow = FpPow;
+    exports2.FpInvertBatch = FpInvertBatch;
+    exports2.FpDiv = FpDiv;
+    exports2.FpLegendre = FpLegendre;
+    exports2.FpIsSquare = FpIsSquare;
+    exports2.nLength = nLength;
+    exports2.Field = Field;
+    exports2.FpSqrtOdd = FpSqrtOdd;
+    exports2.FpSqrtEven = FpSqrtEven;
+    exports2.hashToPrivateScalar = hashToPrivateScalar;
+    exports2.getFieldBytesLength = getFieldBytesLength;
+    exports2.getMinHashLength = getMinHashLength;
+    exports2.mapHashToField = mapHashToField;
+    var utils_ts_1 = require_utils3();
+    var _0n = BigInt(0);
+    var _1n = BigInt(1);
+    var _2n = /* @__PURE__ */ BigInt(2);
+    var _3n = /* @__PURE__ */ BigInt(3);
+    var _4n = /* @__PURE__ */ BigInt(4);
+    var _5n = /* @__PURE__ */ BigInt(5);
+    var _7n = /* @__PURE__ */ BigInt(7);
+    var _8n = /* @__PURE__ */ BigInt(8);
+    var _9n = /* @__PURE__ */ BigInt(9);
+    var _16n = /* @__PURE__ */ BigInt(16);
+    function mod(a, b) {
+      const result = a % b;
+      return result >= _0n ? result : b + result;
+    }
+    function pow(num, power, modulo) {
+      return FpPow(Field(modulo), num, power);
+    }
+    function pow2(x, power, modulo) {
+      let res = x;
+      while (power-- > _0n) {
+        res *= res;
+        res %= modulo;
+      }
+      return res;
+    }
+    function invert(number, modulo) {
+      if (number === _0n)
+        throw new Error("invert: expected non-zero number");
+      if (modulo <= _0n)
+        throw new Error("invert: expected positive modulus, got " + modulo);
+      let a = mod(number, modulo);
+      let b = modulo;
+      let x = _0n, y = _1n, u = _1n, v = _0n;
+      while (a !== _0n) {
+        const q = b / a;
+        const r = b % a;
+        const m = x - u * q;
+        const n = y - v * q;
+        b = a, a = r, x = u, y = v, u = m, v = n;
+      }
+      const gcd = b;
+      if (gcd !== _1n)
+        throw new Error("invert: does not exist");
+      return mod(x, modulo);
+    }
+    function assertIsSquare(Fp, root, n) {
+      if (!Fp.eql(Fp.sqr(root), n))
+        throw new Error("Cannot find square root");
+    }
+    function sqrt3mod4(Fp, n) {
+      const p1div4 = (Fp.ORDER + _1n) / _4n;
+      const root = Fp.pow(n, p1div4);
+      assertIsSquare(Fp, root, n);
+      return root;
+    }
+    function sqrt5mod8(Fp, n) {
+      const p5div8 = (Fp.ORDER - _5n) / _8n;
+      const n2 = Fp.mul(n, _2n);
+      const v = Fp.pow(n2, p5div8);
+      const nv = Fp.mul(n, v);
+      const i = Fp.mul(Fp.mul(nv, _2n), v);
+      const root = Fp.mul(nv, Fp.sub(i, Fp.ONE));
+      assertIsSquare(Fp, root, n);
+      return root;
+    }
+    function sqrt9mod16(P) {
+      const Fp_ = Field(P);
+      const tn = tonelliShanks(P);
+      const c1 = tn(Fp_, Fp_.neg(Fp_.ONE));
+      const c2 = tn(Fp_, c1);
+      const c3 = tn(Fp_, Fp_.neg(c1));
+      const c4 = (P + _7n) / _16n;
+      return (Fp, n) => {
+        let tv1 = Fp.pow(n, c4);
+        let tv2 = Fp.mul(tv1, c1);
+        const tv3 = Fp.mul(tv1, c2);
+        const tv4 = Fp.mul(tv1, c3);
+        const e1 = Fp.eql(Fp.sqr(tv2), n);
+        const e2 = Fp.eql(Fp.sqr(tv3), n);
+        tv1 = Fp.cmov(tv1, tv2, e1);
+        tv2 = Fp.cmov(tv4, tv3, e2);
+        const e3 = Fp.eql(Fp.sqr(tv2), n);
+        const root = Fp.cmov(tv1, tv2, e3);
+        assertIsSquare(Fp, root, n);
+        return root;
+      };
+    }
+    function tonelliShanks(P) {
+      if (P < _3n)
+        throw new Error("sqrt is not defined for small field");
+      let Q = P - _1n;
+      let S = 0;
+      while (Q % _2n === _0n) {
+        Q /= _2n;
+        S++;
+      }
+      let Z = _2n;
+      const _Fp = Field(P);
+      while (FpLegendre(_Fp, Z) === 1) {
+        if (Z++ > 1e3)
+          throw new Error("Cannot find square root: probably non-prime P");
+      }
+      if (S === 1)
+        return sqrt3mod4;
+      let cc = _Fp.pow(Z, Q);
+      const Q1div2 = (Q + _1n) / _2n;
+      return function tonelliSlow(Fp, n) {
+        if (Fp.is0(n))
+          return n;
+        if (FpLegendre(Fp, n) !== 1)
+          throw new Error("Cannot find square root");
+        let M = S;
+        let c = Fp.mul(Fp.ONE, cc);
+        let t = Fp.pow(n, Q);
+        let R = Fp.pow(n, Q1div2);
+        while (!Fp.eql(t, Fp.ONE)) {
+          if (Fp.is0(t))
+            return Fp.ZERO;
+          let i = 1;
+          let t_tmp = Fp.sqr(t);
+          while (!Fp.eql(t_tmp, Fp.ONE)) {
+            i++;
+            t_tmp = Fp.sqr(t_tmp);
+            if (i === M)
+              throw new Error("Cannot find square root");
+          }
+          const exponent = _1n << BigInt(M - i - 1);
+          const b = Fp.pow(c, exponent);
+          M = i;
+          c = Fp.sqr(b);
+          t = Fp.mul(t, c);
+          R = Fp.mul(R, b);
+        }
+        return R;
+      };
+    }
+    function FpSqrt(P) {
+      if (P % _4n === _3n)
+        return sqrt3mod4;
+      if (P % _8n === _5n)
+        return sqrt5mod8;
+      if (P % _16n === _9n)
+        return sqrt9mod16(P);
+      return tonelliShanks(P);
+    }
+    var isNegativeLE = (num, modulo) => (mod(num, modulo) & _1n) === _1n;
+    exports2.isNegativeLE = isNegativeLE;
+    var FIELD_FIELDS = [
+      "create",
+      "isValid",
+      "is0",
+      "neg",
+      "inv",
+      "sqrt",
+      "sqr",
+      "eql",
+      "add",
+      "sub",
+      "mul",
+      "pow",
+      "div",
+      "addN",
+      "subN",
+      "mulN",
+      "sqrN"
+    ];
+    function validateField(field) {
+      const initial = {
+        ORDER: "bigint",
+        MASK: "bigint",
+        BYTES: "number",
+        BITS: "number"
+      };
+      const opts = FIELD_FIELDS.reduce((map, val) => {
+        map[val] = "function";
+        return map;
+      }, initial);
+      (0, utils_ts_1._validateObject)(field, opts);
+      return field;
+    }
+    function FpPow(Fp, num, power) {
+      if (power < _0n)
+        throw new Error("invalid exponent, negatives unsupported");
+      if (power === _0n)
+        return Fp.ONE;
+      if (power === _1n)
+        return num;
+      let p = Fp.ONE;
+      let d = num;
+      while (power > _0n) {
+        if (power & _1n)
+          p = Fp.mul(p, d);
+        d = Fp.sqr(d);
+        power >>= _1n;
+      }
+      return p;
+    }
+    function FpInvertBatch(Fp, nums, passZero = false) {
+      const inverted = new Array(nums.length).fill(passZero ? Fp.ZERO : void 0);
+      const multipliedAcc = nums.reduce((acc, num, i) => {
+        if (Fp.is0(num))
+          return acc;
+        inverted[i] = acc;
+        return Fp.mul(acc, num);
+      }, Fp.ONE);
+      const invertedAcc = Fp.inv(multipliedAcc);
+      nums.reduceRight((acc, num, i) => {
+        if (Fp.is0(num))
+          return acc;
+        inverted[i] = Fp.mul(acc, inverted[i]);
+        return Fp.mul(acc, num);
+      }, invertedAcc);
+      return inverted;
+    }
+    function FpDiv(Fp, lhs, rhs) {
+      return Fp.mul(lhs, typeof rhs === "bigint" ? invert(rhs, Fp.ORDER) : Fp.inv(rhs));
+    }
+    function FpLegendre(Fp, n) {
+      const p1mod2 = (Fp.ORDER - _1n) / _2n;
+      const powered = Fp.pow(n, p1mod2);
+      const yes = Fp.eql(powered, Fp.ONE);
+      const zero = Fp.eql(powered, Fp.ZERO);
+      const no = Fp.eql(powered, Fp.neg(Fp.ONE));
+      if (!yes && !zero && !no)
+        throw new Error("invalid Legendre symbol result");
+      return yes ? 1 : zero ? 0 : -1;
+    }
+    function FpIsSquare(Fp, n) {
+      const l = FpLegendre(Fp, n);
+      return l === 1;
+    }
+    function nLength(n, nBitLength) {
+      if (nBitLength !== void 0)
+        (0, utils_ts_1.anumber)(nBitLength);
+      const _nBitLength = nBitLength !== void 0 ? nBitLength : n.toString(2).length;
+      const nByteLength = Math.ceil(_nBitLength / 8);
+      return { nBitLength: _nBitLength, nByteLength };
+    }
+    function Field(ORDER, bitLenOrOpts, isLE = false, opts = {}) {
+      if (ORDER <= _0n)
+        throw new Error("invalid field: expected ORDER > 0, got " + ORDER);
+      let _nbitLength = void 0;
+      let _sqrt = void 0;
+      let modFromBytes = false;
+      let allowedLengths = void 0;
+      if (typeof bitLenOrOpts === "object" && bitLenOrOpts != null) {
+        if (opts.sqrt || isLE)
+          throw new Error("cannot specify opts in two arguments");
+        const _opts = bitLenOrOpts;
+        if (_opts.BITS)
+          _nbitLength = _opts.BITS;
+        if (_opts.sqrt)
+          _sqrt = _opts.sqrt;
+        if (typeof _opts.isLE === "boolean")
+          isLE = _opts.isLE;
+        if (typeof _opts.modFromBytes === "boolean")
+          modFromBytes = _opts.modFromBytes;
+        allowedLengths = _opts.allowedLengths;
+      } else {
+        if (typeof bitLenOrOpts === "number")
+          _nbitLength = bitLenOrOpts;
+        if (opts.sqrt)
+          _sqrt = opts.sqrt;
+      }
+      const { nBitLength: BITS, nByteLength: BYTES } = nLength(ORDER, _nbitLength);
+      if (BYTES > 2048)
+        throw new Error("invalid field: expected ORDER of <= 2048 bytes");
+      let sqrtP;
+      const f = Object.freeze({
+        ORDER,
+        isLE,
+        BITS,
+        BYTES,
+        MASK: (0, utils_ts_1.bitMask)(BITS),
+        ZERO: _0n,
+        ONE: _1n,
+        allowedLengths,
+        create: (num) => mod(num, ORDER),
+        isValid: (num) => {
+          if (typeof num !== "bigint")
+            throw new Error("invalid field element: expected bigint, got " + typeof num);
+          return _0n <= num && num < ORDER;
+        },
+        is0: (num) => num === _0n,
+        // is valid and invertible
+        isValidNot0: (num) => !f.is0(num) && f.isValid(num),
+        isOdd: (num) => (num & _1n) === _1n,
+        neg: (num) => mod(-num, ORDER),
+        eql: (lhs, rhs) => lhs === rhs,
+        sqr: (num) => mod(num * num, ORDER),
+        add: (lhs, rhs) => mod(lhs + rhs, ORDER),
+        sub: (lhs, rhs) => mod(lhs - rhs, ORDER),
+        mul: (lhs, rhs) => mod(lhs * rhs, ORDER),
+        pow: (num, power) => FpPow(f, num, power),
+        div: (lhs, rhs) => mod(lhs * invert(rhs, ORDER), ORDER),
+        // Same as above, but doesn't normalize
+        sqrN: (num) => num * num,
+        addN: (lhs, rhs) => lhs + rhs,
+        subN: (lhs, rhs) => lhs - rhs,
+        mulN: (lhs, rhs) => lhs * rhs,
+        inv: (num) => invert(num, ORDER),
+        sqrt: _sqrt || ((n) => {
+          if (!sqrtP)
+            sqrtP = FpSqrt(ORDER);
+          return sqrtP(f, n);
+        }),
+        toBytes: (num) => isLE ? (0, utils_ts_1.numberToBytesLE)(num, BYTES) : (0, utils_ts_1.numberToBytesBE)(num, BYTES),
+        fromBytes: (bytes, skipValidation = true) => {
+          if (allowedLengths) {
+            if (!allowedLengths.includes(bytes.length) || bytes.length > BYTES) {
+              throw new Error("Field.fromBytes: expected " + allowedLengths + " bytes, got " + bytes.length);
+            }
+            const padded = new Uint8Array(BYTES);
+            padded.set(bytes, isLE ? 0 : padded.length - bytes.length);
+            bytes = padded;
+          }
+          if (bytes.length !== BYTES)
+            throw new Error("Field.fromBytes: expected " + BYTES + " bytes, got " + bytes.length);
+          let scalar = isLE ? (0, utils_ts_1.bytesToNumberLE)(bytes) : (0, utils_ts_1.bytesToNumberBE)(bytes);
+          if (modFromBytes)
+            scalar = mod(scalar, ORDER);
+          if (!skipValidation) {
+            if (!f.isValid(scalar))
+              throw new Error("invalid field element: outside of range 0..ORDER");
+          }
+          return scalar;
+        },
+        // TODO: we don't need it here, move out to separate fn
+        invertBatch: (lst) => FpInvertBatch(f, lst),
+        // We can't move this out because Fp6, Fp12 implement it
+        // and it's unclear what to return in there.
+        cmov: (a, b, c) => c ? b : a
+      });
+      return Object.freeze(f);
+    }
+    function FpSqrtOdd(Fp, elm) {
+      if (!Fp.isOdd)
+        throw new Error("Field doesn't have isOdd");
+      const root = Fp.sqrt(elm);
+      return Fp.isOdd(root) ? root : Fp.neg(root);
+    }
+    function FpSqrtEven(Fp, elm) {
+      if (!Fp.isOdd)
+        throw new Error("Field doesn't have isOdd");
+      const root = Fp.sqrt(elm);
+      return Fp.isOdd(root) ? Fp.neg(root) : root;
+    }
+    function hashToPrivateScalar(hash, groupOrder, isLE = false) {
+      hash = (0, utils_ts_1.ensureBytes)("privateHash", hash);
+      const hashLen = hash.length;
+      const minLen = nLength(groupOrder).nByteLength + 8;
+      if (minLen < 24 || hashLen < minLen || hashLen > 1024)
+        throw new Error("hashToPrivateScalar: expected " + minLen + "-1024 bytes of input, got " + hashLen);
+      const num = isLE ? (0, utils_ts_1.bytesToNumberLE)(hash) : (0, utils_ts_1.bytesToNumberBE)(hash);
+      return mod(num, groupOrder - _1n) + _1n;
+    }
+    function getFieldBytesLength(fieldOrder) {
+      if (typeof fieldOrder !== "bigint")
+        throw new Error("field order must be bigint");
+      const bitLength = fieldOrder.toString(2).length;
+      return Math.ceil(bitLength / 8);
+    }
+    function getMinHashLength(fieldOrder) {
+      const length = getFieldBytesLength(fieldOrder);
+      return length + Math.ceil(length / 2);
+    }
+    function mapHashToField(key, fieldOrder, isLE = false) {
+      const len = key.length;
+      const fieldLen = getFieldBytesLength(fieldOrder);
+      const minLen = getMinHashLength(fieldOrder);
+      if (len < 16 || len < minLen || len > 1024)
+        throw new Error("expected " + minLen + "-1024 bytes of input, got " + len);
+      const num = isLE ? (0, utils_ts_1.bytesToNumberLE)(key) : (0, utils_ts_1.bytesToNumberBE)(key);
+      const reduced = mod(num, fieldOrder - _1n) + _1n;
+      return isLE ? (0, utils_ts_1.numberToBytesLE)(reduced, fieldLen) : (0, utils_ts_1.numberToBytesBE)(reduced, fieldLen);
+    }
+  }
+});
+
+// tools/node_modules/@noble/curves/abstract/curve.js
+var require_curve = __commonJS({
+  "tools/node_modules/@noble/curves/abstract/curve.js"(exports2) {
+    "use strict";
+    Object.defineProperty(exports2, "__esModule", { value: true });
+    exports2.wNAF = void 0;
+    exports2.negateCt = negateCt;
+    exports2.normalizeZ = normalizeZ;
+    exports2.mulEndoUnsafe = mulEndoUnsafe;
+    exports2.pippenger = pippenger;
+    exports2.precomputeMSMUnsafe = precomputeMSMUnsafe;
+    exports2.validateBasic = validateBasic;
+    exports2._createCurveFields = _createCurveFields;
+    var utils_ts_1 = require_utils3();
+    var modular_ts_1 = require_modular();
+    var _0n = BigInt(0);
+    var _1n = BigInt(1);
+    function negateCt(condition, item) {
+      const neg = item.negate();
+      return condition ? neg : item;
+    }
+    function normalizeZ(c, points) {
+      const invertedZs = (0, modular_ts_1.FpInvertBatch)(c.Fp, points.map((p) => p.Z));
+      return points.map((p, i) => c.fromAffine(p.toAffine(invertedZs[i])));
+    }
+    function validateW(W, bits) {
+      if (!Number.isSafeInteger(W) || W <= 0 || W > bits)
+        throw new Error("invalid window size, expected [1.." + bits + "], got W=" + W);
+    }
+    function calcWOpts(W, scalarBits) {
+      validateW(W, scalarBits);
+      const windows = Math.ceil(scalarBits / W) + 1;
+      const windowSize = 2 ** (W - 1);
+      const maxNumber = 2 ** W;
+      const mask = (0, utils_ts_1.bitMask)(W);
+      const shiftBy = BigInt(W);
+      return { windows, windowSize, mask, maxNumber, shiftBy };
+    }
+    function calcOffsets(n, window2, wOpts) {
+      const { windowSize, mask, maxNumber, shiftBy } = wOpts;
+      let wbits = Number(n & mask);
+      let nextN = n >> shiftBy;
+      if (wbits > windowSize) {
+        wbits -= maxNumber;
+        nextN += _1n;
+      }
+      const offsetStart = window2 * windowSize;
+      const offset = offsetStart + Math.abs(wbits) - 1;
+      const isZero = wbits === 0;
+      const isNeg = wbits < 0;
+      const isNegF = window2 % 2 !== 0;
+      const offsetF = offsetStart;
+      return { nextN, offset, isZero, isNeg, isNegF, offsetF };
+    }
+    function validateMSMPoints(points, c) {
+      if (!Array.isArray(points))
+        throw new Error("array expected");
+      points.forEach((p, i) => {
+        if (!(p instanceof c))
+          throw new Error("invalid point at index " + i);
+      });
+    }
+    function validateMSMScalars(scalars, field) {
+      if (!Array.isArray(scalars))
+        throw new Error("array of scalars expected");
+      scalars.forEach((s, i) => {
+        if (!field.isValid(s))
+          throw new Error("invalid scalar at index " + i);
+      });
+    }
+    var pointPrecomputes = /* @__PURE__ */ new WeakMap();
+    var pointWindowSizes = /* @__PURE__ */ new WeakMap();
+    function getW(P) {
+      return pointWindowSizes.get(P) || 1;
+    }
+    function assert0(n) {
+      if (n !== _0n)
+        throw new Error("invalid wNAF");
+    }
+    var wNAF = class {
+      // Parametrized with a given Point class (not individual point)
+      constructor(Point, bits) {
+        this.BASE = Point.BASE;
+        this.ZERO = Point.ZERO;
+        this.Fn = Point.Fn;
+        this.bits = bits;
+      }
+      // non-const time multiplication ladder
+      _unsafeLadder(elm, n, p = this.ZERO) {
+        let d = elm;
+        while (n > _0n) {
+          if (n & _1n)
+            p = p.add(d);
+          d = d.double();
+          n >>= _1n;
+        }
+        return p;
+      }
+      /**
+       * Creates a wNAF precomputation window. Used for caching.
+       * Default window size is set by `utils.precompute()` and is equal to 8.
+       * Number of precomputed points depends on the curve size:
+       * 2^(𝑊−1) * (Math.ceil(𝑛 / 𝑊) + 1), where:
+       * - 𝑊 is the window size
+       * - 𝑛 is the bitlength of the curve order.
+       * For a 256-bit curve and window size 8, the number of precomputed points is 128 * 33 = 4224.
+       * @param point Point instance
+       * @param W window size
+       * @returns precomputed point tables flattened to a single array
+       */
+      precomputeWindow(point, W) {
+        const { windows, windowSize } = calcWOpts(W, this.bits);
+        const points = [];
+        let p = point;
+        let base = p;
+        for (let window2 = 0; window2 < windows; window2++) {
+          base = p;
+          points.push(base);
+          for (let i = 1; i < windowSize; i++) {
+            base = base.add(p);
+            points.push(base);
+          }
+          p = base.double();
+        }
+        return points;
+      }
+      /**
+       * Implements ec multiplication using precomputed tables and w-ary non-adjacent form.
+       * More compact implementation:
+       * https://github.com/paulmillr/noble-secp256k1/blob/47cb1669b6e506ad66b35fe7d76132ae97465da2/index.ts#L502-L541
+       * @returns real and fake (for const-time) points
+       */
+      wNAF(W, precomputes, n) {
+        if (!this.Fn.isValid(n))
+          throw new Error("invalid scalar");
+        let p = this.ZERO;
+        let f = this.BASE;
+        const wo = calcWOpts(W, this.bits);
+        for (let window2 = 0; window2 < wo.windows; window2++) {
+          const { nextN, offset, isZero, isNeg, isNegF, offsetF } = calcOffsets(n, window2, wo);
+          n = nextN;
+          if (isZero) {
+            f = f.add(negateCt(isNegF, precomputes[offsetF]));
+          } else {
+            p = p.add(negateCt(isNeg, precomputes[offset]));
+          }
+        }
+        assert0(n);
+        return { p, f };
+      }
+      /**
+       * Implements ec unsafe (non const-time) multiplication using precomputed tables and w-ary non-adjacent form.
+       * @param acc accumulator point to add result of multiplication
+       * @returns point
+       */
+      wNAFUnsafe(W, precomputes, n, acc = this.ZERO) {
+        const wo = calcWOpts(W, this.bits);
+        for (let window2 = 0; window2 < wo.windows; window2++) {
+          if (n === _0n)
+            break;
+          const { nextN, offset, isZero, isNeg } = calcOffsets(n, window2, wo);
+          n = nextN;
+          if (isZero) {
+            continue;
+          } else {
+            const item = precomputes[offset];
+            acc = acc.add(isNeg ? item.negate() : item);
+          }
+        }
+        assert0(n);
+        return acc;
+      }
+      getPrecomputes(W, point, transform) {
+        let comp = pointPrecomputes.get(point);
+        if (!comp) {
+          comp = this.precomputeWindow(point, W);
+          if (W !== 1) {
+            if (typeof transform === "function")
+              comp = transform(comp);
+            pointPrecomputes.set(point, comp);
+          }
+        }
+        return comp;
+      }
+      cached(point, scalar, transform) {
+        const W = getW(point);
+        return this.wNAF(W, this.getPrecomputes(W, point, transform), scalar);
+      }
+      unsafe(point, scalar, transform, prev) {
+        const W = getW(point);
+        if (W === 1)
+          return this._unsafeLadder(point, scalar, prev);
+        return this.wNAFUnsafe(W, this.getPrecomputes(W, point, transform), scalar, prev);
+      }
+      // We calculate precomputes for elliptic curve point multiplication
+      // using windowed method. This specifies window size and
+      // stores precomputed values. Usually only base point would be precomputed.
+      createCache(P, W) {
+        validateW(W, this.bits);
+        pointWindowSizes.set(P, W);
+        pointPrecomputes.delete(P);
+      }
+      hasCache(elm) {
+        return getW(elm) !== 1;
+      }
+    };
+    exports2.wNAF = wNAF;
+    function mulEndoUnsafe(Point, point, k1, k2) {
+      let acc = point;
+      let p1 = Point.ZERO;
+      let p2 = Point.ZERO;
+      while (k1 > _0n || k2 > _0n) {
+        if (k1 & _1n)
+          p1 = p1.add(acc);
+        if (k2 & _1n)
+          p2 = p2.add(acc);
+        acc = acc.double();
+        k1 >>= _1n;
+        k2 >>= _1n;
+      }
+      return { p1, p2 };
+    }
+    function pippenger(c, fieldN, points, scalars) {
+      validateMSMPoints(points, c);
+      validateMSMScalars(scalars, fieldN);
+      const plength = points.length;
+      const slength = scalars.length;
+      if (plength !== slength)
+        throw new Error("arrays of points and scalars must have equal length");
+      const zero = c.ZERO;
+      const wbits = (0, utils_ts_1.bitLen)(BigInt(plength));
+      let windowSize = 1;
+      if (wbits > 12)
+        windowSize = wbits - 3;
+      else if (wbits > 4)
+        windowSize = wbits - 2;
+      else if (wbits > 0)
+        windowSize = 2;
+      const MASK = (0, utils_ts_1.bitMask)(windowSize);
+      const buckets = new Array(Number(MASK) + 1).fill(zero);
+      const lastBits = Math.floor((fieldN.BITS - 1) / windowSize) * windowSize;
+      let sum = zero;
+      for (let i = lastBits; i >= 0; i -= windowSize) {
+        buckets.fill(zero);
+        for (let j = 0; j < slength; j++) {
+          const scalar = scalars[j];
+          const wbits2 = Number(scalar >> BigInt(i) & MASK);
+          buckets[wbits2] = buckets[wbits2].add(points[j]);
+        }
+        let resI = zero;
+        for (let j = buckets.length - 1, sumI = zero; j > 0; j--) {
+          sumI = sumI.add(buckets[j]);
+          resI = resI.add(sumI);
+        }
+        sum = sum.add(resI);
+        if (i !== 0)
+          for (let j = 0; j < windowSize; j++)
+            sum = sum.double();
+      }
+      return sum;
+    }
+    function precomputeMSMUnsafe(c, fieldN, points, windowSize) {
+      validateW(windowSize, fieldN.BITS);
+      validateMSMPoints(points, c);
+      const zero = c.ZERO;
+      const tableSize = 2 ** windowSize - 1;
+      const chunks = Math.ceil(fieldN.BITS / windowSize);
+      const MASK = (0, utils_ts_1.bitMask)(windowSize);
+      const tables = points.map((p) => {
+        const res = [];
+        for (let i = 0, acc = p; i < tableSize; i++) {
+          res.push(acc);
+          acc = acc.add(p);
+        }
+        return res;
+      });
+      return (scalars) => {
+        validateMSMScalars(scalars, fieldN);
+        if (scalars.length > points.length)
+          throw new Error("array of scalars must be smaller than array of points");
+        let res = zero;
+        for (let i = 0; i < chunks; i++) {
+          if (res !== zero)
+            for (let j = 0; j < windowSize; j++)
+              res = res.double();
+          const shiftBy = BigInt(chunks * windowSize - (i + 1) * windowSize);
+          for (let j = 0; j < scalars.length; j++) {
+            const n = scalars[j];
+            const curr = Number(n >> shiftBy & MASK);
+            if (!curr)
+              continue;
+            res = res.add(tables[j][curr - 1]);
+          }
+        }
+        return res;
+      };
+    }
+    function validateBasic(curve) {
+      (0, modular_ts_1.validateField)(curve.Fp);
+      (0, utils_ts_1.validateObject)(curve, {
+        n: "bigint",
+        h: "bigint",
+        Gx: "field",
+        Gy: "field"
+      }, {
+        nBitLength: "isSafeInteger",
+        nByteLength: "isSafeInteger"
+      });
+      return Object.freeze({
+        ...(0, modular_ts_1.nLength)(curve.n, curve.nBitLength),
+        ...curve,
+        ...{ p: curve.Fp.ORDER }
+      });
+    }
+    function createField(order, field, isLE) {
+      if (field) {
+        if (field.ORDER !== order)
+          throw new Error("Field.ORDER must match order: Fp == p, Fn == n");
+        (0, modular_ts_1.validateField)(field);
+        return field;
+      } else {
+        return (0, modular_ts_1.Field)(order, { isLE });
+      }
+    }
+    function _createCurveFields(type, CURVE, curveOpts = {}, FpFnLE) {
+      if (FpFnLE === void 0)
+        FpFnLE = type === "edwards";
+      if (!CURVE || typeof CURVE !== "object")
+        throw new Error(`expected valid ${type} CURVE object`);
+      for (const p of ["p", "n", "h"]) {
+        const val = CURVE[p];
+        if (!(typeof val === "bigint" && val > _0n))
+          throw new Error(`CURVE.${p} must be positive bigint`);
+      }
+      const Fp = createField(CURVE.p, curveOpts.Fp, FpFnLE);
+      const Fn = createField(CURVE.n, curveOpts.Fn, FpFnLE);
+      const _b = type === "weierstrass" ? "b" : "d";
+      const params = ["Gx", "Gy", "a", _b];
+      for (const p of params) {
+        if (!Fp.isValid(CURVE[p]))
+          throw new Error(`CURVE.${p} must be valid field element of CURVE.Fp`);
+      }
+      CURVE = Object.freeze(Object.assign({}, CURVE));
+      return { CURVE, Fp, Fn };
+    }
+  }
+});
+
+// tools/node_modules/@noble/curves/abstract/weierstrass.js
+var require_weierstrass = __commonJS({
+  "tools/node_modules/@noble/curves/abstract/weierstrass.js"(exports2) {
+    "use strict";
+    Object.defineProperty(exports2, "__esModule", { value: true });
+    exports2.DER = exports2.DERErr = void 0;
+    exports2._splitEndoScalar = _splitEndoScalar;
+    exports2._normFnElement = _normFnElement;
+    exports2.weierstrassN = weierstrassN;
+    exports2.SWUFpSqrtRatio = SWUFpSqrtRatio;
+    exports2.mapToCurveSimpleSWU = mapToCurveSimpleSWU;
+    exports2.ecdh = ecdh;
+    exports2.ecdsa = ecdsa;
+    exports2.weierstrassPoints = weierstrassPoints;
+    exports2._legacyHelperEquat = _legacyHelperEquat;
+    exports2.weierstrass = weierstrass;
+    var hmac_js_1 = require_hmac();
+    var utils_1 = require_utils2();
+    var utils_ts_1 = require_utils3();
+    var curve_ts_1 = require_curve();
+    var modular_ts_1 = require_modular();
+    var divNearest = (num, den) => (num + (num >= 0 ? den : -den) / _2n) / den;
+    function _splitEndoScalar(k, basis, n) {
+      const [[a1, b1], [a2, b2]] = basis;
+      const c1 = divNearest(b2 * k, n);
+      const c2 = divNearest(-b1 * k, n);
+      let k1 = k - c1 * a1 - c2 * a2;
+      let k2 = -c1 * b1 - c2 * b2;
+      const k1neg = k1 < _0n;
+      const k2neg = k2 < _0n;
+      if (k1neg)
+        k1 = -k1;
+      if (k2neg)
+        k2 = -k2;
+      const MAX_NUM = (0, utils_ts_1.bitMask)(Math.ceil((0, utils_ts_1.bitLen)(n) / 2)) + _1n;
+      if (k1 < _0n || k1 >= MAX_NUM || k2 < _0n || k2 >= MAX_NUM) {
+        throw new Error("splitScalar (endomorphism): failed, k=" + k);
+      }
+      return { k1neg, k1, k2neg, k2 };
+    }
+    function validateSigFormat(format) {
+      if (!["compact", "recovered", "der"].includes(format))
+        throw new Error('Signature format must be "compact", "recovered", or "der"');
+      return format;
+    }
+    function validateSigOpts(opts, def) {
+      const optsn = {};
+      for (let optName of Object.keys(def)) {
+        optsn[optName] = opts[optName] === void 0 ? def[optName] : opts[optName];
+      }
+      (0, utils_ts_1._abool2)(optsn.lowS, "lowS");
+      (0, utils_ts_1._abool2)(optsn.prehash, "prehash");
+      if (optsn.format !== void 0)
+        validateSigFormat(optsn.format);
+      return optsn;
+    }
+    var DERErr = class extends Error {
+      constructor(m = "") {
+        super(m);
+      }
+    };
+    exports2.DERErr = DERErr;
+    exports2.DER = {
+      // asn.1 DER encoding utils
+      Err: DERErr,
+      // Basic building block is TLV (Tag-Length-Value)
+      _tlv: {
+        encode: (tag, data) => {
+          const { Err: E } = exports2.DER;
+          if (tag < 0 || tag > 256)
+            throw new E("tlv.encode: wrong tag");
+          if (data.length & 1)
+            throw new E("tlv.encode: unpadded data");
+          const dataLen = data.length / 2;
+          const len = (0, utils_ts_1.numberToHexUnpadded)(dataLen);
+          if (len.length / 2 & 128)
+            throw new E("tlv.encode: long form length too big");
+          const lenLen = dataLen > 127 ? (0, utils_ts_1.numberToHexUnpadded)(len.length / 2 | 128) : "";
+          const t = (0, utils_ts_1.numberToHexUnpadded)(tag);
+          return t + lenLen + len + data;
+        },
+        // v - value, l - left bytes (unparsed)
+        decode(tag, data) {
+          const { Err: E } = exports2.DER;
+          let pos = 0;
+          if (tag < 0 || tag > 256)
+            throw new E("tlv.encode: wrong tag");
+          if (data.length < 2 || data[pos++] !== tag)
+            throw new E("tlv.decode: wrong tlv");
+          const first = data[pos++];
+          const isLong = !!(first & 128);
+          let length = 0;
+          if (!isLong)
+            length = first;
+          else {
+            const lenLen = first & 127;
+            if (!lenLen)
+              throw new E("tlv.decode(long): indefinite length not supported");
+            if (lenLen > 4)
+              throw new E("tlv.decode(long): byte length is too big");
+            const lengthBytes = data.subarray(pos, pos + lenLen);
+            if (lengthBytes.length !== lenLen)
+              throw new E("tlv.decode: length bytes not complete");
+            if (lengthBytes[0] === 0)
+              throw new E("tlv.decode(long): zero leftmost byte");
+            for (const b of lengthBytes)
+              length = length << 8 | b;
+            pos += lenLen;
+            if (length < 128)
+              throw new E("tlv.decode(long): not minimal encoding");
+          }
+          const v = data.subarray(pos, pos + length);
+          if (v.length !== length)
+            throw new E("tlv.decode: wrong value length");
+          return { v, l: data.subarray(pos + length) };
+        }
+      },
+      // https://crypto.stackexchange.com/a/57734 Leftmost bit of first byte is 'negative' flag,
+      // since we always use positive integers here. It must always be empty:
+      // - add zero byte if exists
+      // - if next byte doesn't have a flag, leading zero is not allowed (minimal encoding)
+      _int: {
+        encode(num) {
+          const { Err: E } = exports2.DER;
+          if (num < _0n)
+            throw new E("integer: negative integers are not allowed");
+          let hex = (0, utils_ts_1.numberToHexUnpadded)(num);
+          if (Number.parseInt(hex[0], 16) & 8)
+            hex = "00" + hex;
+          if (hex.length & 1)
+            throw new E("unexpected DER parsing assertion: unpadded hex");
+          return hex;
+        },
+        decode(data) {
+          const { Err: E } = exports2.DER;
+          if (data[0] & 128)
+            throw new E("invalid signature integer: negative");
+          if (data[0] === 0 && !(data[1] & 128))
+            throw new E("invalid signature integer: unnecessary leading zero");
+          return (0, utils_ts_1.bytesToNumberBE)(data);
+        }
+      },
+      toSig(hex) {
+        const { Err: E, _int: int, _tlv: tlv } = exports2.DER;
+        const data = (0, utils_ts_1.ensureBytes)("signature", hex);
+        const { v: seqBytes, l: seqLeftBytes } = tlv.decode(48, data);
+        if (seqLeftBytes.length)
+          throw new E("invalid signature: left bytes after parsing");
+        const { v: rBytes, l: rLeftBytes } = tlv.decode(2, seqBytes);
+        const { v: sBytes, l: sLeftBytes } = tlv.decode(2, rLeftBytes);
+        if (sLeftBytes.length)
+          throw new E("invalid signature: left bytes after parsing");
+        return { r: int.decode(rBytes), s: int.decode(sBytes) };
+      },
+      hexFromSig(sig) {
+        const { _tlv: tlv, _int: int } = exports2.DER;
+        const rs = tlv.encode(2, int.encode(sig.r));
+        const ss = tlv.encode(2, int.encode(sig.s));
+        const seq = rs + ss;
+        return tlv.encode(48, seq);
+      }
+    };
+    var _0n = BigInt(0);
+    var _1n = BigInt(1);
+    var _2n = BigInt(2);
+    var _3n = BigInt(3);
+    var _4n = BigInt(4);
+    function _normFnElement(Fn, key) {
+      const { BYTES: expected } = Fn;
+      let num;
+      if (typeof key === "bigint") {
+        num = key;
+      } else {
+        let bytes = (0, utils_ts_1.ensureBytes)("private key", key);
+        try {
+          num = Fn.fromBytes(bytes);
+        } catch (error) {
+          throw new Error(`invalid private key: expected ui8a of size ${expected}, got ${typeof key}`);
+        }
+      }
+      if (!Fn.isValidNot0(num))
+        throw new Error("invalid private key: out of range [1..N-1]");
+      return num;
+    }
+    function weierstrassN(params, extraOpts = {}) {
+      const validated = (0, curve_ts_1._createCurveFields)("weierstrass", params, extraOpts);
+      const { Fp, Fn } = validated;
+      let CURVE = validated.CURVE;
+      const { h: cofactor, n: CURVE_ORDER } = CURVE;
+      (0, utils_ts_1._validateObject)(extraOpts, {}, {
+        allowInfinityPoint: "boolean",
+        clearCofactor: "function",
+        isTorsionFree: "function",
+        fromBytes: "function",
+        toBytes: "function",
+        endo: "object",
+        wrapPrivateKey: "boolean"
+      });
+      const { endo } = extraOpts;
+      if (endo) {
+        if (!Fp.is0(CURVE.a) || typeof endo.beta !== "bigint" || !Array.isArray(endo.basises)) {
+          throw new Error('invalid endo: expected "beta": bigint and "basises": array');
+        }
+      }
+      const lengths = getWLengths(Fp, Fn);
+      function assertCompressionIsSupported() {
+        if (!Fp.isOdd)
+          throw new Error("compression is not supported: Field does not have .isOdd()");
+      }
+      function pointToBytes(_c, point, isCompressed) {
+        const { x, y } = point.toAffine();
+        const bx = Fp.toBytes(x);
+        (0, utils_ts_1._abool2)(isCompressed, "isCompressed");
+        if (isCompressed) {
+          assertCompressionIsSupported();
+          const hasEvenY = !Fp.isOdd(y);
+          return (0, utils_ts_1.concatBytes)(pprefix(hasEvenY), bx);
+        } else {
+          return (0, utils_ts_1.concatBytes)(Uint8Array.of(4), bx, Fp.toBytes(y));
+        }
+      }
+      function pointFromBytes(bytes) {
+        (0, utils_ts_1._abytes2)(bytes, void 0, "Point");
+        const { publicKey: comp, publicKeyUncompressed: uncomp } = lengths;
+        const length = bytes.length;
+        const head = bytes[0];
+        const tail = bytes.subarray(1);
+        if (length === comp && (head === 2 || head === 3)) {
+          const x = Fp.fromBytes(tail);
+          if (!Fp.isValid(x))
+            throw new Error("bad point: is not on curve, wrong x");
+          const y2 = weierstrassEquation(x);
+          let y;
+          try {
+            y = Fp.sqrt(y2);
+          } catch (sqrtError) {
+            const err = sqrtError instanceof Error ? ": " + sqrtError.message : "";
+            throw new Error("bad point: is not on curve, sqrt error" + err);
+          }
+          assertCompressionIsSupported();
+          const isYOdd = Fp.isOdd(y);
+          const isHeadOdd = (head & 1) === 1;
+          if (isHeadOdd !== isYOdd)
+            y = Fp.neg(y);
+          return { x, y };
+        } else if (length === uncomp && head === 4) {
+          const L = Fp.BYTES;
+          const x = Fp.fromBytes(tail.subarray(0, L));
+          const y = Fp.fromBytes(tail.subarray(L, L * 2));
+          if (!isValidXY(x, y))
+            throw new Error("bad point: is not on curve");
+          return { x, y };
+        } else {
+          throw new Error(`bad point: got length ${length}, expected compressed=${comp} or uncompressed=${uncomp}`);
+        }
+      }
+      const encodePoint = extraOpts.toBytes || pointToBytes;
+      const decodePoint = extraOpts.fromBytes || pointFromBytes;
+      function weierstrassEquation(x) {
+        const x2 = Fp.sqr(x);
+        const x3 = Fp.mul(x2, x);
+        return Fp.add(Fp.add(x3, Fp.mul(x, CURVE.a)), CURVE.b);
+      }
+      function isValidXY(x, y) {
+        const left = Fp.sqr(y);
+        const right = weierstrassEquation(x);
+        return Fp.eql(left, right);
+      }
+      if (!isValidXY(CURVE.Gx, CURVE.Gy))
+        throw new Error("bad curve params: generator point");
+      const _4a3 = Fp.mul(Fp.pow(CURVE.a, _3n), _4n);
+      const _27b2 = Fp.mul(Fp.sqr(CURVE.b), BigInt(27));
+      if (Fp.is0(Fp.add(_4a3, _27b2)))
+        throw new Error("bad curve params: a or b");
+      function acoord(title, n, banZero = false) {
+        if (!Fp.isValid(n) || banZero && Fp.is0(n))
+          throw new Error(`bad point coordinate ${title}`);
+        return n;
+      }
+      function aprjpoint(other) {
+        if (!(other instanceof Point))
+          throw new Error("ProjectivePoint expected");
+      }
+      function splitEndoScalarN(k) {
+        if (!endo || !endo.basises)
+          throw new Error("no endo");
+        return _splitEndoScalar(k, endo.basises, Fn.ORDER);
+      }
+      const toAffineMemo = (0, utils_ts_1.memoized)((p, iz) => {
+        const { X, Y, Z } = p;
+        if (Fp.eql(Z, Fp.ONE))
+          return { x: X, y: Y };
+        const is0 = p.is0();
+        if (iz == null)
+          iz = is0 ? Fp.ONE : Fp.inv(Z);
+        const x = Fp.mul(X, iz);
+        const y = Fp.mul(Y, iz);
+        const zz = Fp.mul(Z, iz);
+        if (is0)
+          return { x: Fp.ZERO, y: Fp.ZERO };
+        if (!Fp.eql(zz, Fp.ONE))
+          throw new Error("invZ was invalid");
+        return { x, y };
+      });
+      const assertValidMemo = (0, utils_ts_1.memoized)((p) => {
+        if (p.is0()) {
+          if (extraOpts.allowInfinityPoint && !Fp.is0(p.Y))
+            return;
+          throw new Error("bad point: ZERO");
+        }
+        const { x, y } = p.toAffine();
+        if (!Fp.isValid(x) || !Fp.isValid(y))
+          throw new Error("bad point: x or y not field elements");
+        if (!isValidXY(x, y))
+          throw new Error("bad point: equation left != right");
+        if (!p.isTorsionFree())
+          throw new Error("bad point: not in prime-order subgroup");
+        return true;
+      });
+      function finishEndo(endoBeta, k1p, k2p, k1neg, k2neg) {
+        k2p = new Point(Fp.mul(k2p.X, endoBeta), k2p.Y, k2p.Z);
+        k1p = (0, curve_ts_1.negateCt)(k1neg, k1p);
+        k2p = (0, curve_ts_1.negateCt)(k2neg, k2p);
+        return k1p.add(k2p);
+      }
+      class Point {
+        /** Does NOT validate if the point is valid. Use `.assertValidity()`. */
+        constructor(X, Y, Z) {
+          this.X = acoord("x", X);
+          this.Y = acoord("y", Y, true);
+          this.Z = acoord("z", Z);
+          Object.freeze(this);
+        }
+        static CURVE() {
+          return CURVE;
+        }
+        /** Does NOT validate if the point is valid. Use `.assertValidity()`. */
+        static fromAffine(p) {
+          const { x, y } = p || {};
+          if (!p || !Fp.isValid(x) || !Fp.isValid(y))
+            throw new Error("invalid affine point");
+          if (p instanceof Point)
+            throw new Error("projective point not allowed");
+          if (Fp.is0(x) && Fp.is0(y))
+            return Point.ZERO;
+          return new Point(x, y, Fp.ONE);
+        }
+        static fromBytes(bytes) {
+          const P = Point.fromAffine(decodePoint((0, utils_ts_1._abytes2)(bytes, void 0, "point")));
+          P.assertValidity();
+          return P;
+        }
+        static fromHex(hex) {
+          return Point.fromBytes((0, utils_ts_1.ensureBytes)("pointHex", hex));
+        }
+        get x() {
+          return this.toAffine().x;
+        }
+        get y() {
+          return this.toAffine().y;
+        }
+        /**
+         *
+         * @param windowSize
+         * @param isLazy true will defer table computation until the first multiplication
+         * @returns
+         */
+        precompute(windowSize = 8, isLazy = true) {
+          wnaf.createCache(this, windowSize);
+          if (!isLazy)
+            this.multiply(_3n);
+          return this;
+        }
+        // TODO: return `this`
+        /** A point on curve is valid if it conforms to equation. */
+        assertValidity() {
+          assertValidMemo(this);
+        }
+        hasEvenY() {
+          const { y } = this.toAffine();
+          if (!Fp.isOdd)
+            throw new Error("Field doesn't support isOdd");
+          return !Fp.isOdd(y);
+        }
+        /** Compare one point to another. */
+        equals(other) {
+          aprjpoint(other);
+          const { X: X1, Y: Y1, Z: Z1 } = this;
+          const { X: X2, Y: Y2, Z: Z2 } = other;
+          const U1 = Fp.eql(Fp.mul(X1, Z2), Fp.mul(X2, Z1));
+          const U2 = Fp.eql(Fp.mul(Y1, Z2), Fp.mul(Y2, Z1));
+          return U1 && U2;
+        }
+        /** Flips point to one corresponding to (x, -y) in Affine coordinates. */
+        negate() {
+          return new Point(this.X, Fp.neg(this.Y), this.Z);
+        }
+        // Renes-Costello-Batina exception-free doubling formula.
+        // There is 30% faster Jacobian formula, but it is not complete.
+        // https://eprint.iacr.org/2015/1060, algorithm 3
+        // Cost: 8M + 3S + 3*a + 2*b3 + 15add.
+        double() {
+          const { a, b } = CURVE;
+          const b3 = Fp.mul(b, _3n);
+          const { X: X1, Y: Y1, Z: Z1 } = this;
+          let X3 = Fp.ZERO, Y3 = Fp.ZERO, Z3 = Fp.ZERO;
+          let t0 = Fp.mul(X1, X1);
+          let t1 = Fp.mul(Y1, Y1);
+          let t2 = Fp.mul(Z1, Z1);
+          let t3 = Fp.mul(X1, Y1);
+          t3 = Fp.add(t3, t3);
+          Z3 = Fp.mul(X1, Z1);
+          Z3 = Fp.add(Z3, Z3);
+          X3 = Fp.mul(a, Z3);
+          Y3 = Fp.mul(b3, t2);
+          Y3 = Fp.add(X3, Y3);
+          X3 = Fp.sub(t1, Y3);
+          Y3 = Fp.add(t1, Y3);
+          Y3 = Fp.mul(X3, Y3);
+          X3 = Fp.mul(t3, X3);
+          Z3 = Fp.mul(b3, Z3);
+          t2 = Fp.mul(a, t2);
+          t3 = Fp.sub(t0, t2);
+          t3 = Fp.mul(a, t3);
+          t3 = Fp.add(t3, Z3);
+          Z3 = Fp.add(t0, t0);
+          t0 = Fp.add(Z3, t0);
+          t0 = Fp.add(t0, t2);
+          t0 = Fp.mul(t0, t3);
+          Y3 = Fp.add(Y3, t0);
+          t2 = Fp.mul(Y1, Z1);
+          t2 = Fp.add(t2, t2);
+          t0 = Fp.mul(t2, t3);
+          X3 = Fp.sub(X3, t0);
+          Z3 = Fp.mul(t2, t1);
+          Z3 = Fp.add(Z3, Z3);
+          Z3 = Fp.add(Z3, Z3);
+          return new Point(X3, Y3, Z3);
+        }
+        // Renes-Costello-Batina exception-free addition formula.
+        // There is 30% faster Jacobian formula, but it is not complete.
+        // https://eprint.iacr.org/2015/1060, algorithm 1
+        // Cost: 12M + 0S + 3*a + 3*b3 + 23add.
+        add(other) {
+          aprjpoint(other);
+          const { X: X1, Y: Y1, Z: Z1 } = this;
+          const { X: X2, Y: Y2, Z: Z2 } = other;
+          let X3 = Fp.ZERO, Y3 = Fp.ZERO, Z3 = Fp.ZERO;
+          const a = CURVE.a;
+          const b3 = Fp.mul(CURVE.b, _3n);
+          let t0 = Fp.mul(X1, X2);
+          let t1 = Fp.mul(Y1, Y2);
+          let t2 = Fp.mul(Z1, Z2);
+          let t3 = Fp.add(X1, Y1);
+          let t4 = Fp.add(X2, Y2);
+          t3 = Fp.mul(t3, t4);
+          t4 = Fp.add(t0, t1);
+          t3 = Fp.sub(t3, t4);
+          t4 = Fp.add(X1, Z1);
+          let t5 = Fp.add(X2, Z2);
+          t4 = Fp.mul(t4, t5);
+          t5 = Fp.add(t0, t2);
+          t4 = Fp.sub(t4, t5);
+          t5 = Fp.add(Y1, Z1);
+          X3 = Fp.add(Y2, Z2);
+          t5 = Fp.mul(t5, X3);
+          X3 = Fp.add(t1, t2);
+          t5 = Fp.sub(t5, X3);
+          Z3 = Fp.mul(a, t4);
+          X3 = Fp.mul(b3, t2);
+          Z3 = Fp.add(X3, Z3);
+          X3 = Fp.sub(t1, Z3);
+          Z3 = Fp.add(t1, Z3);
+          Y3 = Fp.mul(X3, Z3);
+          t1 = Fp.add(t0, t0);
+          t1 = Fp.add(t1, t0);
+          t2 = Fp.mul(a, t2);
+          t4 = Fp.mul(b3, t4);
+          t1 = Fp.add(t1, t2);
+          t2 = Fp.sub(t0, t2);
+          t2 = Fp.mul(a, t2);
+          t4 = Fp.add(t4, t2);
+          t0 = Fp.mul(t1, t4);
+          Y3 = Fp.add(Y3, t0);
+          t0 = Fp.mul(t5, t4);
+          X3 = Fp.mul(t3, X3);
+          X3 = Fp.sub(X3, t0);
+          t0 = Fp.mul(t3, t1);
+          Z3 = Fp.mul(t5, Z3);
+          Z3 = Fp.add(Z3, t0);
+          return new Point(X3, Y3, Z3);
+        }
+        subtract(other) {
+          return this.add(other.negate());
+        }
+        is0() {
+          return this.equals(Point.ZERO);
+        }
+        /**
+         * Constant time multiplication.
+         * Uses wNAF method. Windowed method may be 10% faster,
+         * but takes 2x longer to generate and consumes 2x memory.
+         * Uses precomputes when available.
+         * Uses endomorphism for Koblitz curves.
+         * @param scalar by which the point would be multiplied
+         * @returns New point
+         */
+        multiply(scalar) {
+          const { endo: endo2 } = extraOpts;
+          if (!Fn.isValidNot0(scalar))
+            throw new Error("invalid scalar: out of range");
+          let point, fake;
+          const mul = (n) => wnaf.cached(this, n, (p) => (0, curve_ts_1.normalizeZ)(Point, p));
+          if (endo2) {
+            const { k1neg, k1, k2neg, k2 } = splitEndoScalarN(scalar);
+            const { p: k1p, f: k1f } = mul(k1);
+            const { p: k2p, f: k2f } = mul(k2);
+            fake = k1f.add(k2f);
+            point = finishEndo(endo2.beta, k1p, k2p, k1neg, k2neg);
+          } else {
+            const { p, f } = mul(scalar);
+            point = p;
+            fake = f;
+          }
+          return (0, curve_ts_1.normalizeZ)(Point, [point, fake])[0];
+        }
+        /**
+         * Non-constant-time multiplication. Uses double-and-add algorithm.
+         * It's faster, but should only be used when you don't care about
+         * an exposed secret key e.g. sig verification, which works over *public* keys.
+         */
+        multiplyUnsafe(sc) {
+          const { endo: endo2 } = extraOpts;
+          const p = this;
+          if (!Fn.isValid(sc))
+            throw new Error("invalid scalar: out of range");
+          if (sc === _0n || p.is0())
+            return Point.ZERO;
+          if (sc === _1n)
+            return p;
+          if (wnaf.hasCache(this))
+            return this.multiply(sc);
+          if (endo2) {
+            const { k1neg, k1, k2neg, k2 } = splitEndoScalarN(sc);
+            const { p1, p2 } = (0, curve_ts_1.mulEndoUnsafe)(Point, p, k1, k2);
+            return finishEndo(endo2.beta, p1, p2, k1neg, k2neg);
+          } else {
+            return wnaf.unsafe(p, sc);
+          }
+        }
+        multiplyAndAddUnsafe(Q, a, b) {
+          const sum = this.multiplyUnsafe(a).add(Q.multiplyUnsafe(b));
+          return sum.is0() ? void 0 : sum;
+        }
+        /**
+         * Converts Projective point to affine (x, y) coordinates.
+         * @param invertedZ Z^-1 (inverted zero) - optional, precomputation is useful for invertBatch
+         */
+        toAffine(invertedZ) {
+          return toAffineMemo(this, invertedZ);
+        }
+        /**
+         * Checks whether Point is free of torsion elements (is in prime subgroup).
+         * Always torsion-free for cofactor=1 curves.
+         */
+        isTorsionFree() {
+          const { isTorsionFree } = extraOpts;
+          if (cofactor === _1n)
+            return true;
+          if (isTorsionFree)
+            return isTorsionFree(Point, this);
+          return wnaf.unsafe(this, CURVE_ORDER).is0();
+        }
+        clearCofactor() {
+          const { clearCofactor } = extraOpts;
+          if (cofactor === _1n)
+            return this;
+          if (clearCofactor)
+            return clearCofactor(Point, this);
+          return this.multiplyUnsafe(cofactor);
+        }
+        isSmallOrder() {
+          return this.multiplyUnsafe(cofactor).is0();
+        }
+        toBytes(isCompressed = true) {
+          (0, utils_ts_1._abool2)(isCompressed, "isCompressed");
+          this.assertValidity();
+          return encodePoint(Point, this, isCompressed);
+        }
+        toHex(isCompressed = true) {
+          return (0, utils_ts_1.bytesToHex)(this.toBytes(isCompressed));
+        }
+        toString() {
+          return `<Point ${this.is0() ? "ZERO" : this.toHex()}>`;
+        }
+        // TODO: remove
+        get px() {
+          return this.X;
+        }
+        get py() {
+          return this.X;
+        }
+        get pz() {
+          return this.Z;
+        }
+        toRawBytes(isCompressed = true) {
+          return this.toBytes(isCompressed);
+        }
+        _setWindowSize(windowSize) {
+          this.precompute(windowSize);
+        }
+        static normalizeZ(points) {
+          return (0, curve_ts_1.normalizeZ)(Point, points);
+        }
+        static msm(points, scalars) {
+          return (0, curve_ts_1.pippenger)(Point, Fn, points, scalars);
+        }
+        static fromPrivateKey(privateKey) {
+          return Point.BASE.multiply(_normFnElement(Fn, privateKey));
+        }
+      }
+      Point.BASE = new Point(CURVE.Gx, CURVE.Gy, Fp.ONE);
+      Point.ZERO = new Point(Fp.ZERO, Fp.ONE, Fp.ZERO);
+      Point.Fp = Fp;
+      Point.Fn = Fn;
+      const bits = Fn.BITS;
+      const wnaf = new curve_ts_1.wNAF(Point, extraOpts.endo ? Math.ceil(bits / 2) : bits);
+      Point.BASE.precompute(8);
+      return Point;
+    }
+    function pprefix(hasEvenY) {
+      return Uint8Array.of(hasEvenY ? 2 : 3);
+    }
+    function SWUFpSqrtRatio(Fp, Z) {
+      const q = Fp.ORDER;
+      let l = _0n;
+      for (let o = q - _1n; o % _2n === _0n; o /= _2n)
+        l += _1n;
+      const c1 = l;
+      const _2n_pow_c1_1 = _2n << c1 - _1n - _1n;
+      const _2n_pow_c1 = _2n_pow_c1_1 * _2n;
+      const c2 = (q - _1n) / _2n_pow_c1;
+      const c3 = (c2 - _1n) / _2n;
+      const c4 = _2n_pow_c1 - _1n;
+      const c5 = _2n_pow_c1_1;
+      const c6 = Fp.pow(Z, c2);
+      const c7 = Fp.pow(Z, (c2 + _1n) / _2n);
+      let sqrtRatio = (u, v) => {
+        let tv1 = c6;
+        let tv2 = Fp.pow(v, c4);
+        let tv3 = Fp.sqr(tv2);
+        tv3 = Fp.mul(tv3, v);
+        let tv5 = Fp.mul(u, tv3);
+        tv5 = Fp.pow(tv5, c3);
+        tv5 = Fp.mul(tv5, tv2);
+        tv2 = Fp.mul(tv5, v);
+        tv3 = Fp.mul(tv5, u);
+        let tv4 = Fp.mul(tv3, tv2);
+        tv5 = Fp.pow(tv4, c5);
+        let isQR = Fp.eql(tv5, Fp.ONE);
+        tv2 = Fp.mul(tv3, c7);
+        tv5 = Fp.mul(tv4, tv1);
+        tv3 = Fp.cmov(tv2, tv3, isQR);
+        tv4 = Fp.cmov(tv5, tv4, isQR);
+        for (let i = c1; i > _1n; i--) {
+          let tv52 = i - _2n;
+          tv52 = _2n << tv52 - _1n;
+          let tvv5 = Fp.pow(tv4, tv52);
+          const e1 = Fp.eql(tvv5, Fp.ONE);
+          tv2 = Fp.mul(tv3, tv1);
+          tv1 = Fp.mul(tv1, tv1);
+          tvv5 = Fp.mul(tv4, tv1);
+          tv3 = Fp.cmov(tv2, tv3, e1);
+          tv4 = Fp.cmov(tvv5, tv4, e1);
+        }
+        return { isValid: isQR, value: tv3 };
+      };
+      if (Fp.ORDER % _4n === _3n) {
+        const c12 = (Fp.ORDER - _3n) / _4n;
+        const c22 = Fp.sqrt(Fp.neg(Z));
+        sqrtRatio = (u, v) => {
+          let tv1 = Fp.sqr(v);
+          const tv2 = Fp.mul(u, v);
+          tv1 = Fp.mul(tv1, tv2);
+          let y1 = Fp.pow(tv1, c12);
+          y1 = Fp.mul(y1, tv2);
+          const y2 = Fp.mul(y1, c22);
+          const tv3 = Fp.mul(Fp.sqr(y1), v);
+          const isQR = Fp.eql(tv3, u);
+          let y = Fp.cmov(y2, y1, isQR);
+          return { isValid: isQR, value: y };
+        };
+      }
+      return sqrtRatio;
+    }
+    function mapToCurveSimpleSWU(Fp, opts) {
+      (0, modular_ts_1.validateField)(Fp);
+      const { A, B, Z } = opts;
+      if (!Fp.isValid(A) || !Fp.isValid(B) || !Fp.isValid(Z))
+        throw new Error("mapToCurveSimpleSWU: invalid opts");
+      const sqrtRatio = SWUFpSqrtRatio(Fp, Z);
+      if (!Fp.isOdd)
+        throw new Error("Field does not have .isOdd()");
+      return (u) => {
+        let tv1, tv2, tv3, tv4, tv5, tv6, x, y;
+        tv1 = Fp.sqr(u);
+        tv1 = Fp.mul(tv1, Z);
+        tv2 = Fp.sqr(tv1);
+        tv2 = Fp.add(tv2, tv1);
+        tv3 = Fp.add(tv2, Fp.ONE);
+        tv3 = Fp.mul(tv3, B);
+        tv4 = Fp.cmov(Z, Fp.neg(tv2), !Fp.eql(tv2, Fp.ZERO));
+        tv4 = Fp.mul(tv4, A);
+        tv2 = Fp.sqr(tv3);
+        tv6 = Fp.sqr(tv4);
+        tv5 = Fp.mul(tv6, A);
+        tv2 = Fp.add(tv2, tv5);
+        tv2 = Fp.mul(tv2, tv3);
+        tv6 = Fp.mul(tv6, tv4);
+        tv5 = Fp.mul(tv6, B);
+        tv2 = Fp.add(tv2, tv5);
+        x = Fp.mul(tv1, tv3);
+        const { isValid, value } = sqrtRatio(tv2, tv6);
+        y = Fp.mul(tv1, u);
+        y = Fp.mul(y, value);
+        x = Fp.cmov(x, tv3, isValid);
+        y = Fp.cmov(y, value, isValid);
+        const e1 = Fp.isOdd(u) === Fp.isOdd(y);
+        y = Fp.cmov(Fp.neg(y), y, e1);
+        const tv4_inv = (0, modular_ts_1.FpInvertBatch)(Fp, [tv4], true)[0];
+        x = Fp.mul(x, tv4_inv);
+        return { x, y };
+      };
+    }
+    function getWLengths(Fp, Fn) {
+      return {
+        secretKey: Fn.BYTES,
+        publicKey: 1 + Fp.BYTES,
+        publicKeyUncompressed: 1 + 2 * Fp.BYTES,
+        publicKeyHasPrefix: true,
+        signature: 2 * Fn.BYTES
+      };
+    }
+    function ecdh(Point, ecdhOpts = {}) {
+      const { Fn } = Point;
+      const randomBytes_ = ecdhOpts.randomBytes || utils_ts_1.randomBytes;
+      const lengths = Object.assign(getWLengths(Point.Fp, Fn), { seed: (0, modular_ts_1.getMinHashLength)(Fn.ORDER) });
+      function isValidSecretKey(secretKey) {
+        try {
+          return !!_normFnElement(Fn, secretKey);
+        } catch (error) {
+          return false;
+        }
+      }
+      function isValidPublicKey(publicKey, isCompressed) {
+        const { publicKey: comp, publicKeyUncompressed } = lengths;
+        try {
+          const l = publicKey.length;
+          if (isCompressed === true && l !== comp)
+            return false;
+          if (isCompressed === false && l !== publicKeyUncompressed)
+            return false;
+          return !!Point.fromBytes(publicKey);
+        } catch (error) {
+          return false;
+        }
+      }
+      function randomSecretKey(seed = randomBytes_(lengths.seed)) {
+        return (0, modular_ts_1.mapHashToField)((0, utils_ts_1._abytes2)(seed, lengths.seed, "seed"), Fn.ORDER);
+      }
+      function getPublicKey(secretKey, isCompressed = true) {
+        return Point.BASE.multiply(_normFnElement(Fn, secretKey)).toBytes(isCompressed);
+      }
+      function keygen(seed) {
+        const secretKey = randomSecretKey(seed);
+        return { secretKey, publicKey: getPublicKey(secretKey) };
+      }
+      function isProbPub(item) {
+        if (typeof item === "bigint")
+          return false;
+        if (item instanceof Point)
+          return true;
+        const { secretKey, publicKey, publicKeyUncompressed } = lengths;
+        if (Fn.allowedLengths || secretKey === publicKey)
+          return void 0;
+        const l = (0, utils_ts_1.ensureBytes)("key", item).length;
+        return l === publicKey || l === publicKeyUncompressed;
+      }
+      function getSharedSecret(secretKeyA, publicKeyB, isCompressed = true) {
+        if (isProbPub(secretKeyA) === true)
+          throw new Error("first arg must be private key");
+        if (isProbPub(publicKeyB) === false)
+          throw new Error("second arg must be public key");
+        const s = _normFnElement(Fn, secretKeyA);
+        const b = Point.fromHex(publicKeyB);
+        return b.multiply(s).toBytes(isCompressed);
+      }
+      const utils = {
+        isValidSecretKey,
+        isValidPublicKey,
+        randomSecretKey,
+        // TODO: remove
+        isValidPrivateKey: isValidSecretKey,
+        randomPrivateKey: randomSecretKey,
+        normPrivateKeyToScalar: (key) => _normFnElement(Fn, key),
+        precompute(windowSize = 8, point = Point.BASE) {
+          return point.precompute(windowSize, false);
+        }
+      };
+      return Object.freeze({ getPublicKey, getSharedSecret, keygen, Point, utils, lengths });
+    }
+    function ecdsa(Point, hash, ecdsaOpts = {}) {
+      (0, utils_1.ahash)(hash);
+      (0, utils_ts_1._validateObject)(ecdsaOpts, {}, {
+        hmac: "function",
+        lowS: "boolean",
+        randomBytes: "function",
+        bits2int: "function",
+        bits2int_modN: "function"
+      });
+      const randomBytes = ecdsaOpts.randomBytes || utils_ts_1.randomBytes;
+      const hmac = ecdsaOpts.hmac || ((key, ...msgs) => (0, hmac_js_1.hmac)(hash, key, (0, utils_ts_1.concatBytes)(...msgs)));
+      const { Fp, Fn } = Point;
+      const { ORDER: CURVE_ORDER, BITS: fnBits } = Fn;
+      const { keygen, getPublicKey, getSharedSecret, utils, lengths } = ecdh(Point, ecdsaOpts);
+      const defaultSigOpts = {
+        prehash: false,
+        lowS: typeof ecdsaOpts.lowS === "boolean" ? ecdsaOpts.lowS : false,
+        format: void 0,
+        //'compact' as ECDSASigFormat,
+        extraEntropy: false
+      };
+      const defaultSigOpts_format = "compact";
+      function isBiggerThanHalfOrder(number) {
+        const HALF = CURVE_ORDER >> _1n;
+        return number > HALF;
+      }
+      function validateRS(title, num) {
+        if (!Fn.isValidNot0(num))
+          throw new Error(`invalid signature ${title}: out of range 1..Point.Fn.ORDER`);
+        return num;
+      }
+      function validateSigLength(bytes, format) {
+        validateSigFormat(format);
+        const size = lengths.signature;
+        const sizer = format === "compact" ? size : format === "recovered" ? size + 1 : void 0;
+        return (0, utils_ts_1._abytes2)(bytes, sizer, `${format} signature`);
+      }
+      class Signature {
+        constructor(r, s, recovery) {
+          this.r = validateRS("r", r);
+          this.s = validateRS("s", s);
+          if (recovery != null)
+            this.recovery = recovery;
+          Object.freeze(this);
+        }
+        static fromBytes(bytes, format = defaultSigOpts_format) {
+          validateSigLength(bytes, format);
+          let recid;
+          if (format === "der") {
+            const { r: r2, s: s2 } = exports2.DER.toSig((0, utils_ts_1._abytes2)(bytes));
+            return new Signature(r2, s2);
+          }
+          if (format === "recovered") {
+            recid = bytes[0];
+            format = "compact";
+            bytes = bytes.subarray(1);
+          }
+          const L = Fn.BYTES;
+          const r = bytes.subarray(0, L);
+          const s = bytes.subarray(L, L * 2);
+          return new Signature(Fn.fromBytes(r), Fn.fromBytes(s), recid);
+        }
+        static fromHex(hex, format) {
+          return this.fromBytes((0, utils_ts_1.hexToBytes)(hex), format);
+        }
+        addRecoveryBit(recovery) {
+          return new Signature(this.r, this.s, recovery);
+        }
+        recoverPublicKey(messageHash) {
+          const FIELD_ORDER = Fp.ORDER;
+          const { r, s, recovery: rec } = this;
+          if (rec == null || ![0, 1, 2, 3].includes(rec))
+            throw new Error("recovery id invalid");
+          const hasCofactor = CURVE_ORDER * _2n < FIELD_ORDER;
+          if (hasCofactor && rec > 1)
+            throw new Error("recovery id is ambiguous for h>1 curve");
+          const radj = rec === 2 || rec === 3 ? r + CURVE_ORDER : r;
+          if (!Fp.isValid(radj))
+            throw new Error("recovery id 2 or 3 invalid");
+          const x = Fp.toBytes(radj);
+          const R = Point.fromBytes((0, utils_ts_1.concatBytes)(pprefix((rec & 1) === 0), x));
+          const ir = Fn.inv(radj);
+          const h = bits2int_modN((0, utils_ts_1.ensureBytes)("msgHash", messageHash));
+          const u1 = Fn.create(-h * ir);
+          const u2 = Fn.create(s * ir);
+          const Q = Point.BASE.multiplyUnsafe(u1).add(R.multiplyUnsafe(u2));
+          if (Q.is0())
+            throw new Error("point at infinify");
+          Q.assertValidity();
+          return Q;
+        }
+        // Signatures should be low-s, to prevent malleability.
+        hasHighS() {
+          return isBiggerThanHalfOrder(this.s);
+        }
+        toBytes(format = defaultSigOpts_format) {
+          validateSigFormat(format);
+          if (format === "der")
+            return (0, utils_ts_1.hexToBytes)(exports2.DER.hexFromSig(this));
+          const r = Fn.toBytes(this.r);
+          const s = Fn.toBytes(this.s);
+          if (format === "recovered") {
+            if (this.recovery == null)
+              throw new Error("recovery bit must be present");
+            return (0, utils_ts_1.concatBytes)(Uint8Array.of(this.recovery), r, s);
+          }
+          return (0, utils_ts_1.concatBytes)(r, s);
+        }
+        toHex(format) {
+          return (0, utils_ts_1.bytesToHex)(this.toBytes(format));
+        }
+        // TODO: remove
+        assertValidity() {
+        }
+        static fromCompact(hex) {
+          return Signature.fromBytes((0, utils_ts_1.ensureBytes)("sig", hex), "compact");
+        }
+        static fromDER(hex) {
+          return Signature.fromBytes((0, utils_ts_1.ensureBytes)("sig", hex), "der");
+        }
+        normalizeS() {
+          return this.hasHighS() ? new Signature(this.r, Fn.neg(this.s), this.recovery) : this;
+        }
+        toDERRawBytes() {
+          return this.toBytes("der");
+        }
+        toDERHex() {
+          return (0, utils_ts_1.bytesToHex)(this.toBytes("der"));
+        }
+        toCompactRawBytes() {
+          return this.toBytes("compact");
+        }
+        toCompactHex() {
+          return (0, utils_ts_1.bytesToHex)(this.toBytes("compact"));
+        }
+      }
+      const bits2int = ecdsaOpts.bits2int || function bits2int_def(bytes) {
+        if (bytes.length > 8192)
+          throw new Error("input is too large");
+        const num = (0, utils_ts_1.bytesToNumberBE)(bytes);
+        const delta = bytes.length * 8 - fnBits;
+        return delta > 0 ? num >> BigInt(delta) : num;
+      };
+      const bits2int_modN = ecdsaOpts.bits2int_modN || function bits2int_modN_def(bytes) {
+        return Fn.create(bits2int(bytes));
+      };
+      const ORDER_MASK = (0, utils_ts_1.bitMask)(fnBits);
+      function int2octets(num) {
+        (0, utils_ts_1.aInRange)("num < 2^" + fnBits, num, _0n, ORDER_MASK);
+        return Fn.toBytes(num);
+      }
+      function validateMsgAndHash(message, prehash) {
+        (0, utils_ts_1._abytes2)(message, void 0, "message");
+        return prehash ? (0, utils_ts_1._abytes2)(hash(message), void 0, "prehashed message") : message;
+      }
+      function prepSig(message, privateKey, opts) {
+        if (["recovered", "canonical"].some((k) => k in opts))
+          throw new Error("sign() legacy options not supported");
+        const { lowS, prehash, extraEntropy } = validateSigOpts(opts, defaultSigOpts);
+        message = validateMsgAndHash(message, prehash);
+        const h1int = bits2int_modN(message);
+        const d = _normFnElement(Fn, privateKey);
+        const seedArgs = [int2octets(d), int2octets(h1int)];
+        if (extraEntropy != null && extraEntropy !== false) {
+          const e = extraEntropy === true ? randomBytes(lengths.secretKey) : extraEntropy;
+          seedArgs.push((0, utils_ts_1.ensureBytes)("extraEntropy", e));
+        }
+        const seed = (0, utils_ts_1.concatBytes)(...seedArgs);
+        const m = h1int;
+        function k2sig(kBytes) {
+          const k = bits2int(kBytes);
+          if (!Fn.isValidNot0(k))
+            return;
+          const ik = Fn.inv(k);
+          const q = Point.BASE.multiply(k).toAffine();
+          const r = Fn.create(q.x);
+          if (r === _0n)
+            return;
+          const s = Fn.create(ik * Fn.create(m + r * d));
+          if (s === _0n)
+            return;
+          let recovery = (q.x === r ? 0 : 2) | Number(q.y & _1n);
+          let normS = s;
+          if (lowS && isBiggerThanHalfOrder(s)) {
+            normS = Fn.neg(s);
+            recovery ^= 1;
+          }
+          return new Signature(r, normS, recovery);
+        }
+        return { seed, k2sig };
+      }
+      function sign(message, secretKey, opts = {}) {
+        message = (0, utils_ts_1.ensureBytes)("message", message);
+        const { seed, k2sig } = prepSig(message, secretKey, opts);
+        const drbg = (0, utils_ts_1.createHmacDrbg)(hash.outputLen, Fn.BYTES, hmac);
+        const sig = drbg(seed, k2sig);
+        return sig;
+      }
+      function tryParsingSig(sg) {
+        let sig = void 0;
+        const isHex = typeof sg === "string" || (0, utils_ts_1.isBytes)(sg);
+        const isObj = !isHex && sg !== null && typeof sg === "object" && typeof sg.r === "bigint" && typeof sg.s === "bigint";
+        if (!isHex && !isObj)
+          throw new Error("invalid signature, expected Uint8Array, hex string or Signature instance");
+        if (isObj) {
+          sig = new Signature(sg.r, sg.s);
+        } else if (isHex) {
+          try {
+            sig = Signature.fromBytes((0, utils_ts_1.ensureBytes)("sig", sg), "der");
+          } catch (derError) {
+            if (!(derError instanceof exports2.DER.Err))
+              throw derError;
+          }
+          if (!sig) {
+            try {
+              sig = Signature.fromBytes((0, utils_ts_1.ensureBytes)("sig", sg), "compact");
+            } catch (error) {
+              return false;
+            }
+          }
+        }
+        if (!sig)
+          return false;
+        return sig;
+      }
+      function verify(signature, message, publicKey, opts = {}) {
+        const { lowS, prehash, format } = validateSigOpts(opts, defaultSigOpts);
+        publicKey = (0, utils_ts_1.ensureBytes)("publicKey", publicKey);
+        message = validateMsgAndHash((0, utils_ts_1.ensureBytes)("message", message), prehash);
+        if ("strict" in opts)
+          throw new Error("options.strict was renamed to lowS");
+        const sig = format === void 0 ? tryParsingSig(signature) : Signature.fromBytes((0, utils_ts_1.ensureBytes)("sig", signature), format);
+        if (sig === false)
+          return false;
+        try {
+          const P = Point.fromBytes(publicKey);
+          if (lowS && sig.hasHighS())
+            return false;
+          const { r, s } = sig;
+          const h = bits2int_modN(message);
+          const is = Fn.inv(s);
+          const u1 = Fn.create(h * is);
+          const u2 = Fn.create(r * is);
+          const R = Point.BASE.multiplyUnsafe(u1).add(P.multiplyUnsafe(u2));
+          if (R.is0())
+            return false;
+          const v = Fn.create(R.x);
+          return v === r;
+        } catch (e) {
+          return false;
+        }
+      }
+      function recoverPublicKey(signature, message, opts = {}) {
+        const { prehash } = validateSigOpts(opts, defaultSigOpts);
+        message = validateMsgAndHash(message, prehash);
+        return Signature.fromBytes(signature, "recovered").recoverPublicKey(message).toBytes();
+      }
+      return Object.freeze({
+        keygen,
+        getPublicKey,
+        getSharedSecret,
+        utils,
+        lengths,
+        Point,
+        sign,
+        verify,
+        recoverPublicKey,
+        Signature,
+        hash
+      });
+    }
+    function weierstrassPoints(c) {
+      const { CURVE, curveOpts } = _weierstrass_legacy_opts_to_new(c);
+      const Point = weierstrassN(CURVE, curveOpts);
+      return _weierstrass_new_output_to_legacy(c, Point);
+    }
+    function _weierstrass_legacy_opts_to_new(c) {
+      const CURVE = {
+        a: c.a,
+        b: c.b,
+        p: c.Fp.ORDER,
+        n: c.n,
+        h: c.h,
+        Gx: c.Gx,
+        Gy: c.Gy
+      };
+      const Fp = c.Fp;
+      let allowedLengths = c.allowedPrivateKeyLengths ? Array.from(new Set(c.allowedPrivateKeyLengths.map((l) => Math.ceil(l / 2)))) : void 0;
+      const Fn = (0, modular_ts_1.Field)(CURVE.n, {
+        BITS: c.nBitLength,
+        allowedLengths,
+        modFromBytes: c.wrapPrivateKey
+      });
+      const curveOpts = {
+        Fp,
+        Fn,
+        allowInfinityPoint: c.allowInfinityPoint,
+        endo: c.endo,
+        isTorsionFree: c.isTorsionFree,
+        clearCofactor: c.clearCofactor,
+        fromBytes: c.fromBytes,
+        toBytes: c.toBytes
+      };
+      return { CURVE, curveOpts };
+    }
+    function _ecdsa_legacy_opts_to_new(c) {
+      const { CURVE, curveOpts } = _weierstrass_legacy_opts_to_new(c);
+      const ecdsaOpts = {
+        hmac: c.hmac,
+        randomBytes: c.randomBytes,
+        lowS: c.lowS,
+        bits2int: c.bits2int,
+        bits2int_modN: c.bits2int_modN
+      };
+      return { CURVE, curveOpts, hash: c.hash, ecdsaOpts };
+    }
+    function _legacyHelperEquat(Fp, a, b) {
+      function weierstrassEquation(x) {
+        const x2 = Fp.sqr(x);
+        const x3 = Fp.mul(x2, x);
+        return Fp.add(Fp.add(x3, Fp.mul(x, a)), b);
+      }
+      return weierstrassEquation;
+    }
+    function _weierstrass_new_output_to_legacy(c, Point) {
+      const { Fp, Fn } = Point;
+      function isWithinCurveOrder(num) {
+        return (0, utils_ts_1.inRange)(num, _1n, Fn.ORDER);
+      }
+      const weierstrassEquation = _legacyHelperEquat(Fp, c.a, c.b);
+      return Object.assign({}, {
+        CURVE: c,
+        Point,
+        ProjectivePoint: Point,
+        normPrivateKeyToScalar: (key) => _normFnElement(Fn, key),
+        weierstrassEquation,
+        isWithinCurveOrder
+      });
+    }
+    function _ecdsa_new_output_to_legacy(c, _ecdsa) {
+      const Point = _ecdsa.Point;
+      return Object.assign({}, _ecdsa, {
+        ProjectivePoint: Point,
+        CURVE: Object.assign({}, c, (0, modular_ts_1.nLength)(Point.Fn.ORDER, Point.Fn.BITS))
+      });
+    }
+    function weierstrass(c) {
+      const { CURVE, curveOpts, hash, ecdsaOpts } = _ecdsa_legacy_opts_to_new(c);
+      const Point = weierstrassN(CURVE, curveOpts);
+      const signs = ecdsa(Point, hash, ecdsaOpts);
+      return _ecdsa_new_output_to_legacy(c, signs);
+    }
+  }
+});
+
+// tools/node_modules/@noble/curves/_shortw_utils.js
+var require_shortw_utils = __commonJS({
+  "tools/node_modules/@noble/curves/_shortw_utils.js"(exports2) {
+    "use strict";
+    Object.defineProperty(exports2, "__esModule", { value: true });
+    exports2.getHash = getHash;
+    exports2.createCurve = createCurve;
+    var weierstrass_ts_1 = require_weierstrass();
+    function getHash(hash) {
+      return { hash };
+    }
+    function createCurve(curveDef, defHash) {
+      const create = (hash) => (0, weierstrass_ts_1.weierstrass)({ ...curveDef, hash });
+      return { ...create(defHash), create };
+    }
+  }
+});
+
+// tools/node_modules/@noble/curves/abstract/hash-to-curve.js
+var require_hash_to_curve = __commonJS({
+  "tools/node_modules/@noble/curves/abstract/hash-to-curve.js"(exports2) {
+    "use strict";
+    Object.defineProperty(exports2, "__esModule", { value: true });
+    exports2._DST_scalar = void 0;
+    exports2.expand_message_xmd = expand_message_xmd;
+    exports2.expand_message_xof = expand_message_xof;
+    exports2.hash_to_field = hash_to_field;
+    exports2.isogenyMap = isogenyMap;
+    exports2.createHasher = createHasher;
+    var utils_ts_1 = require_utils3();
+    var modular_ts_1 = require_modular();
+    var os2ip = utils_ts_1.bytesToNumberBE;
+    function i2osp(value, length) {
+      anum(value);
+      anum(length);
+      if (value < 0 || value >= 1 << 8 * length)
+        throw new Error("invalid I2OSP input: " + value);
+      const res = Array.from({ length }).fill(0);
+      for (let i = length - 1; i >= 0; i--) {
+        res[i] = value & 255;
+        value >>>= 8;
+      }
+      return new Uint8Array(res);
+    }
+    function strxor(a, b) {
+      const arr = new Uint8Array(a.length);
+      for (let i = 0; i < a.length; i++) {
+        arr[i] = a[i] ^ b[i];
+      }
+      return arr;
+    }
+    function anum(item) {
+      if (!Number.isSafeInteger(item))
+        throw new Error("number expected");
+    }
+    function normDST(DST) {
+      if (!(0, utils_ts_1.isBytes)(DST) && typeof DST !== "string")
+        throw new Error("DST must be Uint8Array or string");
+      return typeof DST === "string" ? (0, utils_ts_1.utf8ToBytes)(DST) : DST;
+    }
+    function expand_message_xmd(msg, DST, lenInBytes, H) {
+      (0, utils_ts_1.abytes)(msg);
+      anum(lenInBytes);
+      DST = normDST(DST);
+      if (DST.length > 255)
+        DST = H((0, utils_ts_1.concatBytes)((0, utils_ts_1.utf8ToBytes)("H2C-OVERSIZE-DST-"), DST));
+      const { outputLen: b_in_bytes, blockLen: r_in_bytes } = H;
+      const ell = Math.ceil(lenInBytes / b_in_bytes);
+      if (lenInBytes > 65535 || ell > 255)
+        throw new Error("expand_message_xmd: invalid lenInBytes");
+      const DST_prime = (0, utils_ts_1.concatBytes)(DST, i2osp(DST.length, 1));
+      const Z_pad = i2osp(0, r_in_bytes);
+      const l_i_b_str = i2osp(lenInBytes, 2);
+      const b = new Array(ell);
+      const b_0 = H((0, utils_ts_1.concatBytes)(Z_pad, msg, l_i_b_str, i2osp(0, 1), DST_prime));
+      b[0] = H((0, utils_ts_1.concatBytes)(b_0, i2osp(1, 1), DST_prime));
+      for (let i = 1; i <= ell; i++) {
+        const args = [strxor(b_0, b[i - 1]), i2osp(i + 1, 1), DST_prime];
+        b[i] = H((0, utils_ts_1.concatBytes)(...args));
+      }
+      const pseudo_random_bytes = (0, utils_ts_1.concatBytes)(...b);
+      return pseudo_random_bytes.slice(0, lenInBytes);
+    }
+    function expand_message_xof(msg, DST, lenInBytes, k, H) {
+      (0, utils_ts_1.abytes)(msg);
+      anum(lenInBytes);
+      DST = normDST(DST);
+      if (DST.length > 255) {
+        const dkLen = Math.ceil(2 * k / 8);
+        DST = H.create({ dkLen }).update((0, utils_ts_1.utf8ToBytes)("H2C-OVERSIZE-DST-")).update(DST).digest();
+      }
+      if (lenInBytes > 65535 || DST.length > 255)
+        throw new Error("expand_message_xof: invalid lenInBytes");
+      return H.create({ dkLen: lenInBytes }).update(msg).update(i2osp(lenInBytes, 2)).update(DST).update(i2osp(DST.length, 1)).digest();
+    }
+    function hash_to_field(msg, count, options) {
+      (0, utils_ts_1._validateObject)(options, {
+        p: "bigint",
+        m: "number",
+        k: "number",
+        hash: "function"
+      });
+      const { p, k, m, hash, expand, DST } = options;
+      if (!(0, utils_ts_1.isHash)(options.hash))
+        throw new Error("expected valid hash");
+      (0, utils_ts_1.abytes)(msg);
+      anum(count);
+      const log2p = p.toString(2).length;
+      const L = Math.ceil((log2p + k) / 8);
+      const len_in_bytes = count * m * L;
+      let prb;
+      if (expand === "xmd") {
+        prb = expand_message_xmd(msg, DST, len_in_bytes, hash);
+      } else if (expand === "xof") {
+        prb = expand_message_xof(msg, DST, len_in_bytes, k, hash);
+      } else if (expand === "_internal_pass") {
+        prb = msg;
+      } else {
+        throw new Error('expand must be "xmd" or "xof"');
+      }
+      const u = new Array(count);
+      for (let i = 0; i < count; i++) {
+        const e = new Array(m);
+        for (let j = 0; j < m; j++) {
+          const elm_offset = L * (j + i * m);
+          const tv = prb.subarray(elm_offset, elm_offset + L);
+          e[j] = (0, modular_ts_1.mod)(os2ip(tv), p);
+        }
+        u[i] = e;
+      }
+      return u;
+    }
+    function isogenyMap(field, map) {
+      const coeff = map.map((i) => Array.from(i).reverse());
+      return (x, y) => {
+        const [xn, xd, yn, yd] = coeff.map((val) => val.reduce((acc, i) => field.add(field.mul(acc, x), i)));
+        const [xd_inv, yd_inv] = (0, modular_ts_1.FpInvertBatch)(field, [xd, yd], true);
+        x = field.mul(xn, xd_inv);
+        y = field.mul(y, field.mul(yn, yd_inv));
+        return { x, y };
+      };
+    }
+    exports2._DST_scalar = (0, utils_ts_1.utf8ToBytes)("HashToScalar-");
+    function createHasher(Point, mapToCurve, defaults) {
+      if (typeof mapToCurve !== "function")
+        throw new Error("mapToCurve() must be defined");
+      function map(num) {
+        return Point.fromAffine(mapToCurve(num));
+      }
+      function clear(initial) {
+        const P = initial.clearCofactor();
+        if (P.equals(Point.ZERO))
+          return Point.ZERO;
+        P.assertValidity();
+        return P;
+      }
+      return {
+        defaults,
+        hashToCurve(msg, options) {
+          const opts = Object.assign({}, defaults, options);
+          const u = hash_to_field(msg, 2, opts);
+          const u0 = map(u[0]);
+          const u1 = map(u[1]);
+          return clear(u0.add(u1));
+        },
+        encodeToCurve(msg, options) {
+          const optsDst = defaults.encodeDST ? { DST: defaults.encodeDST } : {};
+          const opts = Object.assign({}, defaults, optsDst, options);
+          const u = hash_to_field(msg, 1, opts);
+          const u0 = map(u[0]);
+          return clear(u0);
+        },
+        /** See {@link H2CHasher} */
+        mapToCurve(scalars) {
+          if (!Array.isArray(scalars))
+            throw new Error("expected array of bigints");
+          for (const i of scalars)
+            if (typeof i !== "bigint")
+              throw new Error("expected array of bigints");
+          return clear(map(scalars));
+        },
+        // hash_to_scalar can produce 0: https://www.rfc-editor.org/errata/eid8393
+        // RFC 9380, draft-irtf-cfrg-bbs-signatures-08
+        hashToScalar(msg, options) {
+          const N = Point.Fn.ORDER;
+          const opts = Object.assign({}, defaults, { p: N, m: 1, DST: exports2._DST_scalar }, options);
+          return hash_to_field(msg, 1, opts)[0][0];
+        }
+      };
+    }
+  }
+});
+
+// tools/node_modules/@noble/curves/secp256k1.js
+var require_secp256k1 = __commonJS({
+  "tools/node_modules/@noble/curves/secp256k1.js"(exports2) {
+    "use strict";
+    Object.defineProperty(exports2, "__esModule", { value: true });
+    exports2.encodeToCurve = exports2.hashToCurve = exports2.secp256k1_hasher = exports2.schnorr = exports2.secp256k1 = void 0;
+    var sha2_js_1 = require_sha2();
+    var utils_js_1 = require_utils2();
+    var _shortw_utils_ts_1 = require_shortw_utils();
+    var hash_to_curve_ts_1 = require_hash_to_curve();
+    var modular_ts_1 = require_modular();
+    var weierstrass_ts_1 = require_weierstrass();
+    var utils_ts_1 = require_utils3();
+    var secp256k1_CURVE = {
+      p: BigInt("0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2f"),
+      n: BigInt("0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141"),
+      h: BigInt(1),
+      a: BigInt(0),
+      b: BigInt(7),
+      Gx: BigInt("0x79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"),
+      Gy: BigInt("0x483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8")
+    };
+    var secp256k1_ENDO = {
+      beta: BigInt("0x7ae96a2b657c07106e64479eac3434e99cf0497512f58995c1396c28719501ee"),
+      basises: [
+        [BigInt("0x3086d221a7d46bcde86c90e49284eb15"), -BigInt("0xe4437ed6010e88286f547fa90abfe4c3")],
+        [BigInt("0x114ca50f7a8e2f3f657c1108d9d44cfd8"), BigInt("0x3086d221a7d46bcde86c90e49284eb15")]
+      ]
+    };
+    var _0n = /* @__PURE__ */ BigInt(0);
+    var _1n = /* @__PURE__ */ BigInt(1);
+    var _2n = /* @__PURE__ */ BigInt(2);
+    function sqrtMod(y) {
+      const P = secp256k1_CURVE.p;
+      const _3n = BigInt(3), _6n = BigInt(6), _11n = BigInt(11), _22n = BigInt(22);
+      const _23n = BigInt(23), _44n = BigInt(44), _88n = BigInt(88);
+      const b2 = y * y * y % P;
+      const b3 = b2 * b2 * y % P;
+      const b6 = (0, modular_ts_1.pow2)(b3, _3n, P) * b3 % P;
+      const b9 = (0, modular_ts_1.pow2)(b6, _3n, P) * b3 % P;
+      const b11 = (0, modular_ts_1.pow2)(b9, _2n, P) * b2 % P;
+      const b22 = (0, modular_ts_1.pow2)(b11, _11n, P) * b11 % P;
+      const b44 = (0, modular_ts_1.pow2)(b22, _22n, P) * b22 % P;
+      const b88 = (0, modular_ts_1.pow2)(b44, _44n, P) * b44 % P;
+      const b176 = (0, modular_ts_1.pow2)(b88, _88n, P) * b88 % P;
+      const b220 = (0, modular_ts_1.pow2)(b176, _44n, P) * b44 % P;
+      const b223 = (0, modular_ts_1.pow2)(b220, _3n, P) * b3 % P;
+      const t1 = (0, modular_ts_1.pow2)(b223, _23n, P) * b22 % P;
+      const t2 = (0, modular_ts_1.pow2)(t1, _6n, P) * b2 % P;
+      const root = (0, modular_ts_1.pow2)(t2, _2n, P);
+      if (!Fpk1.eql(Fpk1.sqr(root), y))
+        throw new Error("Cannot find square root");
+      return root;
+    }
+    var Fpk1 = (0, modular_ts_1.Field)(secp256k1_CURVE.p, { sqrt: sqrtMod });
+    exports2.secp256k1 = (0, _shortw_utils_ts_1.createCurve)({ ...secp256k1_CURVE, Fp: Fpk1, lowS: true, endo: secp256k1_ENDO }, sha2_js_1.sha256);
+    var TAGGED_HASH_PREFIXES = {};
+    function taggedHash(tag, ...messages) {
+      let tagP = TAGGED_HASH_PREFIXES[tag];
+      if (tagP === void 0) {
+        const tagH = (0, sha2_js_1.sha256)((0, utils_ts_1.utf8ToBytes)(tag));
+        tagP = (0, utils_ts_1.concatBytes)(tagH, tagH);
+        TAGGED_HASH_PREFIXES[tag] = tagP;
+      }
+      return (0, sha2_js_1.sha256)((0, utils_ts_1.concatBytes)(tagP, ...messages));
+    }
+    var pointToBytes = (point) => point.toBytes(true).slice(1);
+    var Pointk1 = /* @__PURE__ */ (() => exports2.secp256k1.Point)();
+    var hasEven = (y) => y % _2n === _0n;
+    function schnorrGetExtPubKey(priv) {
+      const { Fn, BASE } = Pointk1;
+      const d_ = (0, weierstrass_ts_1._normFnElement)(Fn, priv);
+      const p = BASE.multiply(d_);
+      const scalar = hasEven(p.y) ? d_ : Fn.neg(d_);
+      return { scalar, bytes: pointToBytes(p) };
+    }
+    function lift_x(x) {
+      const Fp = Fpk1;
+      if (!Fp.isValidNot0(x))
+        throw new Error("invalid x: Fail if x \u2265 p");
+      const xx = Fp.create(x * x);
+      const c = Fp.create(xx * x + BigInt(7));
+      let y = Fp.sqrt(c);
+      if (!hasEven(y))
+        y = Fp.neg(y);
+      const p = Pointk1.fromAffine({ x, y });
+      p.assertValidity();
+      return p;
+    }
+    var num = utils_ts_1.bytesToNumberBE;
+    function challenge(...args) {
+      return Pointk1.Fn.create(num(taggedHash("BIP0340/challenge", ...args)));
+    }
+    function schnorrGetPublicKey(secretKey) {
+      return schnorrGetExtPubKey(secretKey).bytes;
+    }
+    function schnorrSign(message, secretKey, auxRand = (0, utils_js_1.randomBytes)(32)) {
+      const { Fn } = Pointk1;
+      const m = (0, utils_ts_1.ensureBytes)("message", message);
+      const { bytes: px, scalar: d } = schnorrGetExtPubKey(secretKey);
+      const a = (0, utils_ts_1.ensureBytes)("auxRand", auxRand, 32);
+      const t = Fn.toBytes(d ^ num(taggedHash("BIP0340/aux", a)));
+      const rand = taggedHash("BIP0340/nonce", t, px, m);
+      const { bytes: rx, scalar: k } = schnorrGetExtPubKey(rand);
+      const e = challenge(rx, px, m);
+      const sig = new Uint8Array(64);
+      sig.set(rx, 0);
+      sig.set(Fn.toBytes(Fn.create(k + e * d)), 32);
+      if (!schnorrVerify(sig, m, px))
+        throw new Error("sign: Invalid signature produced");
+      return sig;
+    }
+    function schnorrVerify(signature, message, publicKey) {
+      const { Fn, BASE } = Pointk1;
+      const sig = (0, utils_ts_1.ensureBytes)("signature", signature, 64);
+      const m = (0, utils_ts_1.ensureBytes)("message", message);
+      const pub = (0, utils_ts_1.ensureBytes)("publicKey", publicKey, 32);
+      try {
+        const P = lift_x(num(pub));
+        const r = num(sig.subarray(0, 32));
+        if (!(0, utils_ts_1.inRange)(r, _1n, secp256k1_CURVE.p))
+          return false;
+        const s = num(sig.subarray(32, 64));
+        if (!(0, utils_ts_1.inRange)(s, _1n, secp256k1_CURVE.n))
+          return false;
+        const e = challenge(Fn.toBytes(r), pointToBytes(P), m);
+        const R = BASE.multiplyUnsafe(s).add(P.multiplyUnsafe(Fn.neg(e)));
+        const { x, y } = R.toAffine();
+        if (R.is0() || !hasEven(y) || x !== r)
+          return false;
+        return true;
+      } catch (error) {
+        return false;
+      }
+    }
+    exports2.schnorr = (() => {
+      const size = 32;
+      const seedLength = 48;
+      const randomSecretKey = (seed = (0, utils_js_1.randomBytes)(seedLength)) => {
+        return (0, modular_ts_1.mapHashToField)(seed, secp256k1_CURVE.n);
+      };
+      exports2.secp256k1.utils.randomSecretKey;
+      function keygen(seed) {
+        const secretKey = randomSecretKey(seed);
+        return { secretKey, publicKey: schnorrGetPublicKey(secretKey) };
+      }
+      return {
+        keygen,
+        getPublicKey: schnorrGetPublicKey,
+        sign: schnorrSign,
+        verify: schnorrVerify,
+        Point: Pointk1,
+        utils: {
+          randomSecretKey,
+          randomPrivateKey: randomSecretKey,
+          taggedHash,
+          // TODO: remove
+          lift_x,
+          pointToBytes,
+          numberToBytesBE: utils_ts_1.numberToBytesBE,
+          bytesToNumberBE: utils_ts_1.bytesToNumberBE,
+          mod: modular_ts_1.mod
+        },
+        lengths: {
+          secretKey: size,
+          publicKey: size,
+          publicKeyHasPrefix: false,
+          signature: size * 2,
+          seed: seedLength
+        }
+      };
+    })();
+    var isoMap = /* @__PURE__ */ (() => (0, hash_to_curve_ts_1.isogenyMap)(Fpk1, [
+      // xNum
+      [
+        "0x8e38e38e38e38e38e38e38e38e38e38e38e38e38e38e38e38e38e38daaaaa8c7",
+        "0x7d3d4c80bc321d5b9f315cea7fd44c5d595d2fc0bf63b92dfff1044f17c6581",
+        "0x534c328d23f234e6e2a413deca25caece4506144037c40314ecbd0b53d9dd262",
+        "0x8e38e38e38e38e38e38e38e38e38e38e38e38e38e38e38e38e38e38daaaaa88c"
+      ],
+      // xDen
+      [
+        "0xd35771193d94918a9ca34ccbb7b640dd86cd409542f8487d9fe6b745781eb49b",
+        "0xedadc6f64383dc1df7c4b2d51b54225406d36b641f5e41bbc52a56612a8c6d14",
+        "0x0000000000000000000000000000000000000000000000000000000000000001"
+        // LAST 1
+      ],
+      // yNum
+      [
+        "0x4bda12f684bda12f684bda12f684bda12f684bda12f684bda12f684b8e38e23c",
+        "0xc75e0c32d5cb7c0fa9d0a54b12a0a6d5647ab046d686da6fdffc90fc201d71a3",
+        "0x29a6194691f91a73715209ef6512e576722830a201be2018a765e85a9ecee931",
+        "0x2f684bda12f684bda12f684bda12f684bda12f684bda12f684bda12f38e38d84"
+      ],
+      // yDen
+      [
+        "0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffefffff93b",
+        "0x7a06534bb8bdb49fd5e9e6632722c2989467c1bfc8e8d978dfb425d2685c2573",
+        "0x6484aa716545ca2cf3a70c3fa8fe337e0a3d21162f0d6299a7bf8192bfd2a76f",
+        "0x0000000000000000000000000000000000000000000000000000000000000001"
+        // LAST 1
+      ]
+    ].map((i) => i.map((j) => BigInt(j)))))();
+    var mapSWU = /* @__PURE__ */ (() => (0, weierstrass_ts_1.mapToCurveSimpleSWU)(Fpk1, {
+      A: BigInt("0x3f8731abdd661adca08a5558f0f5d272e953d363cb6f0e5d405447c01a444533"),
+      B: BigInt("1771"),
+      Z: Fpk1.create(BigInt("-11"))
+    }))();
+    exports2.secp256k1_hasher = (() => (0, hash_to_curve_ts_1.createHasher)(exports2.secp256k1.Point, (scalars) => {
+      const { x, y } = mapSWU(Fpk1.create(scalars[0]));
+      return isoMap(x, y);
+    }, {
+      DST: "secp256k1_XMD:SHA-256_SSWU_RO_",
+      encodeDST: "secp256k1_XMD:SHA-256_SSWU_NU_",
+      p: Fpk1.ORDER,
+      m: 1,
+      k: 128,
+      expand: "xmd",
+      hash: sha2_js_1.sha256
+    }))();
+    exports2.hashToCurve = (() => exports2.secp256k1_hasher.hashToCurve)();
+    exports2.encodeToCurve = (() => exports2.secp256k1_hasher.encodeToCurve)();
+  }
+});
+
+// tools/node_modules/@noble/hashes/sha3.js
+var require_sha3 = __commonJS({
+  "tools/node_modules/@noble/hashes/sha3.js"(exports2) {
+    "use strict";
+    Object.defineProperty(exports2, "__esModule", { value: true });
+    exports2.shake256 = exports2.shake128 = exports2.keccak_512 = exports2.keccak_384 = exports2.keccak_256 = exports2.keccak_224 = exports2.sha3_512 = exports2.sha3_384 = exports2.sha3_256 = exports2.sha3_224 = exports2.Keccak = void 0;
+    exports2.keccakP = keccakP;
+    var _u64_ts_1 = require_u64();
+    var utils_ts_1 = require_utils2();
+    var _0n = BigInt(0);
+    var _1n = BigInt(1);
+    var _2n = BigInt(2);
+    var _7n = BigInt(7);
+    var _256n = BigInt(256);
+    var _0x71n = BigInt(113);
+    var SHA3_PI = [];
+    var SHA3_ROTL = [];
+    var _SHA3_IOTA = [];
+    for (let round = 0, R = _1n, x = 1, y = 0; round < 24; round++) {
+      [x, y] = [y, (2 * x + 3 * y) % 5];
+      SHA3_PI.push(2 * (5 * y + x));
+      SHA3_ROTL.push((round + 1) * (round + 2) / 2 % 64);
+      let t = _0n;
+      for (let j = 0; j < 7; j++) {
+        R = (R << _1n ^ (R >> _7n) * _0x71n) % _256n;
+        if (R & _2n)
+          t ^= _1n << (_1n << /* @__PURE__ */ BigInt(j)) - _1n;
+      }
+      _SHA3_IOTA.push(t);
+    }
+    var IOTAS = (0, _u64_ts_1.split)(_SHA3_IOTA, true);
+    var SHA3_IOTA_H = IOTAS[0];
+    var SHA3_IOTA_L = IOTAS[1];
+    var rotlH = (h, l, s) => s > 32 ? (0, _u64_ts_1.rotlBH)(h, l, s) : (0, _u64_ts_1.rotlSH)(h, l, s);
+    var rotlL = (h, l, s) => s > 32 ? (0, _u64_ts_1.rotlBL)(h, l, s) : (0, _u64_ts_1.rotlSL)(h, l, s);
+    function keccakP(s, rounds = 24) {
+      const B = new Uint32Array(5 * 2);
+      for (let round = 24 - rounds; round < 24; round++) {
+        for (let x = 0; x < 10; x++)
+          B[x] = s[x] ^ s[x + 10] ^ s[x + 20] ^ s[x + 30] ^ s[x + 40];
+        for (let x = 0; x < 10; x += 2) {
+          const idx1 = (x + 8) % 10;
+          const idx0 = (x + 2) % 10;
+          const B0 = B[idx0];
+          const B1 = B[idx0 + 1];
+          const Th = rotlH(B0, B1, 1) ^ B[idx1];
+          const Tl = rotlL(B0, B1, 1) ^ B[idx1 + 1];
+          for (let y = 0; y < 50; y += 10) {
+            s[x + y] ^= Th;
+            s[x + y + 1] ^= Tl;
+          }
+        }
+        let curH = s[2];
+        let curL = s[3];
+        for (let t = 0; t < 24; t++) {
+          const shift = SHA3_ROTL[t];
+          const Th = rotlH(curH, curL, shift);
+          const Tl = rotlL(curH, curL, shift);
+          const PI = SHA3_PI[t];
+          curH = s[PI];
+          curL = s[PI + 1];
+          s[PI] = Th;
+          s[PI + 1] = Tl;
+        }
+        for (let y = 0; y < 50; y += 10) {
+          for (let x = 0; x < 10; x++)
+            B[x] = s[y + x];
+          for (let x = 0; x < 10; x++)
+            s[y + x] ^= ~B[(x + 2) % 10] & B[(x + 4) % 10];
+        }
+        s[0] ^= SHA3_IOTA_H[round];
+        s[1] ^= SHA3_IOTA_L[round];
+      }
+      (0, utils_ts_1.clean)(B);
+    }
+    var Keccak = class _Keccak extends utils_ts_1.Hash {
+      // NOTE: we accept arguments in bytes instead of bits here.
+      constructor(blockLen, suffix, outputLen, enableXOF = false, rounds = 24) {
+        super();
+        this.pos = 0;
+        this.posOut = 0;
+        this.finished = false;
+        this.destroyed = false;
+        this.enableXOF = false;
+        this.blockLen = blockLen;
+        this.suffix = suffix;
+        this.outputLen = outputLen;
+        this.enableXOF = enableXOF;
+        this.rounds = rounds;
+        (0, utils_ts_1.anumber)(outputLen);
+        if (!(0 < blockLen && blockLen < 200))
+          throw new Error("only keccak-f1600 function is supported");
+        this.state = new Uint8Array(200);
+        this.state32 = (0, utils_ts_1.u32)(this.state);
+      }
+      clone() {
+        return this._cloneInto();
+      }
+      keccak() {
+        (0, utils_ts_1.swap32IfBE)(this.state32);
+        keccakP(this.state32, this.rounds);
+        (0, utils_ts_1.swap32IfBE)(this.state32);
+        this.posOut = 0;
+        this.pos = 0;
+      }
+      update(data) {
+        (0, utils_ts_1.aexists)(this);
+        data = (0, utils_ts_1.toBytes)(data);
+        (0, utils_ts_1.abytes)(data);
+        const { blockLen, state } = this;
+        const len = data.length;
+        for (let pos = 0; pos < len; ) {
+          const take = Math.min(blockLen - this.pos, len - pos);
+          for (let i = 0; i < take; i++)
+            state[this.pos++] ^= data[pos++];
+          if (this.pos === blockLen)
+            this.keccak();
+        }
+        return this;
+      }
+      finish() {
+        if (this.finished)
+          return;
+        this.finished = true;
+        const { state, suffix, pos, blockLen } = this;
+        state[pos] ^= suffix;
+        if ((suffix & 128) !== 0 && pos === blockLen - 1)
+          this.keccak();
+        state[blockLen - 1] ^= 128;
+        this.keccak();
+      }
+      writeInto(out) {
+        (0, utils_ts_1.aexists)(this, false);
+        (0, utils_ts_1.abytes)(out);
+        this.finish();
+        const bufferOut = this.state;
+        const { blockLen } = this;
+        for (let pos = 0, len = out.length; pos < len; ) {
+          if (this.posOut >= blockLen)
+            this.keccak();
+          const take = Math.min(blockLen - this.posOut, len - pos);
+          out.set(bufferOut.subarray(this.posOut, this.posOut + take), pos);
+          this.posOut += take;
+          pos += take;
+        }
+        return out;
+      }
+      xofInto(out) {
+        if (!this.enableXOF)
+          throw new Error("XOF is not possible for this instance");
+        return this.writeInto(out);
+      }
+      xof(bytes) {
+        (0, utils_ts_1.anumber)(bytes);
+        return this.xofInto(new Uint8Array(bytes));
+      }
+      digestInto(out) {
+        (0, utils_ts_1.aoutput)(out, this);
+        if (this.finished)
+          throw new Error("digest() was already called");
+        this.writeInto(out);
+        this.destroy();
+        return out;
+      }
+      digest() {
+        return this.digestInto(new Uint8Array(this.outputLen));
+      }
+      destroy() {
+        this.destroyed = true;
+        (0, utils_ts_1.clean)(this.state);
+      }
+      _cloneInto(to) {
+        const { blockLen, suffix, outputLen, rounds, enableXOF } = this;
+        to || (to = new _Keccak(blockLen, suffix, outputLen, enableXOF, rounds));
+        to.state32.set(this.state32);
+        to.pos = this.pos;
+        to.posOut = this.posOut;
+        to.finished = this.finished;
+        to.rounds = rounds;
+        to.suffix = suffix;
+        to.outputLen = outputLen;
+        to.enableXOF = enableXOF;
+        to.destroyed = this.destroyed;
+        return to;
+      }
+    };
+    exports2.Keccak = Keccak;
+    var gen = (suffix, blockLen, outputLen) => (0, utils_ts_1.createHasher)(() => new Keccak(blockLen, suffix, outputLen));
+    exports2.sha3_224 = (() => gen(6, 144, 224 / 8))();
+    exports2.sha3_256 = (() => gen(6, 136, 256 / 8))();
+    exports2.sha3_384 = (() => gen(6, 104, 384 / 8))();
+    exports2.sha3_512 = (() => gen(6, 72, 512 / 8))();
+    exports2.keccak_224 = (() => gen(1, 144, 224 / 8))();
+    exports2.keccak_256 = (() => gen(1, 136, 256 / 8))();
+    exports2.keccak_384 = (() => gen(1, 104, 384 / 8))();
+    exports2.keccak_512 = (() => gen(1, 72, 512 / 8))();
+    var genShake = (suffix, blockLen, outputLen) => (0, utils_ts_1.createXOFer)((opts = {}) => new Keccak(blockLen, suffix, opts.dkLen === void 0 ? outputLen : opts.dkLen, true));
+    exports2.shake128 = (() => genShake(31, 168, 128 / 8))();
+    exports2.shake256 = (() => genShake(31, 136, 256 / 8))();
+  }
+});
+
+// src/lib/evm.js
+var require_evm = __commonJS({
+  "src/lib/evm.js"(exports2, module2) {
+    "use strict";
+    var { secp256k1 } = require_secp256k1();
+    var { keccak_256 } = require_sha3();
+    var hex = (b) => Buffer.from(b).toString("hex");
+    var unhex = (h) => Buffer.from(String(h).replace(/^0x/, "").padStart(String(h).replace(/^0x/, "").length + String(h).replace(/^0x/, "").length % 2, "0"), "hex");
+    var keccak = (x) => Buffer.from(keccak_256(typeof x === "string" ? Buffer.from(x, "utf8") : x));
+    var pad32 = (b) => Buffer.concat([Buffer.alloc(Math.max(0, 32 - b.length)), b]);
+    var big = (v) => typeof v === "bigint" ? v : BigInt(String(v).trim() || "0");
+    var toHexQ = (v) => "0x" + big(v).toString(16);
+    var checksum = (addr) => {
+      const a = String(addr).toLowerCase().replace(/^0x/, "");
+      if (!/^[0-9a-f]{40}$/.test(a)) throw Object.assign(new Error(`adresse invalide : ${addr}`), { permanent: true });
+      const h = hex(keccak(a));
+      return "0x" + [...a].map((c, i) => parseInt(h[i], 16) >= 8 ? c.toUpperCase() : c).join("");
+    };
+    var addrOfPub = (pub) => checksum(hex(keccak(Buffer.from(pub).slice(1)).slice(12)));
+    var addrOfKey = (pk) => addrOfPub(secp256k1.getPublicKey(unhex(pk), false));
+    var toUnits = (v, dec = 18) => {
+      const [i, f = ""] = String(v).trim().split(".");
+      return BigInt(i || "0") * 10n ** BigInt(dec) + BigInt((f + "0".repeat(dec)).slice(0, dec) || "0");
+    };
+    var fromUnits = (v, dec = 18) => {
+      const b = big(v), neg = b < 0n, a = neg ? -b : b, d = 10n ** BigInt(dec);
+      const f = (a % d).toString().padStart(dec, "0").replace(/0+$/, "");
+      return (neg ? "-" : "") + (a / d).toString() + (f ? "." + f : "");
+    };
+    var splitRaw = (s) => {
+      const out = [];
+      let d = 0, cur = "";
+      for (const c of s) {
+        if (c === "(") d++;
+        if (c === ")") d--;
+        if (c === "," && !d) {
+          out.push(cur.trim());
+          cur = "";
+        } else cur += c;
+      }
+      if (cur.trim()) out.push(cur.trim());
+      return out;
+    };
+    var param = (x, i) => {
+      const w = x.split(/\s+/);
+      const type = w[0];
+      const indexed = w.includes("indexed");
+      const rest = w.slice(1).filter((y) => y !== "indexed" && y !== "memory" && y !== "calldata");
+      return { type: type === "uint" ? "uint256" : type === "int" ? "int256" : type, indexed, name: rest[0] || `arg${i}` };
+    };
+    var parseSig = (sig) => {
+      const m = String(sig).replace(/^function\s+|^event\s+/, "").match(/^\s*(\w+)\s*\(([^)]*)\)\s*(?:(?:returns|:)\s*\(?([^)]*)\)?)?/);
+      if (!m) throw Object.assign(new Error(`signature invalide : ${sig}`), { permanent: true });
+      const ins = splitRaw(m[2]).map(param), outs = m[3] ? splitRaw(m[3]).map(param) : [];
+      return { name: m[1], inputs: ins.map((x) => x.type), indexed: ins.map((x) => x.indexed), names: ins.map((x) => x.name), outputs: outs.map((x) => x.type), outNames: outs.map((x) => x.name), canon: `${m[1]}(${ins.map((x) => x.type).join(",")})` };
+    };
+    var selector = (canon) => keccak(canon).slice(0, 4);
+    var isDyn = (t) => t === "string" || t === "bytes" || /\[\]$/.test(t);
+    var encOne = (t, v) => {
+      if (t === "address") return pad32(unhex(checksum(v)));
+      if (t === "bool") return pad32(Buffer.from([v === true || v === "true" || v === 1 || v === "1" ? 1 : 0]));
+      if (/^uint\d*$/.test(t)) return pad32(unhex(big(v).toString(16)));
+      if (/^int\d*$/.test(t)) {
+        let b = big(v);
+        if (b < 0n) b = (1n << 256n) + b;
+        return pad32(unhex(b.toString(16)));
+      }
+      if (/^bytes\d+$/.test(t)) {
+        const b = unhex(v);
+        return Buffer.concat([b, Buffer.alloc(32 - b.length)]);
+      }
+      throw Object.assign(new Error(`type ABI non g\xE9r\xE9 : ${t}`), { permanent: true });
+    };
+    var encode = (types, vals) => {
+      const heads = [], tails = [];
+      let tailLen = 0;
+      const headLen = types.length * 32;
+      types.forEach((t, i) => {
+        const v = vals[i];
+        if (!isDyn(t)) {
+          heads.push(encOne(t, v));
+          return;
+        }
+        heads.push(pad32(unhex((headLen + tailLen).toString(16))));
+        let tail;
+        if (t === "string" || t === "bytes") {
+          const b = t === "string" ? Buffer.from(String(v), "utf8") : unhex(v);
+          tail = Buffer.concat([pad32(unhex(b.length.toString(16))), b, Buffer.alloc((32 - b.length % 32) % 32)]);
+        } else {
+          const arr = Array.isArray(v) ? v : JSON.parse(v);
+          const inner = t.slice(0, -2);
+          tail = Buffer.concat([pad32(unhex(arr.length.toString(16))), encode(arr.map(() => inner), arr)]);
+        }
+        tails.push(tail);
+        tailLen += tail.length;
+      });
+      return Buffer.concat([...heads, ...tails]);
+    };
+    var decOne = (t, w) => {
+      if (t === "address") return checksum(hex(w.slice(12)));
+      if (t === "bool") return w[31] === 1;
+      if (/^uint\d*$/.test(t)) return BigInt("0x" + (hex(w) || "0")).toString();
+      if (/^int\d*$/.test(t)) {
+        let b = BigInt("0x" + hex(w));
+        if (b >= 1n << 255n) b -= 1n << 256n;
+        return b.toString();
+      }
+      if (/^bytes\d+$/.test(t)) return "0x" + hex(w.slice(0, +t.slice(5)));
+      return "0x" + hex(w);
+    };
+    var decode = (types, data) => {
+      const b = Buffer.isBuffer(data) ? data : unhex(data);
+      return types.map((t, i) => {
+        const w = b.slice(i * 32, i * 32 + 32);
+        if (!isDyn(t)) return decOne(t, w);
+        const off = Number(BigInt("0x" + hex(w)));
+        const len = Number(BigInt("0x" + hex(b.slice(off, off + 32))));
+        if (t === "string") return b.slice(off + 32, off + 32 + len).toString("utf8");
+        if (t === "bytes") return "0x" + hex(b.slice(off + 32, off + 32 + len));
+        return decode(Array(len).fill(t.slice(0, -2)), b.slice(off + 32));
+      });
+    };
+    var callData = (sig, args = []) => {
+      const s = parseSig(sig);
+      return "0x" + hex(Buffer.concat([selector(s.canon), encode(s.inputs, args)]));
+    };
+    var decodeLog = (sig, log) => {
+      const s = parseSig(sig);
+      const out = {};
+      let ti = 1;
+      const data = decode(s.inputs.filter((_, i) => !s.indexed[i]), log.data || "0x");
+      let di = 0;
+      s.inputs.forEach((t, i) => {
+        out[s.names[i]] = s.indexed[i] ? isDyn(t) ? log.topics[ti++] : decOne(t, unhex(log.topics[ti++])) : data[di++];
+      });
+      return out;
+    };
+    var rlp = (x) => {
+      if (Array.isArray(x)) {
+        const body = Buffer.concat(x.map(rlp));
+        return Buffer.concat([lenPrefix(body.length, 192), body]);
+      }
+      const b = Buffer.isBuffer(x) ? x : x === null || x === void 0 || x === 0n || x === 0 || x === "0" || x === "" ? Buffer.alloc(0) : typeof x === "string" && x.startsWith("0x") ? unhex(x) : unhex(big(x).toString(16));
+      if (b.length === 1 && b[0] < 128) return b;
+      return Buffer.concat([lenPrefix(b.length, 128), b]);
+    };
+    var lenPrefix = (n, off) => {
+      if (n < 56) return Buffer.from([off + n]);
+      const l = unhex(n.toString(16));
+      return Buffer.concat([Buffer.from([off + 55 + l.length]), l]);
+    };
+    var strip = (h) => {
+      const b = unhex(h);
+      let i = 0;
+      while (i < b.length && b[i] === 0) i++;
+      return b.slice(i);
+    };
+    var signTx1559 = (tx, pk) => {
+      const fields = [big(tx.chainId), big(tx.nonce), big(tx.maxPriorityFeePerGas), big(tx.maxFeePerGas), big(tx.gas), tx.to ? unhex(checksum(tx.to)) : Buffer.alloc(0), big(tx.value || 0), tx.data ? unhex(tx.data) : Buffer.alloc(0), []];
+      const unsigned = Buffer.concat([Buffer.from([2]), rlp(fields)]);
+      const sig = secp256k1.sign(keccak(unsigned), unhex(pk), { lowS: true });
+      const raw = Buffer.concat([Buffer.from([2]), rlp([...fields, BigInt(sig.recovery), strip(sig.r.toString(16)), strip(sig.s.toString(16))])]);
+      return { raw: "0x" + hex(raw), hash: "0x" + hex(keccak(raw)) };
+    };
+    var msgHash = (m) => {
+      const b = typeof m === "string" && !/^0x[0-9a-f]*$/i.test(m) ? Buffer.from(m, "utf8") : unhex(m);
+      return keccak(Buffer.concat([Buffer.from(`Ethereum Signed Message:
+${b.length}`), b]));
+    };
+    var signMessage = (m, pk) => {
+      const s = secp256k1.sign(msgHash(m), unhex(pk), { lowS: true });
+      return "0x" + hex(pad32(unhex(s.r.toString(16)))) + hex(pad32(unhex(s.s.toString(16)))) + (27 + s.recovery).toString(16);
+    };
+    var recoverMessage = (m, sig) => {
+      const b = unhex(sig);
+      if (b.length !== 65) throw Object.assign(new Error("signature invalide (65 octets attendus)"), { permanent: true });
+      let v = b[64];
+      if (v >= 27) v -= 27;
+      const s = new secp256k1.Signature(BigInt("0x" + hex(b.slice(0, 32))), BigInt("0x" + hex(b.slice(32, 64)))).addRecoveryBit(v);
+      return addrOfPub(s.recoverPublicKey(msgHash(m)).toRawBytes(false));
+    };
+    var newKey = () => {
+      const pk = "0x" + hex(secp256k1.utils.randomPrivateKey());
+      return { cle: pk, adresse: addrOfKey(pk) };
+    };
+    module2.exports = { keccak, checksum, addrOfKey, toUnits, fromUnits, parseSig, selector, encode, decode, callData, decodeLog, rlp, signTx1559, signMessage, recoverMessage, newKey, toHexQ, hex, unhex };
+  }
+});
+
+// src/blocks/blockchain.js
+var require_blockchain = __commonJS({
+  "src/blocks/blockchain.js"(exports2, module2) {
+    "use strict";
+    var evm = require_evm();
+    var perm = (m) => Object.assign(new Error(m), { permanent: true });
+    var need = async (api, name) => {
+      const v = await api.secret(name);
+      if (!v) throw perm(`secret ${name} introuvable (variable d'environnement ou coffre)`);
+      return v;
+    };
+    var RESEAUX = {
+      "Ethereum": { id: 1, rpc: "https://ethereum-rpc.publicnode.com", sym: "ETH", scan: "https://etherscan.io" },
+      "Polygon": { id: 137, rpc: "https://polygon-bor-rpc.publicnode.com", sym: "POL", scan: "https://polygonscan.com" },
+      "Base": { id: 8453, rpc: "https://base-rpc.publicnode.com", sym: "ETH", scan: "https://basescan.org" },
+      "Arbitrum": { id: 42161, rpc: "https://arbitrum-one-rpc.publicnode.com", sym: "ETH", scan: "https://arbiscan.io" },
+      "Optimism": { id: 10, rpc: "https://optimism-rpc.publicnode.com", sym: "ETH", scan: "https://optimistic.etherscan.io" },
+      "BNB Chain": { id: 56, rpc: "https://bsc-rpc.publicnode.com", sym: "BNB", scan: "https://bscscan.com" },
+      "Avalanche": { id: 43114, rpc: "https://avalanche-c-chain-rpc.publicnode.com", sym: "AVAX", scan: "https://snowtrace.io" },
+      "Gnosis": { id: 100, rpc: "https://gnosis-rpc.publicnode.com", sym: "xDAI", scan: "https://gnosisscan.io" },
+      "Sepolia (test)": { id: 11155111, rpc: "https://ethereum-sepolia-rpc.publicnode.com", sym: "ETH", scan: "https://sepolia.etherscan.io" },
+      "Polygon Amoy (test)": { id: 80002, rpc: "https://polygon-amoy-bor-rpc.publicnode.com", sym: "POL", scan: "https://amoy.polygonscan.com" }
+    };
+    var NET = [
+      { name: "reseau", label: "R\xE9seau", type: "select", options: [...Object.keys(RESEAUX), "autre (adresse RPC)"], default: "Ethereum" },
+      { name: "rpc", label: "Adresse RPC (facultatif)", help: "Ton propre n\u0153ud ou Infura/Alchemy. Peut \xEAtre un nom de secret si elle contient une cl\xE9." }
+    ];
+    var net = async (p, api) => {
+      const n = RESEAUX[p.reseau] || {};
+      let url = p.rpc || n.rpc;
+      if (url && !/^https?:\/\//.test(url)) url = await need(api, url);
+      if (!url) throw perm("indique l'adresse RPC du r\xE9seau");
+      return { ...n, rpc: url };
+    };
+    var rid = 1;
+    var rpc = async (n, method, params = []) => {
+      const r = await fetch(n.rpc, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: rid++, method, params }) });
+      if (!r.ok) throw new Error(`n\u0153ud ${method} : HTTP ${r.status}`);
+      const j = await r.json();
+      if (j.error) throw new Error(`n\u0153ud ${method} : ${j.error.message || JSON.stringify(j.error)}`);
+      return j.result;
+    };
+    var num = (h) => h === null || h === void 0 ? null : Number(BigInt(h));
+    var ERC20 = { symbol: "symbol() returns (string)", decimals: "decimals() returns (uint8)", balanceOf: "balanceOf(address) returns (uint256)", name: "name() returns (string)" };
+    var read = async (n, to, sig, args2 = []) => {
+      const s = evm.parseSig(sig);
+      const out = await rpc(n, "eth_call", [{ to: evm.checksum(to), data: evm.callData(sig, args2) }, "latest"]);
+      return evm.decode(s.outputs, out);
+    };
+    var token = async (n, addr) => {
+      const [[symbol], [decimals]] = await Promise.all([read(n, addr, ERC20.symbol).catch(() => ["?"]), read(n, addr, ERC20.decimals).catch(() => ["18"])]);
+      return { symbol, decimals: +decimals };
+    };
+    var args = (v) => {
+      if (v === void 0 || v === null || v === "") return [];
+      if (Array.isArray(v)) return v;
+      try {
+        const j = JSON.parse(v);
+        return Array.isArray(j) ? j : [j];
+      } catch (e) {
+        return String(v).split(",").map((x) => x.trim());
+      }
+    };
+    module2.exports = [
+      {
+        name: "dzf_evm_solde",
+        label: "Blockchain : solde d'une adresse",
+        category: "Blockchain",
+        icon: "fab fa-ethereum",
+        output: "solde",
+        timeout: 30,
+        description: "Solde d'un portefeuille en monnaie du r\xE9seau (ETH, POL, BNB\u2026) et, si tu les indiques, en jetons ERC-20 (USDC, EURC\u2026).",
+        params: [...NET, { name: "adresse", label: "Adresse du portefeuille", required: true, help: "0x\u2026" }, { name: "jetons", label: "Contrats de jetons ERC-20 (facultatif)", type: "json", help: 'Ex. ["0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"] (USDC sur Ethereum)' }],
+        run: async (p, ctx, api) => {
+          const n = await net(p, api);
+          const a = evm.checksum(p.adresse);
+          const wei = await rpc(n, "eth_getBalance", [a, "latest"]);
+          const out = { adresse: a, reseau: p.reseau, symbole: n.sym || "", solde: evm.fromUnits(BigInt(wei)), wei: BigInt(wei).toString(), jetons: [], lien: n.scan ? `${n.scan}/address/${a}` : "" };
+          for (const t of args(p.jetons)) {
+            const [{ symbol, decimals }, [bal]] = await Promise.all([token(n, t), read(n, t, ERC20.balanceOf, [a])]);
+            out.jetons.push({ contrat: evm.checksum(t), symbole: symbol, solde: evm.fromUnits(bal, decimals), brut: bal });
+          }
+          return out;
+        }
+      },
+      {
+        name: "dzf_evm_lire_contrat",
+        label: "Blockchain : lire un contrat",
+        category: "Blockchain",
+        icon: "fas fa-file-contract",
+        output: "contrat",
+        description: "Appelle une fonction en lecture d'un contrat intelligent (gratuit, rien n'est \xE9crit). Tu \xE9cris simplement la signature, ex. \xAB balanceOf(address) returns (uint256) \xBB.",
+        params: [
+          ...NET,
+          { name: "contrat", label: "Adresse du contrat", required: true },
+          { name: "fonction", label: "Fonction", required: true, default: "totalSupply() returns (uint256)", help: "Ex. ownerOf(uint256 id) returns (address owner)" },
+          { name: "arguments", label: "Arguments", type: "json", help: 'Liste JSON ou s\xE9par\xE9s par des virgules. Ex. ["0x\u2026", 5]' },
+          { name: "bloc", label: "Au bloc (facultatif)", help: "Num\xE9ro, vide = le plus r\xE9cent" }
+        ],
+        run: async (p, ctx, api) => {
+          const n = await net(p, api);
+          const s = evm.parseSig(p.fonction);
+          if (!s.outputs.length) throw perm("ajoute ce que la fonction renvoie : \xAB \u2026 returns (uint256) \xBB");
+          const res = evm.decode(s.outputs, await rpc(n, "eth_call", [{ to: evm.checksum(p.contrat), data: evm.callData(p.fonction, args(p.arguments)) }, p.bloc ? evm.toHexQ(p.bloc) : "latest"]));
+          if (res.length === 1) return res[0];
+          return Object.fromEntries(res.map((v, i) => [s.outNames[i], v]));
+        }
+      },
+      {
+        name: "dzf_evm_evenements",
+        label: "Blockchain : \xE9v\xE9nements d'un contrat",
+        category: "Blockchain",
+        icon: "fas fa-stream",
+        output: "evenements",
+        timeout: 60,
+        description: "R\xE9cup\xE8re les \xE9v\xE9nements r\xE9cents d'un contrat (transferts, ventes, votes\u2026) et les d\xE9code. Id\xE9al avec un d\xE9clencheur planifi\xE9 pour suivre un portefeuille ou un jeton.",
+        params: [
+          ...NET,
+          { name: "contrat", label: "Adresse du contrat", required: true },
+          { name: "evenement", label: "\xC9v\xE9nement", required: true, default: "Transfer(address indexed from, address indexed to, uint256 value)" },
+          { name: "derniers_blocs", label: "Sur les N derniers blocs", type: "int", default: 1e3 },
+          { name: "depuis_bloc", label: "\u2026ou depuis le bloc", help: "Ex. {{dernier_bloc_vu}} pour ne rien rater entre deux passages" },
+          { name: "filtre_1", label: "Filtre 1er champ index\xE9 (facultatif)", help: "Ex. l'adresse \xAB from \xBB" },
+          { name: "filtre_2", label: "Filtre 2e champ index\xE9 (facultatif)", help: "Ex. l'adresse \xAB to \xBB" }
+        ],
+        run: async (p, ctx, api) => {
+          const n = await net(p, api);
+          const s = evm.parseSig(p.evenement);
+          const last = num(await rpc(n, "eth_blockNumber"));
+          const from = p.depuis_bloc ? +p.depuis_bloc : Math.max(0, last - Math.min(5e4, +p.derniers_blocs || 1e3));
+          const idxTypes = s.inputs.filter((_, i) => s.indexed[i]);
+          const topic = (v, i) => v ? "0x" + evm.encode([idxTypes[i] || "address"], [v]).toString("hex") : null;
+          const logs = await rpc(n, "eth_getLogs", [{ address: evm.checksum(p.contrat), fromBlock: evm.toHexQ(from), toBlock: evm.toHexQ(last), topics: ["0x" + evm.keccak(s.canon).toString("hex"), topic(p.filtre_1, 0), topic(p.filtre_2, 1)] }]);
+          return { dernier_bloc: last, depuis: from, nombre: logs.length, liste: logs.map((l) => ({ ...evm.decodeLog(p.evenement, l), bloc: num(l.blockNumber), tx: l.transactionHash, lien: n.scan ? `${n.scan}/tx/${l.transactionHash}` : "" })) };
+        }
+      },
+      {
+        name: "dzf_evm_transaction",
+        label: "Blockchain : \xE9tat d'une transaction",
+        category: "Blockchain",
+        icon: "fas fa-receipt",
+        output: "transaction",
+        timeout: 30,
+        description: "Dit si une transaction est en attente, r\xE9ussie ou \xE9chou\xE9e, avec son nombre de confirmations, les frais pay\xE9s et le montant.",
+        params: [...NET, { name: "hash", label: "Hash de la transaction", required: true, help: "0x\u2026 (64 caract\xE8res)" }],
+        run: async (p, ctx, api) => {
+          const n = await net(p, api);
+          const [tx, rc, last] = await Promise.all([rpc(n, "eth_getTransactionByHash", [p.hash]), rpc(n, "eth_getTransactionReceipt", [p.hash]), rpc(n, "eth_blockNumber")]);
+          if (!tx) return { etat: "introuvable", hash: p.hash };
+          const etat = !rc ? "en attente" : rc.status === "0x1" ? "r\xE9ussie" : "\xE9chou\xE9e";
+          return {
+            etat,
+            hash: p.hash,
+            de: tx.from,
+            vers: tx.to,
+            montant: evm.fromUnits(BigInt(tx.value)),
+            symbole: n.sym || "",
+            bloc: num(tx.blockNumber),
+            confirmations: rc ? num(last) - num(rc.blockNumber) + 1 : 0,
+            frais: rc ? evm.fromUnits(BigInt(rc.gasUsed) * BigInt(rc.effectiveGasPrice || tx.gasPrice || 0)) : null,
+            lien: n.scan ? `${n.scan}/tx/${p.hash}` : ""
+          };
+        }
+      },
+      {
+        name: "dzf_evm_envoyer",
+        label: "Blockchain : envoyer (crypto, jeton, contrat)",
+        category: "Blockchain",
+        icon: "fas fa-paper-plane",
+        output: "envoi",
+        timeout: 120,
+        description: "Envoie de la crypto, un jeton ERC-20, ou appelle une fonction d'un contrat qui \xE9crit (mint, vote\u2026). Sign\xE9 sur le serveur avec une cl\xE9 du coffre. Essaie d'abord sur un r\xE9seau de test !",
+        params: [
+          ...NET,
+          { name: "cle", label: "Secret de la cl\xE9 priv\xE9e", required: true, default: "PORTEFEUILLE_CLE", help: "Nom d'un secret du coffre (0x\u2026). Utilise un portefeuille d\xE9di\xE9 avec peu de fonds." },
+          { name: "type_envoi", label: "Quoi", type: "select", options: ["monnaie du r\xE9seau", "jeton ERC-20", "appel de contrat"], default: "monnaie du r\xE9seau" },
+          { name: "vers", label: "Destinataire (ou contrat appel\xE9)", required: true },
+          { name: "montant", label: "Montant", help: "Ex. 0.01 (en ETH, POL\u2026 ou en jetons)" },
+          { name: "jeton", label: "Contrat du jeton", showIf: { type_envoi: "jeton ERC-20" } },
+          { name: "fonction", label: "Fonction", showIf: { type_envoi: "appel de contrat" }, help: "Ex. mint(address to, uint256 amount)" },
+          { name: "arguments", label: "Arguments", type: "json", showIf: { type_envoi: "appel de contrat" } },
+          { name: "plafond", label: "Montant max autoris\xE9 (s\xE9curit\xE9)", default: "0.1", help: "Refuse d'envoyer plus que \xE7a. En monnaie du r\xE9seau ou en jetons." },
+          { name: "attendre", label: "Attendre la confirmation", type: "bool", default: true }
+        ],
+        run: async (p, ctx, api) => {
+          const n = await net(p, api);
+          if (!n.id) n.id = num(await rpc(n, "eth_chainId"));
+          const pk = (await need(api, p.cle)).trim();
+          const from = evm.addrOfKey(pk);
+          let to = p.vers, value = 0n, data;
+          if (p.montant && p.plafond && Number(p.montant) > Number(p.plafond)) throw perm(`montant ${p.montant} au-dessus du plafond ${p.plafond}`);
+          if (p.type_envoi === "jeton ERC-20") {
+            const { decimals } = await token(n, p.jeton);
+            data = evm.callData("transfer(address,uint256)", [p.vers, evm.toUnits(p.montant, decimals)]);
+            to = p.jeton;
+          } else if (p.type_envoi === "appel de contrat") {
+            data = evm.callData(p.fonction, args(p.arguments));
+            if (p.montant) value = evm.toUnits(p.montant);
+          } else value = evm.toUnits(p.montant || "0");
+          const [nonce, block, tip] = await Promise.all([rpc(n, "eth_getTransactionCount", [from, "pending"]), rpc(n, "eth_getBlockByNumber", ["latest", false]), rpc(n, "eth_maxPriorityFeePerGas").catch(() => "0x3b9aca00")]);
+          const base = BigInt(block.baseFeePerGas || "0x0");
+          const txq = { from, to: evm.checksum(to), value: evm.toHexQ(value), ...data ? { data } : {} };
+          const gas = BigInt(await rpc(n, "eth_estimateGas", [txq])) * 12n / 10n;
+          const signed = evm.signTx1559({ chainId: n.id, nonce: BigInt(nonce), maxPriorityFeePerGas: BigInt(tip), maxFeePerGas: base * 2n + BigInt(tip), gas, to, value, data }, pk);
+          const hash = await rpc(n, "eth_sendRawTransaction", [signed.raw]);
+          let etat = "envoy\xE9e";
+          if (p.attendre) {
+            for (let i = 0; i < 40; i++) {
+              await new Promise((r) => setTimeout(r, 2500));
+              const rc = await rpc(n, "eth_getTransactionReceipt", [hash]);
+              if (rc) {
+                etat = rc.status === "0x1" ? "r\xE9ussie" : "\xE9chou\xE9e";
+                break;
+              }
+            }
+          }
+          return { hash, etat, de: from, vers: evm.checksum(to), lien: n.scan ? `${n.scan}/tx/${hash}` : "" };
+        }
+      },
+      {
+        name: "dzf_evm_signature",
+        label: "Blockchain : signer / v\xE9rifier un message",
+        category: "Blockchain",
+        icon: "fas fa-signature",
+        output: "signature",
+        description: "V\xE9rifie qu'un message a \xE9t\xE9 sign\xE9 par un portefeuille (connexion \xAB Sign-In with Ethereum \xBB, preuve de propri\xE9t\xE9), ou signe un message avec une cl\xE9 du coffre.",
+        params: [
+          { name: "action", label: "Action", type: "select", options: ["v\xE9rifier", "signer"], default: "v\xE9rifier" },
+          { name: "message", label: "Message", required: true },
+          { name: "signature", label: "Signature re\xE7ue", showIf: { action: "v\xE9rifier" } },
+          { name: "adresse", label: "Adresse attendue (facultatif)", showIf: { action: "v\xE9rifier" } },
+          { name: "cle", label: "Secret de la cl\xE9 priv\xE9e", default: "PORTEFEUILLE_CLE", showIf: { action: "signer" } }
+        ],
+        run: async (p, ctx, api) => {
+          if (p.action === "signer") {
+            const pk = (await need(api, p.cle)).trim();
+            return { signature: evm.signMessage(p.message, pk), adresse: evm.addrOfKey(pk) };
+          }
+          const a = evm.recoverMessage(p.message, p.signature);
+          return { adresse: a, valide: p.adresse ? a.toLowerCase() === String(p.adresse).toLowerCase() : true };
+        }
+      },
+      {
+        name: "dzf_evm_portefeuille",
+        label: "Blockchain : cr\xE9er un portefeuille",
+        category: "Blockchain",
+        icon: "fas fa-wallet",
+        output: "portefeuille",
+        description: "Cr\xE9e une nouvelle adresse Ethereum/compatible. La cl\xE9 priv\xE9e est rang\xE9e directement dans le coffre chiffr\xE9 (jamais montr\xE9e ni stock\xE9e dans une table).",
+        params: [{ name: "nom_secret", label: "Nom du secret \xE0 cr\xE9er", required: true, default: "PORTEFEUILLE_{{id}}", help: "Refuse d'\xE9craser un secret existant" }],
+        run: async (p, ctx, api) => {
+          const vault = require_vault();
+          const name = String(p.nom_secret).toUpperCase().replace(/[^A-Z0-9_]/g, "_");
+          if (await vault.readSecret(name)) throw perm(`le secret ${name} existe d\xE9j\xE0`);
+          const w = evm.newKey();
+          await vault.writeSecret(name, w.cle);
+          return { adresse: w.adresse, secret: name };
+        }
+      },
+      {
+        name: "dzf_evm_rpc",
+        label: "Blockchain : appel RPC libre",
+        category: "Blockchain",
+        icon: "fas fa-terminal",
+        output: "rpc",
+        description: "Pour les techniciens : n'importe quelle m\xE9thode JSON-RPC (eth_blockNumber, eth_getBlockByNumber, debug_\u2026) sur le r\xE9seau choisi.",
+        params: [...NET, { name: "methode", label: "M\xE9thode", required: true, default: "eth_blockNumber" }, { name: "parametres", label: "Param\xE8tres (liste JSON)", type: "json", default: "[]" }, { name: "convertir", label: "Convertir les 0x\u2026 en nombres", type: "bool", default: true }],
+        run: async (p, ctx, api) => {
+          const r = await rpc(await net(p, api), p.methode, args(p.parametres));
+          return p.convertir && typeof r === "string" && /^0x[0-9a-f]{1,15}$/i.test(r) ? num(r) : r;
+        }
+      },
+      {
+        name: "dzf_bitcoin",
+        label: "Blockchain : Bitcoin",
+        category: "Blockchain",
+        icon: "fab fa-bitcoin",
+        output: "bitcoin",
+        timeout: 30,
+        description: "Solde et derni\xE8res transactions d'une adresse Bitcoin, \xE9tat d'une transaction, ou frais conseill\xE9s \u2014 via mempool.space (ou ton instance).",
+        params: [
+          { name: "action", label: "Action", type: "select", options: ["solde d'une adresse", "transactions d'une adresse", "\xE9tat d'une transaction", "frais conseill\xE9s", "hauteur du dernier bloc"], default: "solde d'une adresse" },
+          { name: "valeur", label: "Adresse ou identifiant de transaction" },
+          { name: "serveur", label: "Serveur", default: "https://mempool.space", help: "Testnet : https://mempool.space/testnet4" }
+        ],
+        run: async (p) => {
+          const base = String(p.serveur || "https://mempool.space").replace(/\/$/, "") + "/api";
+          const get = async (u) => {
+            const r = await fetch(base + u);
+            if (!r.ok) throw new Error(`mempool : HTTP ${r.status}`);
+            const t2 = await r.text();
+            try {
+              return JSON.parse(t2);
+            } catch (e) {
+              return t2;
+            }
+          };
+          const v = encodeURIComponent(String(p.valeur || "").trim());
+          const btc = (s) => s / 1e8;
+          if (p.action === "frais conseill\xE9s") return get("/v1/fees/recommended");
+          if (p.action === "hauteur du dernier bloc") return +await get("/blocks/tip/height");
+          if (!v) throw perm("indique l'adresse ou la transaction");
+          if (p.action === "solde d'une adresse") {
+            const a = await get(`/address/${v}`);
+            const c = a.chain_stats, m = a.mempool_stats;
+            return { adresse: a.address, solde: btc(c.funded_txo_sum - c.spent_txo_sum), en_attente: btc(m.funded_txo_sum - m.spent_txo_sum), transactions: c.tx_count, lien: `https://mempool.space/address/${a.address}` };
+          }
+          if (p.action === "transactions d'une adresse") return (await get(`/address/${v}/txs`)).slice(0, 25).map((t2) => ({ txid: t2.txid, confirmee: t2.status.confirmed, bloc: t2.status.block_height, quand: t2.status.block_time ? new Date(t2.status.block_time * 1e3).toISOString() : null, frais: btc(t2.fee) }));
+          const t = await get(`/tx/${v}`);
+          const tip = t.status.confirmed ? +await get("/blocks/tip/height") : 0;
+          return { txid: t.txid, etat: t.status.confirmed ? "confirm\xE9e" : "en attente", confirmations: t.status.confirmed ? tip - t.status.block_height + 1 : 0, frais: btc(t.fee), montant_sorties: btc(t.vout.reduce((s, o) => s + o.value, 0)), lien: `https://mempool.space/tx/${t.txid}` };
+        }
+      },
+      {
+        name: "dzf_crypto_prix",
+        label: "Blockchain : cours des cryptos",
+        category: "Blockchain",
+        icon: "fas fa-coins",
+        output: "cours",
+        description: "Prix actuel (et variation sur 24 h) de cryptomonnaies en euros, dollars\u2026 via CoinGecko (gratuit, sans cl\xE9).",
+        params: [
+          { name: "ids", label: "Cryptos (identifiants CoinGecko)", default: "bitcoin,ethereum,solana", help: "S\xE9par\xE9s par des virgules. Ex. bitcoin, ethereum, usd-coin, polygon-ecosystem-token" },
+          { name: "devises", label: "Devises", default: "eur,usd" },
+          { name: "cle", label: "Secret de la cl\xE9 CoinGecko (facultatif)", default: "COINGECKO_KEY" }
+        ],
+        run: async (p, ctx, api) => {
+          const k = await api.secret(p.cle);
+          const u = `https://api.coingecko.com/api/v3/simple/price?ids=${encodeURIComponent(p.ids)}&vs_currencies=${encodeURIComponent(p.devises)}&include_24hr_change=true&include_last_updated_at=true`;
+          const r = await fetch(u, { headers: k ? { "x-cg-demo-api-key": k } : {} });
+          if (!r.ok) throw new Error(`CoinGecko : HTTP ${r.status}`);
+          return r.json();
+        }
+      }
+    ];
+    module2.exports.RESEAUX = RESEAUX;
+  }
+});
+
+// src/blocks/devops.js
+var require_devops = __commonJS({
+  "src/blocks/devops.js"(exports2, module2) {
+    "use strict";
+    var crypto = require("crypto");
+    var http = require("http");
+    var perm = (m) => Object.assign(new Error(m), { permanent: true });
+    var need = async (api, name) => {
+      const v = await api.secret(name);
+      if (!v) throw perm(`secret ${name} introuvable (variable d'environnement ou coffre)`);
+      return v;
+    };
+    var json = (v) => {
+      if (v === void 0 || v === null || v === "") return void 0;
+      if (typeof v === "string") {
+        try {
+          return JSON.parse(v);
+        } catch (e) {
+          throw perm("corps JSON invalide");
+        }
+      }
+      return v;
+    };
+    var call = async (url, { method = "GET", headers = {}, body, name }) => {
+      const r = await fetch(url, { method, headers: { Accept: "application/json", ...body !== void 0 ? { "Content-Type": "application/json" } : {}, ...headers }, body: body !== void 0 ? JSON.stringify(body) : void 0 });
+      const t = await r.text();
+      let j;
+      try {
+        j = t ? JSON.parse(t) : null;
+      } catch (e) {
+        j = t;
+      }
+      if (!r.ok) throw Object.assign(new Error(`${name} : HTTP ${r.status} ${j && (j.message || j.error || j.errors && JSON.stringify(j.errors)) || String(t).slice(0, 200)}`), { permanent: [400, 401, 403, 404, 422].includes(r.status) });
+      return j;
+    };
+    var docker = (p, method, path, body) => new Promise((resolve, reject) => {
+      const tcp = /^https?:\/\//.test(p.docker || "");
+      const opt = tcp ? new URL(path, p.docker) : null;
+      const req = (tcp && opt.protocol === "https:" ? require("https") : http).request(tcp ? { hostname: opt.hostname, port: opt.port, path: opt.pathname + opt.search, method } : { socketPath: p.docker || "/var/run/docker.sock", path, method }, (res) => {
+        const parts = [];
+        res.on("data", (c) => parts.push(c));
+        res.on("end", () => {
+          const raw = Buffer.concat(parts);
+          const d = path.includes("/logs") ? raw.toString("latin1") : raw.toString("utf8");
+          let j;
+          try {
+            j = d ? JSON.parse(d) : null;
+          } catch (e) {
+            j = d;
+          }
+          if (res.statusCode >= 400) reject(new Error(`Docker : ${res.statusCode} ${j && j.message || d.slice(0, 200)}`));
+          else resolve(j);
+        });
+      });
+      req.on("error", (e) => reject(new Error(`Docker : ${e.message} (socket mont\xE9 ? /var/run/docker.sock)`)));
+      req.setHeader("Content-Type", "application/json");
+      if (body) req.write(JSON.stringify(body));
+      req.end();
+    });
+    var demux = (s) => {
+      const b = Buffer.from(s, "latin1");
+      const out = [];
+      let i = 0;
+      while (i + 8 <= b.length && b[i] <= 2 && b[i + 1] === 0) {
+        const n = b.readUInt32BE(i + 4);
+        out.push(b.slice(i + 8, i + 8 + n).toString("utf8"));
+        i += 8 + n;
+      }
+      return out.length ? out.join("") : b.toString("utf8");
+    };
+    module2.exports = [
+      {
+        name: "dzf_github",
+        label: "GitHub",
+        category: "DevOps",
+        icon: "fab fa-github",
+        output: "github",
+        timeout: 60,
+        description: "Cr\xE9er une issue, commenter, lister les issues ou pull requests, lire la derni\xE8re version publi\xE9e, lancer une GitHub Action, ou n'importe quel appel de l'API GitHub.",
+        params: [
+          { name: "jeton", label: "Secret du jeton", default: "GITHUB_TOKEN" },
+          { name: "depot", label: "D\xE9p\xF4t", required: true, help: "propri\xE9taire/nom, ex. SidyLaye/saltcorn-dysizz-flow" },
+          { name: "action", label: "Action", type: "select", options: ["cr\xE9er une issue", "commenter", "lister les issues", "lister les pull requests", "derni\xE8re version", "lancer une action", "appel libre"], default: "cr\xE9er une issue" },
+          { name: "titre", label: "Titre", showIf: { action: "cr\xE9er une issue" } },
+          { name: "texte", label: "Texte", type: "text" },
+          { name: "etiquettes", label: "\xC9tiquettes", showIf: { action: "cr\xE9er une issue" }, help: "S\xE9par\xE9es par des virgules" },
+          { name: "numero", label: "N\xB0 de l'issue / PR", showIf: { action: "commenter" } },
+          { name: "fichier_action", label: "Fichier du workflow", showIf: { action: "lancer une action" }, help: "Ex. deploy.yml" },
+          { name: "branche", label: "Branche", default: "main", showIf: { action: "lancer une action" } },
+          { name: "chemin", label: "Chemin de l'API", showIf: { action: "appel libre" }, help: "Ex. /repos/{depot}/commits" },
+          { name: "methode", label: "M\xE9thode", type: "select", options: ["GET", "POST", "PATCH", "PUT", "DELETE"], default: "GET", showIf: { action: "appel libre" } },
+          { name: "corps", label: "Corps (JSON)", type: "json", showIf: { action: "appel libre" } }
+        ],
+        run: async (p, ctx, api) => {
+          const h = { Authorization: `Bearer ${await need(api, p.jeton)}`, "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "dysizz-flow" };
+          const R = `https://api.github.com/repos/${p.depot}`;
+          const g = (u, o = {}) => call(u, { ...o, headers: h, name: "GitHub" });
+          switch (p.action) {
+            case "cr\xE9er une issue": {
+              const j = await g(`${R}/issues`, { method: "POST", body: { title: p.titre, body: p.texte || "", labels: p.etiquettes ? String(p.etiquettes).split(",").map((s) => s.trim()) : [] } });
+              return { numero: j.number, url: j.html_url };
+            }
+            case "commenter": {
+              const j = await g(`${R}/issues/${+p.numero}/comments`, { method: "POST", body: { body: p.texte || "" } });
+              return { url: j.html_url };
+            }
+            case "lister les issues":
+              return (await g(`${R}/issues?state=open&per_page=50`)).filter((i) => !i.pull_request).map((i) => ({ numero: i.number, titre: i.title, auteur: i.user.login, etiquettes: i.labels.map((l) => l.name), cree: i.created_at, url: i.html_url }));
+            case "lister les pull requests":
+              return (await g(`${R}/pulls?state=open&per_page=50`)).map((i) => ({ numero: i.number, titre: i.title, auteur: i.user.login, branche: i.head.ref, brouillon: i.draft, cree: i.created_at, url: i.html_url }));
+            case "derni\xE8re version": {
+              const j = await g(`${R}/releases/latest`);
+              return { version: j.tag_name, nom: j.name, publiee: j.published_at, notes: j.body, url: j.html_url };
+            }
+            case "lancer une action":
+              await g(`${R}/actions/workflows/${encodeURIComponent(p.fichier_action)}/dispatches`, { method: "POST", body: { ref: p.branche || "main" } });
+              return { lance: p.fichier_action };
+            default:
+              return g(`https://api.github.com${String(p.chemin || "/").replace("{depot}", p.depot)}`, { method: p.methode, body: json(p.corps) });
+          }
+        }
+      },
+      {
+        name: "dzf_gitlab",
+        label: "GitLab",
+        category: "DevOps",
+        icon: "fab fa-gitlab",
+        output: "gitlab",
+        timeout: 60,
+        description: "Cr\xE9er une issue, lister les merge requests, lancer un pipeline ou appeler l'API GitLab (gitlab.com ou ton instance).",
+        params: [
+          { name: "adresse", label: "Instance", default: "https://gitlab.com" },
+          { name: "jeton", label: "Secret du jeton", default: "GITLAB_TOKEN" },
+          { name: "projet", label: "Projet", required: true, help: "groupe/projet ou n\xB0 du projet" },
+          { name: "action", label: "Action", type: "select", options: ["cr\xE9er une issue", "lister les issues", "lister les merge requests", "lancer un pipeline", "\xE9tat des pipelines", "appel libre"], default: "cr\xE9er une issue" },
+          { name: "titre", label: "Titre" },
+          { name: "texte", label: "Texte", type: "text" },
+          { name: "branche", label: "Branche", default: "main" },
+          { name: "chemin", label: "Chemin de l'API", showIf: { action: "appel libre" }, help: "Ex. /projects/{projet}/repository/commits" },
+          { name: "methode", label: "M\xE9thode", type: "select", options: ["GET", "POST", "PUT", "DELETE"], default: "GET", showIf: { action: "appel libre" } },
+          { name: "corps", label: "Corps (JSON)", type: "json", showIf: { action: "appel libre" } }
+        ],
+        run: async (p, ctx, api) => {
+          const h = { "PRIVATE-TOKEN": await need(api, p.jeton) };
+          const B = `${String(p.adresse).replace(/\/$/, "")}/api/v4`, P = `${B}/projects/${encodeURIComponent(p.projet)}`;
+          const g = (u, o = {}) => call(u, { ...o, headers: h, name: "GitLab" });
+          switch (p.action) {
+            case "cr\xE9er une issue": {
+              const j = await g(`${P}/issues`, { method: "POST", body: { title: p.titre, description: p.texte || "" } });
+              return { numero: j.iid, url: j.web_url };
+            }
+            case "lister les issues":
+              return (await g(`${P}/issues?state=opened&per_page=50`)).map((i) => ({ numero: i.iid, titre: i.title, auteur: i.author.username, etiquettes: i.labels, url: i.web_url }));
+            case "lister les merge requests":
+              return (await g(`${P}/merge_requests?state=opened&per_page=50`)).map((i) => ({ numero: i.iid, titre: i.title, auteur: i.author.username, branche: i.source_branch, url: i.web_url }));
+            case "lancer un pipeline": {
+              const j = await g(`${P}/pipeline`, { method: "POST", body: { ref: p.branche || "main" } });
+              return { id: j.id, etat: j.status, url: j.web_url };
+            }
+            case "\xE9tat des pipelines":
+              return (await g(`${P}/pipelines?per_page=10`)).map((x) => ({ id: x.id, etat: x.status, branche: x.ref, quand: x.updated_at, url: x.web_url }));
+            default:
+              return g(B + String(p.chemin || "/").replace("{projet}", encodeURIComponent(p.projet)), { method: p.methode, body: json(p.corps) });
+          }
+        }
+      },
+      {
+        name: "dzf_docker",
+        label: "Docker : conteneurs",
+        category: "DevOps",
+        icon: "fab fa-docker",
+        output: "docker",
+        timeout: 60,
+        description: "Lister les conteneurs et leur \xE9tat, red\xE9marrer / arr\xEAter / d\xE9marrer un conteneur, lire ses journaux ou ses statistiques. N\xE9cessite le socket Docker mont\xE9 dans Saltcorn (id\xE9alement via un proxy en lecture).",
+        params: [
+          { name: "docker", label: "Socket ou adresse", default: "/var/run/docker.sock", help: "Conseill\xE9 : tecnativa/docker-socket-proxy \u2192 http://docker-proxy:2375" },
+          { name: "action", label: "Action", type: "select", options: ["lister", "d\xE9tail", "journaux", "statistiques", "red\xE9marrer", "arr\xEAter", "d\xE9marrer"], default: "lister" },
+          { name: "conteneur", label: "Conteneur (nom ou id)" },
+          { name: "lignes", label: "Lignes de journal", type: "int", default: 100, showIf: { action: "journaux" } }
+        ],
+        run: async (p) => {
+          const c = encodeURIComponent(String(p.conteneur || "").trim());
+          if (p.action === "lister") return (await docker(p, "GET", "/containers/json?all=1")).map((x) => ({ nom: (x.Names[0] || "").replace(/^\//, ""), image: x.Image, etat: x.State, statut: x.Status, id: x.Id.slice(0, 12), projet: x.Labels["com.docker.compose.project"] || "" }));
+          if (!c) throw perm("indique le conteneur");
+          if (p.action === "d\xE9tail") {
+            const j = await docker(p, "GET", `/containers/${c}/json`);
+            return { nom: j.Name.replace(/^\//, ""), image: j.Config.Image, etat: j.State.Status, sante: j.State.Health ? j.State.Health.Status : null, demarre: j.State.StartedAt, redemarrages: j.RestartCount };
+          }
+          if (p.action === "journaux") return demux(await docker(p, "GET", `/containers/${c}/logs?stdout=1&stderr=1&timestamps=1&tail=${Math.min(5e3, +p.lignes || 100)}`));
+          if (p.action === "statistiques") {
+            const s = await docker(p, "GET", `/containers/${c}/stats?stream=false`);
+            const cpu = s.cpu_stats.cpu_usage.total_usage - s.precpu_stats.cpu_usage.total_usage, sys = s.cpu_stats.system_cpu_usage - s.precpu_stats.system_cpu_usage;
+            return { cpu_pct: sys > 0 ? +(cpu / sys * (s.cpu_stats.online_cpus || 1) * 100).toFixed(1) : 0, memoire_mo: Math.round((s.memory_stats.usage || 0) / 1048576), memoire_max_mo: Math.round((s.memory_stats.limit || 0) / 1048576) };
+          }
+          const act = { "red\xE9marrer": "restart", "arr\xEAter": "stop", "d\xE9marrer": "start" }[p.action];
+          await docker(p, "POST", `/containers/${c}/${act}`);
+          return { conteneur: p.conteneur, fait: p.action };
+        }
+      },
+      {
+        name: "dzf_dokploy",
+        label: "Dokploy : d\xE9ployer",
+        category: "DevOps",
+        icon: "fas fa-rocket",
+        output: "dokploy",
+        timeout: 60,
+        description: "Red\xE9ploie une application ou un compose sur ton Dokploy, ou liste tes projets et leur \xE9tat.",
+        params: [
+          { name: "adresse", label: "Adresse de Dokploy", required: true, help: "Ex. https://dokploy.mondomaine.fr" },
+          { name: "cle", label: "Secret de la cl\xE9 API", default: "DOKPLOY_KEY" },
+          { name: "action", label: "Action", type: "select", options: ["lister les projets", "red\xE9ployer une application", "red\xE9ployer un compose"], default: "lister les projets" },
+          { name: "id", label: "Id de l'application ou du compose" }
+        ],
+        run: async (p, ctx, api) => {
+          const B = `${String(p.adresse).replace(/\/$/, "")}/api`, h = { "x-api-key": await need(api, p.cle) };
+          if (p.action === "lister les projets") return (await call(`${B}/project.all`, { headers: h, name: "Dokploy" })).map((x) => ({ id: x.projectId, nom: x.name, applications: (x.applications || []).map((a) => ({ id: a.applicationId, nom: a.name, etat: a.applicationStatus })), composes: (x.compose || []).map((a) => ({ id: a.composeId, nom: a.name, etat: a.composeStatus })) }));
+          const isApp = p.action.includes("application");
+          await call(`${B}/${isApp ? "application.redeploy" : "compose.redeploy"}`, { method: "POST", headers: h, body: isApp ? { applicationId: p.id } : { composeId: p.id }, name: "Dokploy" });
+          return { redeploie: p.id };
+        }
+      },
+      {
+        name: "dzf_kubernetes",
+        label: "Kubernetes",
+        category: "DevOps",
+        icon: "fas fa-dharmachakra",
+        output: "k8s",
+        timeout: 60,
+        description: "Lister les pods et leur \xE9tat, red\xE9marrer un d\xE9ploiement, changer le nombre de r\xE9pliques, lire les journaux d'un pod \u2014 ou tout appel \xE0 l'API Kubernetes.",
+        params: [
+          { name: "adresse", label: "Adresse de l'API", default: "https://kubernetes.default.svc" },
+          { name: "jeton", label: "Secret du jeton (ServiceAccount)", default: "K8S_TOKEN" },
+          { name: "espace", label: "Namespace", default: "default" },
+          { name: "action", label: "Action", type: "select", options: ["lister les pods", "red\xE9marrer un d\xE9ploiement", "r\xE9pliques", "journaux d'un pod", "appel libre"], default: "lister les pods" },
+          { name: "nom", label: "Nom (d\xE9ploiement ou pod)" },
+          { name: "repliques", label: "R\xE9pliques", type: "int", showIf: { action: "r\xE9pliques" } },
+          { name: "chemin", label: "Chemin", showIf: { action: "appel libre" }, help: "Ex. /apis/apps/v1/namespaces/default/deployments" },
+          { name: "methode", label: "M\xE9thode", type: "select", options: ["GET", "POST", "PATCH", "DELETE"], default: "GET", showIf: { action: "appel libre" } },
+          { name: "corps", label: "Corps (JSON)", type: "json", showIf: { action: "appel libre" } }
+        ],
+        run: async (p, ctx, api) => {
+          const B = String(p.adresse).replace(/\/$/, ""), ns = encodeURIComponent(p.espace || "default"), n = encodeURIComponent(p.nom || "");
+          const h = { Authorization: `Bearer ${await need(api, p.jeton)}` };
+          const g = (u, o = {}) => call(B + u, { ...o, headers: { ...h, ...o.headers || {} }, name: "Kubernetes" });
+          const patch = (u, body) => fetch(B + u, { method: "PATCH", headers: { ...h, "Content-Type": "application/strategic-merge-patch+json" }, body: JSON.stringify(body) }).then(async (r) => {
+            if (!r.ok) throw new Error(`Kubernetes : HTTP ${r.status} ${(await r.text()).slice(0, 200)}`);
+            return r.json();
+          });
+          switch (p.action) {
+            case "lister les pods":
+              return (await g(`/api/v1/namespaces/${ns}/pods`)).items.map((x) => ({ nom: x.metadata.name, etat: x.status.phase, pret: (x.status.containerStatuses || []).every((c) => c.ready), redemarrages: (x.status.containerStatuses || []).reduce((s, c) => s + c.restartCount, 0), noeud: x.spec.nodeName, depuis: x.status.startTime }));
+            case "red\xE9marrer un d\xE9ploiement":
+              await patch(`/apis/apps/v1/namespaces/${ns}/deployments/${n}`, { spec: { template: { metadata: { annotations: { "kubectl.kubernetes.io/restartedAt": (/* @__PURE__ */ new Date()).toISOString() } } } } });
+              return { redemarre: p.nom };
+            case "r\xE9pliques":
+              await patch(`/apis/apps/v1/namespaces/${ns}/deployments/${n}/scale`, { spec: { replicas: +p.repliques } });
+              return { deploiement: p.nom, repliques: +p.repliques };
+            case "journaux d'un pod": {
+              const r = await fetch(`${B}/api/v1/namespaces/${ns}/pods/${n}/log?tailLines=200`, { headers: h });
+              if (!r.ok) throw new Error(`Kubernetes : HTTP ${r.status}`);
+              return r.text();
+            }
+            default:
+              return g(p.chemin, { method: p.methode, body: json(p.corps) });
+          }
+        }
+      },
+      {
+        name: "dzf_cloudflare",
+        label: "Cloudflare",
+        category: "DevOps",
+        icon: "fab fa-cloudflare",
+        output: "cloudflare",
+        timeout: 60,
+        description: "G\xE9rer les enregistrements DNS d'une zone (lister, cr\xE9er, modifier l'IP \u2014 pratique pour du DNS dynamique), vider le cache, ou tout appel \xE0 l'API Cloudflare.",
+        params: [
+          { name: "jeton", label: "Secret du jeton API", default: "CLOUDFLARE_TOKEN" },
+          { name: "zone", label: "Domaine (zone)", required: true, help: "Ex. mondomaine.fr" },
+          { name: "action", label: "Action", type: "select", options: ["lister les DNS", "cr\xE9er ou mettre \xE0 jour un DNS", "supprimer un DNS", "vider le cache", "appel libre"], default: "lister les DNS" },
+          { name: "nom", label: "Nom de l'enregistrement", help: "Ex. app.mondomaine.fr" },
+          { name: "type", label: "Type", type: "select", options: ["A", "AAAA", "CNAME", "TXT", "MX"], default: "A" },
+          { name: "valeur", label: "Valeur", help: "IP, cible\u2026 \xAB auto \xBB = ton IP publique actuelle" },
+          { name: "proxy", label: "Passer par Cloudflare (orange)", type: "bool", default: false },
+          { name: "chemin", label: "Chemin", showIf: { action: "appel libre" } },
+          { name: "methode", label: "M\xE9thode", type: "select", options: ["GET", "POST", "PATCH", "PUT", "DELETE"], default: "GET", showIf: { action: "appel libre" } },
+          { name: "corps", label: "Corps (JSON)", type: "json", showIf: { action: "appel libre" } }
+        ],
+        run: async (p, ctx, api) => {
+          const h = { Authorization: `Bearer ${await need(api, p.jeton)}` };
+          const g = async (u, o = {}) => (await call(`https://api.cloudflare.com/client/v4${u}`, { ...o, headers: h, name: "Cloudflare" })).result;
+          const [zone] = await g(`/zones?name=${encodeURIComponent(p.zone)}`);
+          if (!zone) throw perm(`zone ${p.zone} introuvable pour ce jeton`);
+          const Z = `/zones/${zone.id}`;
+          if (p.action === "lister les DNS") return (await g(`${Z}/dns_records?per_page=500`)).map((r) => ({ id: r.id, nom: r.name, type: r.type, valeur: r.content, proxy: r.proxied, ttl: r.ttl }));
+          if (p.action === "vider le cache") {
+            await g(`${Z}/purge_cache`, { method: "POST", body: { purge_everything: true } });
+            return { vide: p.zone };
+          }
+          if (p.action === "appel libre") return g(String(p.chemin || "").replace("{zone}", zone.id), { method: p.methode, body: json(p.corps) });
+          const [ex] = await g(`${Z}/dns_records?type=${p.type}&name=${encodeURIComponent(p.nom)}`);
+          if (p.action === "supprimer un DNS") {
+            if (ex) await g(`${Z}/dns_records/${ex.id}`, { method: "DELETE" });
+            return { supprime: !!ex };
+          }
+          let val = p.valeur;
+          if (!val || val === "auto") val = (await (await fetch(p.type === "AAAA" ? "https://api64.ipify.org" : "https://api.ipify.org")).text()).trim();
+          if (ex && ex.content === val && ex.proxied === !!p.proxy) return { nom: p.nom, valeur: val, change: false };
+          const body = { type: p.type, name: p.nom, content: val, proxied: !!p.proxy, ttl: 1 };
+          await g(ex ? `${Z}/dns_records/${ex.id}` : `${Z}/dns_records`, { method: ex ? "PUT" : "POST", body });
+          return { nom: p.nom, valeur: val, change: true, cree: !ex };
+        }
+      },
+      {
+        name: "dzf_ovh",
+        label: "OVHcloud : API",
+        category: "DevOps",
+        icon: "fas fa-server",
+        output: "ovh",
+        timeout: 60,
+        description: "Appelle l'API OVHcloud (sign\xE9e) : tes serveurs, domaines, zones DNS, factures, e-mails MX Plan\u2026 Ex. GET /me/bill pour tes factures.",
+        params: [
+          { name: "cles", label: "Secret des cl\xE9s", default: "OVH_CLES", help: "Secret \xAB APPLICATION_KEY:APPLICATION_SECRET:CONSUMER_KEY \xBB" },
+          { name: "zone", label: "R\xE9gion", type: "select", options: ["ovh-eu", "ovh-ca", "ovh-us"], default: "ovh-eu" },
+          { name: "methode", label: "M\xE9thode", type: "select", options: ["GET", "POST", "PUT", "DELETE"], default: "GET" },
+          { name: "chemin", label: "Chemin", required: true, default: "/me", help: "Ex. /domain/zone/mondomaine.fr/record, /dedicated/server, /me/bill" },
+          { name: "corps", label: "Corps (JSON)", type: "json" }
+        ],
+        run: async (p, ctx, api) => {
+          const [ak, as, ck] = String(await need(api, p.cles)).split(":").map((s) => s.trim());
+          if (!ak || !as || !ck) throw perm("le secret doit \xEAtre \xAB APPLICATION_KEY:APPLICATION_SECRET:CONSUMER_KEY \xBB");
+          const B = { "ovh-eu": "https://eu.api.ovh.com/1.0", "ovh-ca": "https://ca.api.ovh.com/1.0", "ovh-us": "https://api.us.ovhcloud.com/1.0" }[p.zone];
+          const t = await (await fetch(`${B}/auth/time`)).text();
+          const url = B + p.chemin, body = p.corps ? JSON.stringify(json(p.corps)) : "";
+          const sig = "$1$" + crypto.createHash("sha1").update([as, ck, p.methode, url, body, t].join("+")).digest("hex");
+          const r = await fetch(url, { method: p.methode, headers: { "X-Ovh-Application": ak, "X-Ovh-Consumer": ck, "X-Ovh-Timestamp": t, "X-Ovh-Signature": sig, "Content-Type": "application/json" }, body: body || void 0 });
+          const txt = await r.text();
+          let j;
+          try {
+            j = txt ? JSON.parse(txt) : null;
+          } catch (e) {
+            j = txt;
+          }
+          if (!r.ok) throw new Error(`OVH : HTTP ${r.status} ${j && j.message || txt.slice(0, 200)}`);
+          return j;
+        }
+      }
+    ];
+  }
+});
+
+// src/blocks/donnees_ext.js
+var require_donnees_ext = __commonJS({
+  "src/blocks/donnees_ext.js"(exports2, module2) {
+    "use strict";
+    var crypto = require("crypto");
+    var { asList } = require_engine();
+    var perm = (m) => Object.assign(new Error(m), { permanent: true });
+    var need = async (api, name) => {
+      const v = await api.secret(name);
+      if (!v) throw perm(`secret ${name} introuvable (variable d'environnement ou coffre)`);
+      return v;
+    };
+    var J = (v, d) => {
+      if (v === void 0 || v === null || v === "") return d;
+      if (typeof v === "string") {
+        try {
+          return JSON.parse(v);
+        } catch (e) {
+          throw perm("JSON invalide");
+        }
+      }
+      return v;
+    };
+    var call = async (url, { method = "GET", headers = {}, body, name, raw }) => {
+      const r = await fetch(url, { method, headers: { ...body !== void 0 && !raw ? { "Content-Type": "application/json" } : {}, ...headers }, body: body === void 0 ? void 0 : raw ? body : JSON.stringify(body) });
+      const t = await r.text();
+      let j;
+      try {
+        j = t ? JSON.parse(t) : null;
+      } catch (e) {
+        j = t;
+      }
+      if (!r.ok) throw Object.assign(new Error(`${name} : HTTP ${r.status} ${typeof j === "object" && j ? JSON.stringify(j.error || j.message || j).slice(0, 250) : String(t).slice(0, 250)}`), { permanent: [400, 401, 403, 404, 422].includes(r.status) });
+      return j;
+    };
+    var POOLS = /* @__PURE__ */ new Map();
+    var pgPool = async (api, secret) => {
+      const url = await need(api, secret);
+      const k = crypto.createHash("sha256").update(url).digest("hex");
+      if (!POOLS.has(k)) {
+        let pg;
+        try {
+          pg = require.main.require("pg");
+        } catch (e) {
+          pg = require("pg");
+        }
+        POOLS.set(k, new pg.Pool({ connectionString: url, max: 3, idleTimeoutMillis: 3e4, statement_timeout: 6e4 }));
+      }
+      return POOLS.get(k);
+    };
+    var TOKENS = /* @__PURE__ */ new Map();
+    var googleToken = async (api, secret, scope) => {
+      const sa = J(await need(api, secret));
+      const k = sa.client_email + scope, c = TOKENS.get(k);
+      if (c && c.exp > Date.now() + 6e4) return c.token;
+      const b64 = (o) => Buffer.from(JSON.stringify(o)).toString("base64url");
+      const now = Math.floor(Date.now() / 1e3);
+      const unsigned = `${b64({ alg: "RS256", typ: "JWT" })}.${b64({ iss: sa.client_email, scope, aud: "https://oauth2.googleapis.com/token", iat: now, exp: now + 3600 })}`;
+      const jwt = `${unsigned}.${crypto.createSign("RSA-SHA256").update(unsigned).sign(sa.private_key, "base64url")}`;
+      const j = await call("https://oauth2.googleapis.com/token", { method: "POST", raw: true, headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: `grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=${jwt}`, name: "Google" });
+      TOKENS.set(k, { token: j.access_token, exp: Date.now() + j.expires_in * 1e3 });
+      return j.access_token;
+    };
+    module2.exports = [
+      {
+        name: "dzf_postgres_externe",
+        label: "Base PostgreSQL externe",
+        category: "Donn\xE9es externes",
+        icon: "fas fa-database",
+        output: "pg",
+        timeout: 120,
+        description: "Interroge une autre base PostgreSQL (ERP, site, entrep\xF4t\u2026) avec une requ\xEAte param\xE9tr\xE9e ($1, $2\u2026). En lecture seule par d\xE9faut. L'adresse de connexion reste dans le coffre.",
+        params: [
+          { name: "connexion", label: "Secret de connexion", required: true, default: "PG_EXTERNE", help: "Secret \xAB postgres://utilisateur:mdp@hote:5432/base \xBB" },
+          { name: "requete", label: "Requ\xEAte SQL", type: "code", required: true, default: "select id, nom from clients where ville = $1 limit 100" },
+          { name: "valeurs", label: "Valeurs de $1, $2\u2026", type: "json", default: "[]", help: 'Ex. ["{{ville}}"]' },
+          { name: "ecriture", label: "Autoriser l'\xE9criture (insert, update, delete)", type: "bool", default: false }
+        ],
+        run: async (p, ctx, api) => {
+          const pool = await pgPool(api, p.connexion);
+          const client = await pool.connect();
+          try {
+            if (!p.ecriture) await client.query("begin read only");
+            const r = await client.query(String(p.requete), J(p.valeurs, []));
+            if (!p.ecriture) await client.query("commit");
+            return r.command === "SELECT" ? r.rows : { commande: r.command, lignes: r.rowCount, resultat: r.rows };
+          } catch (e) {
+            if (!p.ecriture) await client.query("rollback").catch(() => {
+            });
+            throw e;
+          } finally {
+            client.release();
+          }
+        }
+      },
+      {
+        name: "dzf_recherche_moteur",
+        label: "Moteur de recherche (Meilisearch, Elasticsearch)",
+        category: "Donn\xE9es externes",
+        icon: "fas fa-search-plus",
+        output: "recherche",
+        timeout: 60,
+        description: "Indexe des documents et fais une recherche instantan\xE9e tol\xE9rante aux fautes : Meilisearch, Typesense-like, ou Elasticsearch / OpenSearch.",
+        params: [
+          { name: "moteur", label: "Moteur", type: "select", options: ["Meilisearch", "Elasticsearch / OpenSearch"], default: "Meilisearch" },
+          { name: "adresse", label: "Adresse", default: "http://meilisearch:7700" },
+          { name: "cle", label: "Secret de la cl\xE9", default: "MEILI_KEY", help: "Elasticsearch : \xAB ApiKey \u2026 \xBB ou \xAB utilisateur:mdp \xBB" },
+          { name: "index", label: "Index", required: true },
+          { name: "action", label: "Action", type: "select", options: ["chercher", "indexer des documents", "supprimer un document"], default: "chercher" },
+          { name: "texte", label: "Recherche", showIf: { action: "chercher" } },
+          { name: "filtre", label: "Filtre", showIf: { action: "chercher" }, help: "Meili : ville = Paris \xB7 ES : requ\xEAte JSON compl\xE8te" },
+          { name: "n", label: "R\xE9sultats", type: "int", default: 20, showIf: { action: "chercher" } },
+          { name: "documents", label: "Documents", type: "json", showIf: { action: "indexer des documents" }, help: "Liste d'objets avec un champ id" },
+          { name: "id", label: "Id", showIf: { action: "supprimer un document" } }
+        ],
+        run: async (p, ctx, api) => {
+          const B = String(p.adresse).replace(/\/$/, ""), k = await api.secret(p.cle), ix = encodeURIComponent(p.index);
+          if (p.moteur === "Meilisearch") {
+            const h2 = k ? { Authorization: `Bearer ${k}` } : {};
+            const g2 = (u, o = {}) => call(B + u, { ...o, headers: h2, name: "Meilisearch" });
+            if (p.action === "chercher") {
+              const j = await g2(`/indexes/${ix}/search`, { method: "POST", body: { q: p.texte || "", limit: +p.n || 20, ...p.filtre ? { filter: p.filtre } : {} } });
+              return { total: j.estimatedTotalHits, ms: j.processingTimeMs, resultats: j.hits };
+            }
+            if (p.action === "indexer des documents") {
+              const j = await g2(`/indexes/${ix}/documents`, { method: "POST", body: asList(J(p.documents, [])) });
+              return { tache: j.taskUid, etat: j.status };
+            }
+            return g2(`/indexes/${ix}/documents/${encodeURIComponent(p.id)}`, { method: "DELETE" });
+          }
+          const h = k ? { Authorization: /^ApiKey |^Basic |^Bearer /.test(k) ? k : `Basic ${Buffer.from(k).toString("base64")}` } : {};
+          const g = (u, o = {}) => call(B + u, { ...o, headers: h, name: "Elasticsearch" });
+          if (p.action === "chercher") {
+            const q = p.filtre ? J(p.filtre) : { query: { multi_match: { query: p.texte || "", fuzziness: "AUTO" } }, size: +p.n || 20 };
+            const j = await g(`/${ix}/_search`, { method: "POST", body: q });
+            return { total: j.hits.total.value ?? j.hits.total, resultats: j.hits.hits.map((x) => ({ id: x._id, score: x._score, ...x._source })) };
+          }
+          if (p.action === "indexer des documents") {
+            const nd = asList(J(p.documents, [])).map((d) => `${JSON.stringify({ index: { _index: p.index, ...d.id !== void 0 ? { _id: String(d.id) } : {} } })}
+${JSON.stringify(d)}
+`).join("");
+            const j = await g("/_bulk", { method: "POST", raw: true, headers: { "Content-Type": "application/x-ndjson" }, body: nd });
+            return { erreurs: j.errors, n: j.items.length };
+          }
+          return g(`/${ix}/_doc/${encodeURIComponent(p.id)}`, { method: "DELETE" });
+        }
+      },
+      {
+        name: "dzf_qdrant",
+        label: "Base vectorielle Qdrant",
+        category: "Donn\xE9es externes",
+        icon: "fas fa-project-diagram",
+        output: "qdrant",
+        timeout: 60,
+        description: "Range des vecteurs (avec leurs infos) et retrouve les plus proches par le sens, \xE0 grande \xE9chelle. Compl\xE8te \xAB IA : vecteur \xBB pour une recherche intelligente sur des millions d'\xE9l\xE9ments.",
+        params: [
+          { name: "adresse", label: "Adresse", default: "http://qdrant:6333" },
+          { name: "cle", label: "Secret de la cl\xE9 (si besoin)", default: "QDRANT_KEY" },
+          { name: "collection", label: "Collection", required: true },
+          { name: "action", label: "Action", type: "select", options: ["chercher", "ranger des points", "cr\xE9er la collection", "supprimer des points"], default: "chercher" },
+          { name: "vecteur", label: "Vecteur cherch\xE9", showIf: { action: "chercher" } },
+          { name: "n", label: "R\xE9sultats", type: "int", default: 5, showIf: { action: "chercher" } },
+          { name: "filtre", label: "Filtre (JSON Qdrant)", type: "json", showIf: { action: "chercher" } },
+          { name: "points", label: "Points", type: "json", showIf: { action: "ranger des points" }, help: "Liste {id, vecteur, \u2026infos}. Ex. {{morceaux}}" },
+          { name: "champ_vecteur", label: "Champ du vecteur", default: "vecteur", showIf: { action: "ranger des points" } },
+          { name: "dimension", label: "Dimension", type: "int", default: 768, showIf: { action: "cr\xE9er la collection" } },
+          { name: "ids", label: "Ids", type: "json", showIf: { action: "supprimer des points" } }
+        ],
+        run: async (p, ctx, api) => {
+          const k = await api.secret(p.cle), B = `${String(p.adresse).replace(/\/$/, "")}/collections/${encodeURIComponent(p.collection)}`;
+          const g = (u, o = {}) => call(B + u, { ...o, headers: k ? { "api-key": k } : {}, name: "Qdrant" });
+          if (p.action === "cr\xE9er la collection") return (await g("", { method: "PUT", body: { vectors: { size: +p.dimension || 768, distance: "Cosine" } } })).result;
+          if (p.action === "supprimer des points") return (await g("/points/delete?wait=true", { method: "POST", body: { points: asList(J(p.ids, [])) } })).result;
+          if (p.action === "ranger des points") {
+            const pts = asList(J(p.points, [])).map((x, i) => {
+              const { [p.champ_vecteur || "vecteur"]: v2, id, ...payload } = x;
+              const vec = typeof v2 === "string" ? JSON.parse(v2) : v2;
+              const pid = Number.isInteger(+id) && id !== "" && id !== void 0 ? +id : crypto.createHash("md5").update(String(id ?? i)).digest("hex").replace(/(.{8})(.{4})(.{4})(.{4})(.{12})/, "$1-$2-$3-$4-$5");
+              return { id: pid, vector: vec, payload: { ...payload, id_origine: id } };
+            });
+            for (let i = 0; i < pts.length; i += 256) await g("/points?wait=true", { method: "PUT", body: { points: pts.slice(i, i + 256) } });
+            return { ranges: pts.length };
+          }
+          const v = typeof p.vecteur === "string" ? JSON.parse(p.vecteur) : p.vecteur;
+          return (await g("/points/search", { method: "POST", body: { vector: v, limit: +p.n || 5, with_payload: true, ...p.filtre ? { filter: p.filtre } : {} } })).result.map((x) => ({ score: x.score, ...x.payload }));
+        }
+      },
+      {
+        name: "dzf_clickhouse",
+        label: "ClickHouse",
+        category: "Donn\xE9es externes",
+        icon: "fas fa-bolt",
+        output: "clickhouse",
+        timeout: 120,
+        description: "Requ\xEAtes analytiques ultra-rapides sur des milliards de lignes (journaux, \xE9v\xE9nements, m\xE9triques), et insertion en masse.",
+        params: [
+          { name: "adresse", label: "Adresse HTTP", default: "http://clickhouse:8123" },
+          { name: "identifiants", label: "Secret \xAB utilisateur:mdp \xBB", default: "CLICKHOUSE" },
+          { name: "base", label: "Base", default: "default" },
+          { name: "action", label: "Action", type: "select", options: ["requ\xEAte", "ins\xE9rer des lignes"], default: "requ\xEAte" },
+          { name: "requete", label: "Requ\xEAte", type: "code", showIf: { action: "requ\xEAte" }, default: "select count() from system.tables" },
+          { name: "table", label: "Table", showIf: { action: "ins\xE9rer des lignes" } },
+          { name: "lignes", label: "Lignes", type: "json", showIf: { action: "ins\xE9rer des lignes" } }
+        ],
+        run: async (p, ctx, api) => {
+          const id = await api.secret(p.identifiants);
+          const h = id ? { Authorization: `Basic ${Buffer.from(id).toString("base64")}` } : {};
+          const B = `${String(p.adresse).replace(/\/$/, "")}/?database=${encodeURIComponent(p.base || "default")}`;
+          if (p.action === "ins\xE9rer des lignes") {
+            if (!/^[\w.]+$/.test(p.table || "")) throw perm("nom de table invalide");
+            const rows = asList(J(p.lignes, []));
+            await call(`${B}&query=${encodeURIComponent(`INSERT INTO ${p.table} FORMAT JSONEachRow`)}`, { method: "POST", raw: true, headers: h, body: rows.map((r) => JSON.stringify(r)).join("\n"), name: "ClickHouse" });
+            return { inseres: rows.length };
+          }
+          const j = await call(`${B}&default_format=JSON`, { method: "POST", raw: true, headers: h, body: String(p.requete), name: "ClickHouse" });
+          return j && j.data ? j.data : j;
+        }
+      },
+      {
+        name: "dzf_influxdb",
+        label: "InfluxDB (s\xE9ries temporelles)",
+        category: "Donn\xE9es externes",
+        icon: "fas fa-chart-area",
+        output: "influx",
+        timeout: 60,
+        description: "\xC9crit des mesures (temp\xE9rature, consommation, capteurs, m\xE9triques) et les relit en SQL (InfluxDB 3) ou Flux (InfluxDB 2).",
+        params: [
+          { name: "adresse", label: "Adresse", default: "http://influxdb:8086" },
+          { name: "jeton", label: "Secret du jeton", default: "INFLUX_TOKEN" },
+          { name: "org", label: "Organisation (v2)" },
+          { name: "bucket", label: "Bucket / base", required: true },
+          { name: "action", label: "Action", type: "select", options: ["\xE9crire", "lire (Flux, v2)", "lire (SQL, v3)"], default: "\xE9crire" },
+          { name: "mesure", label: "Mesure", showIf: { action: "\xE9crire" }, help: "Ex. temperature" },
+          { name: "etiquettes", label: "\xC9tiquettes (JSON)", type: "json", showIf: { action: "\xE9crire" }, help: '{"piece":"salon"}' },
+          { name: "valeurs", label: "Valeurs (JSON)", type: "json", showIf: { action: "\xE9crire" }, help: '{"valeur": {{temp}}}' },
+          { name: "requete", label: "Requ\xEAte", type: "code", help: 'Flux : from(bucket:"x") |> range(start:-1h)' }
+        ],
+        run: async (p, ctx, api) => {
+          const B = String(p.adresse).replace(/\/$/, ""), h = { Authorization: `Token ${await need(api, p.jeton)}` };
+          const escK = (s) => String(s).replace(/([,= ])/g, "\\$1");
+          if (p.action === "\xE9crire") {
+            const tags = Object.entries(J(p.etiquettes, {})).map(([k, v]) => `,${escK(k)}=${escK(v)}`).join("");
+            const fields = Object.entries(J(p.valeurs, {})).map(([k, v]) => `${escK(k)}=${typeof v === "number" ? v : typeof v === "boolean" ? v : `"${String(v).replace(/"/g, '\\"')}"`}`).join(",");
+            if (!fields) throw perm("indique au moins une valeur");
+            await call(`${B}/api/v2/write?${p.org ? `org=${encodeURIComponent(p.org)}&` : ""}bucket=${encodeURIComponent(p.bucket)}&precision=ms`, { method: "POST", raw: true, headers: { ...h, "Content-Type": "text/plain" }, body: `${escK(p.mesure)}${tags} ${fields} ${Date.now()}`, name: "InfluxDB" });
+            return { ecrit: true };
+          }
+          if (p.action === "lire (SQL, v3)") return call(`${B}/api/v3/query_sql`, { method: "POST", headers: h, body: { db: p.bucket, q: p.requete, format: "json" }, name: "InfluxDB" });
+          const r = await fetch(`${B}/api/v2/query?org=${encodeURIComponent(p.org || "")}`, { method: "POST", headers: { ...h, "Content-Type": "application/vnd.flux", Accept: "application/csv" }, body: p.requete });
+          if (!r.ok) throw new Error(`InfluxDB : HTTP ${r.status}`);
+          const lines = (await r.text()).split(/\r?\n/).filter((l) => l && !l.startsWith("#"));
+          const head = (lines.shift() || "").split(",");
+          return lines.filter((l) => l !== head.join(",")).map((l) => Object.fromEntries(l.split(",").map((v, i) => [head[i], v !== "" && !isNaN(v) ? +v : v]).filter(([k]) => k && k !== "result" && k !== "table")));
+        }
+      },
+      {
+        name: "dzf_supabase",
+        label: "Supabase",
+        category: "Donn\xE9es externes",
+        icon: "fas fa-bolt",
+        output: "supabase",
+        timeout: 60,
+        description: "Lire, ajouter, modifier ou supprimer des lignes d'une table Supabase (API REST), ou appeler une fonction.",
+        params: [
+          { name: "adresse", label: "Adresse du projet", required: true, help: "https://xxxx.supabase.co" },
+          { name: "cle", label: "Secret de la cl\xE9", default: "SUPABASE_KEY" },
+          { name: "table", label: "Table ou fonction", required: true },
+          { name: "action", label: "Action", type: "select", options: ["lire", "ajouter", "modifier", "supprimer", "appeler une fonction"], default: "lire" },
+          { name: "filtre", label: "Filtre", help: "Syntaxe PostgREST : statut=eq.ouvert&age=gt.18" },
+          { name: "colonnes", label: "Colonnes", default: "*" },
+          { name: "donnees", label: "Donn\xE9es (JSON)", type: "json" },
+          { name: "n", label: "Lignes max", type: "int", default: 100 }
+        ],
+        run: async (p, ctx, api) => {
+          const k = await need(api, p.cle), B = `${String(p.adresse).replace(/\/$/, "")}/rest/v1`, h = { apikey: k, Authorization: `Bearer ${k}`, Prefer: "return=representation" };
+          const f = p.filtre ? `&${String(p.filtre).replace(/^[?&]/, "")}` : "";
+          const t = encodeURIComponent(p.table);
+          if (p.action === "lire") return call(`${B}/${t}?select=${encodeURIComponent(p.colonnes || "*")}&limit=${+p.n || 100}${f}`, { headers: h, name: "Supabase" });
+          if (p.action === "ajouter") return call(`${B}/${t}`, { method: "POST", headers: h, body: J(p.donnees), name: "Supabase" });
+          if (p.action === "appeler une fonction") return call(`${B}/rpc/${t}`, { method: "POST", headers: h, body: J(p.donnees, {}), name: "Supabase" });
+          if (!f) throw perm("un filtre est obligatoire pour modifier ou supprimer");
+          return call(`${B}/${t}?${f.slice(1)}`, { method: p.action === "modifier" ? "PATCH" : "DELETE", headers: h, body: p.action === "modifier" ? J(p.donnees) : void 0, name: "Supabase" });
+        }
+      },
+      {
+        name: "dzf_airtable",
+        label: "Airtable",
+        category: "Donn\xE9es externes",
+        icon: "fas fa-th",
+        output: "airtable",
+        timeout: 60,
+        description: "Lire (avec formule de filtre), ajouter ou modifier des enregistrements d'une base Airtable.",
+        params: [
+          { name: "jeton", label: "Secret du jeton", default: "AIRTABLE_TOKEN" },
+          { name: "base", label: "Id de la base", required: true, help: "app\u2026" },
+          { name: "table", label: "Table", required: true },
+          { name: "action", label: "Action", type: "select", options: ["lire", "ajouter", "modifier"], default: "lire" },
+          { name: "formule", label: "Formule de filtre", showIf: { action: "lire" }, help: "Ex. {Statut}='\xC0 faire'" },
+          { name: "donnees", label: "Enregistrements (JSON)", type: "json", help: "Liste d'objets champs (ajouter) ou {id, \u2026champs} (modifier)" }
+        ],
+        run: async (p, ctx, api) => {
+          const h = { Authorization: `Bearer ${await need(api, p.jeton)}` }, B = `https://api.airtable.com/v0/${encodeURIComponent(p.base)}/${encodeURIComponent(p.table)}`;
+          if (p.action === "lire") {
+            const out2 = [];
+            let off;
+            do {
+              const j = await call(`${B}?pageSize=100${p.formule ? `&filterByFormula=${encodeURIComponent(p.formule)}` : ""}${off ? `&offset=${off}` : ""}`, { headers: h, name: "Airtable" });
+              out2.push(...j.records.map((r) => ({ id: r.id, ...r.fields })));
+              off = j.offset;
+            } while (off && out2.length < 5e3);
+            return out2;
+          }
+          const list = asList(J(p.donnees, []));
+          const out = [];
+          for (let i = 0; i < list.length; i += 10) {
+            const chunk = list.slice(i, i + 10).map((r) => p.action === "modifier" ? { id: r.id, fields: Object.fromEntries(Object.entries(r).filter(([k]) => k !== "id")) } : { fields: r });
+            const j = await call(B, { method: p.action === "modifier" ? "PATCH" : "POST", headers: h, body: { records: chunk, typecast: true }, name: "Airtable" });
+            out.push(...j.records.map((r) => ({ id: r.id, ...r.fields })));
+          }
+          return out;
+        }
+      },
+      {
+        name: "dzf_notion",
+        label: "Notion",
+        category: "Donn\xE9es externes",
+        icon: "fas fa-sticky-note",
+        output: "notion",
+        timeout: 60,
+        description: "Lire une base Notion (en lignes simples), y ajouter une page, ou ajouter du texte \xE0 une page.",
+        params: [
+          { name: "jeton", label: "Secret du jeton d'int\xE9gration", default: "NOTION_TOKEN" },
+          { name: "action", label: "Action", type: "select", options: ["lire une base", "ajouter \xE0 une base", "ajouter du texte \xE0 une page"], default: "lire une base" },
+          { name: "id", label: "Id de la base ou de la page", required: true },
+          { name: "proprietes", label: "Propri\xE9t\xE9s (JSON simple)", type: "json", showIf: { action: "ajouter \xE0 une base" }, help: '{"Nom":"Acheter du pain","Statut":"\xC0 faire","Date":"2026-10-01"}' },
+          { name: "texte", label: "Texte", type: "text", showIf: { action: "ajouter du texte \xE0 une page" } }
+        ],
+        run: async (p, ctx, api) => {
+          const h = { Authorization: `Bearer ${await need(api, p.jeton)}`, "Notion-Version": "2022-06-28" };
+          const g = (u, o = {}) => call(`https://api.notion.com/v1${u}`, { ...o, headers: h, name: "Notion" });
+          const flat = (pr) => {
+            switch (pr.type) {
+              case "title":
+              case "rich_text":
+                return pr[pr.type].map((t) => t.plain_text).join("");
+              case "select":
+              case "status":
+                return pr[pr.type] && pr[pr.type].name;
+              case "multi_select":
+                return pr.multi_select.map((x) => x.name);
+              case "date":
+                return pr.date && pr.date.start;
+              case "people":
+                return pr.people.map((x) => x.name);
+              case "formula":
+                return pr.formula[pr.formula.type];
+              case "relation":
+                return pr.relation.map((x) => x.id);
+              case "rollup":
+                return pr.rollup[pr.rollup.type];
+              default:
+                return pr[pr.type];
+            }
+          };
+          if (p.action === "lire une base") {
+            const out = [];
+            let cur;
+            do {
+              const j2 = await g(`/databases/${p.id}/query`, { method: "POST", body: { page_size: 100, ...cur ? { start_cursor: cur } : {} } });
+              out.push(...j2.results.map((r) => ({ id: r.id, url: r.url, ...Object.fromEntries(Object.entries(r.properties).map(([k, v]) => [k, flat(v)])) })));
+              cur = j2.has_more ? j2.next_cursor : null;
+            } while (cur && out.length < 5e3);
+            return out;
+          }
+          if (p.action === "ajouter du texte \xE0 une page") {
+            await g(`/blocks/${p.id}/children`, { method: "PATCH", body: { children: String(p.texte || "").split(/\n\s*\n/).map((t) => ({ object: "block", type: "paragraph", paragraph: { rich_text: [{ type: "text", text: { content: t.slice(0, 2e3) } }] } })) } });
+            return { ajoute: true };
+          }
+          const db = await g(`/databases/${p.id}`);
+          const props = {};
+          for (const [k, v] of Object.entries(J(p.proprietes, {}))) {
+            const t = db.properties[k] && db.properties[k].type;
+            if (!t) continue;
+            props[k] = t === "title" ? { title: [{ text: { content: String(v) } }] } : t === "rich_text" ? { rich_text: [{ text: { content: String(v) } }] } : t === "select" ? { select: { name: String(v) } } : t === "status" ? { status: { name: String(v) } } : t === "multi_select" ? { multi_select: [].concat(v).map((n) => ({ name: String(n) })) } : t === "date" ? { date: { start: String(v) } } : t === "number" ? { number: +v } : t === "checkbox" ? { checkbox: !!v } : t === "url" ? { url: String(v) } : t === "email" ? { email: String(v) } : { [t]: v };
+          }
+          const j = await g("/pages", { method: "POST", body: { parent: { database_id: p.id }, properties: props } });
+          return { id: j.id, url: j.url };
+        }
+      },
+      {
+        name: "dzf_google_sheets",
+        label: "Google Sheets",
+        category: "Donn\xE9es externes",
+        icon: "fas fa-file-excel",
+        output: "sheets",
+        timeout: 60,
+        description: "Lire une feuille Google (en objets, la 1re ligne donne les noms), ajouter des lignes \xE0 la fin, ou \xE9crire dans une plage. Avec un compte de service (partage la feuille avec son e-mail).",
+        params: [
+          { name: "compte", label: "Secret du compte de service (JSON)", default: "GOOGLE_SA" },
+          { name: "classeur", label: "Id du classeur", required: true, help: "Dans l'URL : /spreadsheets/d/<id>/" },
+          { name: "action", label: "Action", type: "select", options: ["lire", "ajouter des lignes", "\xE9crire une plage"], default: "lire" },
+          { name: "plage", label: "Feuille ou plage", default: "Feuille 1", help: "Ex. Feuille 1 ou Feuille 1!A1:D20" },
+          { name: "lignes", label: "Lignes (JSON)", type: "json", help: "Liste d'objets (colonnes selon l'en-t\xEAte) ou liste de listes" }
+        ],
+        run: async (p, ctx, api) => {
+          const tok = await googleToken(api, p.compte, "https://www.googleapis.com/auth/spreadsheets");
+          const h = { Authorization: `Bearer ${tok}` }, B = `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(p.classeur)}/values`, R = encodeURIComponent(p.plage || "A:ZZ");
+          if (p.action === "lire") {
+            const j2 = await call(`${B}/${R}`, { headers: h, name: "Google Sheets" });
+            const [head = [], ...rows2] = j2.values || [];
+            return rows2.map((r) => Object.fromEntries(head.map((k, i) => [k, r[i] ?? null])));
+          }
+          let rows = asList(J(p.lignes, []));
+          if (rows.length && !Array.isArray(rows[0])) {
+            const sheet = String(p.plage || "").split("!")[0];
+            const head = ((await call(`${B}/${encodeURIComponent(sheet + "!1:1")}`, { headers: h, name: "Google Sheets" })).values || [[]])[0];
+            rows = rows.map((r) => head.map((k) => r[k] === void 0 || r[k] === null ? "" : typeof r[k] === "object" ? JSON.stringify(r[k]) : r[k]));
+          }
+          if (p.action === "ajouter des lignes") {
+            const j2 = await call(`${B}/${R}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`, { method: "POST", headers: h, body: { values: rows }, name: "Google Sheets" });
+            return { plage: j2.updates.updatedRange, lignes: j2.updates.updatedRows };
+          }
+          const j = await call(`${B}/${R}?valueInputOption=USER_ENTERED`, { method: "PUT", headers: h, body: { values: rows }, name: "Google Sheets" });
+          return { plage: j.updatedRange, cellules: j.updatedCells };
+        }
+      },
+      {
+        name: "dzf_baserow_nocodb",
+        label: "Baserow / NocoDB",
+        category: "Donn\xE9es externes",
+        icon: "fas fa-border-all",
+        output: "lignes_ext",
+        timeout: 60,
+        description: "Lire, ajouter ou modifier des lignes dans Baserow ou NocoDB (les \xAB Airtable \xBB libres, h\xE9bergeables chez toi).",
+        params: [
+          { name: "outil", label: "Outil", type: "select", options: ["Baserow", "NocoDB"], default: "Baserow" },
+          { name: "adresse", label: "Adresse", default: "https://api.baserow.io" },
+          { name: "jeton", label: "Secret du jeton", default: "BASEROW_TOKEN" },
+          { name: "table", label: "Id de la table", required: true },
+          { name: "action", label: "Action", type: "select", options: ["lire", "ajouter", "modifier"], default: "lire" },
+          { name: "donnees", label: "Lignes (JSON)", type: "json" }
+        ],
+        run: async (p, ctx, api) => {
+          const k = await need(api, p.jeton), B = String(p.adresse).replace(/\/$/, ""), rows = asList(J(p.donnees, []));
+          if (p.outil === "Baserow") {
+            const h2 = { Authorization: `Token ${k}` }, T2 = `${B}/api/database/rows/table/${encodeURIComponent(p.table)}`;
+            if (p.action === "lire") return (await call(`${T2}/?user_field_names=true&size=200`, { headers: h2, name: "Baserow" })).results;
+            if (p.action === "ajouter") return (await call(`${T2}/batch/?user_field_names=true`, { method: "POST", headers: h2, body: { items: rows }, name: "Baserow" })).items;
+            return (await call(`${T2}/batch/?user_field_names=true`, { method: "PATCH", headers: h2, body: { items: rows }, name: "Baserow" })).items;
+          }
+          const h = { "xc-token": k }, T = `${B}/api/v2/tables/${encodeURIComponent(p.table)}/records`;
+          if (p.action === "lire") return (await call(`${T}?limit=200`, { headers: h, name: "NocoDB" })).list;
+          return call(T, { method: p.action === "ajouter" ? "POST" : "PATCH", headers: h, body: rows, name: "NocoDB" });
+        }
+      }
+    ];
+  }
+});
+
+// src/blocks/connecte.js
+var require_connecte = __commonJS({
+  "src/blocks/connecte.js"(exports2, module2) {
+    "use strict";
+    var net = require("net");
+    var tls = require("tls");
+    var perm = (m) => Object.assign(new Error(m), { permanent: true });
+    var need = async (api, name) => {
+      const v = await api.secret(name);
+      if (!v) throw perm(`secret ${name} introuvable (variable d'environnement ou coffre)`);
+      return v;
+    };
+    var J = (v, d) => {
+      if (v === void 0 || v === null || v === "") return d;
+      if (typeof v === "string") {
+        try {
+          return JSON.parse(v);
+        } catch (e) {
+          return v;
+        }
+      }
+      return v;
+    };
+    var post = async (url, body, headers = {}, name = "API") => {
+      const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json", ...headers }, body: JSON.stringify(body) });
+      const t = await r.text();
+      if (!r.ok) throw new Error(`${name} : HTTP ${r.status} ${t.slice(0, 200)}`);
+      try {
+        return JSON.parse(t);
+      } catch (e) {
+        return t;
+      }
+    };
+    var mqttStr = (s) => {
+      const b = Buffer.from(String(s), "utf8");
+      const l = Buffer.alloc(2);
+      l.writeUInt16BE(b.length);
+      return Buffer.concat([l, b]);
+    };
+    var mqttLen = (n) => {
+      const out = [];
+      do {
+        let d = n % 128;
+        n = Math.floor(n / 128);
+        if (n > 0) d |= 128;
+        out.push(d);
+      } while (n > 0);
+      return Buffer.from(out);
+    };
+    var mqttPkt = (type, flags, body) => Buffer.concat([Buffer.from([type << 4 | flags]), mqttLen(body.length), body]);
+    var mqtt = (opt, work) => new Promise((resolve, reject) => {
+      const u = new URL(opt.url);
+      const secure = u.protocol === "mqtts:";
+      const sock = (secure ? tls : net).connect({ host: u.hostname, port: +u.port || (secure ? 8883 : 1883), servername: u.hostname });
+      let buf = Buffer.alloc(0), done = false;
+      const handlers = [];
+      const finish = (e, v) => {
+        if (done) return;
+        done = true;
+        clearTimeout(t);
+        try {
+          sock.write(mqttPkt(14, 0, Buffer.alloc(0)));
+        } catch (x) {
+        }
+        sock.end();
+        e ? reject(e) : resolve(v);
+      };
+      const t = setTimeout(() => finish(null, "d\xE9lai"), (opt.timeout || 15) * 1e3);
+      sock.on("error", (e) => finish(new Error(`MQTT : ${e.message}`)));
+      sock.on("data", (d) => {
+        buf = Buffer.concat([buf, d]);
+        while (buf.length >= 2) {
+          let mul = 1, len = 0, i = 1, b;
+          do {
+            b = buf[i++];
+            len += (b & 127) * mul;
+            mul *= 128;
+          } while (b & 128 && i < buf.length);
+          if (buf.length < i + len) break;
+          const pkt = { type: buf[0] >> 4, flags: buf[0] & 15, body: buf.slice(i, i + len) };
+          buf = buf.slice(i + len);
+          for (const h of handlers.slice()) h(pkt);
+        }
+      });
+      sock.on(secure ? "secureConnect" : "connect", () => {
+        const flags = (opt.user ? 128 : 0) | (opt.pass ? 64 : 0) | 2;
+        const body = Buffer.concat([mqttStr("MQTT"), Buffer.from([4, flags, 0, 60]), mqttStr(opt.client || `dzf-${Math.random().toString(36).slice(2, 10)}`), ...opt.user ? [mqttStr(opt.user)] : [], ...opt.pass ? [mqttStr(opt.pass)] : []]);
+        sock.write(mqttPkt(1, 0, body));
+        handlers.push(function onConnack(pk) {
+          if (pk.type !== 2) return;
+          handlers.splice(handlers.indexOf(onConnack), 1);
+          if (pk.body[1] !== 0) return finish(perm(`MQTT : connexion refus\xE9e (code ${pk.body[1]} \u2014 identifiants ?)`));
+          work({ sock, handlers, finish });
+        });
+      });
+    });
+    module2.exports = [
+      {
+        name: "dzf_mqtt",
+        label: "MQTT : publier ou \xE9couter",
+        category: "Objets connect\xE9s",
+        icon: "fas fa-broadcast-tower",
+        output: "mqtt",
+        timeout: 120,
+        description: "Parle aux objets connect\xE9s (Zigbee2MQTT, Tasmota, Shelly, ESPHome, capteurs\u2026) : publie un message sur un sujet, ou r\xE9cup\xE8re les messages re\xE7us pendant quelques secondes.",
+        params: [
+          { name: "adresse", label: "Serveur MQTT", default: "mqtt://mosquitto:1883", help: "mqtts:// pour TLS" },
+          { name: "identifiants", label: "Secret \xAB utilisateur:mdp \xBB (si besoin)", default: "MQTT" },
+          { name: "action", label: "Action", type: "select", options: ["publier", "\xE9couter"], default: "publier" },
+          { name: "sujet", label: "Sujet (topic)", required: true, help: "Ex. zigbee2mqtt/lampe_salon/set \xB7 \xE9couter : capteurs/# " },
+          { name: "message", label: "Message", type: "text", showIf: { action: "publier" }, help: 'Ex. {"state":"ON"}' },
+          { name: "conserver", label: "Conserv\xE9 (retain)", type: "bool", default: false, showIf: { action: "publier" } },
+          { name: "secondes", label: "\xC9couter pendant (secondes)", type: "int", default: 5, showIf: { action: "\xE9couter" } },
+          { name: "max", label: "Messages max", type: "int", default: 100, showIf: { action: "\xE9couter" } }
+        ],
+        run: async (p, ctx, api) => {
+          const id = await api.secret(p.identifiants);
+          const [user, ...rest] = id ? String(id).split(":") : [];
+          const opt = { url: p.adresse, user, pass: rest.join(":"), timeout: p.action === "\xE9couter" ? Math.min(60, +p.secondes || 5) + 5 : 15 };
+          if (p.action === "publier") {
+            const payload = Buffer.from(typeof p.message === "object" ? JSON.stringify(p.message) : String(p.message ?? ""), "utf8");
+            return mqtt(opt, ({ sock, finish }) => {
+              sock.write(mqttPkt(3, p.conserver ? 1 : 0, Buffer.concat([mqttStr(p.sujet), payload])));
+              setTimeout(() => finish(null, { publie: p.sujet, octets: payload.length }), 150);
+            });
+          }
+          const msgs = [];
+          return mqtt(opt, ({ sock, handlers, finish }) => {
+            sock.write(mqttPkt(8, 2, Buffer.concat([Buffer.from([0, 1]), mqttStr(p.sujet), Buffer.from([0])])));
+            handlers.push((pk) => {
+              if (pk.type !== 3) return;
+              const tl = pk.body.readUInt16BE(0), topic = pk.body.slice(2, 2 + tl).toString("utf8");
+              const off = 2 + tl + ((pk.flags >> 1 & 3) > 0 ? 2 : 0), txt = pk.body.slice(off).toString("utf8");
+              let val = txt;
+              try {
+                val = JSON.parse(txt);
+              } catch (e) {
+              }
+              msgs.push({ sujet: topic, message: val, quand: (/* @__PURE__ */ new Date()).toISOString() });
+              if (msgs.length >= (+p.max || 100)) finish(null, msgs);
+            });
+            setTimeout(() => finish(null, msgs), Math.min(60, +p.secondes || 5) * 1e3);
+          });
+        }
+      },
+      {
+        name: "dzf_websocket",
+        label: "WebSocket : envoyer et recevoir",
+        category: "Objets connect\xE9s",
+        icon: "fas fa-plug",
+        output: "ws",
+        timeout: 120,
+        description: "Se connecte \xE0 un WebSocket, envoie un message (facultatif) et r\xE9cup\xE8re les r\xE9ponses re\xE7ues pendant quelques secondes (cotations en direct, jeux, serveurs temps r\xE9el\u2026).",
+        params: [{ name: "url", label: "Adresse", required: true, help: "wss://\u2026" }, { name: "message", label: "Message \xE0 envoyer", type: "text" }, { name: "secondes", label: "\xC9couter pendant (secondes)", type: "int", default: 5 }, { name: "max", label: "Messages max", type: "int", default: 50 }],
+        run: async (p) => {
+          if (typeof WebSocket === "undefined") throw perm("WebSocket indisponible (Node 22 requis)");
+          return new Promise((resolve, reject) => {
+            const ws = new WebSocket(p.url);
+            const out = [];
+            const end = () => {
+              try {
+                ws.close();
+              } catch (e) {
+              }
+              resolve(out);
+            };
+            const t = setTimeout(end, Math.min(60, +p.secondes || 5) * 1e3);
+            ws.onopen = () => {
+              if (p.message !== void 0 && p.message !== "") ws.send(typeof p.message === "object" ? JSON.stringify(p.message) : String(p.message));
+            };
+            ws.onmessage = (e) => {
+              let v = e.data;
+              try {
+                v = JSON.parse(v);
+              } catch (x) {
+              }
+              out.push(v);
+              if (out.length >= (+p.max || 50)) {
+                clearTimeout(t);
+                end();
+              }
+            };
+            ws.onerror = (e) => {
+              clearTimeout(t);
+              reject(new Error(`WebSocket : ${e.message || "erreur de connexion"}`));
+            };
+          });
+        }
+      },
+      {
+        name: "dzf_home_assistant",
+        label: "Home Assistant",
+        category: "Objets connect\xE9s",
+        icon: "fas fa-home",
+        output: "maison",
+        timeout: 60,
+        description: "Pilote ta maison : lire l'\xE9tat d'un appareil ou d'un capteur, allumer/\xE9teindre, lancer une sc\xE8ne ou une automatisation, envoyer une notification sur ton t\xE9l\xE9phone.",
+        params: [
+          { name: "adresse", label: "Adresse", default: "http://homeassistant:8123" },
+          { name: "jeton", label: "Secret du jeton longue dur\xE9e", default: "HA_TOKEN" },
+          { name: "action", label: "Action", type: "select", options: ["lire un \xE9tat", "lister les appareils", "appeler un service", "notifier"], default: "lire un \xE9tat" },
+          { name: "entite", label: "Entit\xE9", help: "Ex. light.salon, sensor.temperature_chambre" },
+          { name: "service", label: "Service", showIf: { action: "appeler un service" }, help: "Ex. light.turn_on, scene.turn_on, script.bonne_nuit" },
+          { name: "donnees", label: "Donn\xE9es (JSON)", type: "json", showIf: { action: "appeler un service" }, help: '{"brightness_pct": 40}' },
+          { name: "message", label: "Message", showIf: { action: "notifier" } },
+          { name: "cible", label: "Service de notification", default: "notify.notify", showIf: { action: "notifier" } }
+        ],
+        run: async (p, ctx, api) => {
+          const B = `${String(p.adresse).replace(/\/$/, "")}/api`, h = { Authorization: `Bearer ${await need(api, p.jeton)}` };
+          const get = async (u) => {
+            const r = await fetch(B + u, { headers: h });
+            if (!r.ok) throw new Error(`Home Assistant : HTTP ${r.status}`);
+            return r.json();
+          };
+          if (p.action === "lire un \xE9tat") {
+            const s = await get(`/states/${encodeURIComponent(p.entite)}`);
+            return { entite: s.entity_id, etat: s.state, nom: s.attributes.friendly_name, unite: s.attributes.unit_of_measurement, attributs: s.attributes, depuis: s.last_changed };
+          }
+          if (p.action === "lister les appareils") return (await get("/states")).filter((s) => !p.entite || s.entity_id.startsWith(p.entite)).map((s) => ({ entite: s.entity_id, nom: s.attributes.friendly_name, etat: s.state, unite: s.attributes.unit_of_measurement }));
+          if (p.action === "notifier") {
+            const [d, s] = String(p.cible || "notify.notify").split(".");
+            await post(`${B}/services/${d}/${s}`, { message: String(p.message || "") }, h, "Home Assistant");
+            return { notifie: true };
+          }
+          const [domain, svc] = String(p.service || "").split(".");
+          if (!domain || !svc) throw perm("service au format domaine.service");
+          const res = await post(`${B}/services/${domain}/${svc}`, { ...p.entite ? { entity_id: p.entite } : {}, ...J(p.donnees, {}) }, h, "Home Assistant");
+          return { fait: p.service, changes: Array.isArray(res) ? res.map((s) => ({ entite: s.entity_id, etat: s.state })) : res };
+        }
+      },
+      {
+        name: "dzf_matrix",
+        label: "Matrix / Element",
+        category: "Messagerie",
+        icon: "fas fa-comments",
+        output: "matrix",
+        description: "Envoie un message (texte ou HTML) dans un salon Matrix (Element, Beeper\u2026). Messagerie libre et chiffrable.",
+        params: [{ name: "serveur", label: "Serveur", default: "https://matrix.org" }, { name: "jeton", label: "Secret du jeton d'acc\xE8s", default: "MATRIX_TOKEN" }, { name: "salon", label: "Id du salon", required: true, help: "!abcd:matrix.org" }, { name: "message", label: "Message", type: "text", required: true }, { name: "html", label: "Le message est du HTML", type: "bool", default: false }],
+        run: async (p, ctx, api) => {
+          const txn = `dzf${Date.now()}${Math.random().toString(36).slice(2, 6)}`;
+          const body = p.html ? { msgtype: "m.text", body: require_core().plain(p.message), format: "org.matrix.custom.html", formatted_body: String(p.message) } : { msgtype: "m.text", body: String(p.message) };
+          const r = await fetch(`${String(p.serveur).replace(/\/$/, "")}/_matrix/client/v3/rooms/${encodeURIComponent(p.salon)}/send/m.room.message/${txn}`, { method: "PUT", headers: { Authorization: `Bearer ${await need(api, p.jeton)}`, "Content-Type": "application/json" }, body: JSON.stringify(body) });
+          if (!r.ok) throw new Error(`Matrix : HTTP ${r.status} ${(await r.text()).slice(0, 200)}`);
+          return (await r.json()).event_id;
+        }
+      },
+      {
+        name: "dzf_chat_equipe",
+        label: "Mattermost / Rocket.Chat / Zulip",
+        category: "Messagerie",
+        icon: "fas fa-comment-dots",
+        output: "chat_equipe",
+        description: "Poste un message dans un canal de ta messagerie d'\xE9quipe libre, via un webhook entrant.",
+        params: [
+          { name: "outil", label: "Outil", type: "select", options: ["Mattermost", "Rocket.Chat", "Zulip"], default: "Mattermost" },
+          { name: "webhook", label: "Secret de l'adresse du webhook", default: "CHAT_WEBHOOK", help: "Zulip : URL avec api_key et stream" },
+          { name: "message", label: "Message (Markdown)", type: "text", required: true },
+          { name: "nom", label: "Nom affich\xE9", default: "Dysizz" },
+          { name: "sujet", label: "Sujet (Zulip)", showIf: { outil: "Zulip" } }
+        ],
+        run: async (p, ctx, api) => {
+          const url = await need(api, p.webhook);
+          if (p.outil === "Zulip") {
+            const u = new URL(url);
+            u.searchParams.set("topic", p.sujet || "Dysizz");
+            await post(u.toString(), { text: String(p.message) }, {}, "Zulip");
+          } else await post(url, p.outil === "Mattermost" ? { text: String(p.message), username: p.nom } : { text: String(p.message), alias: p.nom }, {}, p.outil);
+          return { envoye: true };
+        }
+      },
+      {
+        name: "dzf_push",
+        label: "Notification push (Gotify, Pushover, Signal)",
+        category: "Messagerie",
+        icon: "fas fa-mobile-alt",
+        output: "push",
+        description: "Envoie une notification sur ton t\xE9l\xE9phone : Gotify (auto-h\xE9berg\xE9), Pushover, ou un message Signal (via signal-cli-rest-api).",
+        params: [
+          { name: "service", label: "Service", type: "select", options: ["Gotify", "Pushover", "Signal"], default: "Gotify" },
+          { name: "adresse", label: "Adresse (Gotify / Signal)", default: "http://gotify:80" },
+          { name: "cle", label: "Secret de la cl\xE9", default: "GOTIFY_TOKEN", help: "Gotify : jeton d'appli \xB7 Pushover : \xAB APP_TOKEN:USER_KEY \xBB \xB7 Signal : ton num\xE9ro exp\xE9diteur" },
+          { name: "destinataire", label: "Destinataire (Signal)", showIf: { service: "Signal" }, help: "+336\u2026" },
+          { name: "titre", label: "Titre" },
+          { name: "message", label: "Message", type: "text", required: true },
+          { name: "priorite", label: "Priorit\xE9 (0 \xE0 10)", type: "int", default: 5 },
+          { name: "lien", label: "Lien (facultatif)" }
+        ],
+        run: async (p, ctx, api) => {
+          const k = await need(api, p.cle), B = String(p.adresse || "").replace(/\/$/, "");
+          if (p.service === "Gotify") return post(`${B}/message`, { title: p.titre || "Dysizz", message: String(p.message), priority: +p.priorite || 5, ...p.lien ? { extras: { "client::notification": { click: { url: p.lien } } } } : {} }, { "X-Gotify-Key": k }, "Gotify");
+          if (p.service === "Pushover") {
+            const [token, user] = k.split(":");
+            return post("https://api.pushover.net/1/messages.json", { token, user, title: p.titre || "Dysizz", message: String(p.message), priority: Math.max(-2, Math.min(2, Math.round((+p.priorite || 5) / 3) - 1)), ...p.lien ? { url: p.lien } : {} }, {}, "Pushover");
+          }
+          return post(`${B}/v2/send`, { number: k, recipients: [p.destinataire], message: `${p.titre ? p.titre + "\n" : ""}${p.message}${p.lien ? "\n" + p.lien : ""}` }, {}, "Signal");
+        }
+      }
+    ];
+  }
+});
+
+// src/blocks/utilitaires.js
+var require_utilitaires = __commonJS({
+  "src/blocks/utilitaires.js"(exports2, module2) {
+    "use strict";
+    var perm = (m) => Object.assign(new Error(m), { permanent: true });
+    var need = async (api, name) => {
+      const v = await api.secret(name);
+      if (!v) throw perm(`secret ${name} introuvable (variable d'environnement ou coffre)`);
+      return v;
+    };
+    var get = async (url, name, headers = {}) => {
+      const r = await fetch(url, { headers: { "User-Agent": "dysizz-flow/2 (+https://github.com/SidyLaye)", Accept: "application/json", ...headers } });
+      if (!r.ok) throw new Error(`${name} : HTTP ${r.status}`);
+      return r.json();
+    };
+    var WMO = { 0: ["Ciel d\xE9gag\xE9", "\u2600\uFE0F"], 1: ["Plut\xF4t d\xE9gag\xE9", "\u{1F324}\uFE0F"], 2: ["Partiellement nuageux", "\u26C5"], 3: ["Couvert", "\u2601\uFE0F"], 45: ["Brouillard", "\u{1F32B}\uFE0F"], 48: ["Brouillard givrant", "\u{1F32B}\uFE0F"], 51: ["Bruine l\xE9g\xE8re", "\u{1F326}\uFE0F"], 53: ["Bruine", "\u{1F326}\uFE0F"], 55: ["Bruine forte", "\u{1F327}\uFE0F"], 56: ["Bruine vergla\xE7ante", "\u{1F327}\uFE0F"], 57: ["Bruine vergla\xE7ante", "\u{1F327}\uFE0F"], 61: ["Pluie faible", "\u{1F326}\uFE0F"], 63: ["Pluie", "\u{1F327}\uFE0F"], 65: ["Forte pluie", "\u{1F327}\uFE0F"], 66: ["Pluie vergla\xE7ante", "\u{1F327}\uFE0F"], 67: ["Pluie vergla\xE7ante", "\u{1F327}\uFE0F"], 71: ["Neige faible", "\u{1F328}\uFE0F"], 73: ["Neige", "\u{1F328}\uFE0F"], 75: ["Forte neige", "\u2744\uFE0F"], 77: ["Grains de neige", "\u{1F328}\uFE0F"], 80: ["Averses", "\u{1F326}\uFE0F"], 81: ["Averses", "\u{1F327}\uFE0F"], 82: ["Violentes averses", "\u26C8\uFE0F"], 85: ["Averses de neige", "\u{1F328}\uFE0F"], 86: ["Averses de neige", "\u{1F328}\uFE0F"], 95: ["Orage", "\u26C8\uFE0F"], 96: ["Orage et gr\xEAle", "\u26C8\uFE0F"], 99: ["Orage et gr\xEAle", "\u26C8\uFE0F"] };
+    var geocode = async (q) => {
+      if (/^-?\d+(\.\d+)?\s*,\s*-?\d+(\.\d+)?$/.test(String(q).trim())) {
+        const [lat, lon] = String(q).split(",").map(Number);
+        return { lat, lon, nom: q };
+      }
+      const j = await get(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=1&language=fr`, "G\xE9ocodage");
+      const r = (j.results || [])[0];
+      if (!r) throw perm(`lieu \xAB ${q} \xBB introuvable`);
+      return { lat: r.latitude, lon: r.longitude, nom: `${r.name}${r.admin1 ? `, ${r.admin1}` : ""}`, pays: r.country };
+    };
+    var cronNext = (expr, n = 5, from = /* @__PURE__ */ new Date()) => {
+      const f = String(expr).trim().split(/\s+/);
+      if (f.length !== 5) throw perm("expression cron \xE0 5 champs attendue (min heure jour mois jourSemaine)");
+      const R = [[0, 59], [0, 23], [1, 31], [1, 12], [0, 7]];
+      const sets = f.map((s, i) => {
+        const out = /* @__PURE__ */ new Set();
+        for (const part of s.split(",")) {
+          const [range, step = "1"] = part.split("/");
+          let [a, b] = range === "*" ? R[i] : range.split("-").map(Number);
+          if (b === void 0) b = step !== "1" ? R[i][1] : a;
+          for (let v = a; v <= b; v += +step) out.add(i === 4 && v === 7 ? 0 : v);
+        }
+        return out;
+      });
+      const res = [];
+      const d = new Date(from);
+      d.setSeconds(0, 0);
+      d.setMinutes(d.getMinutes() + 1);
+      const domAny = f[2] === "*", dowAny = f[4] === "*";
+      for (let i = 0; i < 527040 && res.length < n; i++) {
+        const dom = sets[2].has(d.getDate()), dow = sets[4].has(d.getDay());
+        const dayOk = domAny && dowAny ? true : domAny ? dow : dowAny ? dom : dom || dow;
+        if (sets[3].has(d.getMonth() + 1) && dayOk && sets[1].has(d.getHours()) && sets[0].has(d.getMinutes())) res.push(new Date(d).toISOString());
+        d.setMinutes(d.getMinutes() + 1);
+      }
+      return res;
+    };
+    var ibanOk = (iban) => {
+      const s = String(iban).replace(/\s/g, "").toUpperCase();
+      if (!/^[A-Z]{2}\d{2}[A-Z0-9]{10,30}$/.test(s)) return false;
+      const r = (s.slice(4) + s.slice(0, 4)).replace(/[A-Z]/g, (c) => c.charCodeAt(0) - 55);
+      let m = 0;
+      for (const c of r) m = (m * 10 + +c) % 97;
+      return m === 1;
+    };
+    var luhn = (s) => {
+      let sum = 0;
+      [...String(s)].reverse().forEach((c, i) => {
+        let d = +c;
+        if (i % 2) {
+          d *= 2;
+          if (d > 9) d -= 9;
+        }
+        sum += d;
+      });
+      return sum % 10 === 0;
+    };
+    module2.exports = [
+      {
+        name: "dzf_meteo",
+        label: "M\xE9t\xE9o",
+        category: "Pratique",
+        icon: "fas fa-cloud-sun",
+        output: "meteo",
+        timeout: 30,
+        description: "M\xE9t\xE9o actuelle et pr\xE9visions (jusqu'\xE0 16 jours) pour une ville ou des coordonn\xE9es, avec une phrase et une ic\xF4ne pr\xEAtes \xE0 afficher. Open-Meteo, gratuit, sans cl\xE9.",
+        params: [{ name: "lieu", label: "Ville ou \xAB lat,lon \xBB", required: true, default: "Paris" }, { name: "jours", label: "Jours de pr\xE9vision", type: "int", default: 3 }],
+        run: async (p) => {
+          const g = await geocode(p.lieu);
+          const j = await get(`https://api.open-meteo.com/v1/forecast?latitude=${g.lat}&longitude=${g.lon}&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m,precipitation&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,sunrise,sunset,uv_index_max&timezone=auto&forecast_days=${Math.min(16, Math.max(1, +p.jours || 3))}`, "Open-Meteo");
+          const c = j.current, w = WMO[c.weather_code] || ["?", "\u{1F321}\uFE0F"];
+          return {
+            lieu: g.nom,
+            lat: g.lat,
+            lon: g.lon,
+            maintenant: { temperature: c.temperature_2m, ressenti: c.apparent_temperature, humidite: c.relative_humidity_2m, vent_kmh: c.wind_speed_10m, pluie_mm: c.precipitation, ciel: w[0], icone: w[1] },
+            resume: `${w[1]} ${w[0]}, ${Math.round(c.temperature_2m)} \xB0C (ressenti ${Math.round(c.apparent_temperature)} \xB0C)`,
+            jours: j.daily.time.map((d, i) => ({ date: d, min: j.daily.temperature_2m_min[i], max: j.daily.temperature_2m_max[i], pluie_mm: j.daily.precipitation_sum[i], risque_pluie: j.daily.precipitation_probability_max[i], uv: j.daily.uv_index_max[i], lever: j.daily.sunrise[i], coucher: j.daily.sunset[i], ciel: (WMO[j.daily.weather_code[i]] || ["?"])[0], icone: (WMO[j.daily.weather_code[i]] || ["", "\u{1F321}\uFE0F"])[1] }))
+          };
+        }
+      },
+      {
+        name: "dzf_adresse",
+        label: "Adresse : chercher, compl\xE9ter, localiser",
+        category: "Pratique",
+        icon: "fas fa-map-marker-alt",
+        output: "adresse",
+        timeout: 30,
+        description: "Transforme une adresse en coordonn\xE9es GPS et en adresse propre (et l'inverse). Base Adresse Nationale pour la France, OpenStreetMap ailleurs.",
+        params: [{ name: "sens", label: "Sens", type: "select", options: ["adresse \u2192 GPS", "GPS \u2192 adresse"], default: "adresse \u2192 GPS" }, { name: "valeur", label: "Adresse ou \xAB lat,lon \xBB", required: true }, { name: "source", label: "Source", type: "select", options: ["France (BAN)", "Monde (OpenStreetMap)"], default: "France (BAN)" }, { name: "n", label: "Propositions", type: "int", default: 1 }],
+        run: async (p) => {
+          const n = Math.min(10, +p.n || 1);
+          if (p.source === "France (BAN)") {
+            const url2 = p.sens === "adresse \u2192 GPS" ? `https://data.geopf.fr/geocodage/search?q=${encodeURIComponent(p.valeur)}&limit=${n}` : (() => {
+              const [lat, lon] = String(p.valeur).split(",").map(Number);
+              return `https://data.geopf.fr/geocodage/reverse?lat=${lat}&lon=${lon}&limit=${n}`;
+            })();
+            const j2 = await get(url2, "BAN");
+            const out2 = (j2.features || []).map((f) => ({ adresse: f.properties.label, numero: f.properties.housenumber, rue: f.properties.street, code_postal: f.properties.postcode, ville: f.properties.city, code_insee: f.properties.citycode, lat: f.geometry.coordinates[1], lon: f.geometry.coordinates[0], score: f.properties.score }));
+            return n === 1 ? out2[0] || null : out2;
+          }
+          const url = p.sens === "adresse \u2192 GPS" ? `https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&limit=${n}&q=${encodeURIComponent(p.valeur)}` : (() => {
+            const [lat, lon] = String(p.valeur).split(",").map(Number);
+            return `https://nominatim.openstreetmap.org/reverse?format=jsonv2&addressdetails=1&lat=${lat}&lon=${lon}`;
+          })();
+          const j = [].concat(await get(url, "OpenStreetMap", { "Accept-Language": "fr" }));
+          const out = j.filter((x) => x && x.lat).map((x) => ({ adresse: x.display_name, ville: x.address && (x.address.city || x.address.town || x.address.village), code_postal: x.address && x.address.postcode, pays: x.address && x.address.country, lat: +x.lat, lon: +x.lon }));
+          return n === 1 ? out[0] || null : out;
+        }
+      },
+      {
+        name: "dzf_itineraire",
+        label: "Itin\xE9raire et distance",
+        category: "Pratique",
+        icon: "fas fa-route",
+        output: "trajet",
+        timeout: 30,
+        description: "Distance et dur\xE9e entre deux lieux en voiture, \xE0 v\xE9lo ou \xE0 pied (OSRM / OpenStreetMap), ou \xE0 vol d'oiseau. Pour les frais kilom\xE9triques, les tourn\xE9es, le temps de trajet.",
+        params: [{ name: "depart", label: "D\xE9part (ville, adresse ou lat,lon)", required: true }, { name: "arrivee", label: "Arriv\xE9e", required: true }, { name: "mode", label: "Mode", type: "select", options: ["voiture", "v\xE9lo", "\xE0 pied", "vol d'oiseau"], default: "voiture" }],
+        run: async (p) => {
+          const [a, b] = await Promise.all([geocode(p.depart), geocode(p.arrivee)]);
+          const R = 6371, rad = (x) => x * Math.PI / 180;
+          const vol = 2 * R * Math.asin(Math.sqrt(Math.sin(rad(b.lat - a.lat) / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(rad(b.lon - a.lon) / 2) ** 2));
+          if (p.mode === "vol d'oiseau") return { depart: a.nom, arrivee: b.nom, km: +vol.toFixed(1) };
+          const prof = { voiture: "routed-car/route/v1/driving", "v\xE9lo": "routed-bike/route/v1/bike", "\xE0 pied": "routed-foot/route/v1/foot" }[p.mode];
+          const j = await get(`https://routing.openstreetmap.de/${prof}/${a.lon},${a.lat};${b.lon},${b.lat}?overview=false`, "OSRM");
+          const r = (j.routes || [])[0];
+          if (!r) throw new Error("pas d'itin\xE9raire trouv\xE9");
+          const min = Math.round(r.duration / 60);
+          return { depart: a.nom, arrivee: b.nom, km: +(r.distance / 1e3).toFixed(1), minutes: min, duree: min >= 60 ? `${Math.floor(min / 60)} h ${String(min % 60).padStart(2, "0")}` : `${min} min`, vol_oiseau_km: +vol.toFixed(1) };
+        }
+      },
+      {
+        name: "dzf_jours_feries",
+        label: "Jours f\xE9ri\xE9s et vacances scolaires",
+        category: "Pratique",
+        icon: "fas fa-umbrella-beach",
+        output: "feries",
+        timeout: 30,
+        description: "Jours f\xE9ri\xE9s fran\xE7ais (m\xE9tropole, Alsace-Moselle, outre-mer) et vacances scolaires par zone. Dit aussi si une date donn\xE9e est f\xE9ri\xE9e ou en vacances.",
+        params: [
+          { name: "quoi", label: "Quoi", type: "select", options: ["jours f\xE9ri\xE9s", "vacances scolaires"], default: "jours f\xE9ri\xE9s" },
+          { name: "annee", label: "Ann\xE9e", default: "", help: "Vide = cette ann\xE9e" },
+          { name: "zone", label: "Zone", default: "metropole", help: "F\xE9ri\xE9s : metropole, alsace-moselle, guadeloupe, martinique, guyane, la-reunion, mayotte\u2026 \xB7 Vacances : A, B ou C" },
+          { name: "date", label: "Tester cette date (facultatif)", help: "AAAA-MM-JJ" }
+        ],
+        run: async (p) => {
+          const year = /^\d{4}$/.test(String(p.annee || "")) ? +p.annee : (/* @__PURE__ */ new Date()).getFullYear();
+          if (p.quoi === "jours f\xE9ri\xE9s") {
+            const j2 = await get(`https://calendrier.api.gouv.fr/jours-feries/${encodeURIComponent(p.zone || "metropole")}/${year}.json`, "Jours f\xE9ri\xE9s");
+            const list2 = Object.entries(j2).map(([date, nom]) => ({ date, nom }));
+            return p.date ? { date: p.date, ferie: !!j2[p.date], nom: j2[p.date] || null, liste: list2 } : list2;
+          }
+          const zone = String(p.zone || "C").toUpperCase().replace(/^ZONE\s*/, "");
+          const j = await get(`https://data.education.gouv.fr/api/explore/v2.1/catalog/datasets/fr-en-calendrier-scolaire/records?where=${encodeURIComponent(`zones="Zone ${zone}" and (start_date>="${year - 1}-08-01" and start_date<"${year + 1}-01-01")`)}&order_by=start_date&limit=50`, "Calendrier scolaire");
+          const seen = /* @__PURE__ */ new Set();
+          const list = (j.results || []).map((r) => ({ nom: r.description, debut: String(r.start_date).slice(0, 10), fin: String(r.end_date).slice(0, 10), annee: r.annee_scolaire })).filter((r) => {
+            const k = r.nom + r.debut;
+            if (seen.has(k)) return false;
+            seen.add(k);
+            return true;
+          });
+          return p.date ? { date: p.date, vacances: list.find((v) => p.date >= v.debut && p.date < v.fin) || null, liste: list } : list;
+        }
+      },
+      {
+        name: "dzf_entreprise",
+        label: "Entreprise : fiche SIRENE",
+        category: "Pratique",
+        icon: "fas fa-building",
+        output: "entreprise",
+        timeout: 30,
+        description: "Trouve une entreprise fran\xE7aise par nom, SIREN ou SIRET : adresse, activit\xE9, dirigeants, effectif, date de cr\xE9ation, \xE9tat (active ou ferm\xE9e). API Recherche d'entreprises (\xC9tat), gratuite.",
+        params: [{ name: "recherche", label: "Nom, SIREN ou SIRET", required: true }, { name: "n", label: "R\xE9sultats", type: "int", default: 1 }],
+        run: async (p) => {
+          const q = String(p.recherche).replace(/\s/g, "").match(/^\d{9,14}$/) ? String(p.recherche).replace(/\s/g, "") : String(p.recherche);
+          const j = await get(`https://recherche-entreprises.api.gouv.fr/search?q=${encodeURIComponent(q)}&per_page=${Math.min(25, +p.n || 1)}`, "Recherche d'entreprises");
+          const out = (j.results || []).map((e) => ({ nom: e.nom_complet, siren: e.siren, siret_siege: e.siege && e.siege.siret, adresse: e.siege && e.siege.adresse, activite: e.activite_principale, categorie: e.categorie_entreprise, effectif: e.tranche_effectif_salarie, creation: e.date_creation, active: e.etat_administratif === "A", dirigeants: (e.dirigeants || []).slice(0, 5).map((d) => d.nom ? `${d.prenoms || ""} ${d.nom}`.trim() : d.denomination), lat: e.siege && +e.siege.latitude, lon: e.siege && +e.siege.longitude }));
+          return (+p.n || 1) === 1 ? out[0] || null : out;
+        }
+      },
+      {
+        name: "dzf_change",
+        label: "Taux de change",
+        category: "Pratique",
+        icon: "fas fa-euro-sign",
+        output: "change",
+        timeout: 30,
+        description: "Convertit un montant d'une devise \xE0 une autre au taux du jour (ou d'une date pass\xE9e), d'apr\xE8s la Banque centrale europ\xE9enne.",
+        params: [{ name: "montant", label: "Montant", type: "number", default: 1 }, { name: "de", label: "De", default: "EUR" }, { name: "vers", label: "Vers", default: "USD,XOF,GBP", help: "Une ou plusieurs devises" }, { name: "date", label: "Date (facultatif)", help: "AAAA-MM-JJ" }],
+        run: async (p) => {
+          const to = String(p.vers).toUpperCase().replace(/\s/g, "").split(",").filter(Boolean);
+          const from = String(p.de).toUpperCase(), amt = +p.montant || 1;
+          const FIXE = { EUR: 1, XOF: 655.957, XAF: 655.957, KMF: 491.96775, XPF: 119.33174 };
+          const need2 = [from, ...to].filter((c) => !FIXE[c]);
+          const rates = need2.length ? (await get(`https://api.frankfurter.dev/v1/${/^\d{4}-\d{2}-\d{2}$/.test(p.date || "") ? p.date : "latest"}?base=EUR&symbols=${[...new Set(need2)].join(",")}`, "Frankfurter")).rates : {};
+          const rate = (c) => {
+            const r = FIXE[c] || rates[c];
+            if (!r) throw perm(`devise inconnue : ${c}`);
+            return r;
+          };
+          const out = Object.fromEntries(to.map((c) => [c, +(amt / rate(from) * rate(c)).toFixed(4)]));
+          return to.length === 1 ? out[to[0]] : out;
+        }
+      },
+      {
+        name: "dzf_wikipedia",
+        label: "Wikip\xE9dia : r\xE9sum\xE9",
+        category: "Pratique",
+        icon: "fab fa-wikipedia-w",
+        output: "wiki",
+        timeout: 30,
+        description: "R\xE9sum\xE9 d'un article Wikip\xE9dia avec son image, ou recherche d'articles. Pour enrichir une fiche, une veille, un quiz\u2026",
+        params: [{ name: "sujet", label: "Sujet", required: true }, { name: "langue", label: "Langue", default: "fr" }],
+        run: async (p) => {
+          const L = /^[a-z]{2,3}$/.test(p.langue || "") ? p.langue : "fr";
+          const s = await get(`https://${L}.wikipedia.org/w/rest.php/v1/search/title?q=${encodeURIComponent(p.sujet)}&limit=1`, "Wikip\xE9dia");
+          const page = (s.pages || [])[0];
+          if (!page) return null;
+          const j = await get(`https://${L}.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(page.key)}`, "Wikip\xE9dia");
+          return { titre: j.title, resume: j.extract, description: j.description, image: j.thumbnail && j.thumbnail.source, url: j.content_urls && j.content_urls.desktop.page };
+        }
+      },
+      {
+        name: "dzf_verifier_numero",
+        label: "V\xE9rifier un IBAN, SIRET, n\xB0 de TVA, carte",
+        category: "Pratique",
+        icon: "fas fa-check-double",
+        output: "verification",
+        description: "Contr\xF4le qu'un num\xE9ro est bien form\xE9 (cl\xE9 de contr\xF4le) : IBAN, SIREN/SIRET, n\xB0 de TVA intracommunautaire (et son existence aupr\xE8s de l'UE), n\xB0 de carte (Luhn). \xC9vite les erreurs de saisie.",
+        params: [{ name: "type", label: "Type", type: "select", options: ["IBAN", "SIREN / SIRET", "TVA intracommunautaire", "carte bancaire (Luhn)"], default: "IBAN" }, { name: "numero", label: "Num\xE9ro", required: true }, { name: "en_ligne", label: "TVA : v\xE9rifier aussi aupr\xE8s de l'UE (VIES)", type: "bool", default: false }],
+        run: async (p) => {
+          const s = String(p.numero).replace(/[\s.-]/g, "").toUpperCase();
+          if (p.type === "IBAN") return { valide: ibanOk(s), pays: s.slice(0, 2), formate: s.replace(/(.{4})/g, "$1 ").trim() };
+          if (p.type.startsWith("SIREN")) return { valide: /^\d{9}$|^\d{14}$/.test(s) && (luhn(s) || s.startsWith("356000000")), type: s.length === 9 ? "SIREN" : "SIRET" };
+          if (p.type.startsWith("carte")) return { valide: /^\d{12,19}$/.test(s) && luhn(s), fin: s.slice(-4) };
+          const m = s.match(/^([A-Z]{2})([A-Z0-9]{2,13})$/);
+          if (!m) return { valide: false };
+          let valide = true;
+          if (m[1] === "FR") {
+            const siren = m[2].slice(2);
+            valide = /^\d{9}$/.test(siren) && +m[2].slice(0, 2) === (12 + 3 * (+siren % 97)) % 97;
+          }
+          if (!p.en_ligne) return { valide, pays: m[1] };
+          const r = await fetch("https://ec.europa.eu/taxation_customs/vies/rest-api/check-vat-number", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ countryCode: m[1] === "GR" ? "EL" : m[1], vatNumber: m[2] }) });
+          const j = await r.json().catch(() => ({}));
+          return { valide: valide && !!j.valid, pays: m[1], nom: j.name && j.name !== "---" ? j.name : null, adresse: j.address && j.address !== "---" ? j.address : null };
+        }
+      },
+      {
+        name: "dzf_cron",
+        label: "Planning : prochaines dates",
+        category: "Pratique",
+        icon: "fas fa-calendar-alt",
+        output: "dates",
+        description: "Donne les prochaines dates d'une r\xE8gle de r\xE9p\xE9tition (format cron, ex. \xAB 0 9 * * 1-5 \xBB = 9 h en semaine), avec une explication. Pour v\xE9rifier un planning avant de l'utiliser.",
+        params: [{ name: "expression", label: "R\xE8gle cron", required: true, default: "0 9 * * 1-5" }, { name: "n", label: "Combien", type: "int", default: 5 }],
+        run: async (p) => ({ expression: p.expression, prochaines: cronNext(p.expression, Math.min(50, +p.n || 5)) })
+      },
+      {
+        name: "dzf_stripe",
+        label: "Stripe : paiements",
+        category: "Pratique",
+        icon: "fab fa-stripe-s",
+        output: "stripe",
+        timeout: 60,
+        description: "Cr\xE9e un lien de paiement ou une session de paiement, lit un paiement ou un client, liste les derniers paiements. Pour tes factures, dons, abonnements.",
+        params: [
+          { name: "cle", label: "Secret de la cl\xE9 secr\xE8te", default: "STRIPE_SECRET" },
+          { name: "action", label: "Action", type: "select", options: ["cr\xE9er un paiement (lien)", "derniers paiements", "lire un paiement", "chercher un client", "appel libre"], default: "cr\xE9er un paiement (lien)" },
+          { name: "montant", label: "Montant (\u20AC)", type: "number" },
+          { name: "libelle", label: "Libell\xE9" },
+          { name: "email", label: "E-mail du client" },
+          { name: "retour", label: "Page de retour apr\xE8s paiement" },
+          { name: "reference", label: "R\xE9f\xE9rence (ex. n\xB0 de facture)" },
+          { name: "id", label: "Id (paiement)" },
+          { name: "chemin", label: "Chemin", showIf: { action: "appel libre" }, help: "Ex. /v1/customers" },
+          { name: "methode", label: "M\xE9thode", type: "select", options: ["GET", "POST"], default: "GET", showIf: { action: "appel libre" } },
+          { name: "corps", label: "Param\xE8tres (JSON)", type: "json", showIf: { action: "appel libre" } }
+        ],
+        run: async (p, ctx, api) => {
+          const k = await need(api, p.cle);
+          const form = (o, pre = "") => Object.entries(o).flatMap(([key, v]) => {
+            const kk = pre ? `${pre}[${key}]` : key;
+            return v && typeof v === "object" ? form(v, kk) : v === void 0 || v === null ? [] : [`${encodeURIComponent(kk)}=${encodeURIComponent(v)}`];
+          });
+          const S = async (path, method = "GET", body) => {
+            const r = await fetch(`https://api.stripe.com${path}`, { method, headers: { Authorization: `Bearer ${k}`, ...body ? { "Content-Type": "application/x-www-form-urlencoded" } : {} }, body: body ? form(body).join("&") : void 0 });
+            const j = await r.json();
+            if (!r.ok) throw Object.assign(new Error(`Stripe : ${j.error && j.error.message || r.status}`), { permanent: r.status < 500 });
+            return j;
+          };
+          if (p.action === "cr\xE9er un paiement (lien)") {
+            if (!(+p.montant > 0)) throw perm("montant invalide");
+            const s = await S("/v1/checkout/sessions", "POST", { mode: "payment", success_url: p.retour || "https://example.com/merci", ...p.email ? { customer_email: p.email } : {}, client_reference_id: p.reference || void 0, metadata: { reference: p.reference || "" }, line_items: { 0: { quantity: 1, price_data: { currency: "eur", unit_amount: Math.round(+p.montant * 100), product_data: { name: p.libelle || "Paiement" } } } } });
+            return { url: s.url, id: s.id, expire: new Date(s.expires_at * 1e3).toISOString() };
+          }
+          if (p.action === "derniers paiements") return (await S("/v1/payment_intents?limit=25")).data.map((x) => ({ id: x.id, montant: x.amount / 100, devise: x.currency, etat: x.status, quand: new Date(x.created * 1e3).toISOString(), description: x.description, client: x.customer }));
+          if (p.action === "lire un paiement") {
+            const id = String(p.id || "");
+            return S(id.startsWith("cs_") ? `/v1/checkout/sessions/${id}` : `/v1/payment_intents/${id}`);
+          }
+          if (p.action === "chercher un client") return (await S(`/v1/customers?email=${encodeURIComponent(p.email || "")}&limit=5`)).data.map((c) => ({ id: c.id, nom: c.name, email: c.email, cree: new Date(c.created * 1e3).toISOString() }));
+          if (!String(p.chemin || "").startsWith("/v1/")) throw perm("chemin /v1/\u2026 attendu");
+          return S(p.chemin, p.methode, p.methode === "POST" ? typeof p.corps === "string" ? JSON.parse(p.corps || "{}") : p.corps || {} : void 0);
+        }
+      }
+    ];
+    module2.exports.cronNext = cronNext;
+    module2.exports.ibanOk = ibanOk;
+  }
+});
+
 // src/blocks/securite.js
 var require_securite = __commonJS({
   "src/blocks/securite.js"(exports2, module2) {
@@ -85079,6 +94398,14 @@ var require_blocks = __commonJS({
       ...require_ia(),
       ...require_services(),
       ...require_emplois(),
+      ...require_stockage(),
+      ...require_documents(),
+      ...require_ia_plus(),
+      ...require_blockchain(),
+      ...require_devops(),
+      ...require_donnees_ext(),
+      ...require_connecte(),
+      ...require_utilitaires(),
       ...require_securite(),
       ...require_surveillance(),
       ...require_surveillance_plus(),
@@ -85087,7 +94414,7 @@ var require_blocks = __commonJS({
       ...require_extras(),
       ...require_controle()
     ];
-    var CATEGORIES = ["Donn\xE9es", "Transformer", "R\xE9seau", "Messagerie", "IA", "Services", "S\xE9curit\xE9", "Surveillance", "Logs & m\xE9triques", "T\xE2ches & planification", "Contr\xF4le", "Extensions", "Mes blocs"];
+    var CATEGORIES = ["Donn\xE9es", "Transformer", "R\xE9seau", "Messagerie", "IA", "Documents", "Stockage", "Donn\xE9es externes", "Pratique", "Services", "Blockchain", "DevOps", "Objets connect\xE9s", "S\xE9curit\xE9", "Surveillance", "Logs & m\xE9triques", "T\xE2ches & planification", "Contr\xF4le", "Extensions", "Mes blocs"];
     var seen = /* @__PURE__ */ new Set();
     for (const b of BLOCKS2) {
       if (seen.has(b.name)) throw new Error(`dysizz-flow : bloc en double ${b.name}`);
@@ -85466,8 +94793,206 @@ var require_templates = __commonJS({
         steps: chain(
           st("planifier", "dzf_planifier", { workflow: "%%workflow%%", dans: "%%jours%%", unite: "jours", contexte: '{"ligne":{"id":"{{id}}"}}', cle: "relance-%%table%%-{{id}}", sortie: "planifie" })
         )
+      },
+      {
+        key: "meteo_matin",
+        label: "M\xE9t\xE9o du matin sur ton t\xE9l\xE9phone",
+        category: "Pratique",
+        when: "Daily",
+        description: "Chaque matin : la m\xE9t\xE9o du jour et des prochains jours pour ta ville, envoy\xE9e en notification (et un rappel parapluie s'il risque de pleuvoir).",
+        vars: [{ name: "ville", label: "Ville", default: "Paris" }],
+        steps: chain(
+          st("meteo", "dzf_meteo", { lieu: "%%ville%%", jours: 3, sortie: "meteo" }),
+          st("prevenir", "dzf_notifier", { qui: "administrateurs", titre: "M\xE9t\xE9o : {{meteo.resume}}", texte: "Aujourd'hui {{meteo.jours.0.min}}\xB0 \xE0 {{meteo.jours.0.max}}\xB0, pluie {{meteo.jours.0.risque_pluie}} %. Demain : {{meteo.jours.1.ciel}}, {{meteo.jours.1.max}}\xB0." }),
+          st("parapluie", "dzf_notifier", { qui: "administrateurs", titre: "\u2614 Prends un parapluie", texte: "Risque de pluie {{meteo.jours.0.risque_pluie}} % aujourd'hui \xE0 %%ville%%." }, { only_if: "meteo.jours[0].risque_pluie >= 60" })
+        )
+      },
+      {
+        key: "export_excel_s3",
+        label: "Export Excel chaque semaine vers S3",
+        category: "Stockage",
+        when: "Weekly",
+        description: "Chaque semaine : exporte une table en vrai fichier Excel et le d\xE9pose dans ton stockage S3 (OVH, Scaleway, MinIO, AWS\u2026). Une sauvegarde lisible par tout le monde.",
+        vars: [{ name: "table", label: "Table \xE0 exporter", default: "contacts" }, { name: "seau", label: "Bucket S3" }, { name: "point", label: "Adresse du service S3", default: "https://s3.gra.io.cloud.ovh.net" }, { name: "region", label: "R\xE9gion", default: "gra" }],
+        steps: chain(
+          st("lignes", "dzf_table_chercher", { table: "%%table%%", filtre: "{}", limite: 5e4, sortie: "lignes" }),
+          st("excel", "dzf_excel_ecrire", { donnees: "{{lignes}}", nom: "%%table%%.xlsx", sortie_fichier: "base64 (dans le workflow)", sortie: "excel" }),
+          st("envoyer", "dzf_s3_envoyer", { point: "%%point%%", region: "%%region%%", seau: "%%seau%%", cles: "S3_CLES", style: "chemin", source: "{{excel}}", cle: "exports/%%table%%-{{excel.octets}}.xlsx", sortie: "envoi" })
+        )
+      },
+      {
+        key: "facture_pdf",
+        label: "PDF automatique \xE0 chaque nouvelle facture",
+        category: "Documents",
+        when: "Insert",
+        tableVar: "table",
+        description: "Quand une facture (ou un devis) est ajout\xE9e, fabrique son PDF propre avec un QR code de paiement SEPA, et range le lien du PDF dans la ligne.",
+        vars: [{ name: "table", label: "Table des factures", default: "factures" }, { name: "champ_pdf", label: "Champ o\xF9 ranger le PDF", default: "pdf" }, { name: "societe", label: "Ta soci\xE9t\xE9", default: "Ma soci\xE9t\xE9" }, { name: "iban", label: "Ton IBAN", default: "" }],
+        steps: chain(
+          st("qr", "dzf_qr", { type: "virement SEPA", beneficiaire: "%%societe%%", iban: "%%iban%%", montant: "{{montant}}", reference: "Facture {{numero}}", taille: 240, sortie: "qr" }),
+          st("pdf", "dzf_pdf_creer", { format: "Markdown", titre: "Facture {{numero}}", auteur: "%%societe%%", contenu: "# Facture {{numero}}\n\n**%%societe%%**\n\nClient : {{client}}\n\n| D\xE9signation | Montant |\n|---|---|\n| {{libelle}} | {{montant}} \u20AC |\n\n---\n\nPayer par virement en scannant ce code avec ton appli bancaire :\n\n![QR de paiement]({{qr.png_data_uri}})", nom: "facture-{{numero}}.pdf", sortie: "pdf" }),
+          st("ranger", "dzf_table_modifier", { table: "%%table%%", id: "{{id}}", valeurs: '{"%%champ_pdf%%":"{{pdf.chemin}}"}', sans_declencheurs: true, sortie: "modifies" })
+        )
+      },
+      {
+        key: "crypto_suivi",
+        label: "Pr\xE9venir quand un portefeuille crypto re\xE7oit des fonds",
+        category: "Blockchain",
+        when: "Hourly",
+        description: "Chaque heure : regarde les transferts d'un jeton (USDC, EURC\u2026) arriv\xE9s sur ton adresse et te pr\xE9vient avec le montant et le lien.",
+        vars: [{ name: "reseau", label: "R\xE9seau", default: "Base" }, { name: "jeton", label: "Contrat du jeton", default: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913" }, { name: "adresse", label: "Ton adresse (0x\u2026)" }],
+        steps: chain(
+          st("recus", "dzf_evm_evenements", { reseau: "%%reseau%%", contrat: "%%jeton%%", evenement: "Transfer(address indexed from, address indexed to, uint256 value)", derniers_blocs: 1800, filtre_2: "%%adresse%%", sortie: "recus" }),
+          st("prevenir", "dzf_notifier", { qui: "administrateurs", titre: "\u{1F4B0} {{recus.nombre}} transfert(s) re\xE7u(s)", texte: "Dernier : {{recus.liste.0.value}} (unit\xE9s brutes) de {{recus.liste.0.from}} \u2014 {{recus.liste.0.lien}}" }, { only_if: "recus.nombre > 0" })
+        )
+      },
+      {
+        key: "assistant_chat",
+        label: "Assistant IA pour tes pages (chat)",
+        category: "IA",
+        when: "Never",
+        description: "Le cerveau du bloc \xAB Chat IA \xBB de dysizz-ui : re\xE7oit la question de l'utilisateur connect\xE9, laisse l'agent chercher dans tes tables ou lancer tes workflows, et renvoie la r\xE9ponse. Cr\xE9e aussi l'adresse /dzf/api/<nom> \xE0 mettre dans le bloc.",
+        vars: [
+          { name: "point", label: "Nom de l'adresse", default: "assistant" },
+          { name: "url_base", label: "API IA (compatible OpenAI)", default: "http://ollama:11434/v1" },
+          { name: "modele", label: "Mod\xE8le", default: "qwen2.5" },
+          { name: "variable_cle", label: "Secret de la cl\xE9 (si besoin)", default: "" },
+          { name: "tables", label: "Tables consultables", default: "taches" },
+          { name: "workflows", label: "Workflows qu'il peut lancer", default: "" }
+        ],
+        point: { nom: "%%point%%", auth: "session", reponse: "agent", limite_minute: 20 },
+        steps: chain(
+          st("agent", "dzf_ia_agent", { url_base: "%%url_base%%", modele: "%%modele%%", variable_cle: "%%variable_cle%%", consigne: "{{corps.message}}", tables: "%%tables%%", workflows: "%%workflows%%", web: false, etapes_max: 6, sortie: "agent", si_erreur: "continuer", delai_max: 300 }),
+          st("secours", "dzf_definir", { valeurs: `{"agent":{"reponse":"D\xE9sol\xE9, je n'arrive pas \xE0 r\xE9pondre pour l'instant ({{agent_erreur}})."}}`, fusionner: true }, { only_if: "!agent" })
+        )
       }
     ];
+  }
+});
+
+// src/expose.js
+var require_expose = __commonJS({
+  "src/expose.js"(exports2, module2) {
+    "use strict";
+    var crypto = require("crypto");
+    var { ensureTables } = require_store();
+    var NOM_RE = /^[a-z0-9][a-z0-9_-]{0,60}$/;
+    var MAX_BODY = 1024 * 1024;
+    var AUTHS = ["aucune", "jeton", "hmac", "session"];
+    var METHODES = ["POST", "GET", "GET et POST"];
+    var CACHE = /* @__PURE__ */ new Map();
+    var findPoint = async (nom) => {
+      const db = require("@saltcorn/data/db");
+      const key = `${db.getTenantSchema()}:${nom}`;
+      const hit = CACHE.get(key);
+      if (hit && hit.t > Date.now() - 3e4) return hit.p;
+      const { points } = await ensureTables();
+      const p = await points.getRow({ nom });
+      CACHE.set(key, { t: Date.now(), p });
+      if (CACHE.size > 500) CACHE.delete(CACHE.keys().next().value);
+      return p;
+    };
+    var forget = () => CACHE.clear();
+    var same = (a, b) => {
+      const x = Buffer.from(String(a || "")), y = Buffer.from(String(b || ""));
+      return x.length === y.length && x.length > 0 && crypto.timingSafeEqual(x, y);
+    };
+    var secretOf = async (name) => {
+      if (!name) return void 0;
+      if (process.env[name]) return process.env[name];
+      const { readSecret } = require_vault();
+      return readSecret(name);
+    };
+    var safeHeaders = (h = {}) => Object.fromEntries(Object.entries(h).filter(([k]) => !/^(cookie|authorization|x-api-key|proxy-authorization)$/i.test(k)).map(([k, v]) => [k, String(v).slice(0, 500)]));
+    var clientIp = (req) => String(req.ip || req.socket && req.socket.remoteAddress || "").replace(/^::ffff:/, "");
+    var PUBLIC = { role_id: 100 };
+    var runAs = async (email) => {
+      if (!email) return PUBLIC;
+      const User = require("@saltcorn/data/models/user");
+      const u = await User.findOne({ email });
+      return u ? u.session_object || u : PUBLIC;
+    };
+    var reply = (res, code, body) => {
+      res.status(code);
+      res.setHeader("Cache-Control", "no-store");
+      res.json(body);
+    };
+    var handle = async (req, res) => {
+      const t0 = Date.now();
+      const nom = String(req.params && req.params.nom || "");
+      try {
+        if (!NOM_RE.test(nom)) return reply(res, 404, { erreur: "introuvable" });
+        const p = await findPoint(nom);
+        if (!p || !p.actif) return reply(res, 404, { erreur: "introuvable" });
+        const m = req.method.toUpperCase();
+        const allowed = p.methode === "GET et POST" ? ["GET", "POST"] : [p.methode || "POST"];
+        if (!allowed.includes(m)) {
+          res.setHeader("Allow", allowed.join(", "));
+          return reply(res, 405, { erreur: "m\xE9thode non autoris\xE9e" });
+        }
+        const lim = +p.limite_minute || 60;
+        const { kv } = require_controle();
+        const n = await kv.incr(`dzf:api:${nom}:${clientIp(req)}:${Math.floor(Date.now() / 6e4)}`, 90);
+        res.setHeader("X-RateLimit-Limit", String(lim));
+        res.setHeader("X-RateLimit-Remaining", String(Math.max(0, lim - n)));
+        if (n > lim) {
+          res.setHeader("Retry-After", "60");
+          return reply(res, 429, { erreur: "trop de requ\xEAtes, r\xE9essaie dans une minute" });
+        }
+        const raw = typeof req.rawBody === "string" ? req.rawBody : Buffer.isBuffer(req.rawBody) ? req.rawBody.toString("utf8") : req.body && Object.keys(req.body).length ? JSON.stringify(req.body) : "";
+        if (raw.length > MAX_BODY) return reply(res, 413, { erreur: "corps trop gros" });
+        if (p.auth === "jeton") {
+          const want = await secretOf(p.secret);
+          const got = String(req.headers.authorization || "").replace(/^Bearer\s+/i, "") || req.headers["x-api-key"];
+          if (!want || !same(got, want)) return reply(res, 401, { erreur: "jeton invalide" });
+        } else if (p.auth === "hmac") {
+          const key2 = await secretOf(p.secret);
+          const got = String(req.headers[String(p.en_tete_signature || "x-signature").toLowerCase()] || "").replace(/^sha256=/, "");
+          const want = key2 && crypto.createHmac("sha256", key2).update(raw).digest("hex");
+          if (!want || !same(got, want)) return reply(res, 401, { erreur: "signature invalide" });
+        } else if (p.auth === "session") {
+          if (!req.user || !req.user.id) return reply(res, 401, { erreur: "connecte-toi d'abord" });
+          if (req.headers["x-requested-with"] !== "dysizz") return reply(res, 403, { erreur: "en-t\xEAte X-Requested-With manquant" });
+          const origin = req.headers.origin || req.headers.referer;
+          if (origin) {
+            try {
+              if (new URL(origin).host !== req.headers.host) return reply(res, 403, { erreur: "origine refus\xE9e" });
+            } catch (e) {
+              return reply(res, 403, { erreur: "origine refus\xE9e" });
+            }
+          }
+        } else if (p.auth !== "aucune") return reply(res, 500, { erreur: "point mal configur\xE9" });
+        const Trigger = require("@saltcorn/data/models/trigger");
+        const wf = Trigger.findOne({ name: p.workflow });
+        if (!wf) return reply(res, 500, { erreur: "workflow absent" });
+        let corps = req.body;
+        if ((!corps || !Object.keys(corps).length) && raw) {
+          try {
+            corps = JSON.parse(raw);
+          } catch (e) {
+            corps = raw;
+          }
+        }
+        const ctx = { corps: corps || {}, corps_brut: raw, query: { ...req.query || {} }, entetes: safeHeaders(req.headers), ip: clientIp(req), methode: m, point: nom, ...p.auth === "session" ? { utilisateur: { id: req.user.id, email: req.user.email, role_id: req.user.role_id } } : {} };
+        const out = await wf.runWithoutRow({ row: ctx, req, user: p.auth === "session" ? req.user : await runAs(p.executer_en) });
+        const key = String(p.reponse || "").trim();
+        const val = key ? (out || {})[key] : { ok: true };
+        const status = out && Number.isInteger(out.statut_http) && out.statut_http >= 200 && out.statut_http < 600 ? out.statut_http : 200;
+        record(nom, true, Date.now() - t0);
+        return reply(res, status, val === void 0 ? null : val);
+      } catch (e) {
+        record(nom, false, Date.now() - t0, e.message);
+        return reply(res, 500, { erreur: "erreur interne" });
+      }
+    };
+    var record = (nom, ok, ms, message) => {
+      try {
+        const { journal } = require_engine();
+        if (!ok) journal({ bloc: `api:${nom}`, ok: false, duree_ms: ms, message });
+      } catch (e) {
+      }
+    };
+    module2.exports = { handle, forget, NOM_RE, AUTHS, METHODES };
   }
 });
 
@@ -85488,6 +95013,7 @@ var require_install = __commonJS({
       "rss_vers_table.table_articles": [S("titre", "String"), S("url", "String", { is_unique: true }), S("date", "Date"), S("resume", "String"), S("image", "String"), S("auteur", "String"), S("video_id", "String"), S("source", "String"), S("lu", "Bool")],
       "imap_vers_table.table_mails": [S("uid", "Integer"), S("message_id", "String", { is_unique: true }), S("dossier", "String"), S("de", "String"), S("de_nom", "String"), S("a", "String"), S("sujet", "String"), S("date", "Date"), S("extrait", "String"), S("corps", "String"), S("lu", "Bool")],
       "surveillance_sites.table_sites": [S("nom", "String"), S("url", "String", { is_unique: true }), S("actif", "Bool"), S("etat", "String"), S("ms", "Integer"), S("raison", "String"), S("verifie_le", "Date")],
+      "facture_pdf.table": [S("numero", "String"), S("client", "String"), S("libelle", "String"), S("montant", "Float"), S("pdf", "String")],
       "veille_cve.table_cve": [S("cve", "String", { is_unique: true }), S("gravite", "String"), S("score", "Float"), S("resume", "String"), S("url", "String"), S("publiee", "Date")]
     };
     var createTable = async (name, fields) => {
@@ -85537,7 +95063,22 @@ var require_install = __commonJS({
         await require("@saltcorn/data/db/state").getState().refresh_triggers(true);
       } catch (e) {
       }
-      return { name, trigger_id, steps: steps.length, created };
+      let point = null;
+      if (t.point) {
+        const { ensureTables } = require_store();
+        const { points } = await ensureTables();
+        const pt = fill(t.point, vars);
+        let nom = String(pt.nom || t.key).toLowerCase().replace(/[^a-z0-9_-]/g, "-").slice(0, 60), i = 2;
+        const base = nom;
+        while (await points.getRow({ nom })) nom = `${base}-${i++}`;
+        await points.insertRow({ nom, workflow: name, methode: pt.methode || "POST", auth: pt.auth || "session", reponse: pt.reponse || "", limite_minute: +pt.limite_minute || 30, actif: true, note: `Cr\xE9\xE9 par le mod\xE8le \xAB ${t.label} \xBB` });
+        try {
+          require_expose().forget(nom);
+        } catch (e) {
+        }
+        point = `/dzf/api/${nom}`;
+      }
+      return { name, trigger_id, steps: steps.length, created, point };
     };
     module2.exports = { installTemplate, TEMPLATES, fill, SCHEMAS };
   }
@@ -85896,7 +95437,7 @@ ${auto.length ? `<label class="dzf-check"><input type="checkbox" name="creer_tab
         if (t && ["Insert", "Update"].includes(input.when) && !t.tableVar) input.when = t.when;
         if (t && t.tableVar && !["Insert", "Update", "Delete"].includes(input.when) && ["Insert", "Update"].includes(t.when)) input.when = input.when === "Never" ? "Never" : t.when;
         const r = await installTemplate(req.params.key, input);
-        res.redirect(`/dysizz-flow/editeur/${r.trigger_id}?ok=${encodeURIComponent(`Workflow \xAB ${r.name} \xBB cr\xE9\xE9${r.created.length ? ` (tables cr\xE9\xE9es : ${r.created.join(", ")})` : ""}. Clique sur une \xE9tape pour la r\xE9gler, puis \xAB Essayer \xBB.`)}`);
+        res.redirect(`/dysizz-flow/editeur/${r.trigger_id}?ok=${encodeURIComponent(`Workflow \xAB ${r.name} \xBB cr\xE9\xE9${r.created.length ? ` (tables cr\xE9\xE9es : ${r.created.join(", ")})` : ""}${r.point ? `. Son adresse pour tes pages : ${r.point}` : ""}. Clique sur une \xE9tape pour la r\xE9gler, puis \xAB Essayer \xBB.`)}`);
       } catch (e) {
         go(res, "/dysizz-flow/modeles", e.message, true);
       }
@@ -85918,121 +95459,6 @@ ${rows.map((r) => `<tr class="${r.ok ? "" : "dzf-bad"}"><td>${esc(new Date(r.qua
       go(res, "/dysizz-flow/journal", "Journal nettoy\xE9");
     };
     module2.exports = { allBlocks, csrf, restore, page, go, hidden, flash, library, blockPage, tryBlock, workshop, editor: editor2, save, remove, copyBuiltin, exportBlocks, importBlocks, templates, installTpl, journalPage, purge };
-  }
-});
-
-// src/expose.js
-var require_expose = __commonJS({
-  "src/expose.js"(exports2, module2) {
-    "use strict";
-    var crypto = require("crypto");
-    var { ensureTables } = require_store();
-    var NOM_RE = /^[a-z0-9][a-z0-9_-]{0,60}$/;
-    var MAX_BODY = 1024 * 1024;
-    var AUTHS = ["aucune", "jeton", "hmac"];
-    var METHODES = ["POST", "GET", "GET et POST"];
-    var CACHE = /* @__PURE__ */ new Map();
-    var findPoint = async (nom) => {
-      const db = require("@saltcorn/data/db");
-      const key = `${db.getTenantSchema()}:${nom}`;
-      const hit = CACHE.get(key);
-      if (hit && hit.t > Date.now() - 3e4) return hit.p;
-      const { points } = await ensureTables();
-      const p = await points.getRow({ nom });
-      CACHE.set(key, { t: Date.now(), p });
-      if (CACHE.size > 500) CACHE.delete(CACHE.keys().next().value);
-      return p;
-    };
-    var forget = () => CACHE.clear();
-    var same = (a, b) => {
-      const x = Buffer.from(String(a || "")), y = Buffer.from(String(b || ""));
-      return x.length === y.length && x.length > 0 && crypto.timingSafeEqual(x, y);
-    };
-    var secretOf = async (name) => {
-      if (!name) return void 0;
-      if (process.env[name]) return process.env[name];
-      const { readSecret } = require_vault();
-      return readSecret(name);
-    };
-    var safeHeaders = (h = {}) => Object.fromEntries(Object.entries(h).filter(([k]) => !/^(cookie|authorization|x-api-key|proxy-authorization)$/i.test(k)).map(([k, v]) => [k, String(v).slice(0, 500)]));
-    var clientIp = (req) => String(req.ip || req.socket && req.socket.remoteAddress || "").replace(/^::ffff:/, "");
-    var PUBLIC = { role_id: 100 };
-    var runAs = async (email) => {
-      if (!email) return PUBLIC;
-      const User = require("@saltcorn/data/models/user");
-      const u = await User.findOne({ email });
-      return u ? u.session_object || u : PUBLIC;
-    };
-    var reply = (res, code, body) => {
-      res.status(code);
-      res.setHeader("Cache-Control", "no-store");
-      res.json(body);
-    };
-    var handle = async (req, res) => {
-      const t0 = Date.now();
-      const nom = String(req.params && req.params.nom || "");
-      try {
-        if (!NOM_RE.test(nom)) return reply(res, 404, { erreur: "introuvable" });
-        const p = await findPoint(nom);
-        if (!p || !p.actif) return reply(res, 404, { erreur: "introuvable" });
-        const m = req.method.toUpperCase();
-        const allowed = p.methode === "GET et POST" ? ["GET", "POST"] : [p.methode || "POST"];
-        if (!allowed.includes(m)) {
-          res.setHeader("Allow", allowed.join(", "));
-          return reply(res, 405, { erreur: "m\xE9thode non autoris\xE9e" });
-        }
-        const lim = +p.limite_minute || 60;
-        const { kv } = require_controle();
-        const n = await kv.incr(`dzf:api:${nom}:${clientIp(req)}:${Math.floor(Date.now() / 6e4)}`, 90);
-        res.setHeader("X-RateLimit-Limit", String(lim));
-        res.setHeader("X-RateLimit-Remaining", String(Math.max(0, lim - n)));
-        if (n > lim) {
-          res.setHeader("Retry-After", "60");
-          return reply(res, 429, { erreur: "trop de requ\xEAtes, r\xE9essaie dans une minute" });
-        }
-        const raw = typeof req.rawBody === "string" ? req.rawBody : Buffer.isBuffer(req.rawBody) ? req.rawBody.toString("utf8") : req.body && Object.keys(req.body).length ? JSON.stringify(req.body) : "";
-        if (raw.length > MAX_BODY) return reply(res, 413, { erreur: "corps trop gros" });
-        if (p.auth === "jeton") {
-          const want = await secretOf(p.secret);
-          const got = String(req.headers.authorization || "").replace(/^Bearer\s+/i, "") || req.headers["x-api-key"];
-          if (!want || !same(got, want)) return reply(res, 401, { erreur: "jeton invalide" });
-        } else if (p.auth === "hmac") {
-          const key2 = await secretOf(p.secret);
-          const got = String(req.headers[String(p.en_tete_signature || "x-signature").toLowerCase()] || "").replace(/^sha256=/, "");
-          const want = key2 && crypto.createHmac("sha256", key2).update(raw).digest("hex");
-          if (!want || !same(got, want)) return reply(res, 401, { erreur: "signature invalide" });
-        } else if (p.auth !== "aucune") return reply(res, 500, { erreur: "point mal configur\xE9" });
-        const Trigger = require("@saltcorn/data/models/trigger");
-        const wf = Trigger.findOne({ name: p.workflow });
-        if (!wf) return reply(res, 500, { erreur: "workflow absent" });
-        let corps = req.body;
-        if ((!corps || !Object.keys(corps).length) && raw) {
-          try {
-            corps = JSON.parse(raw);
-          } catch (e) {
-            corps = raw;
-          }
-        }
-        const ctx = { corps: corps || {}, corps_brut: raw, query: { ...req.query || {} }, entetes: safeHeaders(req.headers), ip: clientIp(req), methode: m, point: nom };
-        const out = await wf.runWithoutRow({ row: ctx, req, user: await runAs(p.executer_en) });
-        const key = String(p.reponse || "").trim();
-        const val = key ? (out || {})[key] : { ok: true };
-        const status = out && Number.isInteger(out.statut_http) && out.statut_http >= 200 && out.statut_http < 600 ? out.statut_http : 200;
-        record(nom, true, Date.now() - t0);
-        return reply(res, status, val === void 0 ? null : val);
-      } catch (e) {
-        record(nom, false, Date.now() - t0, e.message);
-        return reply(res, 500, { erreur: "erreur interne" });
-      }
-    };
-    var record = (nom, ok, ms, message) => {
-      try {
-        const { journal } = require_engine();
-        if (!ok) journal({ bloc: `api:${nom}`, ok: false, duree_ms: ms, message });
-      } catch (e) {
-      }
-    };
-    module2.exports = { handle, forget, NOM_RE, AUTHS, METHODES };
   }
 });
 

@@ -17,6 +17,7 @@ const SCHEMAS = {
   "rss_vers_table.table_articles": [S("titre", "String"), S("url", "String", { is_unique: true }), S("date", "Date"), S("resume", "String"), S("image", "String"), S("auteur", "String"), S("video_id", "String"), S("source", "String"), S("lu", "Bool")],
   "imap_vers_table.table_mails": [S("uid", "Integer"), S("message_id", "String", { is_unique: true }), S("dossier", "String"), S("de", "String"), S("de_nom", "String"), S("a", "String"), S("sujet", "String"), S("date", "Date"), S("extrait", "String"), S("corps", "String"), S("lu", "Bool")],
   "surveillance_sites.table_sites": [S("nom", "String"), S("url", "String", { is_unique: true }), S("actif", "Bool"), S("etat", "String"), S("ms", "Integer"), S("raison", "String"), S("verifie_le", "Date")],
+  "facture_pdf.table": [S("numero", "String"), S("client", "String"), S("libelle", "String"), S("montant", "Float"), S("pdf", "String")],
   "veille_cve.table_cve": [S("cve", "String", { is_unique: true }), S("gravite", "String"), S("score", "Float"), S("resume", "String"), S("url", "String"), S("publiee", "Date")],
 };
 const createTable = async (name, fields) => {
@@ -61,7 +62,20 @@ const installTemplate = async (key, input = {}) => {
     await WorkflowStep.create({ trigger_id, name: s.name, action_name: s.action_name, configuration: s.configuration, next_step: s.next_step || "", only_if: s.only_if || "", initial_step: i === 0 });
   }
   try { await require("@saltcorn/data/db/state").getState().refresh_triggers(true); } catch (e) { /* rien */ }
-  return { name, trigger_id, steps: steps.length, created };
+  /* modèle appelé depuis une page (widget) : on crée aussi son point d'API */
+  let point = null;
+  if (t.point) {
+    const { ensureTables } = require("../store");
+    const { points } = await ensureTables();
+    const pt = fill(t.point, vars);
+    let nom = String(pt.nom || t.key).toLowerCase().replace(/[^a-z0-9_-]/g, "-").slice(0, 60), i = 2;
+    const base = nom;
+    while (await points.getRow({ nom })) nom = `${base}-${i++}`;
+    await points.insertRow({ nom, workflow: name, methode: pt.methode || "POST", auth: pt.auth || "session", reponse: pt.reponse || "", limite_minute: +pt.limite_minute || 30, actif: true, note: `Créé par le modèle « ${t.label} »` });
+    try { require("../expose").forget(nom); } catch (e) { /* rien */ }
+    point = `/dzf/api/${nom}`;
+  }
+  return { name, trigger_id, steps: steps.length, created, point };
 };
 
 module.exports = { installTemplate, TEMPLATES, fill, SCHEMAS };

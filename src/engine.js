@@ -56,7 +56,7 @@ const tableNames = async () => {
   return (await Table.find({})).map((t) => t.name).filter((n) => n !== "users").sort();
 };
 const toField = async (p) => {
-  const base = { name: p.name, label: p.label || p.name, sublabel: p.help || "", required: !!p.required, default: p.default };
+  const base = { name: p.name, label: p.label || p.name, sublabel: p.help || "", required: !!p.required, default: p.default, ...(p.showIf ? { showIf: p.showIf } : {}) };
   switch (p.type) {
     case "int": return { ...base, type: "Integer" };
     case "number": return { ...base, type: "Float" };

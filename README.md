@@ -13,7 +13,7 @@ Des **blocs workflow** pour Saltcorn, comme les nœuds de n8n : chaque bloc fait
 
 C'est la partie « back » du kit. Le front (design, blocs UI) est [dysizz-ui](https://github.com/SidyLaye/saltcorn-dysizz-ui).
 
-## Les blocs (103)
+## Les blocs (182)
 
 | Catégorie | Blocs |
 |---|---|
@@ -27,7 +27,16 @@ C'est la partie « back » du kit. Le front (design, blocs UI) est [dysizz-ui](h
 | Logs & métriques (6) | métrique (écrire, lire moyenne / min / max), alerte sans spam (une fois par période, puis « rétabli »), journaux Saltcorn, envoi vers Loki / Grafana, purge des vieilles lignes |
 | Tâches & planification (9) | lancer un workflow, pour chaque élément (en parallèle borné), planifier plus tard (avec clé qui remplace), planificateur, file d'attente (ajouter, prendre, terminer — Redis ou table), lire / créer un agenda ICS |
 | Contrôle (11) | aiguiller, déjà traité ? (idempotence), disjoncteur, pause, vérifier, verrou (multi-serveurs), cache, limite de débit, Redis, journal, code JavaScript |
-| Services (3) | France Travail, écrire / lire un fichier |
+| Services (4) | France Travail, emplois multi-sources, écrire / lire un fichier |
+| Stockage (11) | S3 (AWS, OVH, Scaleway, MinIO, R2… : lister, envoyer, récupérer, supprimer, copier, lien temporaire), ZIP (créer, ouvrir, anti-bombe), WebDAV (Nextcloud, kDrive…), IPFS (Pinata ou nœud Kubo), base64 / empreinte |
+| Documents (8) | PDF (créer depuis Markdown avec tableaux et images, sans service externe ; convertir HTML / page web / Office et fusionner avec Gotenberg), extraire le texte (PDF, Word, Excel, OCR avec Tika), Excel (écrire, lire), Word (créer, lire, remplir un modèle {{champ}}), QR code (lien, Wi-Fi, carte de visite, virement SEPA ; SVG et PNG), Markdown → HTML |
+| IA avancée (8) | créer une image, transcrire un audio, lire à voix haute, vision et OCR (description, texte, champs JSON), agent avec outils (tes tables, tes workflows, le web), découper un texte, répondre avec tes documents (RAG), traduction DeepL / LibreTranslate |
+| Blockchain (10) | Ethereum et compatibles (Polygon, Base, Arbitrum, Optimism, BNB, Avalanche, Gnosis, réseaux de test) : solde et jetons ERC-20, lire un contrat, événements, état d'une transaction, envoyer (crypto, jeton, appel de contrat, avec plafond), signer / vérifier un message, créer un portefeuille (clé dans le coffre), appel RPC libre ; Bitcoin (mempool.space) ; cours (CoinGecko) |
+| DevOps (7) | GitHub, GitLab, Docker (conteneurs, journaux, stats, redémarrer), Dokploy, Kubernetes, Cloudflare (DNS dynamique, cache), API OVHcloud signée |
+| Données externes (10) | autre base PostgreSQL (lecture seule par défaut), Meilisearch / Elasticsearch, Qdrant, ClickHouse, InfluxDB, Supabase, Airtable, Notion, Google Sheets (compte de service), Baserow / NocoDB |
+| Objets connectés (3) | MQTT (publier, écouter), WebSocket, Home Assistant |
+| Pratique (10) | météo (Open-Meteo), adresse ↔ GPS (BAN, OpenStreetMap), itinéraire et distance, jours fériés et vacances scolaires, fiche entreprise (SIRENE), taux de change (BCE + franc CFA), Wikipédia, vérifier IBAN / SIRET / TVA / carte, prochaines dates cron, Stripe |
+| Messagerie + | Matrix, Mattermost / Rocket.Chat / Zulip, push Gotify / Pushover / Signal |
 
 Réglages communs à tous les blocs : **sortie**, **en cas d'erreur** (arrêter ou continuer), **délai max**, **essais** et **pause entre essais** (pause qui double à chaque fois ; pas de nouvel essai si l'erreur est définitive).
 

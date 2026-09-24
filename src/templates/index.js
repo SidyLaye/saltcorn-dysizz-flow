@@ -218,4 +218,54 @@ module.exports = [
       st("planifier", "dzf_planifier", { workflow: "%%workflow%%", dans: "%%jours%%", unite: "jours", contexte: '{"ligne":{"id":"{{id}}"}}', cle: "relance-%%table%%-{{id}}", sortie: "planifie" }),
     ),
   },
+  {
+    key: "meteo_matin", label: "Météo du matin sur ton téléphone", category: "Pratique", when: "Daily",
+    description: "Chaque matin : la météo du jour et des prochains jours pour ta ville, envoyée en notification (et un rappel parapluie s'il risque de pleuvoir).",
+    vars: [{ name: "ville", label: "Ville", default: "Paris" }],
+    steps: chain(
+      st("meteo", "dzf_meteo", { lieu: "%%ville%%", jours: 3, sortie: "meteo" }),
+      st("prevenir", "dzf_notifier", { qui: "administrateurs", titre: "Météo : {{meteo.resume}}", texte: "Aujourd'hui {{meteo.jours.0.min}}° à {{meteo.jours.0.max}}°, pluie {{meteo.jours.0.risque_pluie}} %. Demain : {{meteo.jours.1.ciel}}, {{meteo.jours.1.max}}°." }),
+      st("parapluie", "dzf_notifier", { qui: "administrateurs", titre: "☔ Prends un parapluie", texte: "Risque de pluie {{meteo.jours.0.risque_pluie}} % aujourd'hui à %%ville%%." }, { only_if: "meteo.jours[0].risque_pluie >= 60" }),
+    ),
+  },
+  {
+    key: "export_excel_s3", label: "Export Excel chaque semaine vers S3", category: "Stockage", when: "Weekly",
+    description: "Chaque semaine : exporte une table en vrai fichier Excel et le dépose dans ton stockage S3 (OVH, Scaleway, MinIO, AWS…). Une sauvegarde lisible par tout le monde.",
+    vars: [{ name: "table", label: "Table à exporter", default: "contacts" }, { name: "seau", label: "Bucket S3" }, { name: "point", label: "Adresse du service S3", default: "https://s3.gra.io.cloud.ovh.net" }, { name: "region", label: "Région", default: "gra" }],
+    steps: chain(
+      st("lignes", "dzf_table_chercher", { table: "%%table%%", filtre: "{}", limite: 50000, sortie: "lignes" }),
+      st("excel", "dzf_excel_ecrire", { donnees: "{{lignes}}", nom: "%%table%%.xlsx", sortie_fichier: "base64 (dans le workflow)", sortie: "excel" }),
+      st("envoyer", "dzf_s3_envoyer", { point: "%%point%%", region: "%%region%%", seau: "%%seau%%", cles: "S3_CLES", style: "chemin", source: "{{excel}}", cle: "exports/%%table%%-{{excel.octets}}.xlsx", sortie: "envoi" }),
+    ),
+  },
+  {
+    key: "facture_pdf", label: "PDF automatique à chaque nouvelle facture", category: "Documents", when: "Insert", tableVar: "table",
+    description: "Quand une facture (ou un devis) est ajoutée, fabrique son PDF propre avec un QR code de paiement SEPA, et range le lien du PDF dans la ligne.",
+    vars: [{ name: "table", label: "Table des factures", default: "factures" }, { name: "champ_pdf", label: "Champ où ranger le PDF", default: "pdf" }, { name: "societe", label: "Ta société", default: "Ma société" }, { name: "iban", label: "Ton IBAN", default: "" }],
+    steps: chain(
+      st("qr", "dzf_qr", { type: "virement SEPA", beneficiaire: "%%societe%%", iban: "%%iban%%", montant: "{{montant}}", reference: "Facture {{numero}}", taille: 240, sortie: "qr" }),
+      st("pdf", "dzf_pdf_creer", { format: "Markdown", titre: "Facture {{numero}}", auteur: "%%societe%%", contenu: "# Facture {{numero}}\n\n**%%societe%%**\n\nClient : {{client}}\n\n| Désignation | Montant |\n|---|---|\n| {{libelle}} | {{montant}} € |\n\n---\n\nPayer par virement en scannant ce code avec ton appli bancaire :\n\n![QR de paiement]({{qr.png_data_uri}})", nom: "facture-{{numero}}.pdf", sortie: "pdf" }),
+      st("ranger", "dzf_table_modifier", { table: "%%table%%", id: "{{id}}", valeurs: '{"%%champ_pdf%%":"{{pdf.chemin}}"}', sans_declencheurs: true, sortie: "modifies" }),
+    ),
+  },
+  {
+    key: "crypto_suivi", label: "Prévenir quand un portefeuille crypto reçoit des fonds", category: "Blockchain", when: "Hourly",
+    description: "Chaque heure : regarde les transferts d'un jeton (USDC, EURC…) arrivés sur ton adresse et te prévient avec le montant et le lien.",
+    vars: [{ name: "reseau", label: "Réseau", default: "Base" }, { name: "jeton", label: "Contrat du jeton", default: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913" }, { name: "adresse", label: "Ton adresse (0x…)" }],
+    steps: chain(
+      st("recus", "dzf_evm_evenements", { reseau: "%%reseau%%", contrat: "%%jeton%%", evenement: "Transfer(address indexed from, address indexed to, uint256 value)", derniers_blocs: 1800, filtre_2: "%%adresse%%", sortie: "recus" }),
+      st("prevenir", "dzf_notifier", { qui: "administrateurs", titre: "💰 {{recus.nombre}} transfert(s) reçu(s)", texte: "Dernier : {{recus.liste.0.value}} (unités brutes) de {{recus.liste.0.from}} — {{recus.liste.0.lien}}" }, { only_if: "recus.nombre > 0" }),
+    ),
+  },
+  {
+    key: "assistant_chat", label: "Assistant IA pour tes pages (chat)", category: "IA", when: "Never",
+    description: "Le cerveau du bloc « Chat IA » de dysizz-ui : reçoit la question de l'utilisateur connecté, laisse l'agent chercher dans tes tables ou lancer tes workflows, et renvoie la réponse. Crée aussi l'adresse /dzf/api/<nom> à mettre dans le bloc.",
+    vars: [{ name: "point", label: "Nom de l'adresse", default: "assistant" }, { name: "url_base", label: "API IA (compatible OpenAI)", default: "http://ollama:11434/v1" }, { name: "modele", label: "Modèle", default: "qwen2.5" },
+      { name: "variable_cle", label: "Secret de la clé (si besoin)", default: "" }, { name: "tables", label: "Tables consultables", default: "taches" }, { name: "workflows", label: "Workflows qu'il peut lancer", default: "" }],
+    point: { nom: "%%point%%", auth: "session", reponse: "agent", limite_minute: 20 },
+    steps: chain(
+      st("agent", "dzf_ia_agent", { url_base: "%%url_base%%", modele: "%%modele%%", variable_cle: "%%variable_cle%%", consigne: "{{corps.message}}", tables: "%%tables%%", workflows: "%%workflows%%", web: false, etapes_max: 6, sortie: "agent", si_erreur: "continuer", delai_max: 300 }),
+      st("secours", "dzf_definir", { valeurs: '{"agent":{"reponse":"Désolé, je n\'arrive pas à répondre pour l\'instant ({{agent_erreur}})."}}', fusionner: true }, { only_if: "!agent" }),
+    ),
+  },
 ];

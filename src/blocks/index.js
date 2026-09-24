@@ -11,6 +11,14 @@ const BLOCKS = [
   ...require("./ia"),
   ...require("./services"),
   ...require("./emplois"),
+  ...require("./stockage"),
+  ...require("./documents"),
+  ...require("./ia_plus"),
+  ...require("./blockchain"),
+  ...require("./devops"),
+  ...require("./donnees_ext"),
+  ...require("./connecte"),
+  ...require("./utilitaires"),
   ...require("./securite"),
   ...require("./surveillance"),
   ...require("./surveillance_plus"),
@@ -19,7 +27,7 @@ const BLOCKS = [
   ...require("./extras"),
   ...require("./controle"),
 ];
-const CATEGORIES = ["Données", "Transformer", "Réseau", "Messagerie", "IA", "Services", "Sécurité", "Surveillance", "Logs & métriques", "Tâches & planification", "Contrôle", "Extensions", "Mes blocs"];
+const CATEGORIES = ["Données", "Transformer", "Réseau", "Messagerie", "IA", "Documents", "Stockage", "Données externes", "Pratique", "Services", "Blockchain", "DevOps", "Objets connectés", "Sécurité", "Surveillance", "Logs & métriques", "Tâches & planification", "Contrôle", "Extensions", "Mes blocs"];
 
 /* garde-fou : pas deux blocs du même nom */
 const seen = new Set();

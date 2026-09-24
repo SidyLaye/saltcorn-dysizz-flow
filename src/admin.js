@@ -299,7 +299,7 @@ const installTpl = async (req, res) => {
     if (t && ["Insert", "Update"].includes(input.when) && !t.tableVar) input.when = t.when;
     if (t && t.tableVar && !["Insert", "Update", "Delete"].includes(input.when) && ["Insert", "Update"].includes(t.when)) input.when = input.when === "Never" ? "Never" : t.when;
     const r = await installTemplate(req.params.key, input);
-    res.redirect(`/dysizz-flow/editeur/${r.trigger_id}?ok=${encodeURIComponent(`Workflow « ${r.name} » créé${r.created.length ? ` (tables créées : ${r.created.join(", ")})` : ""}. Clique sur une étape pour la régler, puis « Essayer ».`)}`);
+    res.redirect(`/dysizz-flow/editeur/${r.trigger_id}?ok=${encodeURIComponent(`Workflow « ${r.name} » créé${r.created.length ? ` (tables créées : ${r.created.join(", ")})` : ""}${r.point ? `. Son adresse pour tes pages : ${r.point}` : ""}. Clique sur une étape pour la régler, puis « Essayer ».`)}`);
   } catch (e) { go(res, "/dysizz-flow/modeles", e.message, true); }
 };
 
