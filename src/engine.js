@@ -83,8 +83,12 @@ const resolveParams = (b, cfg, ctx) => {
     let v = cfg[d.name];
     if (v === undefined || v === "") v = d.default;
     /* raw : le bloc fait lui-même les {{ }} (ex. un modèle appliqué à chaque élément) */
-    if (!d.raw) v = interpolate(v, ctx);
-    if (d.type === "json" && typeof v === "string") { v = parseJSON(v, d.label || d.name); if (!d.raw) v = deep(v, ctx); }
+    if (d.type === "json" && typeof v === "string") {
+      /* JSON : on lit d'abord le JSON, puis on remplace les {{ }} valeur par valeur
+         (ainsi {"projet":"{{projet}}"} donne null si projet est vide, pas "") */
+      if (WHOLE.test(v)) { if (!d.raw) v = interpolate(v, ctx); }
+      else { v = parseJSON(v, d.label || d.name); if (!d.raw) v = deep(v, ctx); }
+    } else if (!d.raw) v = interpolate(v, ctx);
     if ((d.type === "int" || d.type === "number") && typeof v === "string" && v !== "") v = Number(v);
     if (d.type === "bool" && typeof v === "string") v = v === "true" || v === "on";
     if (d.required && (v === undefined || v === null || v === "")) throw new Error(`réglage « ${d.label || d.name} » manquant`);

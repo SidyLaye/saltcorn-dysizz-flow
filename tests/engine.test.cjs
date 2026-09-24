@@ -15,6 +15,8 @@ const B = (n) => BLOCKS.find((b) => b.name === n);
   assert.deepStrictEqual(deep({ x: "{{nom}}", y: ["{{a.b}}"] }, ctx), { x: "Sidy", y: [2] });
   const p = resolveParams({ params: [{ name: "j", type: "json" }, { name: "n", type: "int" }, { name: "m", type: "json", raw: true }] }, { j: '{"k":"{{nom}}"}', n: "5", m: '{"t":"{{item.x}}"}' }, ctx);
   assert.deepStrictEqual(p, { j: { k: "Sidy" }, n: 5, m: { t: "{{item.x}}" } }, "raw garde les {{ }}");
+  assert.deepStrictEqual(resolveParams({ params: [{ name: "v", type: "json" }] }, { v: '{"p":"{{vide}}","n":"{{a.b}}","t":"x {{nom}}"}' }, { vide: null, ...ctx }).v, { p: null, n: 2, t: "x Sidy" }, "types gardés dans le JSON");
+  assert.deepStrictEqual(resolveParams({ params: [{ name: "v", type: "json" }] }, { v: "{{a}}" }, ctx).v, { b: 2 }, "JSON donné par une variable");
   assert.throws(() => resolveParams({ params: [{ name: "x", required: true, label: "X" }] }, {}, {}), /X/);
 
   const items = [{ t: "A", p: 3, u: "x" }, { t: "B", p: 10, u: "y" }, { t: "C", p: 7, u: "x" }];

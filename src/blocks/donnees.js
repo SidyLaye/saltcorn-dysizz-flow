@@ -83,11 +83,17 @@ module.exports = [
   {
     name: "dzf_table_modifier", label: "Table : modifier", category: "Données", icon: "fas fa-pen", output: "modifies",
     description: "Modifie toutes les lignes qui correspondent au filtre (ou la ligne dont l'id est donné).",
-    params: [{ name: "table", label: "Table", type: "table", required: true }, { name: "id", label: "Id de la ligne (sinon filtre)", help: "Ex. {{id}}" }, FILTRE,
+    params: [{ name: "table", label: "Table", type: "table", required: true }, { name: "id", label: "Id de la ligne (sinon filtre)", help: "Ex. {{id}}" },
+      { name: "ids", label: "…ou une liste d'ids (ou de lignes)", help: "Ex. {{a_prevenir}} : chaque élément ou son champ id" }, FILTRE,
       { name: "valeurs", label: "Nouvelles valeurs (JSON)", type: "json", required: true }, { name: "sans_declencheurs", label: "Ne pas lancer les déclencheurs", type: "bool" }],
     run: async (p, ctx, api) => {
       const t = needWrite(T(api, p.table), api);
       if (p.id) { await t.updateRow(p.valeurs, +p.id, api.user, !!p.sans_declencheurs); return 1; }
+      if (p.ids) {
+        const ids = asList(p.ids).map((x) => (x && typeof x === "object" ? x.id : x)).map(Number).filter(Boolean);
+        for (const id of ids) await t.updateRow(p.valeurs, id, api.user, !!p.sans_declencheurs);
+        return ids.length;
+      }
       if (!p.filtre || !Object.keys(p.filtre).length) throw new Error("filtre vide : je refuse de modifier toute la table");
       const rows = await t.getRows(p.filtre, { fields: ["id"] });
       for (const r of rows) await t.updateRow(p.valeurs, r.id, api.user, !!p.sans_declencheurs);

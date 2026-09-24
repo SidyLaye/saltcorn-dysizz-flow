@@ -54,28 +54,35 @@ module.exports = [
   },
   {
     name: "dzf_rss", label: "Lire des flux RSS / Atom / YouTube", category: "Réseau", icon: "fas fa-rss", output: "articles", timeout: 120,
-    description: "Lit un ou plusieurs flux en parallèle (limité), nettoie le HTML, et renvoie une liste d'éléments {titre, url, date, resume, image, auteur, video_id, source}. Les sources en erreur sont listées à part, sans bloquer les autres.",
+    description: "Lit un ou plusieurs flux en parallèle (limité), nettoie le HTML, et renvoie une liste d'éléments {titre, url, date, resume, image, auteur, video_id, type, source}. Les sources en erreur sont listées à part, sans bloquer les autres.",
     params: [
       { name: "sources", label: "Sources", required: true, help: "Une adresse, ou une liste (ex. {{lignes}} d'une table de sources)" },
       { name: "champ_url", label: "Champ de l'adresse dans chaque source", default: "url" },
       { name: "champ_chaine", label: "Champ de la chaîne YouTube (@nom ou UC…)", default: "chaine" },
+      { name: "champs_source", label: "Champs de la source recopiés dans chaque élément", help: "Ex. theme,langue → item.source_theme, item.source_langue" },
       { name: "max_par_source", label: "Éléments max par source", type: "int", default: 30 },
       { name: "en_parallele", label: "Sources lues en même temps", type: "int", default: 4 },
     ],
     run: async (p, ctx, api) => {
       const sources = asList(p.sources).map((s) => (typeof s === "string" ? { url: s } : s));
-      const erreurs = [];
+      const erreurs = [], chaines = [];
+      const copy = String(p.champs_source || "").split(",").map((x) => x.trim()).filter(Boolean);
       const lists = await pool(sources, +p.en_parallele || 4, async (s) => {
         try {
           let url = s[p.champ_url || "url"];
           const ch = s[p.champ_chaine || "chaine"] || s.youtube_id;
-          if (!url && ch) url = youtubeFeed(s.youtube_id || (await resolveYoutube(ch)));
+          if (!url && ch) {
+            let id = s.youtube_id;
+            if (!id) { id = await resolveYoutube(ch); chaines.push({ source: s.id, youtube_id: id }); }
+            url = youtubeFeed(id);
+          }
           if (!url) throw new Error("pas d'adresse");
-          return parseFeed(await httpGet(url)).slice(0, +p.max_par_source || 30).map((it) => ({ ...it, source: s.id ?? url, source_nom: s.nom || "" }));
+          return parseFeed(await httpGet(url)).slice(0, +p.max_par_source || 30).map((it) => ({ ...it, type: it.video_id ? "vidéo" : "article", source: s.id ?? url, source_nom: s.nom || "", ...Object.fromEntries(copy.map((c) => [`source_${c}`, s[c]])) }));
         } catch (e) { erreurs.push({ source: s.id ?? s.url, nom: s.nom || s.url, erreur: e.message }); return []; }
       });
-      /* les éléments dans <sortie>, les sources en erreur dans <sortie>_erreurs */
-      return { __merge: { [api.out]: lists.flat(), [`${api.out}_erreurs`]: erreurs } };
+      /* <sortie> : les éléments ; <sortie>_erreurs : les sources en erreur ;
+         <sortie>_chaines : les identifiants YouTube trouvés (à enregistrer pour ne plus les chercher) */
+      return { __merge: { [api.out]: lists.flat(), [`${api.out}_erreurs`]: erreurs, [`${api.out}_chaines`]: chaines } };
     },
   },
   {

@@ -185,11 +185,14 @@ var require_engine = __commonJS({
       for (const d of b.params || []) {
         let v = cfg[d.name];
         if (v === void 0 || v === "") v = d.default;
-        if (!d.raw) v = interpolate(v, ctx);
         if (d.type === "json" && typeof v === "string") {
-          v = parseJSON(v, d.label || d.name);
-          if (!d.raw) v = deep(v, ctx);
-        }
+          if (WHOLE.test(v)) {
+            if (!d.raw) v = interpolate(v, ctx);
+          } else {
+            v = parseJSON(v, d.label || d.name);
+            if (!d.raw) v = deep(v, ctx);
+          }
+        } else if (!d.raw) v = interpolate(v, ctx);
         if ((d.type === "int" || d.type === "number") && typeof v === "string" && v !== "") v = Number(v);
         if (d.type === "bool" && typeof v === "string") v = v === "true" || v === "on";
         if (d.required && (v === void 0 || v === null || v === "")) throw new Error(`r\xE9glage \xAB ${d.label || d.name} \xBB manquant`);
@@ -401,6 +404,7 @@ var require_donnees = __commonJS({
         params: [
           { name: "table", label: "Table", type: "table", required: true },
           { name: "id", label: "Id de la ligne (sinon filtre)", help: "Ex. {{id}}" },
+          { name: "ids", label: "\u2026ou une liste d'ids (ou de lignes)", help: "Ex. {{a_prevenir}} : chaque \xE9l\xE9ment ou son champ id" },
           FILTRE,
           { name: "valeurs", label: "Nouvelles valeurs (JSON)", type: "json", required: true },
           { name: "sans_declencheurs", label: "Ne pas lancer les d\xE9clencheurs", type: "bool" }
@@ -410,6 +414,11 @@ var require_donnees = __commonJS({
           if (p.id) {
             await t.updateRow(p.valeurs, +p.id, api.user, !!p.sans_declencheurs);
             return 1;
+          }
+          if (p.ids) {
+            const ids = asList(p.ids).map((x) => x && typeof x === "object" ? x.id : x).map(Number).filter(Boolean);
+            for (const id of ids) await t.updateRow(p.valeurs, id, api.user, !!p.sans_declencheurs);
+            return ids.length;
           }
           if (!p.filtre || !Object.keys(p.filtre).length) throw new Error("filtre vide : je refuse de modifier toute la table");
           const rows = await t.getRows(p.filtre, { fields: ["id"] });
@@ -2662,30 +2671,39 @@ var require_reseau = __commonJS({
         icon: "fas fa-rss",
         output: "articles",
         timeout: 120,
-        description: "Lit un ou plusieurs flux en parall\xE8le (limit\xE9), nettoie le HTML, et renvoie une liste d'\xE9l\xE9ments {titre, url, date, resume, image, auteur, video_id, source}. Les sources en erreur sont list\xE9es \xE0 part, sans bloquer les autres.",
+        description: "Lit un ou plusieurs flux en parall\xE8le (limit\xE9), nettoie le HTML, et renvoie une liste d'\xE9l\xE9ments {titre, url, date, resume, image, auteur, video_id, type, source}. Les sources en erreur sont list\xE9es \xE0 part, sans bloquer les autres.",
         params: [
           { name: "sources", label: "Sources", required: true, help: "Une adresse, ou une liste (ex. {{lignes}} d'une table de sources)" },
           { name: "champ_url", label: "Champ de l'adresse dans chaque source", default: "url" },
           { name: "champ_chaine", label: "Champ de la cha\xEEne YouTube (@nom ou UC\u2026)", default: "chaine" },
+          { name: "champs_source", label: "Champs de la source recopi\xE9s dans chaque \xE9l\xE9ment", help: "Ex. theme,langue \u2192 item.source_theme, item.source_langue" },
           { name: "max_par_source", label: "\xC9l\xE9ments max par source", type: "int", default: 30 },
           { name: "en_parallele", label: "Sources lues en m\xEAme temps", type: "int", default: 4 }
         ],
         run: async (p, ctx, api) => {
           const sources = asList(p.sources).map((s) => typeof s === "string" ? { url: s } : s);
-          const erreurs = [];
+          const erreurs = [], chaines = [];
+          const copy = String(p.champs_source || "").split(",").map((x) => x.trim()).filter(Boolean);
           const lists = await pool(sources, +p.en_parallele || 4, async (s) => {
             try {
               let url = s[p.champ_url || "url"];
               const ch = s[p.champ_chaine || "chaine"] || s.youtube_id;
-              if (!url && ch) url = youtubeFeed(s.youtube_id || await resolveYoutube(ch));
+              if (!url && ch) {
+                let id = s.youtube_id;
+                if (!id) {
+                  id = await resolveYoutube(ch);
+                  chaines.push({ source: s.id, youtube_id: id });
+                }
+                url = youtubeFeed(id);
+              }
               if (!url) throw new Error("pas d'adresse");
-              return parseFeed(await httpGet(url)).slice(0, +p.max_par_source || 30).map((it) => ({ ...it, source: s.id ?? url, source_nom: s.nom || "" }));
+              return parseFeed(await httpGet(url)).slice(0, +p.max_par_source || 30).map((it) => ({ ...it, type: it.video_id ? "vid\xE9o" : "article", source: s.id ?? url, source_nom: s.nom || "", ...Object.fromEntries(copy.map((c) => [`source_${c}`, s[c]])) }));
             } catch (e) {
               erreurs.push({ source: s.id ?? s.url, nom: s.nom || s.url, erreur: e.message });
               return [];
             }
           });
-          return { __merge: { [api.out]: lists.flat(), [`${api.out}_erreurs`]: erreurs } };
+          return { __merge: { [api.out]: lists.flat(), [`${api.out}_erreurs`]: erreurs, [`${api.out}_chaines`]: chaines } };
         }
       },
       {
