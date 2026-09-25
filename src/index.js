@@ -46,6 +46,16 @@ module.exports = {
   dysizz_flow_api: {
     writeSecret: (nom, valeur, note) => require("./vault").writeSecret(nom, valeur, note),
     hasSecret: async (nom) => { try { return (await require("./vault").readSecret(nom)) !== undefined; } catch (e) { return false; } },
+    /* CRM dont les secrets sont lus dans l'environnement puis le coffre (jamais renvoyés à l'appelant) */
+    crmDepuisCoffre: (type, reglages, prefixe, mode) => {
+      const pre = String(prefixe || "LEADS_CRM").replace(/[^\w]/g, "");
+      const secret = async (k) => { const n = `${pre}_${String(k).toUpperCase()}`; if (process.env[n]) return process.env[n]; try { return await require("./vault").readSecret(n); } catch (e) { return undefined; } };
+      return require("./lib/leads/crm").creerCrm(type, { ...(reglages || {}), secret }, { mode });
+    },
+    /* moteur leads immobiliers (utilisé par dysizz-leads) */
+    leads: require("./lib/leads"),
+    /* écouteurs de boîtes mail */
+    ecouteurs: { demarrerTous: () => require("./ecouteurs").demarrerTous(), etat: () => require("./ecouteurs").etat(), tableDest: (t) => require("./ecouteurs").tableDest(t) },
   },
   /* tuiles sur l'accueil Dysizz (/dysizz, fourni par dysizz-ui) */
   dysizz_hub,
@@ -54,7 +64,10 @@ module.exports = {
   onLoad: async () => {
     try { registerExternal(); } catch (e) { /* rien */ }
     try { await registerUserBlocks(); } catch (e) { /* table pas encore créée : normal au 1er démarrage */ }
+    try { await require("./ecouteurs").surveiller(); } catch (e) { /* rien */ }
   },
+  /* événement émis par les écouteurs de boîtes mail : un workflow peut s'y abonner */
+  eventTypes: { DzfMailRecu: { hasChannel: true } },
   routes: [
     { url: "/dysizz-flow", method: "get", callback: withAssets(admin.library) },
     { url: "/dysizz-flow/bloc/:name", method: "get", callback: withAssets(admin.blockPage) },
@@ -79,6 +92,9 @@ module.exports = {
     { url: "/dysizz-flow/api", method: "get", callback: withAssets(admin2.apiPage) },
     { url: "/dysizz-flow/api/save", method: "post", callback: admin2.apiSave },
     { url: "/dysizz-flow/api/delete", method: "post", callback: admin2.apiDelete },
+    { url: "/dysizz-flow/ecouteurs", method: "get", callback: withAssets(admin2.ecoutePage) },
+    { url: "/dysizz-flow/ecouteurs/save", method: "post", callback: admin2.ecouteSave },
+    { url: "/dysizz-flow/ecouteurs/delete", method: "post", callback: admin2.ecouteDelete },
     { url: "/dysizz-flow/coffre", method: "get", callback: withAssets(admin2.vaultPage) },
     { url: "/dysizz-flow/coffre/save", method: "post", callback: admin2.vaultSave },
     { url: "/dysizz-flow/coffre/delete", method: "post", callback: admin2.vaultDelete },

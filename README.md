@@ -13,7 +13,7 @@ Des **blocs workflow** pour Saltcorn, comme les nœuds de n8n : chaque bloc fait
 
 C'est la partie « back » du kit. Le front (design, blocs UI) est [dysizz-ui](https://github.com/SidyLaye/saltcorn-dysizz-ui).
 
-## Les blocs (182)
+## Les blocs (201)
 
 | Catégorie | Blocs |
 |---|---|
@@ -32,7 +32,9 @@ C'est la partie « back » du kit. Le front (design, blocs UI) est [dysizz-ui](h
 | Documents (8) | PDF (créer depuis Markdown avec tableaux et images, sans service externe ; convertir HTML / page web / Office et fusionner avec Gotenberg), extraire le texte (PDF, Word, Excel, OCR avec Tika), Excel (écrire, lire), Word (créer, lire, remplir un modèle {{champ}}), QR code (lien, Wi-Fi, carte de visite, virement SEPA ; SVG et PNG), Markdown → HTML |
 | IA avancée (8) | créer une image, transcrire un audio, lire à voix haute, vision et OCR (description, texte, champs JSON), agent avec outils (tes tables, tes workflows, le web), découper un texte, répondre avec tes documents (RAG), traduction DeepL / LibreTranslate |
 | Blockchain (10) | Ethereum et compatibles (Polygon, Base, Arbitrum, Optimism, BNB, Avalanche, Gnosis, réseaux de test) : solde et jetons ERC-20, lire un contrat, événements, état d'une transaction, envoyer (crypto, jeton, appel de contrat, avec plafond), signer / vérifier un message, créer un portefeuille (clé dans le coffre), appel RPC libre ; Bitcoin (mempool.space) ; cours (CoinGecko) |
-| DevOps (7) | GitHub, GitLab, Docker (conteneurs, journaux, stats, redémarrer), Dokploy, Kubernetes, Cloudflare (DNS dynamique, cache), API OVHcloud signée |
+| DevOps (6) | GitHub, GitLab, Docker (conteneurs, journaux, stats, redémarrer), Dokploy, Kubernetes, Cloudflare (DNS dynamique, cache) |
+| OVHcloud (14) | créer une clé d'accès (lien de validation), compte et services qui expirent, domaines (expiration, DNS, verrou, changer les serveurs DNS), enregistrements DNS (lister, créer ou mettre à jour sans doublon, supprimer, vérification publique), **sous-domaine en une fois** (DNS + hébergement + SSL), zone (export / import BIND, DNSSEC, rafraîchir), redirections web, e-mails MX Plan (boîtes, mots de passe depuis le coffre, redirections, répondeur), hébergement web (multisite, SSL, bases), VPS (état, redémarrer, snapshots), serveurs dédiés, Public Cloud (instances), factures et commandes non payées, appel libre signé |
+| Leads immobiliers (6) | lire un mail de portail sans IA (30 portails : Leboncoin, SeLoger, Green-Acres, Figaro, Bien'ici, Properstar, French-Property, Rightmove, sites d'agence AC3…), traiter un mail (bien, agence, contact, consentement, destinataires), retrouver le bien (référence, variantes, critères, contradiction = rejet), qui reçoit (règles, congés, mi-temps), absents de la semaine, consulter le CRM — Immofacile ou Salesforce, mode ombre par défaut |
 | Données externes (10) | autre base PostgreSQL (lecture seule par défaut), Meilisearch / Elasticsearch, Qdrant, ClickHouse, InfluxDB, Supabase, Airtable, Notion, Google Sheets (compte de service), Baserow / NocoDB |
 | Objets connectés (3) | MQTT (publier, écouter), WebSocket, Home Assistant |
 | Pratique (10) | météo (Open-Meteo), adresse ↔ GPS (BAN, OpenStreetMap), itinéraire et distance, jours fériés et vacances scolaires, fiche entreprise (SIRENE), taux de change (BCE + franc CFA), Wikipédia, vérifier IBAN / SIRET / TVA / carte, prochaines dates cron, Stripe |
@@ -62,6 +64,10 @@ Un bloc marche aussi seul : comme déclencheur sur une table, en tâche planifi�
 - Les droits de la table sont respectés quand un utilisateur lance un bloc. Le SQL passe par une transaction en lecture seule.
 - Tables du plugin créées au premier usage, et complétées toutes seules quand une nouvelle version ajoute un champ.
 - Les erreurs sont notées dans `/dysizz-flow/journal`, la vue d'ensemble dans `/dysizz-flow/supervision`. Pour suivre un workflow pas à pas, utilise les « Workflow runs » de Saltcorn.
+
+## Écouteurs de boîtes mail (temps réel)
+
+`/dysizz-flow/ecouteurs` : une boîte IMAP reste écoutée (IDLE, relève de secours toutes les 5 minutes). Chaque mail est rangé une seule fois dans la table choisie, puis l'événement **DzfMailRecu** est émis : un workflow « Quand : DzfMailRecu » le traite (les champs du mail sont dans le contexte : `id`, `objet`, `expediteur`…). Lecture seule par défaut (rien n'est marqué lu ni déplacé). Le curseur (dernier UID) est gardé dans `dzf_ecouteurs` : pas de parcours de toute la table à chaque relève. Les écouteurs tournent dans le processus principal de Saltcorn et suivent la table (un changement est pris en compte en 30 s).
 
 ## Points d'API (exposition)
 

@@ -1,5 +1,12 @@
 # Journal des versions
 
+## 2.4.0
+
+- **Famille OVHcloud (14 blocs)** : tout gérer sans ouvrir l'espace client — clé d'accès, services qui expirent, domaines, enregistrements DNS sans doublon, sous-domaine complet en un bloc (DNS + hébergement + SSL, vérification publique), zone (export / import, DNSSEC), redirections, e-mails MX Plan, hébergement, VPS, dédiés, Public Cloud, factures. Client signé commun : horloge OVH mesurée une fois, reprise sur 429/5xx, erreurs lisibles.
+- **Famille Leads immobiliers (6 blocs)** et moteur `lib/leads` : lecture déterministe des mails de 30 portails (chaque champ dit d'où il vient), rapprochement du bien selon la procédure « non-conformes » (référence, moins le dernier caractère, segments de droite à gauche, critères un par un, contradiction = rejet), contact (priorité à l'e-mail puis au plus récent), consentement anti-démarchage avec le mail d'origine en preuve, destinataires (règles, congés, mi-temps, chaîne de remplacement, siège). Adaptateurs CRM Immofacile V2 et Salesforce, mode ombre (écritures bloquées au niveau HTTP). Mesuré sur 4 000 vrais mails : moins d'1 ms par mail ; même bien que l'ancien système dans 1 794 cas sur 1 803 (les 9 écarts : identifiant CRM donné par le portail, ou référence tronquée par l'ancien) ; 216 biens retrouvés que l'ancien envoyait en quarantaine ; 24 laissés « à vérifier » que l'ancien trouvait. Mêmes destinataires dans 1 780 cas sur 1 827 (écarts dus aux changements de réglages depuis).
+- **Écouteurs de boîtes mail** (IMAP IDLE) : remplacent le plugin imap-idle ; événement `DzfMailRecu` pour les workflows.
+- API pour les autres plugins : `dysizz_flow_api.leads` (moteur), `crmDepuisCoffre` (CRM dont les secrets restent dans le coffre), `ecouteurs`.
+
 ## 2.3.1
 
 - Flux plus solides : nouvel essai si le site coupe la connexion, flux YouTube en 404 lus par la playlist « mises en ligne » de la chaîne, et une page web donnée à la place d'un flux fait chercher le flux tout seul (lien annoncé par la page, puis /feed, /rss.xml…). Le flux trouvé est rendu dans `<sortie>_chaines`.

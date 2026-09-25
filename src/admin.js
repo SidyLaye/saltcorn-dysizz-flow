@@ -18,7 +18,7 @@ const TYPE_LABEL = { texte: "texte court", text: "texte long", int: "nombre enti
 
 const page = (res, req, title, active, html) => res.sendWrap({ title, requestFluidLayout: true }, {
   above: [{ type: "blank", isHTML: true, contents: `<div class="dzf">
-<nav class="dzf-tabs">${[["workflows", "Workflows", "fas fa-project-diagram"], ["modeles", "Catalogue", "fas fa-magic"], ["", "Blocs", "fas fa-cubes"], ["atelier", "Atelier", "fas fa-tools"], ["api", "Points d'API", "fas fa-plug"], ["coffre", "Coffre", "fas fa-lock"], ["supervision", "Supervision", "fas fa-tachometer-alt"], ["journal", "Journal", "fas fa-clipboard-list"]]
+<nav class="dzf-tabs">${[["workflows", "Workflows", "fas fa-project-diagram"], ["modeles", "Catalogue", "fas fa-magic"], ["", "Blocs", "fas fa-cubes"], ["atelier", "Atelier", "fas fa-tools"], ["api", "Points d'API", "fas fa-plug"], ["ecouteurs", "Écouteurs", "fas fa-satellite-dish"], ["coffre", "Coffre", "fas fa-lock"], ["supervision", "Supervision", "fas fa-tachometer-alt"], ["journal", "Journal", "fas fa-clipboard-list"]]
     .map(([u, l, i]) => `<a href="/dysizz-flow${u ? "/" + u : ""}" class="${active === u ? "on" : ""}"><i class="${i}"></i>${l}</a>`).join("")}
 <a href="/dysizz" class="dzf-ext"><i class="fas fa-th-large"></i>Accueil</a></nav>
 ${flash(req)}${html}</div>`.replace(/\{\{/g, "&#123;&#123;").replace(/\}\}/g, "&#125;&#125;") }],

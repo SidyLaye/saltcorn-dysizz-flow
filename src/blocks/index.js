@@ -16,6 +16,8 @@ const BLOCKS = [
   ...require("./ia_plus"),
   ...require("./blockchain"),
   ...require("./devops"),
+  ...require("./ovh"),
+  ...require("./leads"),
   ...require("./donnees_ext"),
   ...require("./connecte"),
   ...require("./utilitaires"),
@@ -27,7 +29,7 @@ const BLOCKS = [
   ...require("./extras"),
   ...require("./controle"),
 ];
-const CATEGORIES = ["Données", "Transformer", "Réseau", "Messagerie", "IA", "Documents", "Stockage", "Données externes", "Pratique", "Services", "Blockchain", "DevOps", "Objets connectés", "Sécurité", "Surveillance", "Logs & métriques", "Tâches & planification", "Contrôle", "Extensions", "Mes blocs"];
+const CATEGORIES = ["Données", "Transformer", "Réseau", "Messagerie", "IA", "Documents", "Stockage", "Données externes", "Pratique", "Services", "Blockchain", "DevOps", "OVHcloud", "Leads immobiliers", "Objets connectés", "Sécurité", "Surveillance", "Logs & métriques", "Tâches & planification", "Contrôle", "Extensions", "Mes blocs"];
 
 /* garde-fou : pas deux blocs du même nom */
 const seen = new Set();

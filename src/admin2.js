@@ -69,6 +69,50 @@ const apiDelete = async (req, res) => {
   go(res, "/dysizz-flow/api", "Point supprimé");
 };
 
+/* ---------- écouteurs de boîtes mail ---------- */
+const ecoutePage = async (req, res) => {
+  if (!isAdmin(req)) return denied(res);
+  const { ecouteurs } = await ensureTables();
+  const rows = await ecouteurs.getRows({}, { orderBy: "nom" });
+  const vivants = new Map(require("./ecouteurs").etat().map((x) => [x.nom, x]));
+  const form = (e = {}) => `<form method="post" action="/dysizz-flow/ecouteurs/save" class="dzf-point">${hidden(req)}<input type="hidden" name="id" value="${e.id || ""}">
+<label>Nom<input class="form-control form-control-sm" name="nom" value="${esc(e.nom || "")}" required pattern="[a-z0-9][a-z0-9_-]{0,60}" placeholder="ex. info-agence"></label>
+<label>Serveur IMAP<input class="form-control form-control-sm" name="serveur" value="${esc(e.serveur || "")}" required placeholder="ssl0.ovh.net"></label>
+<label>Port<input class="form-control form-control-sm" type="number" name="port" value="${esc(e.port || 993)}"></label>
+<label>Identifiant<input class="form-control form-control-sm" name="utilisateur" value="${esc(e.utilisateur || "")}" required></label>
+<label>Mot de passe (nom du secret)<input class="form-control form-control-sm" name="secret" value="${esc(e.secret || "")}" required placeholder="ex. MAIL_INFO"></label>
+<label>Dossier<input class="form-control form-control-sm" name="dossier" value="${esc(e.dossier || "INBOX")}"></label>
+<label>Table où ranger les mails<input class="form-control form-control-sm" name="table_dest" value="${esc(e.table_dest || "")}" required placeholder="ex. mails_entrants"></label>
+<label class="dzf-check"><input type="checkbox" name="marquer_lu" ${e.marquer_lu ? "checked" : ""}> Marquer les mails comme lus (sinon : lecture seule stricte)</label>
+<label class="dzf-check"><input type="checkbox" name="actif" ${e.actif !== false ? "checked" : ""}> Actif</label>
+<button class="btn btn-primary btn-sm">Enregistrer et (re)démarrer</button></form>`;
+  page(res, req, "Écouteurs de boîtes mail", "ecouteurs", `<div class="dzf-intro"><p>Un écouteur reste connecté à une boîte (IMAP IDLE) : chaque nouveau mail est rangé dans ta table puis l'événement <code>DzfMailRecu</code> est émis. Crée un workflow « Quand : DzfMailRecu » pour le traiter. Relève de secours toutes les 5 minutes. Par défaut rien n'est modifié sur le serveur.</p></div>
+${rows.map((e) => { const v = vivants.get(e.nom); return `<details class="dzf-box"><summary><b>${esc(e.nom)}</b> ${esc(e.utilisateur)} · ${esc(e.dossier || "INBOX")} → <code>${esc(e.table_dest)}</code> · <span class="${e.etat === "erreur" ? "ko" : "ok"}">${esc(e.etat || (e.actif ? "en attente" : "arrêté"))}</span>${e.vu_le ? " · vu " + esc(new Date(e.vu_le).toLocaleString("fr-FR")) : ""} · ${+e.recus || 0} reçu(s)${e.erreur ? ` · <span class="ko">${esc(e.erreur)}</span>` : ""}</summary>${form(e)}
+<form method="post" action="/dysizz-flow/ecouteurs/delete">${hidden(req)}<input type="hidden" name="id" value="${e.id}"><button class="btn btn-outline-danger btn-sm">Supprimer</button></form></details>`; }).join("") || '<p class="dzf-muted">Aucun écouteur.</p>'}
+<h2>Nouvel écouteur</h2>${form()}`);
+};
+const ecouteSave = async (req, res) => {
+  if (!isAdmin(req)) return denied(res);
+  const b = req.body || {};
+  const nom = String(b.nom || "").trim().toLowerCase();
+  if (!/^[a-z0-9][a-z0-9_-]{0,60}$/.test(nom)) return go(res, "/dysizz-flow/ecouteurs", "Nom invalide", true);
+  const table = String(b.table_dest || "").trim();
+  if (!/^[a-z][a-z0-9_]{1,60}$/.test(table)) return go(res, "/dysizz-flow/ecouteurs", "Nom de table invalide (minuscules, chiffres, _)", true);
+  const row = { nom, serveur: String(b.serveur || "").trim(), port: +b.port || 993, utilisateur: String(b.utilisateur || "").trim(), secret: String(b.secret || "").replace(/[^\w.-]/g, ""), dossier: String(b.dossier || "INBOX").trim(), table_dest: table, marquer_lu: b.marquer_lu === "on", actif: b.actif === "on" };
+  const { ecouteurs } = await ensureTables();
+  try { if (b.id) await ecouteurs.updateRow(row, +b.id); else await ecouteurs.insertRow({ ...row, dernier_uid: 0, recus: 0 }); } catch (e) { return go(res, "/dysizz-flow/ecouteurs", "Impossible : " + e.message, true); }
+  await require("./ecouteurs").tableDest(table).catch(() => {});
+  await require("./ecouteurs").demarrerTous().catch(() => 0);
+  go(res, "/dysizz-flow/ecouteurs", `Écouteur « ${nom} » enregistré : il démarre dans les 30 secondes`);
+};
+const ecouteDelete = async (req, res) => {
+  if (!isAdmin(req)) return denied(res);
+  const { ecouteurs } = await ensureTables();
+  await ecouteurs.deleteRows({ id: +(req.body || {}).id });
+  await require("./ecouteurs").demarrerTous().catch(() => 0);
+  go(res, "/dysizz-flow/ecouteurs", "Écouteur supprimé");
+};
+
 /* ---------- coffre ---------- */
 const vaultPage = async (req, res) => {
   if (!isAdmin(req)) return denied(res);
@@ -151,4 +195,4 @@ ${errs.map((r) => `<tr class="dzf-bad"><td>${esc(new Date(r.started_at).toLocale
 ${lastErr.map((r) => `<tr><td>${esc(new Date(r.quand).toLocaleString("fr-FR"))}</td><td><code>${esc(r.bloc)}</code></td><td>${esc(r.message || "")}</td></tr>`).join("") || '<tr><td colspan="3" class="dzf-muted">Aucune.</td></tr>'}</table>`);
 };
 
-module.exports = { apiPage, apiSave, apiDelete, vaultPage, vaultSave, vaultDelete, monitorPage };
+module.exports = { ecoutePage, ecouteSave, ecouteDelete, apiPage, apiSave, apiDelete, vaultPage, vaultSave, vaultDelete, monitorPage };

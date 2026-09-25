@@ -157,7 +157,7 @@ module.exports = [
     },
   },
   {
-    name: "dzf_ovh", label: "OVHcloud : API", category: "DevOps", icon: "fas fa-server", output: "ovh", timeout: 60,
+    name: "dzf_ovh", label: "OVHcloud : API (appel libre)", category: "OVHcloud", icon: "fas fa-server", output: "ovh", timeout: 60,
     description: "Appelle l'API OVHcloud (signée) : tes serveurs, domaines, zones DNS, factures, e-mails MX Plan… Ex. GET /me/bill pour tes factures.",
     params: [{ name: "cles", label: "Secret des clés", default: "OVH_CLES", help: "Secret « APPLICATION_KEY:APPLICATION_SECRET:CONSUMER_KEY »" }, { name: "zone", label: "Région", type: "select", options: ["ovh-eu", "ovh-ca", "ovh-us"], default: "ovh-eu" },
       { name: "methode", label: "Méthode", type: "select", options: ["GET", "POST", "PUT", "DELETE"], default: "GET" }, { name: "chemin", label: "Chemin", required: true, default: "/me", help: "Ex. /domain/zone/mondomaine.fr/record, /dedicated/server, /me/bill" }, { name: "corps", label: "Corps (JSON)", type: "json" }],

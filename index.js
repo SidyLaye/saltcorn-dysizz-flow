@@ -1,4 +1,4 @@
-/* dysizz-flow 2.3.1 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.4.0 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.3.1" : "dev";
+    var VERSION2 = true ? "2.4.0" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -79,6 +79,7 @@ var require_store = __commonJS({
       points: { name: "dzf_points", fields: [["nom", "String", { required: true, is_unique: true }], ["workflow", "String"], ["methode", "String"], ["auth", "String"], ["secret", "String"], ["en_tete_signature", "String"], ["reponse", "String"], ["limite_minute", "Integer"], ["actif", "Bool"], ["note", "String"], ["executer_en", "String"]] },
       file: { name: "dzf_file", fields: [["file", "String", { required: true }], ["charge", "String"], ["etat", "String"], ["cree_le", "Date"], ["pris_le", "Date"], ["essais", "Integer"]] },
       versions: { name: "dzf_versions", fields: [["nom", "String", { required: true }], ["version", "Integer"], ["contenu", "String"], ["quand", "Date"], ["par", "String"]] },
+      ecouteurs: { name: "dzf_ecouteurs", fields: [["nom", "String", { required: true, is_unique: true }], ["serveur", "String"], ["port", "Integer"], ["utilisateur", "String"], ["secret", "String"], ["dossier", "String"], ["table_dest", "String"], ["actif", "Bool"], ["marquer_lu", "Bool"], ["dernier_uid", "Integer"], ["uidvalidity", "String"], ["etat", "String"], ["vu_le", "Date"], ["erreur", "String"], ["recus", "Integer"]] },
       verrous: { name: "dzf_verrous", fields: [["nom", "String", { required: true, is_unique: true }], ["jusqu_a", "Date"], ["par", "String"]] }
     };
     var ready = null;
@@ -91238,8 +91239,8 @@ var require_devops = __commonJS({
       },
       {
         name: "dzf_ovh",
-        label: "OVHcloud : API",
-        category: "DevOps",
+        label: "OVHcloud : API (appel libre)",
+        category: "OVHcloud",
         icon: "fas fa-server",
         output: "ovh",
         timeout: 60,
@@ -91268,6 +91269,2613 @@ var require_devops = __commonJS({
           }
           if (!r.ok) throw new Error(`OVH : HTTP ${r.status} ${j && j.message || txt.slice(0, 200)}`);
           return j;
+        }
+      }
+    ];
+  }
+});
+
+// src/lib/ovh.js
+var require_ovh = __commonJS({
+  "src/lib/ovh.js"(exports2, module2) {
+    "use strict";
+    var crypto = require("crypto");
+    var BASES = { "ovh-eu": "https://eu.api.ovh.com/1.0", "ovh-ca": "https://ca.api.ovh.com/1.0", "ovh-us": "https://api.us.ovhcloud.com/1.0" };
+    var decalages = /* @__PURE__ */ new Map();
+    var client = ({ cles, zone = "ovh-eu", fetch: f = fetch } = {}) => {
+      const [ak, as, ck] = String(cles || "").split(":").map((s) => s.trim());
+      if (!ak || !as) throw Object.assign(new Error("cl\xE9s OVH attendues : \xAB APPLICATION_KEY:APPLICATION_SECRET:CONSUMER_KEY \xBB"), { permanent: true });
+      const B = BASES[zone] || BASES["ovh-eu"];
+      const maintenant = async () => {
+        if (!decalages.has(B)) {
+          const t = +await (await f(`${B}/auth/time`)).text();
+          decalages.set(B, t - Math.floor(Date.now() / 1e3));
+        }
+        return Math.floor(Date.now() / 1e3) + decalages.get(B);
+      };
+      const appel = async (methode, chemin, corps, { signe = true } = {}) => {
+        const url = B + chemin, body = corps === void 0 || corps === null ? "" : JSON.stringify(corps);
+        for (let essai = 1; essai <= 3; essai++) {
+          const h = { "X-Ovh-Application": ak, "Content-Type": "application/json", Accept: "application/json" };
+          if (signe) {
+            if (!ck) throw Object.assign(new Error("CONSUMER_KEY manquante : utilise \xAB OVH : cr\xE9er une cl\xE9 d'acc\xE8s \xBB"), { permanent: true });
+            const t = String(await maintenant());
+            h["X-Ovh-Consumer"] = ck;
+            h["X-Ovh-Timestamp"] = t;
+            h["X-Ovh-Signature"] = "$1$" + crypto.createHash("sha1").update([as, ck, methode, url, body, t].join("+")).digest("hex");
+          }
+          const r = await f(url, { method: methode, headers: h, body: body || void 0 });
+          const txt = await r.text();
+          let j;
+          try {
+            j = txt ? JSON.parse(txt) : null;
+          } catch (e) {
+            j = txt;
+          }
+          if ((r.status === 429 || r.status >= 500) && essai < 3) {
+            await new Promise((ok) => setTimeout(ok, 800 * essai));
+            continue;
+          }
+          if (r.status === 400 && /timestamp/i.test(txt) && essai < 3) {
+            decalages.delete(B);
+            continue;
+          }
+          if (!r.ok) {
+            const msg = j && (j.message || j.errorCode) || txt.slice(0, 200);
+            throw Object.assign(new Error(`OVH ${methode} ${chemin} \u2192 HTTP ${r.status} : ${msg}`), { http: r.status, permanent: r.status === 400 || r.status === 403 || r.status === 404 || r.status === 409 });
+          }
+          return j;
+        }
+      };
+      const detailler = async (cheminListe, cheminObjet, { max = 200, concurrence = 8 } = {}) => {
+        const ids = (await appel("GET", cheminListe) || []).slice(0, max);
+        const out = new Array(ids.length);
+        let i = 0;
+        await Promise.all(Array.from({ length: Math.min(concurrence, ids.length) }, async () => {
+          while (i < ids.length) {
+            const k = i++;
+            try {
+              out[k] = await appel("GET", cheminObjet(ids[k]));
+            } catch (e) {
+              out[k] = { id: ids[k], erreur: e.message };
+            }
+          }
+        }));
+        return out;
+      };
+      return {
+        get: (c) => appel("GET", c),
+        post: (c, b) => appel("POST", c, b ?? {}),
+        put: (c, b) => appel("PUT", c, b ?? {}),
+        del: (c) => appel("DELETE", c),
+        appel,
+        detailler,
+        base: B,
+        ak
+      };
+    };
+    var demanderCle = async ({ ak, zone = "ovh-eu", droits, retour, fetch: f = fetch }) => {
+      const B = BASES[zone] || BASES["ovh-eu"];
+      const r = await f(`${B}/auth/credential`, { method: "POST", headers: { "X-Ovh-Application": ak, "Content-Type": "application/json" }, body: JSON.stringify({ accessRules: droits, redirection: retour || void 0 }) });
+      const j = await r.json();
+      if (!r.ok) throw new Error("OVH : " + (j.message || r.status));
+      return j;
+    };
+    var enc = (s) => encodeURIComponent(String(s || "").trim());
+    module2.exports = { client, demanderCle, BASES, enc };
+  }
+});
+
+// src/blocks/ovh.js
+var require_ovh2 = __commonJS({
+  "src/blocks/ovh.js"(exports2, module2) {
+    "use strict";
+    var { client, demanderCle, enc } = require_ovh();
+    var perm = (m) => Object.assign(new Error(m), { permanent: true });
+    var ZONES = ["ovh-eu", "ovh-ca", "ovh-us"];
+    var P_CLES = [
+      { name: "cles", label: "Secret des cl\xE9s OVH", default: "OVH_CLES", help: "\xAB APPLICATION_KEY:APPLICATION_SECRET:CONSUMER_KEY \xBB rang\xE9 dans le coffre. Pas de cl\xE9 ? Bloc \xAB OVH : cr\xE9er une cl\xE9 d'acc\xE8s \xBB." },
+      { name: "region", label: "R\xE9gion", type: "select", options: ZONES, default: "ovh-eu" }
+    ];
+    var ovh = async (p, api) => {
+      const c = await api.secret(p.cles || "OVH_CLES");
+      if (!c) throw perm(`secret ${p.cles || "OVH_CLES"} introuvable (coffre ou variable d'environnement)`);
+      return client({ cles: c, zone: p.region });
+    };
+    var TYPES_DNS = ["A", "AAAA", "CNAME", "MX", "TXT", "SRV", "CAA", "NS", "SPF", "DKIM", "DMARC", "PTR", "TLSA"];
+    var jours = (d) => d ? Math.round((new Date(d) - Date.now()) / 864e5) : null;
+    var sd = (s) => String(s || "").trim().replace(/\.$/, "").replace(/^@$/, "");
+    var assurer = async (o, zone, { sousDomaine, type, cible, ttl, remplacer = true }) => {
+      const q = `/domain/zone/${enc(zone)}/record?fieldType=${enc(type)}&subDomain=${enc(sousDomaine)}`;
+      const ids = await o.get(q) || [];
+      if (ids.length && remplacer) {
+        const actuels = await Promise.all(ids.map((id) => o.get(`/domain/zone/${enc(zone)}/record/${id}`)));
+        const meme = actuels.find((r2) => String(r2.target).replace(/\.$/, "") === String(cible).replace(/\.$/, ""));
+        if (meme && (!ttl || meme.ttl === +ttl)) return { action: "inchang\xE9", id: meme.id };
+        await o.put(`/domain/zone/${enc(zone)}/record/${actuels[0].id}`, { target: cible, ttl: +ttl || 0, subDomain: sousDomaine });
+        for (const r2 of actuels.slice(1)) await o.del(`/domain/zone/${enc(zone)}/record/${r2.id}`);
+        return { action: "mis \xE0 jour", id: actuels[0].id, doublons_supprimes: actuels.length - 1 };
+      }
+      const r = await o.post(`/domain/zone/${enc(zone)}/record`, { fieldType: type, subDomain: sousDomaine, target: cible, ttl: +ttl || 0 });
+      return { action: "cr\xE9\xE9", id: r && r.id };
+    };
+    var rafraichir = (o, zone) => o.post(`/domain/zone/${enc(zone)}/refresh`);
+    var resoudre = async (nom, type) => {
+      const r = await fetch(`https://cloudflare-dns.com/dns-query?name=${enc(nom)}&type=${enc(type)}`, { headers: { Accept: "application/dns-json" } });
+      const j = await r.json();
+      return (j.Answer || []).map((a) => String(a.data).replace(/\.$/, "").replace(/^"|"$/g, ""));
+    };
+    module2.exports = [
+      {
+        name: "dzf_ovh_cle",
+        label: "OVH : cr\xE9er une cl\xE9 d'acc\xE8s",
+        category: "OVHcloud",
+        icon: "fas fa-key",
+        output: "cle_ovh",
+        description: "Pr\xE9pare une cl\xE9 d'acc\xE8s (consumer key) avec les droits choisis. OVH renvoie un lien \xE0 ouvrir une seule fois pour valider ; ensuite range \xAB AK:AS:CK \xBB dans le coffre.",
+        params: [
+          { name: "application_key", label: "Application key", required: true, help: "Cr\xE9\xE9e sur https://eu.api.ovh.com/createApp/ (une seule fois)." },
+          { name: "region", label: "R\xE9gion", type: "select", options: ZONES, default: "ovh-eu" },
+          { name: "droits", label: "Droits", type: "select", options: ["tout (GET/POST/PUT/DELETE sur /*)", "lecture seule (GET /*)", "DNS et domaines seulement", "e-mails seulement", "sur mesure"], default: "DNS et domaines seulement" },
+          { name: "sur_mesure", label: "Droits sur mesure (JSON)", type: "json", showIf: { droits: "sur mesure" }, help: '[{"method":"GET","path":"/domain/*"}]' },
+          { name: "retour", label: "Page de retour apr\xE8s validation", help: "Facultatif" }
+        ],
+        run: async (p) => {
+          const M = ["GET", "POST", "PUT", "DELETE"];
+          const tout = (chemins) => chemins.flatMap((path) => M.map((method) => ({ method, path })));
+          const droits = { "tout (GET/POST/PUT/DELETE sur /*)": tout(["/*"]), "lecture seule (GET /*)": [{ method: "GET", path: "/*" }], "DNS et domaines seulement": tout(["/domain/*"]), "e-mails seulement": tout(["/email/*"]) }[p.droits] || (typeof p.sur_mesure === "string" ? JSON.parse(p.sur_mesure) : p.sur_mesure);
+          const r = await demanderCle({ ak: p.application_key, zone: p.region, droits, retour: p.retour });
+          return { lien_validation: r.validationUrl, consumer_key: r.consumerKey, etat: r.state, a_faire: "Ouvre le lien, connecte-toi, valide ; puis range \xAB APPLICATION_KEY:APPLICATION_SECRET:CONSUMER_KEY \xBB dans le coffre (OVH_CLES)." };
+        }
+      },
+      {
+        name: "dzf_ovh_compte",
+        label: "OVH : compte et \xE9ch\xE9ances",
+        category: "OVHcloud",
+        icon: "fas fa-id-card",
+        output: "ovh_compte",
+        timeout: 120,
+        description: "Ton compte (nic, contact), et la liste de tes services avec leur date d'expiration et le renouvellement : pour voir d'un coup ce qui expire bient\xF4t.",
+        params: [...P_CLES, { name: "sous", label: "Services qui expirent dans moins de (jours)", type: "int", default: 60, help: "0 = tous les services" }],
+        run: async (p, ctx, api) => {
+          const o = await ovh(p, api);
+          const me = await o.get("/me");
+          const ids = await o.get("/services") || [];
+          const services = [];
+          for (const id of ids.slice(0, 300)) {
+            try {
+              const s = await o.get(`/services/${id}`);
+              const exp = s.billing && s.billing.expirationDate;
+              services.push({ id, nom: s.resource && (s.resource.displayName || s.resource.name), produit: s.resource && s.resource.product && s.resource.product.name, expire_le: exp, dans_jours: jours(exp), renouvellement: s.billing && s.billing.renew && s.billing.renew.current && s.billing.renew.current.mode, etat: s.billing && s.billing.lifecycle && s.billing.lifecycle.current && s.billing.lifecycle.current.state });
+            } catch (e) {
+              services.push({ id, erreur: e.message });
+            }
+          }
+          const filtre = +p.sous ? services.filter((s) => s.dans_jours !== null && s.dans_jours <= +p.sous) : services;
+          return { compte: { nic: me.nichandle, nom: [me.firstname, me.name].filter(Boolean).join(" "), email: me.email, pays: me.country }, services: filtre.sort((a, b) => (a.dans_jours ?? 9e9) - (b.dans_jours ?? 9e9)), total: services.length };
+        }
+      },
+      {
+        name: "dzf_ovh_domaines",
+        label: "OVH : domaines",
+        category: "OVHcloud",
+        icon: "fas fa-globe",
+        output: "domaines",
+        timeout: 120,
+        description: "Liste tes noms de domaine avec expiration, renouvellement automatique, serveurs DNS, verrouillage et DNSSEC. Ou change les serveurs DNS / le verrou d'un domaine.",
+        params: [
+          ...P_CLES,
+          { name: "action", label: "Action", type: "select", options: ["lister", "d\xE9tail", "changer les serveurs DNS", "verrouiller", "d\xE9verrouiller"], default: "lister" },
+          { name: "domaine", label: "Domaine", showIf: { action: ["d\xE9tail", "changer les serveurs DNS", "verrouiller", "d\xE9verrouiller"] } },
+          { name: "serveurs", label: "Serveurs DNS (un par ligne)", type: "text", showIf: { action: "changer les serveurs DNS" } }
+        ],
+        run: async (p, ctx, api) => {
+          const o = await ovh(p, api);
+          const d = enc(p.domaine);
+          const fiche = async (nom) => {
+            const [info, svc, dns] = await Promise.all([o.get(`/domain/${enc(nom)}`), o.get(`/domain/${enc(nom)}/serviceInfos`).catch(() => ({})), o.get(`/domain/${enc(nom)}/nameServer`).catch(() => [])]);
+            const ns = await Promise.all((dns || []).slice(0, 8).map((id) => o.get(`/domain/${enc(nom)}/nameServer/${id}`).then((x) => x.host).catch(() => null)));
+            return { domaine: nom, expire_le: svc.expiration, dans_jours: jours(svc.expiration), renouvellement_auto: !!(svc.renew && svc.renew.automatic), serveurs_dns: ns.filter(Boolean), type_dns: info.nameServerType, verrou: info.transferLockStatus, dnssec: info.dnssecSupported ? "possible" : "non" };
+          };
+          if (p.action === "lister") {
+            const noms = await o.get("/domain") || [];
+            const out = [];
+            for (const n of noms.slice(0, 200)) out.push(await fiche(n).catch((e) => ({ domaine: n, erreur: e.message })));
+            return out.sort((a, b) => (a.dans_jours ?? 9e9) - (b.dans_jours ?? 9e9));
+          }
+          if (!p.domaine) throw perm("indique le domaine");
+          if (p.action === "d\xE9tail") return fiche(p.domaine);
+          if (p.action === "changer les serveurs DNS") {
+            const hosts = String(p.serveurs || "").split(/[\s,;]+/).filter(Boolean);
+            if (hosts.length < 2) throw perm("au moins deux serveurs DNS");
+            return o.post(`/domain/${d}/nameServers/update`, { nameServers: hosts.map((host) => ({ host })) });
+          }
+          await o.put(`/domain/${d}`, { transferLockStatus: p.action === "verrouiller" ? "locked" : "unlocked" });
+          return fiche(p.domaine);
+        }
+      },
+      {
+        name: "dzf_ovh_dns",
+        label: "OVH : enregistrements DNS",
+        category: "OVHcloud",
+        icon: "fas fa-network-wired",
+        output: "dns",
+        timeout: 120,
+        description: "Lister, cr\xE9er ou mettre \xE0 jour (sans doublon), supprimer un enregistrement d'une zone (A, AAAA, CNAME, MX, TXT, SRV, CAA\u2026). La zone est rafra\xEEchie apr\xE8s chaque \xE9criture ; option : v\xE9rifier la r\xE9ponse DNS publique.",
+        params: [
+          ...P_CLES,
+          { name: "zone", label: "Zone (domaine)", required: true, help: "Ex. mondomaine.fr" },
+          { name: "action", label: "Action", type: "select", options: ["lister", "cr\xE9er ou mettre \xE0 jour", "ajouter (sans remplacer)", "supprimer"], default: "lister" },
+          { name: "type", label: "Type", type: "select", options: ["(tous)", ...TYPES_DNS], default: "(tous)" },
+          { name: "sous_domaine", label: "Sous-domaine", help: "Vide = le domaine lui-m\xEAme. Ex. www, api, _dmarc" },
+          { name: "cible", label: "Valeur / cible", showIf: { action: ["cr\xE9er ou mettre \xE0 jour", "ajouter (sans remplacer)", "supprimer"] }, help: 'Ex. 51.68.1.2, monsite.netlify.app., "v=spf1 include:mx.ovh.com ~all", 10 mx1.mail.ovh.net.' },
+          { name: "ttl", label: "TTL (secondes)", type: "int", default: 0, help: "0 = TTL par d\xE9faut de la zone" },
+          { name: "verifier", label: "V\xE9rifier la r\xE9ponse DNS publique", type: "bool", default: false }
+        ],
+        run: async (p, ctx, api) => {
+          const o = await ovh(p, api);
+          const z = String(p.zone || "").trim(), s = sd(p.sous_domaine), t = p.type === "(tous)" ? "" : p.type;
+          if (!z) throw perm("indique la zone");
+          if (p.action === "lister") {
+            const q = `/domain/zone/${enc(z)}/record?${t ? "fieldType=" + enc(t) + "&" : ""}${p.sous_domaine !== void 0 && p.sous_domaine !== "" ? "subDomain=" + enc(s) : ""}`;
+            const ids = await o.get(q) || [];
+            const l = await Promise.all(ids.slice(0, 500).map((id) => o.get(`/domain/zone/${enc(z)}/record/${id}`)));
+            return l.map((r) => ({ id: r.id, nom: (r.subDomain ? r.subDomain + "." : "") + z, sous_domaine: r.subDomain, type: r.fieldType, cible: r.target, ttl: r.ttl })).sort((a, b) => a.nom.localeCompare(b.nom) || a.type.localeCompare(b.type));
+          }
+          if (!t) throw perm("choisis le type d'enregistrement");
+          let res;
+          if (p.action === "supprimer") {
+            const ids = await o.get(`/domain/zone/${enc(z)}/record?fieldType=${enc(t)}&subDomain=${enc(s)}`) || [];
+            const l = await Promise.all(ids.map((id) => o.get(`/domain/zone/${enc(z)}/record/${id}`)));
+            const cible = l.filter((r) => !p.cible || String(r.target).replace(/\.$/, "") === String(p.cible).replace(/\.$/, ""));
+            for (const r of cible) await o.del(`/domain/zone/${enc(z)}/record/${r.id}`);
+            res = { action: "supprim\xE9", nombre: cible.length };
+          } else {
+            if (!p.cible) throw perm("indique la valeur / cible");
+            res = await assurer(o, z, { sousDomaine: s, type: t, cible: p.cible, ttl: p.ttl, remplacer: p.action === "cr\xE9er ou mettre \xE0 jour" });
+          }
+          if (res.action !== "inchang\xE9") await rafraichir(o, z);
+          res.nom = (s ? s + "." : "") + z;
+          res.type = t;
+          if (p.verifier) res.reponse_publique = await resoudre(res.nom, t).catch((e) => "v\xE9rification impossible : " + e.message);
+          return res;
+        }
+      },
+      {
+        name: "dzf_ovh_sous_domaine",
+        label: "OVH : cr\xE9er un sous-domaine",
+        category: "OVHcloud",
+        icon: "fas fa-sitemap",
+        output: "sous_domaine",
+        timeout: 180,
+        description: "Cr\xE9e un sous-domaine complet en une fois : l'enregistrement DNS (A/AAAA vers une IP, ou CNAME vers un nom), et si tu veux l'ajout sur ton h\xE9bergement web OVH (dossier + SSL Let's Encrypt). Refait sans rien casser s'il existe d\xE9j\xE0.",
+        params: [
+          ...P_CLES,
+          { name: "zone", label: "Domaine", required: true },
+          { name: "sous_domaine", label: "Sous-domaine", required: true, help: "Ex. crm, app, client1" },
+          { name: "vers", label: "Pointe vers", type: "select", options: ["une adresse IP", "un autre nom (CNAME)", "mon h\xE9bergement web OVH"], default: "une adresse IP" },
+          { name: "cible", label: "IP ou nom cible", showIf: { vers: ["une adresse IP", "un autre nom (CNAME)"] }, help: "IPv4, IPv6 ou nom (ex. mon-app.fly.dev)" },
+          { name: "hebergement", label: "H\xE9bergement web (nom du service)", showIf: { vers: "mon h\xE9bergement web OVH" }, help: "Ex. monsite.cluster030.hosting.ovh.net \u2014 bloc \xAB OVH : h\xE9bergement web \xBB pour les voir" },
+          { name: "dossier", label: "Dossier sur l'h\xE9bergement", default: "", showIf: { vers: "mon h\xE9bergement web OVH" }, help: "Vide = ./<sous-domaine>" },
+          { name: "ssl", label: "Activer le SSL", type: "bool", default: true, showIf: { vers: "mon h\xE9bergement web OVH" } },
+          { name: "verifier", label: "V\xE9rifier la r\xE9ponse DNS publique", type: "bool", default: true }
+        ],
+        run: async (p, ctx, api) => {
+          const o = await ovh(p, api);
+          const z = String(p.zone).trim(), s = sd(p.sous_domaine), nom = `${s}.${z}`;
+          if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/i.test(s)) throw perm("sous-domaine invalide (lettres, chiffres, tirets)");
+          const etapes = [];
+          if (p.vers === "mon h\xE9bergement web OVH") {
+            if (!p.hebergement) throw perm("indique l'h\xE9bergement web");
+            const H = `/hosting/web/${enc(p.hebergement)}`;
+            const deja = await o.get(`${H}/attachedDomain/${enc(nom)}`).catch(() => null);
+            if (deja) etapes.push({ etape: "h\xE9bergement", action: "d\xE9j\xE0 attach\xE9", dossier: deja.path });
+            else {
+              const t = await o.post(`${H}/attachedDomain`, { domain: nom, path: p.dossier || `./${s}`, ssl: !!p.ssl, firewall: "none", ownLog: z, cdn: "none" });
+              etapes.push({ etape: "h\xE9bergement", action: "attach\xE9", tache: t && t.id });
+            }
+            const info = await o.get(H);
+            const ip4 = info.hostingIp, ip6 = info.hostingIpv6;
+            if (ip4) etapes.push({ etape: "DNS A", ...await assurer(o, z, { sousDomaine: s, type: "A", cible: ip4 }) });
+            if (ip6) etapes.push({ etape: "DNS AAAA", ...await assurer(o, z, { sousDomaine: s, type: "AAAA", cible: ip6 }) });
+            if (p.ssl) {
+              const ssl = await o.get(`${H}/ssl`).catch(() => null);
+              if (!ssl) {
+                await o.post(`${H}/ssl`, {}).catch((e) => etapes.push({ etape: "SSL", erreur: e.message }));
+                etapes.push({ etape: "SSL", action: "demand\xE9 (Let's Encrypt)" });
+              } else {
+                await o.post(`${H}/ssl/regenerate`).catch(() => {
+                });
+                etapes.push({ etape: "SSL", action: "r\xE9g\xE9n\xE9r\xE9 pour inclure " + nom });
+              }
+            }
+          } else {
+            if (!p.cible) throw perm("indique l'IP ou le nom cible");
+            const ip = String(p.cible).trim();
+            const type = p.vers === "un autre nom (CNAME)" ? "CNAME" : /:/.test(ip) ? "AAAA" : "A";
+            const cible = type === "CNAME" && !ip.endsWith(".") ? ip + "." : ip;
+            etapes.push({ etape: "DNS " + type, ...await assurer(o, z, { sousDomaine: s, type, cible }) });
+          }
+          await rafraichir(o, z);
+          etapes.push({ etape: "zone", action: "rafra\xEEchie" });
+          const res = { nom, etapes };
+          if (p.verifier) res.reponse_publique = await resoudre(nom, p.vers === "un autre nom (CNAME)" ? "CNAME" : "A").catch((e) => "v\xE9rification impossible : " + e.message);
+          res.note = "La propagation DNS prend de quelques minutes \xE0 quelques heures.";
+          return res;
+        }
+      },
+      {
+        name: "dzf_ovh_zone",
+        label: "OVH : zone DNS (export, import, DNSSEC)",
+        category: "OVHcloud",
+        icon: "fas fa-file-export",
+        output: "zone",
+        timeout: 120,
+        description: "Sauvegarde la zone (format BIND), la restaure depuis un texte, la rafra\xEEchit, ou active/d\xE9sactive DNSSEC.",
+        params: [
+          ...P_CLES,
+          { name: "zone", label: "Zone", required: true },
+          { name: "action", label: "Action", type: "select", options: ["exporter", "importer", "rafra\xEEchir", "\xE9tat DNSSEC", "activer DNSSEC", "d\xE9sactiver DNSSEC"], default: "exporter" },
+          { name: "contenu", label: "Zone \xE0 importer (BIND)", type: "code", showIf: { action: "importer" } }
+        ],
+        run: async (p, ctx, api) => {
+          const o = await ovh(p, api);
+          const z = enc(p.zone);
+          switch (p.action) {
+            case "exporter":
+              return { zone: p.zone, bind: await o.get(`/domain/zone/${z}/export`), le: (/* @__PURE__ */ new Date()).toISOString() };
+            case "importer":
+              if (!p.contenu) throw perm("colle la zone au format BIND");
+              return o.post(`/domain/zone/${z}/import`, { zoneFile: p.contenu });
+            case "rafra\xEEchir":
+              await rafraichir(o, p.zone);
+              return { zone: p.zone, rafraichie: true };
+            case "\xE9tat DNSSEC":
+              return o.get(`/domain/zone/${z}/dnssec`);
+            case "activer DNSSEC":
+              return o.post(`/domain/zone/${z}/dnssec`);
+            default:
+              return o.del(`/domain/zone/${z}/dnssec`);
+          }
+        }
+      },
+      {
+        name: "dzf_ovh_redirection",
+        label: "OVH : redirections web",
+        category: "OVHcloud",
+        icon: "fas fa-share",
+        output: "redirections",
+        description: "Redirige un (sous-)domaine vers une adresse web (301 visible, 302, ou invisible) ; liste ou supprime les redirections.",
+        params: [
+          ...P_CLES,
+          { name: "zone", label: "Domaine", required: true },
+          { name: "action", label: "Action", type: "select", options: ["lister", "cr\xE9er", "supprimer"], default: "lister" },
+          { name: "sous_domaine", label: "Sous-domaine", showIf: { action: ["cr\xE9er", "supprimer"] } },
+          { name: "vers", label: "Adresse de destination", showIf: { action: "cr\xE9er" }, help: "https://\u2026" },
+          { name: "type", label: "Type", type: "select", options: ["visiblePermanent", "visible", "invisible"], default: "visiblePermanent", showIf: { action: "cr\xE9er" } }
+        ],
+        run: async (p, ctx, api) => {
+          const o = await ovh(p, api);
+          const z = enc(p.zone), s = sd(p.sous_domaine);
+          const lister = async () => Promise.all((await o.get(`/domain/zone/${z}/redirection`) || []).map((id) => o.get(`/domain/zone/${z}/redirection/${id}`)));
+          if (p.action === "lister") return (await lister()).map((r) => ({ id: r.id, depuis: (r.subDomain ? r.subDomain + "." : "") + p.zone, vers: r.target, type: r.type }));
+          if (p.action === "cr\xE9er") {
+            if (!/^https?:\/\//.test(p.vers || "")) throw perm("adresse de destination en http(s)://");
+            const r = await o.post(`/domain/zone/${z}/redirection`, { subDomain: s, target: p.vers, type: p.type });
+            await rafraichir(o, p.zone);
+            return r;
+          }
+          const l = (await lister()).filter((r) => (r.subDomain || "") === s);
+          for (const r of l) await o.del(`/domain/zone/${z}/redirection/${r.id}`);
+          await rafraichir(o, p.zone);
+          return { supprimees: l.length };
+        }
+      },
+      {
+        name: "dzf_ovh_emails",
+        label: "OVH : e-mails (MX Plan)",
+        category: "OVHcloud",
+        icon: "fas fa-at",
+        output: "emails",
+        timeout: 120,
+        description: "Bo\xEEtes mail d'un domaine (MX Plan) : lister avec l'espace utilis\xE9, cr\xE9er, changer le mot de passe, supprimer ; redirections (alias) : lister, cr\xE9er, supprimer ; r\xE9pondeur d'absence.",
+        params: [
+          ...P_CLES,
+          { name: "domaine", label: "Domaine", required: true },
+          { name: "action", label: "Action", type: "select", options: ["lister les bo\xEEtes", "cr\xE9er une bo\xEEte", "changer le mot de passe", "supprimer une bo\xEEte", "lister les redirections", "cr\xE9er une redirection", "supprimer une redirection", "activer le r\xE9pondeur", "couper le r\xE9pondeur"], default: "lister les bo\xEEtes" },
+          { name: "compte", label: "Nom de la bo\xEEte (avant @)", showIf: { action: ["cr\xE9er une bo\xEEte", "changer le mot de passe", "supprimer une bo\xEEte", "activer le r\xE9pondeur", "couper le r\xE9pondeur"] } },
+          { name: "secret_mdp", label: "Secret du mot de passe", default: "", showIf: { action: ["cr\xE9er une bo\xEEte", "changer le mot de passe"] }, help: "Nom du secret dans le coffre (jamais en clair dans le workflow)" },
+          { name: "taille", label: "Taille (Mo)", type: "int", default: 5e3, showIf: { action: "cr\xE9er une bo\xEEte" } },
+          { name: "de", label: "Adresse redirig\xE9e", showIf: { action: ["cr\xE9er une redirection", "supprimer une redirection"] } },
+          { name: "vers", label: "Vers", showIf: { action: "cr\xE9er une redirection" } },
+          { name: "garder_copie", label: "Garder une copie", type: "bool", default: false, showIf: { action: "cr\xE9er une redirection" } },
+          { name: "message", label: "Message d'absence", type: "text", showIf: { action: "activer le r\xE9pondeur" } },
+          { name: "jusqu_au", label: "Jusqu'au (AAAA-MM-JJ)", showIf: { action: "activer le r\xE9pondeur" } }
+        ],
+        run: async (p, ctx, api) => {
+          const o = await ovh(p, api);
+          const D = `/email/domain/${enc(p.domaine)}`;
+          const mdp = async () => {
+            const v = p.secret_mdp && await api.secret(p.secret_mdp);
+            if (!v) throw perm("mot de passe introuvable : range-le dans le coffre et indique son nom");
+            if (v.length < 9) throw perm("mot de passe trop court (9 caract\xE8res minimum chez OVH)");
+            return v;
+          };
+          switch (p.action) {
+            case "lister les bo\xEEtes":
+              return (await o.detailler(`${D}/account`, (a) => `${D}/account/${enc(a)}`)).map((a) => ({ adresse: `${a.accountName}@${p.domaine}`, taille_mo: Math.round((a.size || 0) / 1048576), bloquee: !!a.isBlocked, description: a.description }));
+            case "cr\xE9er une bo\xEEte":
+              return o.post(`${D}/account`, { accountName: p.compte, password: await mdp(), size: (+p.taille || 5e3) * 1048576 });
+            case "changer le mot de passe":
+              return o.post(`${D}/account/${enc(p.compte)}/changePassword`, { password: await mdp() });
+            case "supprimer une bo\xEEte":
+              return o.del(`${D}/account/${enc(p.compte)}`);
+            case "lister les redirections":
+              return (await o.detailler(`${D}/redirection`, (id) => `${D}/redirection/${id}`)).map((r) => ({ id: r.id, de: r.from, vers: r.to }));
+            case "cr\xE9er une redirection":
+              return o.post(`${D}/redirection`, { from: p.de, to: p.vers, localCopy: !!p.garder_copie });
+            case "supprimer une redirection": {
+              const l = await o.detailler(`${D}/redirection?from=${enc(p.de)}`, (id) => `${D}/redirection/${id}`);
+              for (const r of l) await o.del(`${D}/redirection/${r.id}`);
+              return { supprimees: l.length };
+            }
+            case "activer le r\xE9pondeur":
+              return o.post(`${D}/responder`, { account: p.compte, content: p.message || "Je suis absent.", copy: false, from: (/* @__PURE__ */ new Date()).toISOString(), to: p.jusqu_au ? (/* @__PURE__ */ new Date(p.jusqu_au + "T23:59:00")).toISOString() : void 0 });
+            default:
+              return o.del(`${D}/responder/${enc(p.compte)}`);
+          }
+        }
+      },
+      {
+        name: "dzf_ovh_hebergement",
+        label: "OVH : h\xE9bergement web",
+        category: "OVHcloud",
+        icon: "fas fa-server",
+        output: "hebergement",
+        timeout: 120,
+        description: "Tes h\xE9bergements web : \xE9tat, offre, espace disque, domaines attach\xE9s (multisite), SSL, bases de donn\xE9es ; d\xE9tacher un domaine ; r\xE9g\xE9n\xE9rer le SSL.",
+        params: [
+          ...P_CLES,
+          { name: "action", label: "Action", type: "select", options: ["lister", "d\xE9tail", "domaines attach\xE9s", "d\xE9tacher un domaine", "\xE9tat SSL", "r\xE9g\xE9n\xE9rer le SSL", "bases de donn\xE9es"], default: "lister" },
+          { name: "service", label: "H\xE9bergement", showIf: { action: ["d\xE9tail", "domaines attach\xE9s", "d\xE9tacher un domaine", "\xE9tat SSL", "r\xE9g\xE9n\xE9rer le SSL", "bases de donn\xE9es"] } },
+          { name: "domaine", label: "Domaine \xE0 d\xE9tacher", showIf: { action: "d\xE9tacher un domaine" } }
+        ],
+        run: async (p, ctx, api) => {
+          const o = await ovh(p, api);
+          const H = `/hosting/web/${enc(p.service)}`;
+          if (p.action === "lister") return (await o.detailler("/hosting/web", (s) => `/hosting/web/${enc(s)}`)).map((h) => ({ service: h.serviceName, offre: h.offer, etat: h.state, cluster: h.cluster, ip: h.hostingIp, disque_go: h.quotaSize && h.quotaSize.value, utilise: h.quotaUsed && `${h.quotaUsed.value} ${h.quotaUsed.unit}` }));
+          if (!p.service) throw perm("indique l'h\xE9bergement");
+          switch (p.action) {
+            case "d\xE9tail":
+              return o.get(H);
+            case "domaines attach\xE9s":
+              return (await o.detailler(`${H}/attachedDomain`, (d) => `${H}/attachedDomain/${enc(d)}`)).map((d) => ({ domaine: d.domain, dossier: d.path, ssl: d.ssl, cdn: d.cdn, pare_feu: d.firewall, etat: d.status }));
+            case "d\xE9tacher un domaine":
+              return o.del(`${H}/attachedDomain/${enc(p.domaine)}`);
+            case "\xE9tat SSL":
+              return o.get(`${H}/ssl`).then(async (s) => ({ ...s, domaines: await o.get(`${H}/ssl/domains`).catch(() => []) }));
+            case "r\xE9g\xE9n\xE9rer le SSL":
+              return o.post(`${H}/ssl/regenerate`);
+            default:
+              return (await o.detailler(`${H}/database`, (d) => `${H}/database/${enc(d)}`)).map((d) => ({ nom: d.name, type: d.type, version: d.version, etat: d.state, serveur: d.server, taille: d.quotaUsed && `${d.quotaUsed.value} ${d.quotaUsed.unit}` }));
+          }
+        }
+      },
+      {
+        name: "dzf_ovh_vps",
+        label: "OVH : VPS",
+        category: "OVHcloud",
+        icon: "fas fa-hdd",
+        output: "vps",
+        timeout: 120,
+        description: "Tes VPS : \xE9tat, IP, offre, zone ; red\xE9marrer, d\xE9marrer, arr\xEAter ; snapshot (cr\xE9er, restaurer, supprimer) ; derni\xE8res t\xE2ches.",
+        params: [
+          ...P_CLES,
+          { name: "action", label: "Action", type: "select", options: ["lister", "d\xE9tail", "red\xE9marrer", "d\xE9marrer", "arr\xEAter", "cr\xE9er un snapshot", "restaurer le snapshot", "supprimer le snapshot", "t\xE2ches"], default: "lister" },
+          { name: "service", label: "VPS", showIf: { action: ["d\xE9tail", "red\xE9marrer", "d\xE9marrer", "arr\xEAter", "cr\xE9er un snapshot", "restaurer le snapshot", "supprimer le snapshot", "t\xE2ches"] } },
+          { name: "description_snapshot", label: "Description du snapshot", showIf: { action: "cr\xE9er un snapshot" } }
+        ],
+        run: async (p, ctx, api) => {
+          const o = await ovh(p, api);
+          const V = `/vps/${enc(p.service)}`;
+          if (p.action === "lister") return Promise.all((await o.get("/vps") || []).map(async (s) => {
+            const v = await o.get(`/vps/${enc(s)}`).catch((e) => ({ erreur: e.message }));
+            const ips = await o.get(`/vps/${enc(s)}/ips`).catch(() => []);
+            return { service: s, nom: v.displayName, etat: v.state, offre: v.model && v.model.name, zone: v.zone, ips };
+          }));
+          if (!p.service) throw perm("indique le VPS");
+          switch (p.action) {
+            case "d\xE9tail":
+              return o.get(V);
+            case "red\xE9marrer":
+              return o.post(`${V}/reboot`);
+            case "d\xE9marrer":
+              return o.post(`${V}/start`);
+            case "arr\xEAter":
+              return o.post(`${V}/stop`);
+            case "cr\xE9er un snapshot":
+              return o.post(`${V}/createSnapshot`, { description: p.description_snapshot || "dysizz " + (/* @__PURE__ */ new Date()).toISOString().slice(0, 16) });
+            case "restaurer le snapshot":
+              return o.post(`${V}/snapshot/revert`);
+            case "supprimer le snapshot":
+              return o.del(`${V}/snapshot`);
+            default:
+              return (await o.detailler(`${V}/tasks`, (id) => `${V}/tasks/${id}`, { max: 20 })).map((t) => ({ id: t.id, type: t.type, etat: t.state, progression: t.progress, date: t.date }));
+          }
+        }
+      },
+      {
+        name: "dzf_ovh_dedie",
+        label: "OVH : serveurs d\xE9di\xE9s",
+        category: "OVHcloud",
+        icon: "fas fa-server",
+        output: "dedies",
+        timeout: 120,
+        description: "Tes serveurs d\xE9di\xE9s : \xE9tat, IP, datacenter, OS, supervision ; red\xE9marrer (hard reboot) ; t\xE2ches en cours.",
+        params: [...P_CLES, { name: "action", label: "Action", type: "select", options: ["lister", "d\xE9tail", "red\xE9marrer", "t\xE2ches"], default: "lister" }, { name: "service", label: "Serveur", showIf: { action: ["d\xE9tail", "red\xE9marrer", "t\xE2ches"] } }],
+        run: async (p, ctx, api) => {
+          const o = await ovh(p, api);
+          const S = `/dedicated/server/${enc(p.service)}`;
+          if (p.action === "lister") return (await o.detailler("/dedicated/server", (s) => `/dedicated/server/${enc(s)}`)).map((s) => ({ service: s.name, nom: s.reverse, ip: s.ip, datacenter: s.datacenter, os: s.os, etat: s.state, supervision: s.monitoring }));
+          if (!p.service) throw perm("indique le serveur");
+          if (p.action === "d\xE9tail") return o.get(S);
+          if (p.action === "red\xE9marrer") return o.post(`${S}/reboot`);
+          return (await o.detailler(`${S}/task`, (id) => `${S}/task/${id}`, { max: 20 })).map((t) => ({ id: t.taskId, fonction: t.function, etat: t.status, debut: t.startDate, fin: t.doneDate }));
+        }
+      },
+      {
+        name: "dzf_ovh_cloud",
+        label: "OVH : Public Cloud",
+        category: "OVHcloud",
+        icon: "fas fa-cloud",
+        output: "cloud",
+        timeout: 120,
+        description: "Projets Public Cloud et instances : lister (\xE9tat, r\xE9gion, IP, gabarit), red\xE9marrer, d\xE9marrer, arr\xEAter.",
+        params: [
+          ...P_CLES,
+          { name: "action", label: "Action", type: "select", options: ["projets", "instances", "red\xE9marrer", "d\xE9marrer", "arr\xEAter"], default: "projets" },
+          { name: "projet", label: "Projet (id)", showIf: { action: ["instances", "red\xE9marrer", "d\xE9marrer", "arr\xEAter"] } },
+          { name: "instance", label: "Instance (id)", showIf: { action: ["red\xE9marrer", "d\xE9marrer", "arr\xEAter"] } }
+        ],
+        run: async (p, ctx, api) => {
+          const o = await ovh(p, api);
+          const C = `/cloud/project/${enc(p.projet)}`;
+          if (p.action === "projets") return (await o.detailler("/cloud/project", (id) => `/cloud/project/${enc(id)}`)).map((x) => ({ id: x.project_id, nom: x.description, etat: x.status }));
+          if (!p.projet) throw perm("indique le projet");
+          if (p.action === "instances") return (await o.get(`${C}/instance`) || []).map((i) => ({ id: i.id, nom: i.name, etat: i.status, region: i.region, gabarit: i.flavorId, ip: (i.ipAddresses || []).map((a) => a.ip) }));
+          if (!p.instance) throw perm("indique l'instance");
+          return o.post(`${C}/instance/${enc(p.instance)}/${{ "red\xE9marrer": "reboot", "d\xE9marrer": "start", "arr\xEAter": "stop" }[p.action]}`, p.action === "red\xE9marrer" ? { type: "soft" } : {});
+        }
+      },
+      {
+        name: "dzf_ovh_factures",
+        label: "OVH : factures",
+        category: "OVHcloud",
+        icon: "fas fa-file-invoice-dollar",
+        output: "factures",
+        timeout: 120,
+        description: "Tes factures sur une p\xE9riode (montant HT/TTC, lien PDF), le total, et les commandes non pay\xE9es.",
+        params: [...P_CLES, { name: "depuis_jours", label: "Depuis (jours)", type: "int", default: 90 }, { name: "impayees", label: "Ajouter les commandes non pay\xE9es", type: "bool", default: true }],
+        run: async (p, ctx, api) => {
+          const o = await ovh(p, api);
+          const depuis = new Date(Date.now() - (+p.depuis_jours || 90) * 864e5).toISOString().slice(0, 10);
+          const f = (await o.detailler(`/me/bill?date.from=${depuis}`, (id) => `/me/bill/${enc(id)}`)).map((b) => ({ id: b.billId, date: b.date, ht: b.priceWithoutTax && b.priceWithoutTax.value, ttc: b.priceWithTax && b.priceWithTax.value, devise: b.priceWithTax && b.priceWithTax.currencyCode, pdf: b.pdfUrl }));
+          const out = { factures: f.sort((a, b) => String(b.date).localeCompare(String(a.date))), total_ttc: Math.round(f.reduce((s, x) => s + (+x.ttc || 0), 0) * 100) / 100 };
+          if (p.impayees) {
+            const cmd = await o.detailler(`/me/order?date.from=${depuis}`, (id) => `/me/order/${id}`, { max: 50 });
+            const st = await Promise.all(cmd.map((c) => c && c.orderId ? o.get(`/me/order/${c.orderId}/status`).catch(() => "?") : "?"));
+            out.commandes_non_payees = cmd.map((c, i) => ({ id: c.orderId, date: c.date, ttc: c.priceWithTax && c.priceWithTax.value, statut: st[i], lien: c.url })).filter((c) => c.id && /notPaid|checking/.test(c.statut));
+          }
+          return out;
+        }
+      }
+    ];
+  }
+});
+
+// src/lib/leads/texte.js
+var require_texte = __commonJS({
+  "src/lib/leads/texte.js"(exports2, module2) {
+    "use strict";
+    var ENT = { nbsp: " ", amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", eacute: "\xE9", egrave: "\xE8", ecirc: "\xEA", agrave: "\xE0", acirc: "\xE2", ccedil: "\xE7", ocirc: "\xF4", ucirc: "\xFB", ugrave: "\xF9", icirc: "\xEE", iuml: "\xEF", euml: "\xEB", euro: "\u20AC", laquo: "\xAB", raquo: "\xBB", rsquo: "\u2019", lsquo: "\u2018", ldquo: "\u201C", rdquo: "\u201D", hellip: "\u2026", ndash: "\u2013", mdash: "\u2014", middot: "\xB7", bull: "\u2022", sup2: "\xB2", deg: "\xB0", Eacute: "\xC9", Egrave: "\xC8", Agrave: "\xC0", Ccedil: "\xC7" };
+    var entites = (s) => String(s).replace(/&#(\d+);?/g, (_, n) => {
+      try {
+        return String.fromCodePoint(+n);
+      } catch (e) {
+        return " ";
+      }
+    }).replace(/&#x([0-9a-f]+);?/gi, (_, n) => {
+      try {
+        return String.fromCodePoint(parseInt(n, 16));
+      } catch (e) {
+        return " ";
+      }
+    }).replace(/&([a-z]+\d?);/gi, (m, n) => ENT[n] !== void 0 ? ENT[n] : m);
+    var reparer = (s) => {
+      if (!/Ã[\x80-\xBF©¨ª«§¢®´¹¼½¾ ]|Â[\xA0-\xBF]|â€/.test(s)) return s;
+      try {
+        const b = Buffer.from(s, "latin1").toString("utf8");
+        return /�/.test(b) ? s : b;
+      } catch (e) {
+        return s;
+      }
+    };
+    var htmlTexte = (html) => entites(String(html || "").replace(/<!--[\s\S]*?-->/g, " ").replace(/<(script|style|head|title)\b[\s\S]*?<\/\1\s*>/gi, " ").replace(/<a\b[^>]*href\s*=\s*["']?(mailto:|tel:)([^"'\s>]+)[^>]*>/gi, " $1$2 ").replace(/<br\s*\/?>/gi, "\n").replace(/<\/(p|div|li|tr|h\d|table|td|th|dt|dd|blockquote|section|article)\s*>/gi, "\n").replace(/<(td|th)\b[^>]*>/gi, "\n").replace(/<[^>]+>/g, " "));
+    var lignes = (t) => String(t).replace(/\r\n?/g, "\n").replace(/(^|\n)[^\n{}]{0,80}\{[^{}]{0,1500}?\}/g, (m, a) => /[;:]\s*[\w#-]/.test(m) && !/[.!?]\s*$/.test(m.split("{")[0]) ? a : m).replace(/[   ]/g, " ").replace(/[​-‍﻿]/g, "").split("\n").map((l) => l.replace(/[ \t\f\v]+/g, " ").trim()).filter(Boolean);
+    var texteMail = ({ texte, html } = {}) => {
+      const t = String(texte || "");
+      const brut = t.trim() && !/^\s*<(!doctype|html)/i.test(t) && t.replace(/\s/g, "").length > 80;
+      const src = brut ? entites(t) : htmlTexte(html || t);
+      return lignes(reparer(src).replace(/([a-zà-ÿA-ZÀ-Ÿ)])(E-?mail|T[ée]l[ée]phone|Phone)\s*:/g, "$1\n$2 :").replace(/[\[<(]\s*https?:\/\/[^\s\]>)]*\s*[\]>)]/g, " ").replace(/https?:\/\/\S{70,}/g, " ")).join("\n");
+    };
+    var liens = ({ texte, html } = {}) => {
+      const out = /* @__PURE__ */ new Set();
+      String(html || "").replace(/href\s*=\s*["']?(https?:\/\/[^"'\s>]+)/gi, (_, u) => out.add(entites(u)));
+      String(texte || "").replace(/https?:\/\/[^\s\]>)"'<]+/g, (u) => out.add(u));
+      return [...out];
+    };
+    var sansAccent = (s) => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "");
+    var cle = (s) => sansAccent(s).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+    var sansCitation = (t) => {
+      const L = String(t).split("\n"), out = [];
+      for (let i = 0; i < L.length; i++) {
+        const l = L[i];
+        if (/^(>|&gt;)/.test(l)) break;
+        if (/^(le|on) .{4,90}(a écrit|wrote)\s*:?\s*$/i.test(l)) break;
+        if (/^-{2,}\s*(original message|message d'origine|message transféré|forwarded message)/i.test(l)) break;
+        if (/^(de|from)\s*:/i.test(l) && L.slice(i + 1, i + 5).some((x) => /^(envoyé|sent|date|à|to|objet|subject)\s*:/i.test(x))) break;
+        out.push(l);
+      }
+      return out.join("\n");
+    };
+    module2.exports = { liens, entites, reparer, htmlTexte, lignes, texteMail, sansAccent, cle, sansCitation };
+  }
+});
+
+// src/lib/leads/prenoms.js
+var require_prenoms = __commonJS({
+  "src/lib/leads/prenoms.js"(exports2, module2) {
+    "use strict";
+    var L = `aaron abdel abdou adam adele adeline adrian adriana adrien agathe agnes ahmed aida aimee alain alan alban albert alberto alec alex alexa alexander alexandra alexandre alexia alexis alfred alfredo ali alice alicia alina aline alison alix allan amanda amandine amber ambre amelia amelie amy ana anais andre andrea andreas andres andrew andy angela angelique angelo anita ann anna annabel annabelle anne anneke annette annick annie anouk anthony antoine antoinette anton antonio april ariane arianne arlette armand armelle arnaud arno arthur audrey aude augustin aurelia aurelie aurelien aurore axel axelle baptiste barbara barry bart bas bastien beatrice beatrix belinda ben benedicte benjamin benoit bernadette bernard bert bertrand beth betty bianca bill blanche bob bram brenda brent brian brice brigitte britt bruce bruno bryan camille candice carine carl carla carlos carmen carol carole caroline carolyn cassandra catherine cathy cecile cedric celia celine chantal charles charlie charlotte chloe chris christa christel christelle christian christiane christine christophe christopher claire clara clarisse claude claudia claudine clement clementine colette colin colette coralie corinne cornelis craig cristina cyril cyrille daan damien dan daniel daniela daniele danielle danny david dawn dean debbie deborah delphine denis denise derek diana diane didier dieter dirk dominique donald donna doris dorothee dylan eddy edith edouard edward eileen elena eliane elisa elisabeth elise eliza elizabeth ella ellen eloise elsa emeline emilie emily emma emmanuel emmanuelle eric erik erika ernest esther estelle ethan etienne eva eve evelyne fabien fabienne fabrice fanny felix fernand fernando fiona florence florent florian francine francis francisco franck francois francoise frank frans freddy frederic frederique gabriel gabrielle gael gaelle gareth gary gauthier gavin genevieve geoffrey george georges gerald gerard gerhard geraldine gert ghislaine gilbert gilles gina ginette gisele glenn gordon grace graham greg gregory guillaume guy gwen gwenaelle hans harry heather hector heidi helen helena helene henk henri henry herve hilde hugo hugues ian ines ingrid irene iris isabel isabella isabelle ivan ivo jack jackie jacqueline jacques jade james jan jane janet janine jasmine jason jean jeanne jeannine jeff jennifer jenny jeremy jerome jessica jill jim joan joanna joao jocelyne joel joelle johan johanna john jonathan jordan jorge jose josee joseph josephine josiane joyce juan judith julia julian julie julien juliette justine karen karin karine kate katherine kathleen kathy katia keith kelly ken kenneth kevin kim kirsten koen kristel krista lars laura laure laurence laurent lea leila lena leo leon leonie linda lionel lisa lise liz loic lois lorraine lou louis louise luc luca lucas lucie lucien lucy ludovic luis lydia lydie madeleine maelle magali maggie malcolm manon manuel manuela marc marcel marco margaret margot maria marianne marie marielle marieke marine marion mario marjorie mark marlene martin martina martine mary mathias mathieu mathilde matthew matthias maud maurice max maxime megan melanie melissa mia michael michel michele michelle mickael miguel mike mireille monica monique morgan muriel mylene myriam nadia nadine nancy natalia natasha nathalie nathan neil nick nicolas nicole nigel nina noel noemie norbert odile olga olivia olivier oscar pablo pamela pascal pascale patricia patrick paul paula paule pauline pedro peggy penelope peter philip philippe pierre pieter rachel rafael raphael raymond rebecca regine remi renaud rene renee richard rick rita rob robert roberto robin roger roland romain ronald rosa rose ross ruben ruth ryan sabine sabrina sally samantha samuel sandra sandrine sara sarah sebastien serge sergio sharon sheila simon simone sofia solange sonia sophie stacey stefan stephane stephanie stephen stef steve steven stuart sue susan suzanne sylvain sylvie tanguy tania tatiana teresa theo therese thibault thierry thomas tim timothy tina tom tony tristan ursula valentin valerie vanessa vera veronique victor victoria vincent virginie vivian walter wendy willem william wim xavier yann yannick yolande yves yvette yvonne zoe`;
+    module2.exports = new Set(L.split(/\s+/));
+  }
+});
+
+// src/lib/leads/valeurs.js
+var require_valeurs = __commonJS({
+  "src/lib/leads/valeurs.js"(exports2, module2) {
+    "use strict";
+    var { cle } = require_texte();
+    var PRENOMS = require_prenoms();
+    var estPrenom = (w) => PRENOMS.has(cle(w).split(" ")[0]);
+    var EMAIL_RE = /[a-z0-9._%+'-]+@[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,}/i;
+    var email = (s) => {
+      const m = String(s || "").replace(/^mailto:/i, "").match(EMAIL_RE);
+      return m ? m[0].toLowerCase().replace(/^[.'-]+|[.'-]+$/g, "") : "";
+    };
+    var telephone = (s, pays = "33") => {
+      let t = String(s || "").replace(/^tel:/i, "").replace(/\(0\)/g, "").trim();
+      if (!/\d/.test(t)) return "";
+      const plus = /^\s*\+/.test(t);
+      let d = t.replace(/[^\d]/g, "");
+      if (d.length < 8 || d.length > 15) return "";
+      if (plus) return "+" + d;
+      if (d.startsWith("00")) return "+" + d.slice(2);
+      if (/^0[1-9]\d{8}$/.test(d)) return "+" + pays + d.slice(1);
+      if (/^(33|32|41|44|31|34|49|39|351|352|353|1)\d{7,12}$/.test(d) && d.length >= 10) return "+" + d;
+      if (/^[67]\d{8}$/.test(d) && pays === "33") return "+33" + d;
+      return d.length >= 9 ? "+" + d : "";
+    };
+    var prix = (s) => {
+      const t = String(s || "").replace(/[\u00A0\u202F]/g, " ");
+      const N = "(\\d{1,3}(?:( |\\.|,|\u2019|')\\d{3})(?:\\2\\d{3})*|\\d{4,9})";
+      const re1 = new RegExp("(?:\u20AC|\\beur\\b|\\beuros?\\b)\\s*" + N + "(?![\\d/]|[.,]\\d)", "gi");
+      const re2 = new RegExp("(?<![\\d.,])" + N + "(?:[.,]\\d{1,2})?\\s*(?:\u20AC|\\beur\\b|\\beuros?\\b)(?!\\s*\\/)", "gi");
+      const tous = [...t.matchAll(re1), ...t.matchAll(re2)].filter((x) => !/^\s*\/\s*m/i.test(t.slice(x.index + x[0].length, x.index + x[0].length + 4))).sort((a, b) => a.index - b.index);
+      const m = tous[0];
+      if (!m) return null;
+      const n = +String(m[1]).replace(/[ .,’']/g, "");
+      return n >= 1e3 && n < 1e9 ? n : null;
+    };
+    var nombre = (s) => {
+      const m = String(s || "").match(/\d+(?:[.,]\d+)?/);
+      return m ? +m[0].replace(",", ".") : null;
+    };
+    var surface = (s) => {
+      const m = String(s || "").replace(/[\u00A0\u202F]/g, " ").match(/(?<![\d.,])(\d{1,3}(?: \d{3})?|\d{1,6})(?:[.,](\d+))?\s*(?:m²|m2|sq\.? ?m)/i);
+      if (!m) return null;
+      const n = +(m[1].replace(/\s/g, "") + (m[2] ? "." + m[2] : ""));
+      return n > 5 && n < 1e5 ? Math.round(n) : null;
+    };
+    var pieces = (s) => {
+      const m = String(s || "").match(/(\d{1,2})\s*(?:pièces?|pieces?|pi[eè]ce\(s\)|p\b|rooms?)/i);
+      return m ? +m[1] : null;
+    };
+    var chambres = (s) => {
+      const m = String(s || "").match(/(\d{1,2})\s*(?:chambres?|ch\b|bedrooms?|beds?)/i);
+      return m ? +m[1] : null;
+    };
+    var TYPES2 = [
+      ["appartement", /\b(appartement|appart|apartment|flat|duplex|triplex|studio|loft|penthouse)\b/],
+      ["terrain", /\b(terrain|land|plot)\b/],
+      ["immeuble", /\b(immeuble|building)\b/],
+      ["local", /\b(local|commerce|bureau|fonds de commerce|entrepot|hangar)\b/],
+      ["grange", /\b(grange|remise|barn|ruine)\b/],
+      ["chateau", /\b(chateau|castle|manoir|manor)\b/],
+      ["propriete", /\b(propriete|domaine|property|estate|mas|bastide|longere|moulin|corps de ferme|ferme|farmhouse)\b/],
+      ["maison", /\b(maison|villa|house|home|pavillon|chalet|cottage|gite|maison de ville|maison de village)\b/]
+    ];
+    var typeBien = (s) => {
+      const k = cle(s);
+      for (const [t, re] of TYPES2) if (re.test(k)) return t;
+      return "";
+    };
+    var lieu = (s) => {
+      const t = String(s || "").replace(/\s+/g, " ").trim();
+      let m = t.match(/^(.{2,60}?)\s*\(\s*(\d{5}|\d{2}|2[AB])\s*\)/i);
+      if (m) return m[2].length === 5 ? { ville: m[1].trim(), code_postal: m[2] } : { ville: m[1].trim(), departement: m[2] };
+      m = t.match(/\b(\d{5})\s+([A-Za-zÀ-ÿ' -]{2,60})$/);
+      if (m) return { ville: m[2].trim(), code_postal: m[1] };
+      m = t.match(/^([A-Za-zÀ-ÿ' -]{2,60}?)\s*[,-]?\s*(\d{5})$/);
+      if (m) return { ville: m[1].trim(), code_postal: m[2] };
+      return {};
+    };
+    var faitsTitre = (s) => {
+      const o = {};
+      const ty = typeBien(s);
+      if (ty) o.type = ty;
+      const p = pieces(s);
+      if (p) o.pieces = p;
+      const su = surface(s);
+      if (su) o.surface = su;
+      const c = chambres(s);
+      if (c) o.chambres = c;
+      const pr = prix(s);
+      if (pr) o.prix = pr;
+      return o;
+    };
+    var nomPropre = (s) => String(s || "").replace(/\s+/g, " ").trim().replace(/^(m\.|mr\.?|mme\.?|mrs\.?|ms\.?|mlle|monsieur|madame|mister|miss)\s+/i, "").replace(/[«»"“”]+/g, "").slice(0, 120);
+    var decouperNom = (s, ordre = "auto") => {
+      const t = nomPropre(s).replace(/\s+(et|and|&)\s+.*$/i, (m) => m);
+      if (!t) return {};
+      const tiret = t.split(/\s[-–]\s/);
+      const mots = tiret.length === 2 ? tiret.map((x) => x.trim()) : t.split(" ");
+      if (mots.length === 1) return estPrenom(t) ? { prenom: t } : { nom: t };
+      const premier = mots[0], dernier = mots[mots.length - 1];
+      const a = { prenom: premier, nom: mots.slice(1).join(" ") }, b = { nom: premier, prenom: mots.slice(1).join(" ") };
+      const pa = estPrenom(premier), pb = estPrenom(dernier);
+      if (pa && !pb) return a;
+      if (pb && !pa) return mots.length === 2 ? b : { prenom: dernier, nom: mots.slice(0, -1).join(" ") };
+      const maj = (w) => w.length > 1 && w === w.toUpperCase() && /[A-Z]/.test(w);
+      if (maj(premier) && !maj(dernier)) return b;
+      if (maj(dernier) && !maj(premier)) return a;
+      if (ordre === "nom_prenom" || tiret.length === 2 && ordre !== "prenom_nom") return b;
+      return a;
+    };
+    module2.exports = { estPrenom, EMAIL_RE, email, telephone, prix, nombre, surface, pieces, chambres, typeBien, lieu, faitsTitre, nomPropre, decouperNom };
+  }
+});
+
+// src/lib/leads/fiche.js
+var require_fiche = __commonJS({
+  "src/lib/leads/fiche.js"(exports2, module2) {
+    "use strict";
+    var { cle } = require_texte();
+    var LIBELLES = {
+      email: ["email", "e mail", "mail", "adresse e mail", "adresse email", "email address", "courriel", "mail", "e mail de contact", "votre email"],
+      telephone: ["telephone", "tel", "tel portable", "tel perso", "tel prof", "telephone portable", "phone", "phone number", "numero de telephone", "n de telephone", "numero de tel", "portable", "mobile", "telefoon", "telefono", "numero"],
+      nom: ["nom", "last name", "surname", "achternaam", "nom de famille"],
+      prenom: ["prenom", "first name", "voornaam", "given name"],
+      nom_complet: ["nom prenom", "nom complet", "full name", "name", "naam", "customer", "client", "contact", "prospect", "nombre"],
+      civilite: ["civilite", "title", "salutation"],
+      message: ["message", "son message", "voici son message", "comments", "comment", "commentaire", "message du client", "customer message", "votre message", "bericht", "mensaje", "remarques", "demande", "informations complementaires souhaitees par l internaute"],
+      reference: ["reference", "ref", "reference de l annonce", "ref de l annonce", "votre reference", "ref pro", "reference annonce", "reference du bien", "listing reference", "property reference", "referentie", "referencia", "mandat"],
+      id_crm: ["id de ton crm", "id crm", "crm id"],
+      prix: ["prix", "price", "prijs", "precio", "prix de vente"],
+      ville: ["localite", "ville", "city", "town", "commune", "plaats"],
+      code_postal: ["code postal", "postcode", "postal code", "zip", "cp"],
+      adresse: ["adresse", "address", "adres"],
+      pays: ["pays", "country", "land"],
+      langue: ["langue", "language"],
+      type: ["type", "type de bien", "property type"],
+      surface: ["surface", "surface habitable", "living area"],
+      pieces: ["pieces", "nombre de pieces", "rooms"],
+      chambres: ["chambres", "bedrooms", "nombre de chambres"],
+      delai: ["delai du projet", "purchase timescale", "timescale", "delai"],
+      r_type: ["types de biens", "type de bien recherche", "type de projet"],
+      r_localisation: ["localisation", "zone souhaitee", "secteur recherche", "location"],
+      r_budget: ["budget max", "budget", "budget maximum"],
+      r_surface: ["surface habitable min", "surface min"],
+      r_terrain: ["surface terrain min"],
+      r_pieces: ["nombre de pieces min", "pieces min"],
+      r_chambres: ["nombre de chambres min", "chambres min"],
+      transaction: ["transaction"]
+    };
+    var INDEX = /* @__PURE__ */ new Map();
+    for (const [champ, l] of Object.entries(LIBELLES)) for (const x of l) INDEX.set(x, champ);
+    var INLINE = /(?<!code|n°|num[ée]ro)\s(?=(?:client|customer|email|e-mail|t[ée]l[ée]phone|phone|nego|n[ée]go|pour l'agence|for the real estate|message du client|customer message)\s*:)/gi;
+    var nettoyerLigne = (l) => String(l).replace(/^[\s•*·#>|-]+/, "").replace(/[\s*|]+$/, "").replace(/^\*(.+?)\*\s*:/, "$1:").trim();
+    var libelle = (brut) => {
+      const k = cle(brut.replace(/\(s\)/g, "")).replace(/\s+(min|max)$/, (m) => m);
+      if (k.length > 40) return null;
+      return INDEX.get(k) || null;
+    };
+    var lireFiche = (texte) => {
+      const L = String(texte).split("\n").flatMap((l) => l.split(INLINE)).map(nettoyerLigne).filter(Boolean);
+      const out = [];
+      for (let i = 0; i < L.length; i++) {
+        const l = L[i];
+        let m = l.match(/^([^:：]{1,45}?)\s*[:：]\s*(.*)$/);
+        let champ = m && libelle(m[1]);
+        let val = m ? m[2].trim() : "";
+        if (!champ) {
+          champ = libelle(l.replace(/[:：]\s*$/, ""));
+          val = "";
+          m = champ ? [l] : null;
+        }
+        if (!champ) continue;
+        if (!val && i + 1 < L.length) {
+          const n = L[i + 1];
+          const nm = n.match(/^([^:：]{1,45}?)\s*[:：]/);
+          if (!libelle(n.replace(/[:：]\s*$/, "")) && !(nm && libelle(nm[1]))) {
+            val = n;
+            i++;
+          }
+        }
+        out.push({ champ, valeur: val.replace(/^\*+\s*|\s*\*+$/g, "").trim(), ligne: i, lignes: L });
+      }
+      return { couples: out, lignes: L };
+    };
+    var ARRETS = /^(répondre|reply|repondre|conseil|retrouvez|cordialement,?$|à très bientôt|a bientot|l'équipe|the .* team|nouveau\s*:|please respond|to view more|----|====|===|# |voir l|consultez|merci de votre confiance|you can reply|vous pouvez répondre|ce message|this email|traduit de|appeler|call|messages précédents|conversation history|rappel de l|annonce concernée|properties$|biens? )/i;
+    var bloc = (L, debut, premier = "") => {
+      const out = premier ? [premier] : [];
+      for (let i = debut; i < L.length && out.length < 60; i++) {
+        const l = L[i];
+        const m = l.match(/^([^:：]{1,45}?)\s*[:：]/);
+        if (m && libelle(m[1]) || libelle(l.replace(/[:：]\s*$/, "")) || ARRETS.test(l)) break;
+        out.push(l);
+      }
+      return out.join("\n").replace(/^[«"*\s]+|[»"*\s]+$/g, "").trim();
+    };
+    module2.exports = { LIBELLES, lireFiche, bloc, libelle, nettoyerLigne };
+  }
+});
+
+// src/lib/leads/portails.js
+var require_portails = __commonJS({
+  "src/lib/leads/portails.js"(exports2, module2) {
+    "use strict";
+    var V = require_valeurs();
+    var { bloc } = require_fiche();
+    var { cle } = require_texte();
+    var dom = (s) => {
+      const t = String(s || "");
+      const m = t.match(/<[^>]*@([\w.-]+)>/) || t.match(/@([\w.-]+)/);
+      return m ? m[1].toLowerCase() : "";
+    };
+    var ligneApres = (L, re, n = 1) => {
+      const i = L.findIndex((l) => re.test(l));
+      return i >= 0 ? L[i + n] || "" : "";
+    };
+    var cherche = (L, re) => {
+      for (const l of L) {
+        const m = l.match(re);
+        if (m) return m;
+      }
+      return null;
+    };
+    var PORTAILS = [
+      {
+        id: "leboncoin",
+        nom: "Leboncoin",
+        test: (d, o) => /(^|\.)leboncoin\.fr$/.test(d),
+        nature: (o, t, d) => {
+          if (/^messagerie\./.test(d) && /nouveau message pour/i.test(o)) return "lead";
+          if (/demande de contact .*page pro/i.test(o)) return "recherche";
+          return "non_lead";
+        },
+        regles: ({ L, o, r, texte }) => {
+          const m = o.match(/nouveau message pour\s*[«"“](.+?)[»"”]/i);
+          if (m) {
+            r.bien.titre = m[1];
+            Object.assign(r.bien, V.faitsTitre(m[1]), r.bien);
+          }
+          const i = L.findIndex((l) => /^e-?mail\s*:/i.test(l));
+          if (i >= 0 && L[i + 1] && !/[«"]/.test(L[i + 1]) && !r.contact.nom_complet) r.contact.nom_complet = L[i + 1];
+          const g = texte.match(/«\s*([\s\S]*?)\s*»/);
+          if (g) r.message = g[1].trim();
+          const bonjour = L[0] && L[0].match(/^bonjour\s+(.+?),?$/i);
+          if (bonjour) r.agence_nommee = bonjour[1];
+          const tail = L.findIndex((l) => /^référence\s*:/i.test(l));
+          if (tail > 1) {
+            const pr = V.prix(L[tail - 1]);
+            if (pr) r.bien.prix = pr;
+          }
+        }
+      },
+      {
+        id: "green_acres",
+        nom: "Green-Acres",
+        test: (d) => /green-acres\.(com|fr)$/.test(d),
+        nature: (o) => /buyer replied|a répondu|replied/i.test(o) ? "relance" : /demande d.information/i.test(o) ? "lead" : "non_lead",
+        regles: ({ L, o, r, texte }) => {
+          const ref = texte.match(/\((?:reference|référence)\s*([\w-]+)\)|^(?:reference|référence)\s*:\s*([\w-]+)/im);
+          if (ref) r.bien.reference = ref[1] || ref[2];
+          const t = o.match(/-\s*([^-]+?)\s*-\s*(?:Achat|Location|Buy|Rent)\s*-\s*(.+?)(?:\s+\d+\s*m²|$)/i);
+          if (t) {
+            r.bien.type = V.typeBien(t[1]) || r.bien.type;
+            r.bien.ville = r.bien.ville || t[2].trim();
+          }
+          r.bien.surface = r.bien.surface || V.surface(o);
+          r.bien.prix = r.bien.prix || V.prix(o);
+          const pl = L.find((l) => /^[\d  .,]+\s*€$/.test(l));
+          if (pl) r.bien.prix = V.prix(pl);
+          const ty = L.findIndex((l) => /^analyse du profil$/i.test(l));
+          if (ty >= 0 && V.typeBien(L[ty + 1])) r.bien.type = r.bien.type || V.typeBien(L[ty + 1]);
+          const env = L.findIndex((l) => l === "\u2709");
+          if (env >= 0) r.contact.email_relais = V.email(L[env + 1]);
+          const rep = texte.match(/^(.+?) has replied to you/m) || texte.match(/^(.+?) vous a répondu/m);
+          if (rep && !r.contact.nom_complet) r.contact.nom_complet = rep[1];
+          const tete = L.findIndex((l) => /^(.+?)\s+-\s+\d{1,2}(\/\d{1,2}\/\d{4}|\s+\w+\s+\d{4})\s+à\s+\d/.test(l));
+          if (tete >= 0) {
+            if (!r.contact.nom_complet) r.contact.nom_complet = L[tete].replace(/\s+-\s+\d.*$/, "");
+            const fin = L.slice(tete + 1).findIndex((l) => /^(vos coordonnées|reply to this|répondez à cet|contact offert|you  ?-|vous  ?-)/i.test(l) || /^(you|vous)\s+-\s+\d/i.test(l));
+            r.message = L.slice(tete + 1, fin >= 0 ? tete + 1 + fin : tete + 12).join("\n");
+          }
+          const tel = L.findIndex((l) => l === "\u260E");
+          if (tel >= 0 && !r.contact.telephone) r.contact.telephone = L[tel + 1];
+          const lieu = cherche(L, /^([A-Za-zÀ-ÿ' -]+)\s*\((\d{5})\)$/);
+          if (lieu) {
+            r.bien.ville = lieu[1].trim();
+            r.bien.code_postal = lieu[2];
+          }
+          const f = cherche(L, /(\d+)\s*m²\s*[–-]\s*(\d+)\s*(rooms|pièces)/i);
+          if (f) {
+            r.bien.surface = +f[1];
+            r.bien.pieces = +f[2];
+          }
+        }
+      },
+      {
+        id: "giraffe360",
+        nom: "Giraffe (visite virtuelle restreinte)",
+        test: (d) => /giraffe360\.com$/.test(d),
+        nature: (o) => /prospect|accès accordé|access granted|nouveau prospect/i.test(o) ? "lead" : "non_lead",
+        regles: ({ L, r }) => {
+          const p = cherche(L, /projet\s*:?\s*(.+?)(?:\s+https?:|$)/i) || [null, ligneApres(L, /^nouveau prospect pour le projet$/i).replace(/\s+https?:.*$/, "")];
+          const titre = p && p[1] || "";
+          if (titre) {
+            r.bien.titre = titre;
+            const ref = titre.match(/\bREF\.?\s*(\d{3,})/i) || titre.match(/\b(\d{4,6})\b(?!\s*,)/);
+            if (ref) r.bien.reference = ref[1];
+            const lc = titre.match(/([A-ZÀ-Ÿ' -]{3,})\s*\((\d{5})/);
+            if (lc) {
+              r.bien.ville = lc[1].trim();
+              r.bien.code_postal = lc[2];
+            }
+          }
+        }
+      },
+      {
+        id: "seloger",
+        nom: "Se Loger",
+        test: (d) => /seloger\.com$/.test(d),
+        nature: (o) => /acquéreur est intéressé|internaute|locataire|contact/i.test(o) ? "lead" : /confier son projet/i.test(o) ? "recherche" : "non_lead",
+        regles: ({ L, r, texte }) => {
+          const n = texte.match(/^(.+?) s'intéresse à ce/m);
+          if (n) {
+            r.contact.nom_complet = n[1].replace(/e-?mail\s*:?.*$/i, "").trim();
+            delete r.contact.nom;
+            delete r.contact.prenom;
+          }
+          const i = L.findIndex((l) => /^ref\. de/i.test(l));
+          if (i >= 0) {
+            const w = L.slice(i, i + 4).map((l) => l.replace(/^.*?:\s*/, ""));
+            const j = w.findIndex((l) => /^[A-Z]{0,4}-?\d[\w-]*$/i.test(l));
+            if (j >= 0) r.bien.reference = w[j];
+          }
+          const k = L.findIndex((l) => V.prix(l));
+          if (k >= 0) {
+            r.bien.prix = V.prix(L[k]);
+            const v = L.slice(k + 1, k + 5);
+            const cp = v.find((x) => /^\d{5}$/.test(x));
+            if (cp) r.bien.code_postal = cp;
+            if (v[0] && /^[A-ZÀ-Ÿ' -]{2,}$/.test(v[0])) r.bien.ville = v[0];
+            const ty = v.find((x) => V.typeBien(x));
+            if (ty) r.bien.type = V.typeBien(ty);
+          }
+          if (!r.bien.code_postal) {
+            const lc = L.slice(0, k + 12).map(V.lieu).find((x) => x.code_postal);
+            if (lc) Object.assign(r.bien, lc);
+          }
+          const bl = L.slice(k).join(" ");
+          r.bien.pieces = r.bien.pieces || V.pieces(bl);
+          r.bien.surface = r.bien.surface || V.surface(bl);
+          const m = L.findIndex((l) => /^découvrir$/i.test(l));
+          if (m >= 0) {
+            const s = L.slice(m + 1).findIndex((l) => !/^(son|projet)$/i.test(l));
+            if (s >= 0) r.message = bloc(L, m + 1 + s + 1, L[m + 1 + s]).replace(/\nmailto:[\s\S]*$/, "");
+          }
+          const tel = cherche(L, /^tel:(\+?\d+)/i);
+          if (tel) r.contact.telephone = tel[1];
+        }
+      },
+      {
+        id: "figaro",
+        nom: "figaro immo",
+        test: (d) => /^immobilier\.lefigaro\.fr$|explorimmo/.test(d),
+        nature: (o) => /vous adresse un contact|contact|s'intéresse|intéressé/i.test(o) ? "lead" : "non_lead",
+        regles: ({ L, o, r, texte }) => {
+          const prog = texte.match(/identifiant programme\s*:\s*(\S+)/i);
+          if (prog) {
+            r.bien.reference = prog[1];
+            const cp = texte.match(/code postal du programme\s*:\s*(\d{5})/i);
+            if (cp) r.bien.code_postal = cp[1];
+            const v = texte.match(/ville du programme\s*:\s*(.+)/i);
+            if (v) r.bien.ville = v[1].trim();
+            const m = texte.match(/souhaitées par l.internaute\s*:\s*([\s\S]+?)(?:\n-\s|$)/i);
+            if (m) r.message = m[1].trim();
+            return;
+          }
+          const a = o.match(/annonce\s+([\w-]+(?:\s+bis)?)/i) || texte.match(/votre annonce\s+([\w-]+)\s+visible/i);
+          if (a) r.bien.reference = a[1];
+          const i = L.findIndex((l) => /visible sur/i.test(l));
+          if (i >= 0) {
+            const v = L.slice(i + 1, i + 6).join(" ");
+            r.bien.type = V.typeBien(L[i + 1]) || r.bien.type;
+            const cp = v.match(/\b(\d{5})\b/);
+            if (cp) r.bien.code_postal = cp[1];
+            r.bien.surface = V.surface(v);
+            r.bien.pieces = V.pieces(v);
+            r.bien.prix = V.prix(v);
+          }
+        }
+      },
+      {
+        id: "proprietes_figaro",
+        nom: "Propri\xE9t\xE9s le Figaro",
+        test: (d) => /proprietes\.lefigaro\.fr$/.test(d),
+        nature: () => "lead",
+        regles: ({ L, texte, r }) => {
+          const ref = texte.match(/votre référence\s*:\s*([\w-]+)/i);
+          if (ref) r.bien.reference = ref[1];
+          const rp = texte.match(/référence propriétés le figaro\s*:\s*(\d+)/i);
+          if (rp) r.bien.reference_portail = rp[1];
+          const i = L.findIndex((l) => /^son projet\s*:/i.test(l));
+          if (i >= 0) {
+            const j = L.slice(i + 1).findIndex((l) => !/^(achat|vente|location|maison|appartement|a un bien|[A-ZÀ-Ÿ][\wÀ-ÿ' -]+$)/i.test(l) || l.length > 40);
+            if (j >= 0) r.message = bloc(L, i + 2 + j, L[i + 1 + j]);
+          }
+          const k = L.findIndex((l) => /^annonce concernée/i.test(l));
+          if (k >= 0) {
+            const v = L.slice(k + 1, k + 6);
+            const lc = v.map(V.lieu).find((x) => x.ville);
+            if (lc) Object.assign(r.bien, lc);
+            const s = v.join(" ");
+            r.bien.prix = V.prix(s);
+            r.bien.surface = V.surface(s);
+            r.bien.pieces = V.pieces(s);
+            r.bien.chambres = V.chambres(s);
+            r.bien.type = V.typeBien(v[0]) || r.bien.type;
+          }
+        }
+      },
+      {
+        id: "french_property",
+        nom: "FRENCH PROPERTY",
+        test: (d) => /french-property\.com$/.test(d),
+        nature: (o) => /enquiry|demande/i.test(o) && !/confirmation/i.test(o) ? "lead" : "non_lead",
+        regles: ({ L, texte, r }) => {
+          const ref = texte.match(/(?:enquiry - ref|demande de renseignements - réf\.?)\s*:\s*([\w-]+)/i);
+          if (ref) r.bien.reference = ref[1];
+          const i = L.findIndex((l) => /^(property details|détails du bien)/i.test(l));
+          if (i >= 0) {
+            r.bien.titre = L[i + 1];
+            const s = L.slice(i + 1, i + 5).join(" ");
+            r.bien.prix = V.prix(s);
+            const lo = texte.match(/(?:location|lieu)\s*:\s*(.+)/i);
+            if (lo) {
+              const parts = lo[1].split(",");
+              r.bien.ville = parts[parts.length - 1].trim();
+              const dep = lo[1].match(/\((\d{2})\)/);
+              if (dep) r.bien.departement = dep[1];
+            }
+          }
+          const m = L.findIndex((l) => /^message\s*:/i.test(l));
+          if (m >= 0) {
+            const msg = bloc(L, m + 1, L[m].replace(/^message\s*:\s*/i, ""));
+            const req = L.slice(m + 1).filter((l, j, a) => /^requests\s*:/i.test(a[0]) || true);
+            const q = texte.match(/(?:requests|demandes)\s*:\s*\n([\s\S]*?)\n(?:purchase timescale|calendrier d'achat|property details|détails du bien)/i);
+            r.message = [msg, q ? "Demandes : " + q[1].replace(/\n/g, ", ").replace(/\*\s*/g, "") : ""].filter(Boolean).join("\n");
+          }
+        }
+      },
+      {
+        id: "properstar",
+        nom: "Properstar",
+        test: (d) => /properstar\.com$/.test(d),
+        nature: (o) => /nouveau message|new message|demande/i.test(o) ? "lead" : "non_lead",
+        regles: ({ L, texte, r }) => {
+          const n = texte.match(/=\s*(?:nouveau message de|new message from)\s+(.+?)\s*=/i);
+          if (n) r.contact.nom_complet = n[1];
+          const i = L.findIndex((l) => /^=\s*(nouveau message|new message)/i.test(l));
+          if (i >= 0) r.message = bloc(L, i + 1);
+          const j = L.findIndex((l) => /annonce désirée|desired listing/i.test(l));
+          if (j >= 0) {
+            const s = L.slice(j + 1, j + 5).join(" ");
+            r.bien.titre = L[j + 1];
+            const pt = L.slice(j + 1, j + 5).find((l) => /·/.test(l));
+            r.bien.type = V.typeBien(pt ? pt.split("\xB7")[0] : L[j + 1]);
+            r.bien.surface = V.surface(s);
+            r.bien.pieces = V.pieces(s);
+            r.bien.chambres = V.chambres(s);
+            r.bien.prix = V.prix(s);
+          }
+        }
+      },
+      {
+        id: "bienici",
+        nom: "BIEN ICI",
+        test: (d) => /bienici\.com$/.test(d),
+        nature: (o) => /contact .*acquéreur|contact prospect|contact vendeur/i.test(o) ? "lead" : "non_lead",
+        regles: ({ L, o, texte, liens, r }) => {
+          const a = o.match(/annonce\s+([\w-]+)\s+à\s+(.+)$/i);
+          if (a) {
+            r.bien.reference = a[1];
+            r.bien.ville = a[2].trim();
+          }
+          const id = liens.map((u) => u.match(/immo-facile-(\d{6,})/)).find(Boolean);
+          if (id) r.bien.id_crm = id[1];
+          const c = texte.match(/ses coordonnées\s*([^\n]+?)\s+téléphone\s*:\s*([+\d ().-]+)/i);
+          if (c) {
+            r.contact.nom_complet = c[1].trim();
+            r.contact.telephone = c[2];
+          }
+          const i = L.findIndex((l) => /^rappel de l.annonce/i.test(l));
+          if (i >= 0) {
+            const v = L.slice(i + 1, i + 5);
+            const s = v.join(" ");
+            r.bien.type = V.typeBien(v[0]);
+            r.bien.pieces = V.pieces(s);
+            r.bien.surface = V.surface(s);
+            r.bien.prix = V.prix(s);
+            const lc = v.map(V.lieu).find((x) => x.code_postal);
+            if (lc) Object.assign(r.bien, lc);
+          }
+          const m = texte.match(/(?:son message|message)\s*:\s*\n?([\s\S]*?)\n(?:rappel de l|voir l)/i);
+          if (m && !r.message) r.message = m[1].trim();
+        }
+      },
+      {
+        id: "site_agence",
+        nom: "Site d'agence (AC3)",
+        test: (d) => /ac3-groupe\.com$/.test(d),
+        nature: (o) => /demande|request|création compte|account/i.test(o) ? "lead" : "non_lead",
+        regles: ({ L, texte, r }) => {
+          const cl = texte.match(/(?:client|customer)\s*:\s*([^\n]+)/i);
+          if (cl) {
+            const parts = cl[1].replace(/\s+(e-?mail|t[ée]l[ée]phone|phone)\s*:.*$/i, "").split(/\s+-\s+/).map((x) => x.trim());
+            const em = parts.find((x) => V.email(x)), tel = parts.find((x) => V.telephone(x) && !V.email(x));
+            const noms = parts.filter((x) => x !== em && x !== tel && !/email|t[ée]l/i.test(x));
+            if (noms.length >= 2 && noms.every((x) => !/\s/.test(x))) {
+              r.contact.nom = noms[0];
+              r.contact.prenom = noms[1];
+            } else if (noms.length) r.contact.nom_complet = noms.join(" ");
+            if (em) r.contact.email = V.email(em);
+            if (tel) r.contact.telephone = tel;
+          }
+          const de = texte.match(/(?:TEXT_DE|^De)\s*:\s*(.+?)\s+-\s+(\S+@\S+)/im);
+          if (de) {
+            r.contact.email = r.contact.email || V.email(de[2]);
+            if (!r.contact.nom && !r.contact.nom_complet) r.contact.nom_complet = de[1];
+          }
+          const ref = texte.match(/\((?:reference|référence)\s*:\s*([\w-]+)\)/i);
+          if (ref) r.bien.reference = ref[1];
+          const b = texte.match(/^(?:Biens?|Properties)\s+(.+?)\s*\((?:reference|référence)/im) || texte.match(/^(.+?)\s*\((?:reference|référence)\s*:/im);
+          if (b) {
+            r.bien.titre = b[1];
+            Object.assign(r.bien, { ...V.faitsTitre(b[1]), ...r.bien });
+            const v = b[1].match(/(?:^|\s)à\s+([\wÀ-ÿ' -]+)$/i);
+            if (v && !r.bien.ville) r.bien.ville = v[1];
+          }
+          const nego = texte.match(/(?:nego|pour l'agence|for the real estate)\s*:\s*([^\n]+?)(?:\s+(?:client|customer)\s*:|$)/im);
+          if (nego && nego[1].trim()) r.agence_nommee = nego[1].trim();
+          const i = L.findIndex((l) => /^(message du client|customer message)\s*:?$/i.test(l));
+          if (i >= 0) {
+            const msg = bloc(L, i + 1).replace(/^(properties|biens?)$/im, "");
+            const fl = texte.match(/->\s*([\s\S]*?)\n(?:properties|biens?)\n/i);
+            r.message = (fl ? fl[1] : msg).trim();
+          }
+          const d = texte.match(/délai du projet\s*:\s*(.+)/i);
+          if (d) r.delai = d[1].trim();
+          const oc = texte.match(/origine du contact\s*:\s*(.+)/i);
+          if (oc) r.origine_declaree = oc[1].trim();
+          if (/n'a pas accepté d'?[eê]tre recontacté par e-?mail/i.test(texte)) r.consentement_email = false;
+        }
+      },
+      {
+        id: "bellespierres",
+        nom: "Belles Pierres",
+        test: (d) => /bellespierres\.com$/.test(d),
+        nature: (o) => /demande/i.test(o) ? "lead" : "non_lead",
+        regles: ({ L, r }) => {
+          const i = L.findIndex((l) => /^vous avez une demande d/i.test(l) && !/sur bellespierres/i.test(l));
+          if (i >= 0) {
+            const s = L.slice(i + 1, i + 6).join(" ");
+            r.bien.titre = L[i + 1];
+            r.bien.type = V.typeBien(L[i + 1]);
+            r.bien.prix = V.prix(s);
+            r.bien.surface = V.surface(s);
+            r.bien.pieces = V.pieces(s);
+            r.bien.chambres = V.chambres(s);
+            const v = L[i + 1].match(/.*(?:^|\s)à\s+([^:|]+?)\s*:/);
+            if (v) r.bien.ville = v[1].trim();
+          }
+          const k = L.findIndex((l) => /^référence de l.annonce\s*:?$/i.test(l));
+          if (k >= 0) r.bien.reference = L[k + 1];
+        }
+      },
+      {
+        id: "ma_propriete",
+        nom: "Ma Propri\xE9t\xE9.fr",
+        test: (d) => /ma-propriete\.fr$/.test(d),
+        nature: (o) => /message|projet/i.test(o) ? "lead" : "non_lead",
+        regles: ({ texte, liens, r }) => {
+          const t = texte.match(/titre de l.annonce\s*\*?\s*:\s*\*?\s*(.+?)\s*\*?$/im);
+          if (t) r.bien.titre = t[1];
+          const u = liens.map((x) => x.match(/ma-propriete\.fr\/fr\/[^?]*\/([a-z-]+)\/[^/?]+\?prix=(\d+)/)).find(Boolean);
+          if (u) r.bien.prix = +u[2];
+        }
+      },
+      {
+        id: "rightmove",
+        nom: "RIGHTMOVE",
+        test: (d) => /rightmove\.co\.uk$/.test(d),
+        nature: (o) => /lead|enquiry/i.test(o) ? "lead" : "non_lead",
+        regles: ({ texte, r }) => {
+          const a = texte.match(/^address:\s*(.+)$/im);
+          if (a) {
+            const p = a[1].split(",");
+            r.bien.ville = p[p.length - 1].trim();
+          }
+          const b = texte.match(/^bedrooms:\s*(\d+)/im);
+          if (b) r.bien.chambres = +b[1];
+          const t = texte.match(/^type:\s*(.+)$/im);
+          if (t) r.bien.type = V.typeBien(t[1]);
+          const ph = texte.match(/^phone:\s*(\d{10,})/im);
+          if (ph) r.contact.telephone = "+" + ph[1];
+        }
+      },
+      {
+        id: "paruvendu",
+        nom: "Paru-vendu",
+        test: (d) => /paruvendu(pro)?\.fr$/.test(d),
+        nature: (o) => /contact/i.test(o) ? "lead" : "non_lead",
+        regles: ({ L, o, texte, r }) => {
+          const ref = o.match(/réf\.\s*:\s*([\w]+)/i) || texte.match(/réf\. pro\s*:\s*(\S+)/i);
+          if (ref) r.bien.reference_portail = ref[1];
+          const own = (r.bien.reference_portail || "").match(/_(\d+)$/);
+          if (own) r.bien.reference = own[1];
+          const i = L.findIndex((l) => /^réf\. pro/i.test(l));
+          if (i >= 0) {
+            const s = L.slice(i + 1, i + 3).join(" ");
+            r.bien.prix = V.prix(s);
+            r.bien.surface = V.surface(s);
+            r.bien.pieces = V.pieces(s);
+            r.bien.type = V.typeBien(s);
+            const lc = s.match(/([\wÀ-ÿ' -]+)\s*\((\d{5})\)/);
+            if (lc) {
+              r.bien.ville = lc[1].replace(/^.*€\s*/, "").trim();
+              r.bien.code_postal = lc[2];
+            }
+          }
+          const k = L.findIndex((l) => /^répondez à ce contact/i.test(l));
+          if (k >= 0) {
+            r.contact.nom_complet = L[k + 2];
+            delete r.contact.nom;
+            delete r.contact.prenom;
+          }
+          const m = L.findIndex((l) => /^voici son message/i.test(l));
+          if (m >= 0) r.message = bloc(L, m + 1).replace(/\nmailto:.*$/s, "");
+        }
+      },
+      {
+        id: "jestimo",
+        nom: "Jestimo estimation en ligne",
+        test: (d) => /jestim(o|online)\.(com|fr)$/.test(d),
+        nature: (o) => /piste|réaction|estimation/i.test(o) ? "estimation" : "non_lead",
+        regles: ({ texte, r }) => {
+          const c = texte.match(/contacter\s+(.+?)\s+sur l.adresse email\s+(\S+@\S+?)\s+ou au\s+([+\d ]+)/i);
+          if (c) {
+            r.contact.nom_complet = c[1];
+            r.contact.email = V.email(c[2]);
+            r.contact.telephone = c[3];
+          }
+          const a = texte.match(/située (?:au|à)\s+(.+?),\s*(\d{5})\s+([A-Za-zÀ-ÿ' -]+?)(?:\s+a\s|\.|\n|$)/i);
+          if (a) {
+            r.bien.adresse = a[1];
+            r.bien.code_postal = a[2];
+            r.bien.ville = a[3].trim();
+          }
+          const e = texte.match(/pré-estimation du bien\s*:\s*([\d  ]+)\s*€/i);
+          if (e) r.bien.prix = V.prix(e[1] + " \u20AC");
+        }
+      },
+      { id: "ekonsilio", nom: "eKonsilio (chat)", test: (d) => /ekonsilio\.(fr|com)$/.test(d), nature: (o, t) => /nouvelle demande de contact/i.test(t) ? "lead" : "non_lead", regles: ({ texte, r }) => {
+        const m = texte.match(/# commentaire\s*\n([\s\S]*?)\n#/i);
+        if (m) r.message = m[1].trim();
+      } },
+      { id: "zefir", nom: "Zefir (Zefir)", test: (d) => /zefir\.fr$/.test(d), nature: () => "estimation" },
+      { id: "huisenaanbod", nom: "HUISenAANBOD.nl", test: (d) => /huisenaanbod\.nl$/.test(d), nature: () => "lead" },
+      { id: "kyero", nom: "KYERO", test: (d) => /kyero\.com$/.test(d), nature: () => "lead" },
+      { id: "jamesedition", nom: "JAMES EDITION", test: (d) => /jamesedition\.com$/.test(d), nature: () => "lead" },
+      {
+        id: "chateauxpourtous",
+        nom: "Ch\xE2teaux pour tous",
+        test: (d, o) => /chateauxpourtous/.test(d) || /^chateauxpourtous a un contact/i.test(o),
+        nature: () => "lead",
+        regles: ({ L, o, r }) => {
+          const m = o.match(/ref\.\s*([\w-]+)/i);
+          if (m) r.bien.reference = m[1];
+          r.bien.prix = V.prix(o);
+          const i = L.findIndex((l) => /^il s.agit de/i.test(l));
+          if (i >= 0) {
+            r.contact.nom_complet = V.nomPropre(L[i + 1].replace(/^monsieur ou madame\s+/i, "").replace(/^(miss|mister|mr|mrs|ms)\s+/i, ""));
+            delete r.contact.nom;
+            delete r.contact.prenom;
+          }
+        }
+      },
+      { id: "meretdemeures", nom: "MERS ET DEMEURES", test: (d) => /meretdemeures|mersetdemeures/.test(d), nature: () => "lead" },
+      { id: "moulin", nom: "Moulin.nl", test: (d) => /moulin\.nl$/.test(d), nature: () => "lead" },
+      {
+        id: "idealista",
+        nom: "Idealista",
+        test: (d) => /idealista\.(fr|com)$/.test(d),
+        nature: (o) => /contact|message|demande|intéress/i.test(o) && !/compte|mot de passe|bienvenue/i.test(o) ? "lead" : "non_lead",
+        regles: ({ L, o, r }) => {
+          const n = o.match(/message de (.+?) concernant/i);
+          if (n) {
+            r.contact.nom_complet = n[1];
+            delete r.contact.nom;
+            delete r.contact.prenom;
+          }
+          const e = L.findIndex((l) => V.email(l) && !/idealista/.test(l));
+          if (e >= 0) {
+            r.contact.email = V.email(L[e]);
+            const f = L.slice(e + 1).findIndex((l) => /^(réponse depuis|réf\.|code de l)/i.test(l));
+            r.message = L.slice(e + 1, f >= 0 ? e + 1 + f : e + 8).join("\n");
+          }
+          const t = L.find((l) => /^\+?[\d ]{9,}/.test(l));
+          if (t) r.contact.telephone = t.replace(/\[.*$/, "");
+          const pr = L.find((l) => /^[\d.  ]+\s*€$/.test(l));
+          if (pr) r.bien.prix = V.prix(pr);
+          const a = o.match(/réf\.\s*:\s*(\w+),\s*([^,]+?)\s*-\s*.*,\s*([^,]+)$/i);
+          if (a) {
+            r.bien.reference = a[1];
+            r.bien.type = V.typeBien(a[2]);
+            r.bien.ville = a[3].trim();
+          }
+        }
+      },
+      { id: "arkadia", nom: "Arkadia", test: (d, o) => /arkadia/.test(d) || /sur arkadia/i.test(o), nature: () => "lead", regles: ({ o, r }) => {
+        const m = o.match(/annonce n°\s*([\w-]+)/i);
+        if (m) r.bien.reference_portail = m[1];
+      } },
+      { id: "snpi", nom: "Sites partenaires SNPI (Apimo)", test: (d, o) => /apimo\.(com|net|fr)$/.test(d) && /demande|contact/i.test(o), nature: () => "lead" },
+      { id: "adapt", nom: "Adapt immobilier", test: (d) => /adaptinformatique\.fr$|adaptimmobilier/.test(d), nature: () => "lead" },
+      { id: "annonces_diverses", nom: "Autres portails", test: (d) => /(stonimmo\.com|annonce-immobilier\.com|lesiteimmo\.com|superimmo(pro)?\.com|contact\.superimmopro\.com|belles-demeures|jetrouvetous\.fr|immobilier\.email)$/.test(d), nature: (o) => /contact|demande|message|intéress|lead/i.test(o) ? "lead" : "non_lead" },
+      /* Rapport de quarantaine anti-spam : ce n'est pas un lead mais il peut en cacher. */
+      {
+        id: "vade",
+        nom: "Rapport anti-spam",
+        test: (d) => /vadesecure\.com$/.test(d),
+        nature: () => "alerte_spam",
+        regles: ({ texte, r }) => {
+          r.bloques = (texte.match(/^.{3,40}\|.+\|\s*\d+\s*k\s*\|.+$/gm) || []).map((l) => l.split("|")[0].trim()).filter((x) => /properstar|green|leboncoin|seloger|figaro|bienici|rightmove|french|giraffe|ac3|immo/i.test(x));
+        }
+      },
+      { id: "bruit", nom: "Service / newsletter", test: (d) => /(immo-facile\.fr|toutvendre\.fr|opinionsystem\.fr|notaires\.fr|cci\.fr|tiktok\.com|news\.leboncoin\.fr|gestiviag\.com|communication-snpi\.com|centre-conventions-collectives\.fr|linkedin\.com|facebookmail\.com|google\.com)$/.test(d), nature: () => "non_lead" }
+    ];
+    var detecter = (mail) => {
+      const d = dom(mail.expediteur), o = String(mail.objet || "");
+      return PORTAILS.find((p) => p.test(d, o)) || null;
+    };
+    module2.exports = { PORTAILS, detecter, dom };
+  }
+});
+
+// src/lib/leads/extraire.js
+var require_extraire = __commonJS({
+  "src/lib/leads/extraire.js"(exports2, module2) {
+    "use strict";
+    var { texteMail, liens: lesLiens, cle, sansCitation } = require_texte();
+    var V = require_valeurs();
+    var { lireFiche, bloc } = require_fiche();
+    var { detecter, dom } = require_portails();
+    var RELAIS = /(@|\.)(messagerie\.leboncoin\.fr|email\.green-acres\.com|reply\.properstar\.com|leboncoin\.fr|green-acres\.com|seloger\.com|bienici\.com|lefigaro\.fr|french-property\.com|properstar\.com|giraffe360\.com|ac3-groupe\.com|rightmove\.co\.uk|paruvendu(pro)?\.fr|ma-propriete\.fr|bellespierres\.com|jestim(o|online)\.(com|fr)|ekonsilio\.(fr|com)|octea\.com|vadesecure\.com)$/i;
+    var GENERIQUES = /^(no-?reply|noreply|support|contact|info|enquiries|pacontact|pro|service|notification|newsletter)@/i;
+    var vide = () => ({ contact: {}, bien: {}, recherche: {}, message: "", preuves: {} });
+    var poser = (r, chemin, v, preuve) => {
+      if (v === void 0 || v === null || v === "" || typeof v === "number" && !isFinite(v)) return;
+      const [a, b] = chemin.split(".");
+      const cible = b ? r[a] : r;
+      const k = b || a;
+      if (cible[k] !== void 0 && cible[k] !== null && cible[k] !== "") return;
+      cible[k] = v;
+      r.preuves[chemin] = preuve;
+    };
+    var depuisFiche = (r, couples, L) => {
+      for (const c of couples) {
+        const v = c.valeur, p = "fiche:" + c.champ;
+        switch (c.champ) {
+          case "email":
+            poser(r, "contact.email", V.email(v), p);
+            break;
+          case "telephone":
+            poser(r, "contact.telephone", V.telephone(v) ? v : "", p);
+            break;
+          case "nom":
+            poser(r, "contact.nom", V.nomPropre(v), p);
+            break;
+          case "prenom":
+            poser(r, "contact.prenom", V.nomPropre(v), p);
+            break;
+          case "nom_complet":
+            if (!V.email(v) || v.split(/\s+-\s+/).length > 1) poser(r, "contact.nom_complet", V.nomPropre(v.split(/\s+-\s+(?=\S+@|\+?\d)/)[0]), p);
+            break;
+          case "civilite":
+            poser(r, "contact.civilite", v, p);
+            break;
+          case "pays":
+            poser(r, "contact.pays", v, p);
+            break;
+          case "langue":
+            poser(r, "contact.langue", v, p);
+            break;
+          case "message":
+            if (!r.message) {
+              r.message = bloc(c.lignes, c.ligne + 1, v);
+              r.preuves.message = p;
+            }
+            break;
+          case "reference": {
+            const m = v.match(/[\w][\w./-]*/);
+            if (m && /\d/.test(m[0])) poser(r, "bien.reference", m[0], p);
+            break;
+          }
+          case "id_crm":
+            poser(r, "bien.id_crm", (v.match(/\d{5,}/) || [])[0], p);
+            break;
+          case "prix":
+            poser(r, "bien.prix", V.prix(/€|eur/i.test(v) ? v : v + " \u20AC"), p);
+            break;
+          case "ville":
+            poser(r, "bien.ville", v, p);
+            break;
+          case "code_postal":
+            poser(r, "bien.code_postal", (v.match(/\b\d{5}\b/) || [])[0], p);
+            break;
+          case "adresse":
+            poser(r, "bien.adresse", v, p);
+            break;
+          case "type":
+            poser(r, "bien.type", V.typeBien(v), p);
+            break;
+          case "surface":
+            poser(r, "bien.surface", V.surface(v + (/m/.test(v) ? "" : " m\xB2")), p);
+            break;
+          case "pieces":
+            poser(r, "bien.pieces", V.nombre(v), p);
+            break;
+          case "chambres":
+            poser(r, "bien.chambres", V.nombre(v), p);
+            break;
+          case "delai":
+            poser(r, "delai", v, p);
+            break;
+          case "r_type":
+            poser(r, "recherche.type", V.typeBien(v) || (/n\.?c/i.test(v) ? "" : v), p);
+            break;
+          case "r_localisation":
+            if (!/n\.?c\.?$/i.test(v)) poser(r, "recherche.localisation", v, p);
+            break;
+          case "r_budget":
+            poser(r, "recherche.budget_max", V.prix(v + " \u20AC"), p);
+            break;
+          case "r_surface":
+            poser(r, "recherche.surface_min", V.nombre(v), p);
+            break;
+          case "r_terrain":
+            poser(r, "recherche.terrain_min", V.nombre(v), p);
+            break;
+          case "r_pieces":
+            poser(r, "recherche.pieces_min", V.nombre(v), p);
+            break;
+          case "r_chambres":
+            poser(r, "recherche.chambres_min", V.nombre(v), p);
+            break;
+          default:
+        }
+      }
+    };
+    var identifierSite = (liens, texte, objet, sites = []) => {
+      const compte = /* @__PURE__ */ new Map();
+      for (const u of liens) {
+        const h = (u.match(/^https?:\/\/([^/?#]+)/i) || [])[1];
+        if (!h) continue;
+        const s2 = sites.find((x) => h.toLowerCase().replace(/^www\./, "").endsWith(x.domaine));
+        if (s2) compte.set(s2, (compte.get(s2) || 0) + 1);
+      }
+      if (compte.size) return { ...[...compte.entries()].sort((a, b) => b[1] - a[1])[0][0], preuve: "lien" };
+      const t = cle(objet + " " + texte.slice(0, 600));
+      const s = sites.find((x) => (x.noms || []).some((n) => t.includes(cle(n))));
+      return s ? { ...s, preuve: "nom" } : null;
+    };
+    var deballer = (texte, objet, domAgence) => {
+      const L = texte.split("\n");
+      for (let i = 0; i < L.length; i++) {
+        const m = L[i].match(/^(?:de|from)\s*:?\s+(.*@.*)$/i) || (/^(de|from)$/i.test(L[i]) && /@/.test(L[i + 1] || "") ? [null, L[i + 1]] : null);
+        if (!m) continue;
+        const d = dom(m[1]);
+        if (!d || domAgence.some((x) => d === x || d.endsWith("." + x))) continue;
+        let j = i + 1;
+        while (j < L.length && j < i + 8 && /^(envoyé|sent|date|à|to|cc|objet|subject|a)\s*:?/i.test(L[j])) j++;
+        const o = (L.slice(i, j).find((l) => /^(objet|subject)\s*:/i.test(l)) || "").replace(/^(objet|subject)\s*:\s*/i, "") || objet.replace(/^((tr|fwd?|fw|re)\s*:\s*)+/i, "");
+        return { expediteur: m[1], objet: o, texte: L.slice(j).join("\n"), html: "" };
+      }
+      return null;
+    };
+    var extraire = (mail, conf = {}) => {
+      const texte = texteMail({ texte: mail.texte ?? mail.corps_texte, html: mail.html ?? mail.corps_html });
+      const liens = lesLiens({ texte: mail.texte ?? mail.corps_texte, html: mail.html ?? mail.corps_html });
+      const objet = String(mail.objet || "");
+      const d = dom(mail.expediteur);
+      const domAgence = (conf.domaines_agence || []).map((x) => x.toLowerCase());
+      const r = vide();
+      const p = detecter(mail);
+      r.portail = p ? p.id : null;
+      r.portail_nom = p ? p.nom : null;
+      const auto = /^(automatic reply|réponse automatique|automatische antwort|automatisch antwoord|auto(matic)?[- ]?reply|out of office|absence|abwesenheit|risposta automatica|respuesta automática|email not in use|your email to|undeliverable|non remis|delivery status|mail delivery)/i.test(objet.replace(/^(re|tr|fwd?)\s*:\s*/i, ""));
+      const campagne = (conf.objets_campagnes || []).find((c2) => cle(objet).includes(cle(c2)));
+      if (auto) r.nature = "auto_reponse";
+      else if (p) r.nature = p.nature(objet, texte, d);
+      else if (domAgence.some((x) => d === x || d.endsWith("." + x))) {
+        r.nature = "interne";
+        if (/^\s*(tr|fwd?|fw|transf)\s*:/i.test(objet) && !mail.__deballe) {
+          const inner = deballer(texte, objet, domAgence);
+          if (inner) {
+            const r2 = extraire({ ...inner, destinataire: mail.destinataire, __deballe: true }, conf);
+            r2.transfere_par = mail.expediteur;
+            r2.preuves.transfert = "deballe";
+            return r2;
+          }
+        }
+      } else r.nature = campagne ? "reponse_campagne" : "direct";
+      const corps = ["direct", "reponse_campagne"].includes(r.nature) ? sansCitation(texte) : texte;
+      const { couples, lignes: L } = lireFiche(corps);
+      if (!["non_lead", "interne", "auto_reponse"].includes(r.nature)) depuisFiche(r, couples, L);
+      if (p && p.regles && r.nature !== "non_lead") {
+        try {
+          p.regles({ L, o: objet, r, texte: corps, liens, conf, mail });
+        } catch (e) {
+          r.erreur_regle = e.message;
+        }
+        for (const k of ["contact", "bien"]) for (const [c2, v] of Object.entries(r[k])) if (v !== null && v !== void 0 && v !== "" && !r.preuves[k + "." + c2]) r.preuves[k + "." + c2] = "portail:" + p.id;
+        if (r.message && !r.preuves.message) r.preuves.message = "portail:" + p.id;
+      }
+      if (r.nature === "reponse_campagne") {
+        poser(r, "contact.email", V.email(mail.expediteur), "expediteur");
+        if (!r.message) {
+          r.message = corps.split("\n").slice(0, 40).join("\n");
+          r.preuves.message = "corps";
+        }
+      }
+      if (r.nature === "direct") {
+        const ref = objet.match(/(?:r[ée]f(?:[ée]rence)?\.?\s*(?:n°)?\s*:?\s*|#)\s*([\w-]*\d[\w-]*)/i);
+        if (ref) poser(r, "bien.reference", ref[1], "objet");
+        else {
+          const n2 = objet.match(/(?<![\d.,])(\d{4,12})(?![\d.,]|\s*(€|m2|m²|euros?))/);
+          if (n2 && !/^(19|20)\d\d$/.test(n2[1])) poser(r, "bien.reference", n2[1], "objet:nombre");
+        }
+        for (const [k, v] of Object.entries(V.faitsTitre(objet))) poser(r, "bien." + k, v, "objet");
+        poser(r, "contact.email", V.email(mail.expediteur), "expediteur");
+        const n = String(mail.expediteur || "").match(/^\s*"?([^"<@]+?)"?\s*</);
+        if (n) poser(r, "contact.nom_complet", V.nomPropre(n[1]), "expediteur");
+        if (!r.message) {
+          r.message = corps.split("\n").slice(0, 40).join("\n");
+          r.preuves.message = "corps";
+        }
+        const zone = objet + "\n" + corps.slice(0, 1200);
+        const bienMot = /(maison|villa|appartement|propriét|house|property|home|huis|woning|annonce|listing|réf|ref\b|reference)/i.test(zone);
+        const intention = /(visite|visiter|viewing|intéress|interested|renseignement|information|achat|acheter|buy|purchase|disponible|available|prix|price|offre|offer|à vendre|a vendre|for sale|te koop|recherche|looking for)/i.test(zone);
+        if (!r.bien.reference && !(bienMot && intention)) r.nature = "inconnu";
+      }
+      if (["lead", "relance", "direct"].includes(r.nature)) {
+        if (!r.bien.reference) {
+          const re = /(?:\br[ée]f(?:[ée]rence)?\b|\bref\b)\.?\s*(?:de l.annonce|n°|no\.?)?\s*:?\s*\[?\s*([A-Z]{0,4}-?\d[\w-]{2,})/i;
+          const m = objet.match(re) || corps.match(re) || corps.match(/\[(\d{3,})\]\s*-/);
+          if (m) poser(r, "bien.reference", m[1], "motif:reference");
+        }
+        if (!r.bien.id_crm) for (const motif of conf.id_crm_liens || []) {
+          const re = new RegExp(motif, "i");
+          const m = liens.map((u) => u.match(re)).find(Boolean);
+          if (m) {
+            poser(r, "bien.id_crm", m[1], "lien");
+            break;
+          }
+        }
+      }
+      if (!r.contact.email_relais && RELAIS.test(d) && !GENERIQUES.test(V.email(mail.expediteur))) r.contact.email_relais = V.email(mail.expediteur);
+      const c = r.contact;
+      if (c.email && (RELAIS.test(c.email) || domAgence.some((x) => c.email.endsWith("@" + x)) || GENERIQUES.test(c.email))) {
+        if (RELAIS.test(c.email)) c.email_relais = c.email;
+        delete c.email;
+        delete r.preuves["contact.email"];
+      }
+      if (!c.email && r.nature !== "non_lead" && r.nature !== "interne") {
+        const tous = (corps.match(new RegExp(V.EMAIL_RE.source, "gi")) || []).map((x) => x.toLowerCase()).filter((x) => !RELAIS.test(x) && !GENERIQUES.test(x) && !domAgence.some((a) => x.endsWith("@" + a)));
+        if (tous.length) poser(r, "contact.email", tous[0], "texte");
+      }
+      if (c.telephone) {
+        const t = V.telephone(c.telephone);
+        if (t) c.telephone = t;
+        else {
+          delete c.telephone;
+          delete r.preuves["contact.telephone"];
+        }
+      }
+      if (!c.telephone) {
+        const m = liens.concat(corps.match(/tel:\+?[\d ]{8,}/gi) || []).find((u) => /^tel:/i.test(u));
+        if (m) poser(r, "contact.telephone", V.telephone(m), "lien tel");
+      }
+      if (c.nom_complet && !c.nom && !c.prenom) {
+        const parts = V.decouperNom(c.nom_complet, "auto");
+        if (parts.nom) {
+          c.nom = parts.nom;
+          r.preuves["contact.nom"] = "decoupe";
+        }
+        if (parts.prenom) {
+          c.prenom = parts.prenom;
+          r.preuves["contact.prenom"] = "decoupe";
+        }
+      }
+      if (c.nom && !c.nom_complet) c.nom_complet = [c.prenom, c.nom].filter(Boolean).join(" ");
+      const b = r.bien;
+      for (const k of ["prix", "surface", "pieces", "chambres"]) if (b[k] === null || b[k] === void 0 || b[k] === "" || Number.isNaN(b[k])) delete b[k];
+      if (b.ville) b.ville = b.ville.replace(/\s+/g, " ").replace(/[,.]+$/, "").trim();
+      if (b.reference) b.reference = String(b.reference).trim();
+      if (r.message) r.message = r.message.replace(/\n{3,}/g, "\n\n").trim().slice(0, 8e3);
+      if (p && p.id === "site_agence") {
+        const s = identifierSite(liens, texte, objet, conf.sites || []);
+        if (s) {
+          r.site = s.domaine;
+          r.site_origine = s.origine || s.domaine;
+          r.preuves.site = s.preuve;
+        }
+      }
+      r.manquants = [];
+      if (["lead", "relance", "recherche", "estimation", "direct", "reponse_campagne"].includes(r.nature)) {
+        if (!c.email && !c.telephone) r.manquants.push("coordonnees");
+        if (!c.email && !c.email_relais) r.manquants.push("email");
+        if (!c.nom && !c.prenom) r.manquants.push("nom");
+        if (["lead", "relance"].includes(r.nature) && !b.reference && !b.id_crm && !b.reference_portail) r.manquants.push("reference");
+      }
+      r.destinataire = mail.destinataire || "";
+      return r;
+    };
+    module2.exports = { extraire, identifierSite, RELAIS };
+  }
+});
+
+// src/lib/leads/rapprochement.js
+var require_rapprochement = __commonJS({
+  "src/lib/leads/rapprochement.js"(exports2, module2) {
+    "use strict";
+    var { cle } = require_texte();
+    var REGLES = { prix_ok: 0.035, prix_ko: 0.1, surface_ok_m2: 3, surface_ok: 0.035, surface_ko: 0.1 };
+    var ecart = (a, b) => Math.abs(a - b) / Math.max(Math.abs(a), Math.abs(b), 1);
+    var memeVille = (a, b) => {
+      const x = cle(a).replace(/\b(saint|st)\b/g, "st").replace(/\s+/g, ""), y = cle(b).replace(/\b(saint|st)\b/g, "st").replace(/\s+/g, "");
+      return x && y && (x === y || x.includes(y) || y.includes(x));
+    };
+    var comparer = (mail = {}, bien = {}, regles = REGLES) => {
+      const out = { accords: [], conflits: [], inconnus: [] };
+      const note = (nom, ok, ko) => (ok ? out.accords : ko ? out.conflits : out.inconnus).push(nom);
+      if (mail.prix && bien.prix) {
+        const e = ecart(+mail.prix, +bien.prix);
+        note("prix", e <= regles.prix_ok, e > regles.prix_ko);
+      }
+      if (mail.surface && bien.surface) {
+        const d = Math.abs(mail.surface - bien.surface), e = ecart(+mail.surface, +bien.surface);
+        note("surface", d <= regles.surface_ok_m2 || e <= regles.surface_ok, e > regles.surface_ko && d > regles.surface_ok_m2);
+      }
+      if (mail.pieces && bien.pieces) note("pieces", +mail.pieces === +bien.pieces, Math.abs(mail.pieces - bien.pieces) >= 2);
+      if (mail.code_postal && bien.code_postal) note("code_postal", mail.code_postal === bien.code_postal, mail.code_postal.slice(0, 2) !== String(bien.code_postal).slice(0, 2));
+      else if (mail.departement && bien.code_postal) note("departement", String(bien.code_postal).startsWith(mail.departement), !String(bien.code_postal).startsWith(mail.departement));
+      if (mail.ville && bien.ville) note("ville", memeVille(mail.ville, bien.ville), false);
+      if (mail.type && bien.type) note("type", mail.type === bien.type, false);
+      return out;
+    };
+    var verdict = (cmp, minAccords, preuveForte = false) => {
+      if (preuveForte && cmp.conflits.length === 1 && cmp.accords.length >= 2) return { ok: true, raison: "accords : " + cmp.accords.join(", ") + " \u2014 \xE9cart signal\xE9 : " + cmp.conflits[0], alerte: cmp.conflits[0] };
+      if (cmp.conflits.length) return { ok: false, raison: "contradiction : " + cmp.conflits.join(", ") };
+      if (cmp.accords.length < minAccords) return { ok: false, raison: `preuves insuffisantes (${cmp.accords.length}/${minAccords} accord)` };
+      return { ok: true, raison: cmp.accords.length ? "accords : " + cmp.accords.join(", ") : "r\xE9f\xE9rence exacte, rien \xE0 comparer" };
+    };
+    var variantes = (ref) => {
+      const r = String(ref || "").trim();
+      if (!r) return [];
+      const out = [];
+      const add = (valeur, etape, min) => {
+        if (valeur && valeur.length >= 2 && !out.some((x) => x.valeur === valeur)) out.push({ valeur, etape, min });
+      };
+      add(r, "reference_complete", 0);
+      if (r.length > 3) add(r.slice(0, -1), "reference_moins_dernier", 1);
+      const seg = r.split(/[_\-/.\s|:]+/).filter(Boolean);
+      if (seg.length > 1) for (let i = seg.length - 1; i >= 0; i--) add(seg[i], "segment_" + (seg.length - i), 1);
+      const num = r.match(/\d{3,}/g) || [];
+      for (let i = num.length - 1; i >= 0; i--) add(num[i], "partie_numerique", 1);
+      return out;
+    };
+    var CRITERES = ["type", "pieces", "surface", "prix", "lieu"];
+    var rapprocher = async (lead, crm, opts = {}) => {
+      const b = lead.bien || {};
+      const faits = { prix: b.prix, surface: b.surface, pieces: b.pieces, chambres: b.chambres, type: b.type, ville: b.ville, code_postal: b.code_postal, departement: b.departement };
+      const etapes = [], alertes = [];
+      const essayer = async (etape, requete, biens, minAccords, forte = false) => {
+        const vus = /* @__PURE__ */ new Set(), list = (biens || []).filter((x) => x && !vus.has(String(x.id)) && vus.add(String(x.id)));
+        const res = { etape, requete, trouves: list.length, candidats: [] };
+        etapes.push(res);
+        for (const x of list) {
+          const cmp = comparer(faits, x, opts.regles || REGLES);
+          const v = verdict(cmp, minAccords, forte);
+          res.candidats.push({ id: x.id, reference: x.reference, ok: v.ok, raison: v.raison, alerte: v.alerte });
+        }
+        const ok = res.candidats.filter((c) => c.ok);
+        if (ok.length === 1) {
+          const x = list.find((y) => y.id === ok[0].id);
+          if (ok[0].alerte) alertes.push(ok[0].alerte + " diff\xE9rent entre le mail et le CRM");
+          return x;
+        }
+        if (ok.length > 1) res.ambigu = true;
+        return null;
+      };
+      for (const id of [b.id_crm].filter(Boolean)) {
+        const x = await crm.bienParId(id).catch(() => null);
+        const hit = await essayer("identifiant_crm", id, x ? [x] : [], 0, true);
+        if (hit) return { bien: hit, methode: "identifiant_crm", etapes, alertes, confiance: "haute" };
+      }
+      const refs = [b.reference, b.reference_portail].filter(Boolean);
+      for (const ref of refs) {
+        for (const v of variantes(ref)) {
+          const biens = await crm.biensParReference(v.valeur).catch(() => []);
+          const exacts = biens.filter((x) => String(x.reference).trim().toLowerCase() === v.valeur.toLowerCase());
+          const hit = await essayer(v.etape, v.valeur, exacts, v.min, v.etape === "reference_complete");
+          if (hit) return { bien: hit, methode: v.etape, etapes, alertes, confiance: v.min ? "moyenne" : "haute" };
+        }
+      }
+      if (crm.biensParCriteres && !opts.sansCriteres) {
+        const dispo = CRITERES.filter((k) => k === "lieu" ? faits.ville || faits.code_postal : faits[k]);
+        if (dispo.length >= 2) {
+          let retenus = [], dernier = null;
+          for (const k of dispo) {
+            const essai = retenus.concat([k]);
+            const q = Object.fromEntries(essai.map((x) => x === "lieu" ? ["lieu", faits.ville || faits.code_postal] : [x, faits[x]]));
+            const r = await crm.biensParCriteres(q, { max: 2 }).catch(() => []);
+            etapes.push({ etape: "criteres", requete: q, trouves: r.length });
+            if (!r.length) continue;
+            retenus = essai;
+            dernier = r;
+            if (r.length === 1) break;
+          }
+          if (dernier && dernier.length === 1 && retenus.length >= 2) {
+            const hit = await essayer("criteres_verification", retenus.join("+"), dernier, 2);
+            if (hit) return { bien: hit, methode: "criteres:" + retenus.join("+"), etapes, alertes, confiance: retenus.length >= 3 ? "moyenne" : "basse" };
+          }
+        }
+      }
+      const ambigu = etapes.some((e) => e.ambigu);
+      const contredit = etapes.some((e) => (e.candidats || []).some((c) => /contradiction/.test(c.raison)));
+      return { bien: null, methode: null, etapes, motif: ambigu ? "plusieurs biens possibles" : contredit ? "bien trouv\xE9 mais contredit par le mail" : refs.length ? "r\xE9f\xE9rence introuvable" : "pas de r\xE9f\xE9rence ni assez de crit\xE8res" };
+    };
+    module2.exports = { rapprocher, comparer, verdict, variantes, REGLES };
+  }
+});
+
+// src/lib/leads/contact.js
+var require_contact = __commonJS({
+  "src/lib/leads/contact.js"(exports2, module2) {
+    "use strict";
+    var recent = (xs) => xs.slice().sort((a, b) => String(b.cree_le || "").localeCompare(String(a.cree_le || "")) || (+b.id || 0) - (+a.id || 0))[0];
+    var resoudreContact = async (c = {}, crm) => {
+      const trace = [];
+      let parEmail = [], parTel = [];
+      if (c.email) parEmail = await crm.contactsParEmail(c.email).catch((e) => {
+        trace.push("recherche par e-mail impossible : " + e.message);
+        return [];
+      });
+      if (c.telephone) parTel = await crm.contactsParTelephone(c.telephone).catch((e) => {
+        trace.push("recherche par t\xE9l\xE9phone impossible : " + e.message);
+        return [];
+      });
+      if (parEmail.length) {
+        const x = recent(parEmail);
+        if (parEmail.length > 1) trace.push(`${parEmail.length} contacts avec cet e-mail : le plus r\xE9cent est gard\xE9 (${x.id})`);
+        const autres = parTel.filter((t) => String(t.id) !== String(x.id));
+        if (autres.length) trace.push(`le t\xE9l\xE9phone est aussi sur ${autres.map((t) => t.id).join(", ")} : priorit\xE9 \xE0 l'e-mail`);
+        return { contact: x, action: "mettre_a_jour", par: "email", trace };
+      }
+      if (parTel.length && !c.email) {
+        const x = recent(parTel);
+        if (parTel.length > 1) trace.push(`${parTel.length} contacts avec ce t\xE9l\xE9phone : le plus r\xE9cent est gard\xE9 (${x.id})`);
+        return { contact: x, action: "mettre_a_jour", par: "telephone", trace };
+      }
+      if (parTel.length && c.email) trace.push(`t\xE9l\xE9phone connu sur ${recent(parTel).id} mais e-mail diff\xE9rent : priorit\xE9 \xE0 l'e-mail, nouveau contact`);
+      if (!c.email && !c.telephone) return { contact: null, action: "impossible", trace: trace.concat("ni e-mail ni t\xE9l\xE9phone") };
+      return { contact: null, action: "creer", trace };
+    };
+    var completer = (existant = {}, c = {}) => {
+      const patch = {};
+      const vide = (v) => v === void 0 || v === null || String(v).trim() === "";
+      if (vide(existant.prenom) && c.prenom) patch.prenom = c.prenom;
+      if (vide(existant.nom) && c.nom) patch.nom = c.nom;
+      const tels = [existant.telephone, existant.mobile].filter(Boolean).map((t) => String(t).replace(/\D/g, "").slice(-9));
+      if (c.telephone && !tels.includes(c.telephone.replace(/\D/g, "").slice(-9))) {
+        const mobile = /^\+33[67]\d{8}$/.test(c.telephone);
+        if (mobile && vide(existant.mobile)) patch.mobile = c.telephone;
+        else if (!mobile && vide(existant.telephone)) patch.telephone = c.telephone;
+        else patch.note_telephone = c.telephone;
+      }
+      return patch;
+    };
+    module2.exports = { resoudreContact, completer, recent };
+  }
+});
+
+// src/lib/leads/routage.js
+var require_routage = __commonJS({
+  "src/lib/leads/routage.js"(exports2, module2) {
+    "use strict";
+    var jour = (d) => {
+      const x = new Date(d);
+      return x.toISOString().slice(0, 10);
+    };
+    var isoJour = (d) => {
+      const n = new Date(d).getUTCDay();
+      return n === 0 ? 7 : n;
+    };
+    var NOMS_JOURS = ["", "lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"];
+    var absenceDe = (conf, id, quand) => {
+      const j = jour(quand);
+      return (conf.absences || []).find((a) => String(a.personne_id) === String(id) && a.actif !== false && a.debut <= j && (!a.fin || a.fin >= j));
+    };
+    var disponibilite = (conf, p, quand) => {
+      if (!p) return { dispo: false, raison: "personne inconnue" };
+      if (p.actif === false) return { dispo: false, raison: `${p.nom} est inactif(ve)`, remplacant: p.remplacant_inactif || null };
+      const a = absenceDe(conf, p.id, quand);
+      if (a) return { dispo: false, raison: `${p.nom} est en ${a.motif || "cong\xE9s"} du ${a.debut} au ${a.fin || "\u2026"}`, remplacant: a.remplacant || null, type: "absence" };
+      if (p.temps === "mi_temps" && Array.isArray(p.jours) && p.jours.length && !p.jours.includes(isoJour(quand)))
+        return { dispo: false, raison: `${p.nom} ne travaille pas le ${NOMS_JOURS[isoJour(quand)]} (mi-temps)`, remplacant: p.remplacant_hors_jours || null, type: "hors_jours" };
+      return { dispo: true };
+    };
+    var regleDe = (conf, negoId) => {
+      const rs = (conf.regles || []).filter((r) => r.actif !== false);
+      return rs.find((r) => r.cible && (r.cible.negociateurs || []).map(String).includes(String(negoId))) || rs.find((r) => r.cible && r.cible.tous) || {};
+    };
+    var destinataires = (negoId, quand = /* @__PURE__ */ new Date(), conf = {}) => {
+      const P = new Map((conf.personnes || []).map((p) => [String(p.id), p]));
+      const liste = [], trace = [];
+      const vu = /* @__PURE__ */ new Set();
+      const ajouterAdresse = (email, role, pour, raison) => {
+        const e = String(email || "").trim().toLowerCase();
+        if (!e || !/@/.test(e)) return;
+        const deja = liste.find((x) => x.email === e);
+        if (deja) {
+          if (!deja.roles.includes(role)) deja.roles.push(role);
+          return;
+        }
+        liste.push({ email: e, role, roles: [role], pour, raison });
+      };
+      const ajouterPersonne = (ref, role, pour, chemin = []) => {
+        if (!ref) return;
+        if (ref.email) return ajouterAdresse(ref.email, role, pour, chemin.length ? "remplace " + chemin.join(" \u2192 ") : "adresse libre");
+        const p = P.get(String(ref.personne));
+        if (!p) {
+          trace.push(`${role} : personne ${ref.personne} introuvable`);
+          return;
+        }
+        if (chemin.includes(p.nom) || chemin.length > 5) {
+          trace.push(`${role} : boucle de remplacement (${chemin.concat(p.nom).join(" \u2192 ")}) \u2014 arr\xEAt`);
+          return;
+        }
+        const d = disponibilite(conf, p, quand);
+        if (d.dispo) return ajouterAdresse(p.email, role, pour, chemin.length ? `remplace ${chemin.join(" \u2192 ")}` : "titulaire");
+        trace.push(`${role} : ${d.raison}`);
+        if (!d.remplacant) {
+          trace.push(`${role} : aucun rempla\xE7ant pr\xE9vu \u2014 ${p.nom} ne re\xE7oit rien`);
+          return;
+        }
+        ajouterPersonne(d.remplacant, role, pour, chemin.concat(p.nom));
+      };
+      const nego = P.get(String(negoId));
+      const r = regleDe(conf, negoId);
+      if (!nego) trace.push(negoId ? `n\xE9gociateur ${negoId} inconnu` : "aucun n\xE9gociateur trouv\xE9 pour ce lead");
+      else {
+        if (r.couper_negociateur) trace.push(`n\xE9gociateur : ${nego.nom} coup\xE9(e) par une r\xE8gle d'envoi`);
+        else ajouterPersonne({ personne: nego.id }, "negociateur", nego.nom);
+        const modeA = r.assistante || "garder";
+        if (modeA === "couper") trace.push("assistant(e) : coup\xE9(e) par une r\xE8gle d'envoi");
+        else if (modeA === "remplacer") ajouterPersonne(r.assistante_remplacante, "assistante", nego.nom, []);
+        else if (nego.assistante_id) ajouterPersonne({ personne: nego.assistante_id }, "assistante", nego.nom);
+        else if (nego.email_assistante) ajouterAdresse(nego.email_assistante, "assistante", nego.nom, "assistante d\xE9clar\xE9e");
+        for (const e of r.adresses_libres || []) ajouterAdresse(e, "adresse_libre", nego.nom, "adresse ajout\xE9e par une r\xE8gle");
+      }
+      for (const e of conf.siege || []) ajouterAdresse(e, "siege", "tous", "le si\xE8ge re\xE7oit toujours");
+      return { liste, trace, regle: r.id || null };
+    };
+    var absentsSemaine = (conf, lundi = /* @__PURE__ */ new Date()) => {
+      const d0 = new Date(lundi);
+      d0.setUTCHours(12, 0, 0, 0);
+      d0.setUTCDate(d0.getUTCDate() - (isoJour(d0) - 1));
+      const P = new Map((conf.personnes || []).map((p) => [String(p.id), p]));
+      const nom = (ref) => !ref ? "personne (rien n'est transf\xE9r\xE9)" : ref.email ? ref.email : (P.get(String(ref.personne)) || {}).nom || "?";
+      const out = [];
+      for (const p of conf.personnes || []) {
+        const jours = [];
+        for (let i = 0; i < 7; i++) {
+          const q = new Date(d0);
+          q.setUTCDate(d0.getUTCDate() + i);
+          const d = disponibilite(conf, p, q);
+          if (!d.dispo && p.actif !== false) jours.push({ jour: jour(q), type: d.type, relais: nom(d.remplacant) });
+        }
+        if (jours.length) out.push({ personne: p.nom, role: p.role, jours, resume: [...new Set(jours.map((j) => (j.type === "absence" ? "cong\xE9s" : "hors jours") + " \u2192 " + j.relais))].join(" ; ") });
+      }
+      return out;
+    };
+    module2.exports = { destinataires, disponibilite, absentsSemaine, isoJour };
+  }
+});
+
+// src/lib/leads/traiter.js
+var require_traiter = __commonJS({
+  "src/lib/leads/traiter.js"(exports2, module2) {
+    "use strict";
+    var { extraire } = require_extraire();
+    var { rapprocher } = require_rapprochement();
+    var { resoudreContact, completer } = require_contact();
+    var { destinataires } = require_routage();
+    var NATURES_LEAD = ["lead", "relance", "recherche", "estimation", "direct"];
+    var dateFr = (d) => {
+      const x = new Date(d);
+      return isNaN(x) ? "" : x.toLocaleDateString("fr-FR", { timeZone: "Europe/Paris", day: "2-digit", month: "2-digit", year: "numeric" });
+    };
+    var gabarit = (t, v) => String(t).replace(/\{(\w+)\}/g, (_, k) => v[k] ?? "");
+    var preuveEml = (mail) => {
+      const b = "dz" + Date.now().toString(36);
+      const h = (s) => String(s || "").replace(/[\r\n]+/g, " ");
+      const txt = [
+        `From: ${h(mail.expediteur)}`,
+        `To: ${h(mail.destinataire)}`,
+        `Subject: ${h(mail.objet)}`,
+        `Date: ${new Date(mail.date || mail.date_envoi || Date.now()).toUTCString()}`,
+        "MIME-Version: 1.0",
+        `Content-Type: multipart/alternative; boundary="${b}"`,
+        "",
+        `--${b}`,
+        "Content-Type: text/plain; charset=utf-8",
+        "",
+        String(mail.texte ?? mail.corps_texte ?? ""),
+        ...mail.html ?? mail.corps_html ? [`--${b}`, "Content-Type: text/html; charset=utf-8", "", String(mail.html ?? mail.corps_html)] : [],
+        `--${b}--`,
+        ""
+      ].join("\r\n");
+      return { nom: `demande-${jourIso(mail.date || mail.date_envoi)}.eml`, type: "message/rfc822", base64: Buffer.from(txt, "utf8").toString("base64") };
+    };
+    var jourIso = (d) => {
+      const x = new Date(d || Date.now());
+      return isNaN(x) ? "" : x.toISOString().slice(0, 10);
+    };
+    var trouverAgence = (r, bien, conf) => {
+      const A = conf.agences || [];
+      if (bien && bien.agence_id) {
+        const a2 = A.find((x) => String(x.id) === String(bien.agence_id));
+        if (a2) return { agence: a2, par: "bien" };
+      }
+      const dest = String(r.destinataire || "").toLowerCase();
+      const a = A.find((x) => (x.boites || []).some((b) => dest.includes(String(b).toLowerCase())));
+      if (a) return { agence: a, par: "bo\xEEte de r\xE9ception" };
+      if (r.agence_nommee) {
+        const k = r.agence_nommee.toLowerCase();
+        const n = A.find((x) => k.includes(String(x.nom).toLowerCase()) || String(x.nom).toLowerCase().includes(k));
+        if (n) return { agence: n, par: "agence cit\xE9e dans le mail" };
+      }
+      return { agence: null, par: null };
+    };
+    var traiter = async (mail, crm, conf = {}) => {
+      const t0 = Date.now();
+      const r = extraire(mail, conf);
+      const dossier = { extraction: r, statut: "ignore", motifs: [], actions: [], alertes: [], etapes: [] };
+      if (!NATURES_LEAD.includes(r.nature)) {
+        dossier.statut = ["inconnu", "reponse_campagne"].includes(r.nature) ? "a_trier" : r.nature === "alerte_spam" && (r.bloques || []).length ? "alerte" : "ignore";
+        dossier.motifs.push(`nature : ${r.nature}`);
+        if (r.nature === "alerte_spam" && (r.bloques || []).length) dossier.alertes.push(`${r.bloques.length} mail(s) de portail bloqu\xE9(s) par l'anti-spam : ${r.bloques.join(", ")}`);
+        dossier.duree_ms = Date.now() - t0;
+        return dossier;
+      }
+      const rb = await rapprocher(r, crm, conf.rapprochement || {});
+      dossier.bien = rb.bien;
+      dossier.rapprochement = { methode: rb.methode, confiance: rb.confiance, motif: rb.motif, etapes: rb.etapes };
+      for (const a of rb.alertes || []) dossier.alertes.push(a);
+      if (!rb.bien && ["lead", "relance"].includes(r.nature)) dossier.motifs.push("bien non trouv\xE9 : " + rb.motif);
+      if (rb.bien && rb.confiance === "basse") dossier.motifs.push("bien \xE0 confirmer : trouv\xE9 sur deux crit\xE8res seulement");
+      const ag = trouverAgence(r, rb.bien, conf);
+      dossier.agence = ag.agence ? { id: ag.agence.id, nom: ag.agence.nom, par: ag.par } : null;
+      const negoId = rb.bien && rb.bien.negociateur_id ? rb.bien.negociateur_id : ag.agence && ag.agence.negociateur_defaut ? ag.agence.negociateur_defaut : null;
+      dossier.negociateur = negoId;
+      if (!negoId) dossier.motifs.push("aucun n\xE9gociateur (bien non trouv\xE9 et pas de n\xE9gociateur par d\xE9faut pour l'agence)");
+      const c = { ...r.contact };
+      if (!c.email && c.email_relais && conf.utiliser_relais !== false) {
+        c.email = c.email_relais;
+        dossier.alertes.push("e-mail du portail (relais) utilis\xE9 faute d'e-mail direct");
+      }
+      const rc = await resoudreContact(c, crm);
+      dossier.contact = { id: rc.contact ? rc.contact.id : null, action: rc.action, par: rc.par, trace: rc.trace };
+      if (rc.action === "impossible") dossier.motifs.push("contact impossible : ni e-mail ni t\xE9l\xE9phone");
+      const origineCode = r.portail === "site_agence" ? r.site_origine : (conf.origines_portail || {})[r.portail] || r.portail;
+      const origine = (conf.origines || []).find((o) => o.code === origineCode) || null;
+      dossier.origine = origine ? { code: origine.code, libelle: origine.libelle, id: origine.id } : { code: origineCode, libelle: r.portail_nom, id: null };
+      if (!origine) dossier.alertes.push(`origine \xAB ${origineCode} \xBB non reli\xE9e \xE0 une origine du CRM`);
+      if (rc.action === "creer") dossier.actions.push({ op: "creerContact", donnees: { email: c.email, prenom: c.prenom, nom: c.nom, telephone: c.telephone, origine: dossier.origine.id, agence: dossier.agence && dossier.agence.id, negociateur: negoId } });
+      if (rc.action === "mettre_a_jour") {
+        const patch = completer(rc.contact, c);
+        if (Object.keys(patch).length) dossier.actions.push({ op: "majContact", id: rc.contact.id, donnees: patch });
+      }
+      if (rb.bien && rc.action !== "impossible") dossier.actions.push({ op: "lierBien", bien: rb.bien.id, note: [r.portail_nom, r.message].filter(Boolean).join(" \u2014 ").slice(0, 4e3) });
+      if (conf.consentement && conf.consentement.actif && rc.action !== "impossible") {
+        const date = mail.date || mail.date_envoi || /* @__PURE__ */ new Date();
+        const motif = gabarit(conf.consentement.libelle || "Demande de contact via {portail} du {date}", { portail: r.site || r.portail_nom || r.portail, date: dateFr(date) });
+        dossier.actions.push({ op: "ajouterConsentement", date: new Date(date).toISOString(), motif, preuves: [preuveEml(mail)] });
+      }
+      dossier.destinataires = destinataires(negoId, mail.date || mail.date_envoi || /* @__PURE__ */ new Date(), conf.routage || {});
+      dossier.statut = dossier.motifs.length ? "a_verifier" : "pret";
+      dossier.duree_ms = Date.now() - t0;
+      return dossier;
+    };
+    var executer = async (dossier, crm, { mode = "ombre" } = {}) => {
+      const res = [];
+      let contactId = dossier.contact && dossier.contact.id;
+      for (const a of dossier.actions) {
+        if (mode !== "reel") {
+          res.push({ ...a, preuves: a.preuves && a.preuves.map((p) => p.nom), fait: false, mode });
+          continue;
+        }
+        try {
+          let out;
+          if (a.op === "creerContact") {
+            out = await crm.creerContact(a.donnees);
+            contactId = out && out.id;
+          } else if (a.op === "majContact") out = await crm.majContact(a.id, a.donnees);
+          else if (a.op === "lierBien") out = await crm.lierBien(contactId, a.bien, a.note);
+          else if (a.op === "ajouterConsentement") out = await crm.ajouterConsentement(contactId, a);
+          res.push({ op: a.op, fait: true, resultat: out && out.id ? { id: out.id } : !!out });
+        } catch (e) {
+          res.push({ op: a.op, fait: false, erreur: e.message });
+          if (a.op === "creerContact") break;
+        }
+      }
+      return { contactId, resultats: res };
+    };
+    module2.exports = { traiter, executer, preuveEml, trouverAgence, NATURES_LEAD };
+  }
+});
+
+// src/lib/leads/crm/immofacile.js
+var require_immofacile = __commonJS({
+  "src/lib/leads/crm/immofacile.js"(exports2, module2) {
+    "use strict";
+    var { typeBien } = require_valeurs();
+    var { cle } = require_texte();
+    var creer = (cfg = {}) => {
+      const base = String(cfg.base || "https://v2.immo-facile.com/api").replace(/\/+$/, "");
+      const racine = new URL(base).origin + "/api/v2/site";
+      const f = cfg.fetch || fetch;
+      let jeton = null, expire = 0, defs = null, typesBien = null;
+      const journal = cfg.journal || (() => {
+      });
+      const LECTURE = (m, p) => m === "GET" ? /^\/(discovery|customers\/\d+|customers\/(origins|groups)|criterias\/(product\/all|product\/[\w-]+|search-requests)|products\/\d+|agencies|users)(\?|\/|$)/.test(p) : m === "POST" && ["/products/search", "/customers/search"].includes(p.split("?")[0]);
+      const token = async () => {
+        if (jeton && Date.now() < expire - 6e4) return jeton;
+        const basic = await cfg.secret("basic");
+        if (!basic) throw Object.assign(new Error("identifiants Immofacile absents (coffre : basic)"), { permanent: true });
+        const r = await f(`${base}/client/token/site`, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded", Authorization: /^basic /i.test(basic) ? basic : "Basic " + basic, Accept: "application/json" }, body: "site_id=" + encodeURIComponent(cfg.site_id) });
+        const tx = await r.text();
+        if (!r.ok) throw Object.assign(new Error(`jeton Immofacile HTTP ${r.status}`), { permanent: r.status === 401 || r.status === 403 });
+        const j = JSON.parse(tx);
+        if (!j.access_token) throw new Error("jeton Immofacile re\xE7u sans access_token");
+        jeton = j.access_token;
+        expire = Date.now() + (+j.expires_in || 3e3) * 1e3;
+        return jeton;
+      };
+      const appel = async (methode, chemin, corps, { multipart } = {}) => {
+        if (cfg.lectureSeule && !LECTURE(methode, chemin)) throw Object.assign(new Error(`\xE9criture bloqu\xE9e (mode ombre) : ${methode} ${chemin}`), { permanent: true, ombre: true });
+        for (let essai = 1; essai <= 4; essai++) {
+          const t0 = Date.now();
+          const headers = { Authorization: "Bearer " + await token(), Accept: "application/json" };
+          if (corps && !multipart) headers["Content-Type"] = "application/json";
+          const ctrl = new AbortController();
+          const to = setTimeout(() => ctrl.abort(), cfg.delai_ms || 2e4);
+          let r;
+          try {
+            r = await f(racine + chemin, { method: methode, headers, body: multipart || (corps ? JSON.stringify(corps) : void 0), signal: ctrl.signal });
+          } catch (e) {
+            clearTimeout(to);
+            if (essai === 4) throw e;
+            await new Promise((ok) => setTimeout(ok, 500 * essai));
+            continue;
+          }
+          clearTimeout(to);
+          const tx = await r.text();
+          journal({ methode, chemin, statut: r.status, ms: Date.now() - t0 });
+          if (r.status === 401 && essai === 1) {
+            jeton = null;
+            continue;
+          }
+          if ((r.status === 429 || r.status >= 500) && essai < 4) {
+            await new Promise((ok) => setTimeout(ok, (+r.headers.get("retry-after") || essai) * 1e3));
+            continue;
+          }
+          if (!r.ok) throw Object.assign(new Error(`Immofacile ${methode} ${chemin} \u2192 HTTP ${r.status} : ${tx.slice(0, 300)}`), { http: r.status, permanent: r.status >= 400 && r.status < 500 && r.status !== 429 });
+          try {
+            return tx ? JSON.parse(tx) : {};
+          } catch (e) {
+            return { brut: tx };
+          }
+        }
+      };
+      const data = (j) => j && j.data !== void 0 ? j.data : j;
+      const criteres = async () => {
+        if (defs) return defs;
+        const l = data(await appel("GET", "/criterias/product/all")) || [];
+        defs = new Map((Array.isArray(l) ? l : []).filter((d) => d && d.id != null).map((d) => [String(d.id), String(d.xml || d.name || d.id)]));
+        return defs;
+      };
+      const codeType = async (canon) => {
+        if (!typesBien) {
+          const d = [...(await criteres()).entries()].find(([, x]) => cle(x) === "typebien");
+          const vals = d ? data(await appel("GET", "/criterias/product/" + d[0])) : [];
+          typesBien = (Array.isArray(vals) ? vals : vals && vals.values ? vals.values : []).map((v) => ({ code: String(v.value ?? v.id ?? v.code), libelle: String(v.label ?? v.name ?? v.value) }));
+        }
+        const t = typesBien.find((x) => typeBien(x.libelle) === canon);
+        return t ? t.code : null;
+      };
+      const versBien = async (p) => {
+        if (!p) return null;
+        const D = await criteres().catch(() => /* @__PURE__ */ new Map());
+        const v = {}, lab = {};
+        for (const g of [p.criteres_text, p.criteres_number, p.criteres_fulltext, p.criteres_flag]) for (const c of Array.isArray(g) ? g : []) {
+          const id = c.critere_id ?? c.criteria_id ?? c.criterias_id ?? c.id;
+          const x = id != null && D.get(String(id)) || c.critere_xml || c.xml;
+          if (!x) continue;
+          const val = c.critere_value ?? c.value ?? c.valeur;
+          if (val != null && String(val).trim()) v[cle(x)] = val;
+          const l = c.critere_value_name ?? c.value_name ?? c.label;
+          if (l != null) lab[cle(x)] = l;
+        }
+        const n = (k) => v[k] != null && isFinite(+String(v[k]).replace(",", ".")) ? +String(v[k]).replace(",", ".") : null;
+        const a = p.assigned_to || p.assignedTo || {};
+        return {
+          id: p.id,
+          reference: String(p.model || "").trim(),
+          prix: +p.price || n("prix"),
+          surface: n("surface"),
+          pieces: n("nbpiece") || n("nbpieces"),
+          chambres: n("nbchambre") || n("chambres"),
+          type: typeBien(lab.typebien || v.typebien || p.category && (p.category.name || p.category.label) || ""),
+          ville: v.villeweb || v.ville_web || null,
+          code_postal: (String(v.codepostalweb || v.cpvilleweb || "").match(/\d{5}/) || [])[0] || null,
+          negociateur_id: a.id ?? a.user_id ?? p.user_id ?? null,
+          agence_id: p.agency_id ?? (p.agency && p.agency.id) ?? null,
+          brut_id: p.id
+        };
+      };
+      const detail = async (id) => versBien(data(await appel("GET", `/products/${Number(id)}?fetch=criteres_text,criteres_number,assigned_to,category`)));
+      const recherche = async (corps) => {
+        const j = await appel("POST", "/products/search?fetch=assigned_to", corps);
+        const l = data(j);
+        return Array.isArray(l) ? l : [];
+      };
+      const versContact = (c) => ({ id: c.id, email: c.email || null, emails: [c.email, ...(c.emails || []).map((e) => e.email || e)].filter(Boolean), telephone: c.phone || null, mobile: c.mobile_phone || c.mobilePhone || null, telephones: [c.phone, c.mobile_phone, c.mobilePhone].filter(Boolean).map((t) => String(t).replace(/[^\d+]/g, "")), prenom: c.firstname || null, nom: c.lastname || null, cree_le: c.created_at || c.createdAt || c.created || null, agence_id: c.agency_id || null, negociateur_id: c.user_id || null });
+      const chercherContacts = async (filtre) => {
+        const out = [], vus = /* @__PURE__ */ new Set(), curseurs = /* @__PURE__ */ new Set();
+        let cursor = null;
+        for (let page = 0; page < 20; page++) {
+          const j = await appel("POST", "/customers/search", { ...filtre, per_page: 200, ...cursor ? { cursor } : {} });
+          const l = Array.isArray(j && j.data) ? j.data : [];
+          for (const c of l) if (c && c.id && !vus.has(c.id)) {
+            vus.add(c.id);
+            out.push(versContact(c));
+          }
+          const next = j && j.meta && j.meta.next_cursor;
+          if (!next || !l.length || curseurs.has(next)) break;
+          curseurs.add(next);
+          cursor = next;
+        }
+        return out;
+      };
+      return {
+        nom: "immofacile",
+        lectureSeule: !!cfg.lectureSeule,
+        tester: async () => ({ ok: true, discovery: data(await appel("GET", "/discovery")) }),
+        bienParId: detail,
+        biensParReference: async (ref) => {
+          const l = await recherche({ model: String(ref), count: 5 });
+          return Promise.all(l.filter((p) => String(p.model || "").trim().toLowerCase() === String(ref).trim().toLowerCase()).slice(0, 3).map((p) => detail(p.id)));
+        },
+        biensParCriteres: async (q, { max = 2 } = {}) => {
+          const c = [];
+          if (q.type) {
+            const code = await codeType(q.type);
+            if (code) c.push({ id: "TypeBien", operator: "EGAL", value: code });
+          }
+          if (q.pieces) c.push({ id: "NbPiece", operator: "EGAL", value: String(q.pieces) });
+          if (q.surface) c.push({ id: "Surface", operator: "EGAL", value: String(q.surface) });
+          if (q.prix) c.push({ id: "Prix", operator: "EGAL", value: String(q.prix) });
+          if (q.lieu) c.push({ id: "CPVilleweb", operator: "CONTIENT", value: String(q.lieu) });
+          if (!c.length) return [];
+          const l = await recherche({ criterias: c, count: max });
+          return Promise.all(l.slice(0, max).map((p) => detail(p.id)));
+        },
+        contactsParEmail: (e) => chercherContacts({ email: e }).then((l) => l.filter((c) => c.emails.map((x) => String(x).toLowerCase()).includes(String(e).toLowerCase()))),
+        contactsParTelephone: (t) => chercherContacts({ phone: t }).then((l) => l.filter((c) => c.telephones.some((x) => x.slice(-9) === String(t).replace(/\D/g, "").slice(-9)))),
+        origines: async () => data(await appel("GET", "/customers/origins")),
+        groupes: async () => data(await appel("GET", "/customers/groups")),
+        creerContact: async (d) => {
+          const corps = { email: d.email, check_duplicate: true };
+          if (d.prenom) corps.firstname = d.prenom;
+          if (d.nom) corps.lastname = d.nom;
+          if (d.telephone) corps[/^\+33[67]\d{8}$/.test(d.telephone) ? "mobile_phone" : "phone"] = d.telephone;
+          if (d.agence) corps.agency_id = Number(d.agence);
+          if (d.negociateur) corps.user_id = Number(d.negociateur);
+          if (d.origine) corps.origin = Number(d.origine);
+          if (cfg.groupe_demandeur) corps.group = Number(cfg.groupe_demandeur);
+          return versContact(data(await appel("POST", "/customers", corps)));
+        },
+        majContact: async (id, p) => {
+          const corps = {};
+          if (p.prenom) corps.firstname = p.prenom;
+          if (p.nom) corps.lastname = p.nom;
+          if (p.mobile) corps.mobile_phone = p.mobile;
+          if (p.telephone) corps.phone = p.telephone;
+          if (!Object.keys(corps).length) return { id };
+          return data(await appel("PATCH", `/customers/${Number(id)}`, corps));
+        },
+        lierBien: async (contactId, bienId, note) => data(await appel("POST", `/customers/${Number(contactId)}/follow-ups/${Number(bienId)}`, { comment: String(note || "").slice(0, 2e3) })),
+        /* Consentement : multipart (date, motif, preuves). Noms de champs configurables : à valider sur la doc V2 avant le passage en réel. */
+        ajouterConsentement: async (contactId, a) => {
+          const n = { date: "date", motif: "reason", preuve: "proofs[]", ...cfg.champs_consentement || {} };
+          const fd = new FormData();
+          fd.append(n.date, String(a.date).slice(0, 10));
+          fd.append(n.motif, a.motif);
+          for (const p of a.preuves || []) fd.append(n.preuve, new Blob([Buffer.from(p.base64, "base64")], { type: p.type || "application/octet-stream" }), p.nom);
+          return data(await appel("POST", `/customers/${Number(contactId)}/consent`, null, { multipart: fd }));
+        }
+      };
+    };
+    module2.exports = { creer };
+  }
+});
+
+// src/lib/leads/crm/salesforce.js
+var require_salesforce = __commonJS({
+  "src/lib/leads/crm/salesforce.js"(exports2, module2) {
+    "use strict";
+    var { typeBien } = require_valeurs();
+    var DEFAUT = {
+      version: "v61.0",
+      bien: { objet: "Product2", id: "Id", reference: "ProductCode", prix: "Price__c", surface: "Surface__c", pieces: "Rooms__c", type: "Family", ville: "City__c", code_postal: "PostalCode__c", negociateur: "OwnerId", agence: null },
+      contact: { objet: "Lead", id: "Id", email: "Email", telephone: "Phone", mobile: "MobilePhone", prenom: "FirstName", nom: "LastName", cree_le: "CreatedDate", origine: "LeadSource", proprietaire: "OwnerId", societe: "Company" },
+      lien: { objet: "Task", contact: "WhoId", bien: "WhatId", note: "Description", sujet: "Subject" }
+    };
+    var q = (s) => "'" + String(s).replace(/\\/g, "\\\\").replace(/'/g, "\\'") + "'";
+    var creer = (cfg = {}) => {
+      const M = { ...DEFAUT, ...cfg, bien: { ...DEFAUT.bien, ...cfg.bien || {} }, contact: { ...DEFAUT.contact, ...cfg.contact || {} }, lien: { ...DEFAUT.lien, ...cfg.lien || {} } };
+      const f = cfg.fetch || fetch;
+      let session = null;
+      const connexion = async () => {
+        if (session && Date.now() < session.expire) return session;
+        const login = String(cfg.domaine || "https://login.salesforce.com").replace(/\/+$/, "");
+        const p = new URLSearchParams();
+        const refresh = await cfg.secret("refresh_token");
+        p.set("grant_type", refresh ? "refresh_token" : "client_credentials");
+        p.set("client_id", await cfg.secret("client_id"));
+        p.set("client_secret", await cfg.secret("client_secret"));
+        if (refresh) p.set("refresh_token", refresh);
+        const r = await f(login + "/services/oauth2/token", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: p.toString() });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok || !j.access_token) throw Object.assign(new Error("connexion Salesforce refus\xE9e : " + (j.error_description || r.status)), { permanent: true });
+        session = { jeton: j.access_token, instance: j.instance_url, expire: Date.now() + 50 * 6e4 };
+        return session;
+      };
+      const appel = async (methode, chemin, corps) => {
+        if (cfg.lectureSeule && methode !== "GET") throw Object.assign(new Error(`\xE9criture bloqu\xE9e (mode ombre) : ${methode} ${chemin}`), { permanent: true, ombre: true });
+        const s = await connexion();
+        const r = await f(`${s.instance}/services/data/${M.version}${chemin}`, { method: methode, headers: { Authorization: "Bearer " + s.jeton, "Content-Type": "application/json", Accept: "application/json" }, body: corps ? JSON.stringify(corps) : void 0 });
+        if (r.status === 204) return {};
+        const j = await r.json().catch(() => ({}));
+        if (r.status === 401) session = null;
+        if (!r.ok) throw Object.assign(new Error(`Salesforce ${methode} ${chemin} \u2192 ${r.status} : ${JSON.stringify(j).slice(0, 300)}`), { http: r.status, permanent: r.status >= 400 && r.status < 500 && r.status !== 429 });
+        return j;
+      };
+      const soql = async (s) => (await appel("GET", "/query?q=" + encodeURIComponent(s))).records || [];
+      const B = M.bien, C = M.contact;
+      const champsB = [B.id, B.reference, B.prix, B.surface, B.pieces, B.type, B.ville, B.code_postal, B.negociateur, B.agence].filter(Boolean);
+      const champsC = [C.id, C.email, C.telephone, C.mobile, C.prenom, C.nom, C.cree_le].filter(Boolean);
+      const versBien = (x) => x && { id: x[B.id], reference: x[B.reference], prix: +x[B.prix] || null, surface: +x[B.surface] || null, pieces: +x[B.pieces] || null, type: typeBien(x[B.type] || ""), ville: x[B.ville] || null, code_postal: x[B.code_postal] || null, negociateur_id: x[B.negociateur] || null, agence_id: B.agence ? x[B.agence] : null };
+      const versContact = (x) => ({ id: x[C.id], email: x[C.email], emails: [x[C.email]].filter(Boolean), telephone: x[C.telephone], mobile: x[C.mobile], telephones: [x[C.telephone], x[C.mobile]].filter(Boolean).map((t) => String(t).replace(/[^\d+]/g, "")), prenom: x[C.prenom], nom: x[C.nom], cree_le: x[C.cree_le] });
+      const selB = `SELECT ${champsB.join(",")} FROM ${B.objet}`, selC = `SELECT ${champsC.join(",")} FROM ${C.objet}`;
+      return {
+        nom: "salesforce",
+        lectureSeule: !!cfg.lectureSeule,
+        tester: async () => ({ ok: true, limites: await appel("GET", "/limits") }),
+        bienParId: async (id) => versBien((await soql(`${selB} WHERE ${B.id} = ${q(id)} LIMIT 1`))[0]),
+        biensParReference: async (ref) => (await soql(`${selB} WHERE ${B.reference} = ${q(ref)} LIMIT 3`)).map(versBien),
+        biensParCriteres: async (c, { max = 2 } = {}) => {
+          const w = [];
+          if (c.pieces && B.pieces) w.push(`${B.pieces} = ${+c.pieces}`);
+          if (c.surface && B.surface) w.push(`${B.surface} = ${+c.surface}`);
+          if (c.prix && B.prix) w.push(`${B.prix} = ${+c.prix}`);
+          if (c.lieu && B.ville) w.push(`(${B.ville} LIKE ${q("%" + c.lieu + "%")}${B.code_postal ? ` OR ${B.code_postal} = ${q(c.lieu)}` : ""})`);
+          if (!w.length) return [];
+          const l = (await soql(`${selB} WHERE ${w.join(" AND ")} LIMIT ${max + 3}`)).map(versBien);
+          return (c.type ? l.filter((x) => !x.type || x.type === c.type) : l).slice(0, max);
+        },
+        contactsParEmail: async (e) => (await soql(`${selC} WHERE ${C.email} = ${q(e)} ORDER BY ${C.cree_le} DESC LIMIT 20`)).map(versContact),
+        contactsParTelephone: async (t) => {
+          const n = String(t).replace(/\D/g, "").slice(-9);
+          return (await soql(`${selC} WHERE ${C.telephone} LIKE ${q("%" + n.slice(-6))} OR ${C.mobile} LIKE ${q("%" + n.slice(-6))} ORDER BY ${C.cree_le} DESC LIMIT 20`)).map(versContact).filter((c) => c.telephones.some((x) => x.replace(/\D/g, "").slice(-9) === n));
+        },
+        creerContact: async (d) => {
+          const x = { [C.email]: d.email, [C.prenom]: d.prenom, [C.nom]: d.nom || d.email || "Inconnu", [C.telephone]: d.telephone };
+          if (C.societe && C.objet === "Lead") x[C.societe] = d.societe || "Particulier";
+          if (C.origine && d.origine_libelle) x[C.origine] = d.origine_libelle;
+          if (C.proprietaire && d.negociateur) x[C.proprietaire] = d.negociateur;
+          const r = await appel("POST", `/sobjects/${C.objet}`, x);
+          return { id: r.id };
+        },
+        majContact: async (id, p) => {
+          const x = {};
+          if (p.prenom) x[C.prenom] = p.prenom;
+          if (p.nom) x[C.nom] = p.nom;
+          if (p.telephone) x[C.telephone] = p.telephone;
+          if (p.mobile && C.mobile) x[C.mobile] = p.mobile;
+          if (Object.keys(x).length) await appel("PATCH", `/sobjects/${C.objet}/${id}`, x);
+          return { id };
+        },
+        lierBien: async (contactId, bienId, note) => {
+          const L = M.lien;
+          const r = await appel("POST", `/sobjects/${L.objet}`, { [L.contact]: contactId, ...L.bien && C.objet !== "Lead" ? { [L.bien]: bienId } : {}, [L.sujet]: "Nouvelle demande", [L.note]: String(note || "").slice(0, 3e4) });
+          return { id: r.id };
+        },
+        /* Consentement : la preuve devient un fichier Salesforce lié au contact ; le motif et la date vont dans le titre. */
+        ajouterConsentement: async (contactId, a) => {
+          const out = [];
+          for (const p of a.preuves || []) {
+            const v = await appel("POST", "/sobjects/ContentVersion", { Title: `${a.motif}`.slice(0, 255), PathOnClient: p.nom, VersionData: p.base64, Description: `Consentement du ${String(a.date).slice(0, 10)} \u2014 ${a.motif}`.slice(0, 1e3) });
+            const doc = (await soql(`SELECT ContentDocumentId FROM ContentVersion WHERE Id = ${q(v.id)}`))[0];
+            if (doc) out.push(await appel("POST", "/sobjects/ContentDocumentLink", { ContentDocumentId: doc.ContentDocumentId, LinkedEntityId: contactId, ShareType: "V" }));
+          }
+          return { id: contactId, fichiers: out.length };
+        }
+      };
+    };
+    module2.exports = { creer, DEFAUT };
+  }
+});
+
+// src/lib/leads/crm/memoire.js
+var require_memoire = __commonJS({
+  "src/lib/leads/crm/memoire.js"(exports2, module2) {
+    "use strict";
+    var { typeBien } = require_valeurs();
+    var { cle } = require_texte();
+    var creer = ({ biens = [], contacts = [] } = {}) => {
+      const B = biens.map((b) => ({ ...b, type: b.type && typeBien(b.type) ? typeBien(b.type) : b.type }));
+      const C = contacts.slice();
+      const ecritures = [];
+      return {
+        nom: "memoire",
+        ecritures,
+        bienParId: async (id) => B.find((b) => String(b.id) === String(id)) || null,
+        biensParReference: async (ref) => B.filter((b) => String(b.reference || "").trim().toLowerCase() === String(ref).trim().toLowerCase()).slice(0, 5),
+        biensParCriteres: async (q, { max = 2 } = {}) => B.filter((b) => (q.type === void 0 || b.type === q.type) && (q.pieces === void 0 || +b.pieces === +q.pieces) && (q.surface === void 0 || Math.round(+b.surface) === Math.round(+q.surface)) && (q.prix === void 0 || +b.prix === +q.prix) && (q.lieu === void 0 || cle(b.ville + " " + b.code_postal).includes(cle(q.lieu)))).slice(0, max),
+        contactsParEmail: async (e) => C.filter((c) => (c.emails || [c.email]).map((x) => String(x || "").toLowerCase()).includes(String(e).toLowerCase())),
+        contactsParTelephone: async (t) => C.filter((c) => (c.telephones || [c.telephone]).includes(t)),
+        creerContact: async (c) => {
+          const x = { id: "m" + (C.length + 1), cree_le: (/* @__PURE__ */ new Date()).toISOString(), ...c };
+          C.push(x);
+          ecritures.push({ op: "creerContact", c });
+          return x;
+        },
+        majContact: async (id, champs) => {
+          ecritures.push({ op: "majContact", id, champs });
+          return { id };
+        },
+        lierBien: async (contactId, bienId, note) => {
+          ecritures.push({ op: "lierBien", contactId, bienId, note });
+          return true;
+        },
+        ajouterConsentement: async (contactId, consent) => {
+          ecritures.push({ op: "ajouterConsentement", contactId, consent: { ...consent, preuves: (consent.preuves || []).map((p) => p.nom) } });
+          return true;
+        }
+      };
+    };
+    module2.exports = { creer };
+  }
+});
+
+// src/lib/leads/crm/ombre.js
+var require_ombre = __commonJS({
+  "src/lib/leads/crm/ombre.js"(exports2, module2) {
+    "use strict";
+    var ECRITURES = ["creerContact", "majContact", "lierBien", "ajouterConsentement"];
+    var ombre = (crm) => {
+      const notees = [];
+      const o = { ...crm, nom: crm.nom + " (ombre)", ombre: true, notees };
+      for (const k of ECRITURES) o[k] = async (...args) => {
+        notees.push({ op: k, args: args.map((a) => a && a.preuves ? { ...a, preuves: a.preuves.map((p) => p.nom) } : a) });
+        return { id: k === "creerContact" ? "ombre-" + notees.length : args[0], ombre: true };
+      };
+      return o;
+    };
+    module2.exports = { ombre, ECRITURES };
+  }
+});
+
+// src/lib/leads/crm/index.js
+var require_crm = __commonJS({
+  "src/lib/leads/crm/index.js"(exports2, module2) {
+    "use strict";
+    var ADAPTATEURS = { immofacile: require_immofacile(), salesforce: require_salesforce(), memoire: require_memoire() };
+    var { ombre } = require_ombre();
+    var creerCrm = (type, cfg = {}, { mode = "ombre" } = {}) => {
+      const A = ADAPTATEURS[type];
+      if (!A) throw Object.assign(new Error(`CRM inconnu : ${type} (disponibles : ${Object.keys(ADAPTATEURS).join(", ")})`), { permanent: true });
+      const crm = A.creer({ ...cfg, lectureSeule: mode !== "reel" });
+      return mode === "reel" ? crm : ombre(crm);
+    };
+    module2.exports = { creerCrm, ADAPTATEURS };
+  }
+});
+
+// src/blocks/leads.js
+var require_leads = __commonJS({
+  "src/blocks/leads.js"(exports2, module2) {
+    "use strict";
+    var { extraire } = require_extraire();
+    var { rapprocher } = require_rapprochement();
+    var { traiter, executer } = require_traiter();
+    var { destinataires, absentsSemaine } = require_routage();
+    var { creerCrm, ADAPTATEURS } = require_crm();
+    var { PORTAILS } = require_portails();
+    var perm = (m) => Object.assign(new Error(m), { permanent: true });
+    var obj = (v, nom) => {
+      if (v === void 0 || v === null || v === "") return {};
+      if (typeof v === "object") return v;
+      try {
+        return JSON.parse(v);
+      } catch (e) {
+        throw perm(`${nom} : JSON invalide`);
+      }
+    };
+    var versMail = (m) => {
+      const x = obj(m, "mail");
+      return { expediteur: x.expediteur ?? x.de ?? x.from ?? "", destinataire: x.destinataire ?? x.a ?? x.to ?? "", objet: x.objet ?? x.sujet ?? x.subject ?? "", texte: x.corps_texte ?? x.corps ?? x.texte ?? x.text ?? "", html: x.corps_html ?? x.html ?? "", date: x.date_envoi ?? x.date ?? /* @__PURE__ */ new Date() };
+    };
+    var P_CONF = { name: "configuration", label: "Configuration", type: "json", default: "{{leads_conf}}", help: "Agences, personnes, r\xE8gles, absences, origines, sites\u2026 (bloc \xAB Leads : charger la configuration \xBB de la solution, ou un JSON)" };
+    var P_CRM = [
+      { name: "crm", label: "CRM", type: "select", options: Object.keys(ADAPTATEURS), default: "immofacile" },
+      { name: "crm_reglages", label: "R\xE9glages du CRM", type: "json", default: "{}", help: 'Immofacile : {"site_id":"\u2026"}. Salesforce : {"domaine":"https://\u2026.my.salesforce.com", "contact":{"objet":"Lead"}}' },
+      { name: "prefixe_secrets", label: "Pr\xE9fixe des secrets", default: "LEADS_CRM", help: "Immofacile : LEADS_CRM_BASIC. Salesforce : LEADS_CRM_CLIENT_ID, LEADS_CRM_CLIENT_SECRET (+ LEADS_CRM_REFRESH_TOKEN)." }
+    ];
+    var crmDe = (p, api, mode = "ombre") => {
+      const reg = obj(p.crm_reglages, "r\xE9glages du CRM");
+      const pre = String(p.prefixe_secrets || "LEADS_CRM").replace(/[^\w]/g, "");
+      return creerCrm(p.crm, { ...reg, secret: (k) => api.secret(`${pre}_${String(k).toUpperCase()}`) }, { mode });
+    };
+    module2.exports = [
+      {
+        name: "dzf_lead_extraire",
+        label: "Leads : lire un mail de portail",
+        category: "Leads immobiliers",
+        icon: "fas fa-envelope-open-text",
+        output: "lead",
+        description: `Lit un mail de lead sans IA : portail, nature (lead, relance, estimation, non-lead\u2026), contact, bien (r\xE9f\xE9rence, prix, surface, pi\xE8ces, ville), message, site d'agence d'origine. Chaque champ dit d'o\xF9 il vient. ${PORTAILS.length} portails reconnus.`,
+        params: [{ name: "mail", label: "Mail", type: "json", default: "{{row}}", help: "Objet avec expediteur, destinataire, objet, corps_texte, corps_html, date_envoi" }, P_CONF],
+        run: async (p) => extraire(versMail(p.mail), obj(p.configuration, "configuration"))
+      },
+      {
+        name: "dzf_lead_traiter",
+        label: "Leads : traiter un mail",
+        category: "Leads immobiliers",
+        icon: "fas fa-route",
+        output: "dossier",
+        timeout: 120,
+        description: "Traitement complet : lecture, bien, agence, n\xE9gociateur, contact, consentement, destinataires. En mode ombre, le CRM est seulement lu et les \xE9critures sont not\xE9es. Aucun mail n'est envoy\xE9 par ce bloc.",
+        params: [
+          { name: "mail", label: "Mail", type: "json", default: "{{row}}" },
+          P_CONF,
+          ...P_CRM,
+          { name: "mode", label: "Mode", type: "select", options: ["ombre", "reel"], default: "ombre", help: "ombre : aucune \xE9criture dans le CRM. reel : cr\xE9e / compl\xE8te le contact, lie le bien, pose le consentement." }
+        ],
+        run: async (p, ctx, api) => {
+          const crm = crmDe(p, api, p.mode);
+          const conf = obj(p.configuration, "configuration");
+          const d = await traiter(versMail(p.mail), crm, conf);
+          d.execution = await executer(d, crm, { mode: p.mode });
+          if (crm.notees) d.execution.ecritures_notees = crm.notees;
+          return d;
+        }
+      },
+      {
+        name: "dzf_lead_rapprocher",
+        label: "Leads : retrouver le bien",
+        category: "Leads immobiliers",
+        icon: "fas fa-search-location",
+        output: "rapprochement",
+        timeout: 90,
+        description: "Retrouve le bien dans le CRM : identifiant, r\xE9f\xE9rence compl\xE8te, r\xE9f\xE9rence moins le dernier caract\xE8re, segments de droite \xE0 gauche, puis crit\xE8res un par un. Chaque bien trouv\xE9 est compar\xE9 au mail (prix, ville, code postal, surface, pi\xE8ces) ; contradiction = rejet.",
+        params: [{ name: "bien", label: "Infos du bien (depuis le mail)", type: "json", default: "{{lead.bien}}", help: '{"reference":"32102","prix":240000,"surface":105,"pieces":5,"ville":"Cardaillac","code_postal":"46100"}' }, ...P_CRM],
+        run: async (p, ctx, api) => rapprocher({ bien: obj(p.bien, "bien") }, crmDe(p, api, "ombre"))
+      },
+      {
+        name: "dzf_lead_destinataires",
+        label: "Leads : qui re\xE7oit ?",
+        category: "Leads immobiliers",
+        icon: "fas fa-user-check",
+        output: "destinataires",
+        description: "Donne les adresses exactes qui recevraient un lead de ce n\xE9gociateur \xE0 cette date, avec l'explication (r\xE8gle, cong\xE9s, mi-temps, rempla\xE7ant, si\xE8ge). C'est le bouton \xAB tester \xBB.",
+        params: [{ name: "negociateur", label: "N\xE9gociateur (id)", required: true }, { name: "date", label: "Date", default: "", help: "Vide = maintenant" }, { name: "routage", label: "R\xE8gles d'envoi", type: "json", default: "{{leads_conf.routage}}" }],
+        run: async (p) => destinataires(p.negociateur, p.date ? new Date(p.date) : /* @__PURE__ */ new Date(), obj(p.routage, "routage"))
+      },
+      {
+        name: "dzf_lead_absents",
+        label: "Leads : absents de la semaine",
+        category: "Leads immobiliers",
+        icon: "fas fa-umbrella-beach",
+        output: "absents",
+        description: "Qui est absent cette semaine (cong\xE9s ou jours non travaill\xE9s \xE0 mi-temps), et qui prend le relais.",
+        params: [{ name: "routage", label: "R\xE8gles d'envoi", type: "json", default: "{{leads_conf.routage}}" }, { name: "semaine", label: "Un jour de la semaine voulue", default: "" }],
+        run: async (p) => absentsSemaine(obj(p.routage, "routage"), p.semaine ? new Date(p.semaine) : /* @__PURE__ */ new Date())
+      },
+      {
+        name: "dzf_crm",
+        label: "CRM immobilier : consulter",
+        category: "Leads immobiliers",
+        icon: "fas fa-address-book",
+        output: "crm",
+        timeout: 90,
+        description: "Lecture seule dans le CRM (Immofacile ou Salesforce) : tester la connexion, lire un bien, chercher par r\xE9f\xE9rence, chercher un contact par e-mail ou t\xE9l\xE9phone.",
+        params: [
+          ...P_CRM,
+          { name: "action", label: "Action", type: "select", options: ["tester la connexion", "lire un bien", "biens par r\xE9f\xE9rence", "contacts par e-mail", "contacts par t\xE9l\xE9phone"], default: "tester la connexion" },
+          { name: "valeur", label: "Valeur", showIf: { action: ["lire un bien", "biens par r\xE9f\xE9rence", "contacts par e-mail", "contacts par t\xE9l\xE9phone"] } }
+        ],
+        run: async (p, ctx, api) => {
+          const crm = crmDe(p, api, "ombre");
+          switch (p.action) {
+            case "tester la connexion":
+              return crm.tester();
+            case "lire un bien":
+              return crm.bienParId(p.valeur);
+            case "biens par r\xE9f\xE9rence":
+              return crm.biensParReference(p.valeur);
+            case "contacts par e-mail":
+              return crm.contactsParEmail(p.valeur);
+            default:
+              return crm.contactsParTelephone(require_valeurs().telephone(p.valeur));
+          }
         }
       }
     ];
@@ -94458,6 +97066,8 @@ var require_blocks = __commonJS({
       ...require_ia_plus(),
       ...require_blockchain(),
       ...require_devops(),
+      ...require_ovh2(),
+      ...require_leads(),
       ...require_donnees_ext(),
       ...require_connecte(),
       ...require_utilitaires(),
@@ -94469,7 +97079,7 @@ var require_blocks = __commonJS({
       ...require_extras(),
       ...require_controle()
     ];
-    var CATEGORIES = ["Donn\xE9es", "Transformer", "R\xE9seau", "Messagerie", "IA", "Documents", "Stockage", "Donn\xE9es externes", "Pratique", "Services", "Blockchain", "DevOps", "Objets connect\xE9s", "S\xE9curit\xE9", "Surveillance", "Logs & m\xE9triques", "T\xE2ches & planification", "Contr\xF4le", "Extensions", "Mes blocs"];
+    var CATEGORIES = ["Donn\xE9es", "Transformer", "R\xE9seau", "Messagerie", "IA", "Documents", "Stockage", "Donn\xE9es externes", "Pratique", "Services", "Blockchain", "DevOps", "OVHcloud", "Leads immobiliers", "Objets connect\xE9s", "S\xE9curit\xE9", "Surveillance", "Logs & m\xE9triques", "T\xE2ches & planification", "Contr\xF4le", "Extensions", "Mes blocs"];
     var seen = /* @__PURE__ */ new Set();
     for (const b of BLOCKS2) {
       if (seen.has(b.name)) throw new Error(`dysizz-flow : bloc en double ${b.name}`);
@@ -95203,7 +97813,7 @@ var require_admin = __commonJS({
     var TYPE_LABEL = { texte: "texte court", text: "texte long", int: "nombre entier", number: "nombre", bool: "oui / non", select: "liste de choix", table: "une table", json: "JSON", code: "code", password: "mot de passe" };
     var page = (res, req, title, active, html) => res.sendWrap({ title, requestFluidLayout: true }, {
       above: [{ type: "blank", isHTML: true, contents: `<div class="dzf">
-<nav class="dzf-tabs">${[["workflows", "Workflows", "fas fa-project-diagram"], ["modeles", "Catalogue", "fas fa-magic"], ["", "Blocs", "fas fa-cubes"], ["atelier", "Atelier", "fas fa-tools"], ["api", "Points d'API", "fas fa-plug"], ["coffre", "Coffre", "fas fa-lock"], ["supervision", "Supervision", "fas fa-tachometer-alt"], ["journal", "Journal", "fas fa-clipboard-list"]].map(([u, l, i]) => `<a href="/dysizz-flow${u ? "/" + u : ""}" class="${active === u ? "on" : ""}"><i class="${i}"></i>${l}</a>`).join("")}
+<nav class="dzf-tabs">${[["workflows", "Workflows", "fas fa-project-diagram"], ["modeles", "Catalogue", "fas fa-magic"], ["", "Blocs", "fas fa-cubes"], ["atelier", "Atelier", "fas fa-tools"], ["api", "Points d'API", "fas fa-plug"], ["ecouteurs", "\xC9couteurs", "fas fa-satellite-dish"], ["coffre", "Coffre", "fas fa-lock"], ["supervision", "Supervision", "fas fa-tachometer-alt"], ["journal", "Journal", "fas fa-clipboard-list"]].map(([u, l, i]) => `<a href="/dysizz-flow${u ? "/" + u : ""}" class="${active === u ? "on" : ""}"><i class="${i}"></i>${l}</a>`).join("")}
 <a href="/dysizz" class="dzf-ext"><i class="fas fa-th-large"></i>Accueil</a></nav>
 ${flash(req)}${html}</div>`.replace(/\{\{/g, "&#123;&#123;").replace(/\}\}/g, "&#125;&#125;") }]
     });
@@ -95517,6 +98127,196 @@ ${rows.map((r) => `<tr class="${r.ok ? "" : "dzf-bad"}"><td>${esc(new Date(r.qua
   }
 });
 
+// src/ecouteurs.js
+var require_ecouteurs = __commonJS({
+  "src/ecouteurs.js"(exports2, module2) {
+    "use strict";
+    var cluster = require("cluster");
+    var G = globalThis[Symbol.for("dysizz-flow.ecouteurs")] || (globalThis[Symbol.for("dysizz-flow.ecouteurs")] = { actifs: /* @__PURE__ */ new Map() });
+    var EVENT = "DzfMailRecu";
+    var CHAMPS = [["uid", "Integer"], ["dossier", "String"], ["message_id", "String"], ["expediteur", "String"], ["destinataire", "String"], ["objet", "String"], ["date_envoi", "Date"], ["corps_texte", "String"], ["corps_html", "String"], ["recu_le", "Date"], ["ecouteur", "String"]];
+    var log = (m) => {
+      try {
+        require("@saltcorn/data/db/state").getState().log(4, "[dysizz-flow \xE9couteur] " + m);
+      } catch (e) {
+      }
+    };
+    var tableDest = async (nom) => {
+      const Table = require("@saltcorn/data/models/table"), Field = require("@saltcorn/data/models/field");
+      let t = Table.findOne({ name: nom });
+      if (!t) {
+        t = await Table.create(nom, { min_role_read: 1, min_role_write: 1, description: "Mails re\xE7us (\xE9couteur dysizz-flow)" });
+      }
+      const have = new Set(t.getFields().map((f) => f.name));
+      let ajout = false;
+      for (const [n, type] of CHAMPS) if (!have.has(n)) {
+        await Field.create({ table: t, name: n, label: n, type });
+        ajout = true;
+      }
+      if (ajout) {
+        try {
+          await require("@saltcorn/data/db/state").getState().refresh_tables(true);
+        } catch (e) {
+        }
+        t = Table.findOne({ name: nom });
+      }
+      return t;
+    };
+    var Ecouteur = class {
+      constructor(conf, tenant) {
+        this.conf = conf;
+        this.tenant = tenant;
+        this.stop = false;
+        this.occupe = false;
+        this.client = null;
+        this.timer = null;
+      }
+      async maj(champs) {
+        const db = require("@saltcorn/data/db");
+        await db.runWithTenant(this.tenant, async () => {
+          const { ensureTables } = require_store();
+          const T = await ensureTables();
+          await T.ecouteurs.updateRow(champs, this.conf.id);
+        });
+        Object.assign(this.conf, champs);
+      }
+      client_() {
+        const { ImapFlow } = require_imap_flow();
+        return new ImapFlow({ host: this.conf.serveur, port: +this.conf.port || 993, secure: (+this.conf.port || 993) === 993, auth: { user: this.conf.utilisateur, pass: this.mdp }, logger: false, socketTimeout: 5 * 6e4 });
+      }
+      async relever(cause) {
+        if (this.occupe || this.stop) return;
+        this.occupe = true;
+        const db = require("@saltcorn/data/db");
+        let c = null, n = 0;
+        try {
+          await db.runWithTenant(this.tenant, async () => {
+            const { simpleParser } = require_mailparser();
+            const Trigger = require("@saltcorn/data/models/trigger");
+            const T = await tableDest(this.conf.table_dest);
+            c = this.client_();
+            await c.connect();
+            const box = await c.mailboxOpen(this.conf.dossier || "INBOX", { readOnly: !this.conf.marquer_lu });
+            const validity = String(box.uidValidity || "");
+            let depuis = +this.conf.dernier_uid || 0;
+            if (this.conf.uidvalidity && validity && this.conf.uidvalidity !== validity) {
+              log(`${this.conf.nom} : UIDVALIDITY a chang\xE9, reprise sur les 2 derniers jours`);
+              depuis = 0;
+            }
+            const uids = depuis ? await c.search({ uid: `${depuis + 1}:*` }, { uid: true }) : await c.search({ since: new Date(Date.now() - 2 * 864e5) }, { uid: true });
+            let max = depuis;
+            for (const uid of (uids || []).filter((u) => u > depuis).sort((a, b) => a - b)) {
+              const m = await c.fetchOne(String(uid), { uid: true, source: true, envelope: true, internalDate: true }, { uid: true });
+              if (!m) continue;
+              max = Math.max(max, uid);
+              const mid = String(m.envelope && m.envelope.messageId || "").slice(0, 300);
+              const deja = await T.getRow(mid ? { message_id: mid, dossier: this.conf.dossier || "INBOX" } : { uid, ecouteur: this.conf.nom });
+              if (deja) continue;
+              const p = await simpleParser(m.source);
+              const row = { uid, dossier: this.conf.dossier || "INBOX", message_id: mid, expediteur: p.from ? p.from.text : "", destinataire: p.to ? [].concat(p.to).map((x) => x.text).join(", ") : "", objet: p.subject || "", date_envoi: p.date || m.internalDate || /* @__PURE__ */ new Date(), corps_texte: p.text || "", corps_html: typeof p.html === "string" ? p.html : "", recu_le: /* @__PURE__ */ new Date(), ecouteur: this.conf.nom };
+              const id = await T.insertRow(row);
+              n++;
+              if (this.conf.marquer_lu) await c.messageFlagsAdd(String(uid), ["\\Seen"], { uid: true }).catch(() => {
+              });
+              await Trigger.emitEvent(EVENT, this.conf.nom, null, { id, table: this.conf.table_dest, ...row, corps_html: void 0 });
+            }
+            await this.maj({ dernier_uid: max, uidvalidity: validity, etat: this.conf.etat === "idle" ? "idle" : "ok", vu_le: /* @__PURE__ */ new Date(), erreur: "", recus: (+this.conf.recus || 0) + n });
+          });
+          if (n) log(`${this.conf.nom} : ${n} mail(s) (${cause})`);
+        } catch (e) {
+          log(`${this.conf.nom} : rel\xE8ve en \xE9chec (${e.message})`);
+          await this.maj({ etat: "erreur", erreur: String(e.message).slice(0, 500), vu_le: /* @__PURE__ */ new Date() }).catch(() => {
+          });
+        } finally {
+          if (c) await c.logout().catch(() => {
+          });
+          this.occupe = false;
+        }
+      }
+      async boucle() {
+        while (!this.stop) {
+          let c = null;
+          try {
+            c = this.client_();
+            this.client = c;
+            await c.connect();
+            await c.mailboxOpen(this.conf.dossier || "INBOX", { readOnly: true });
+            await this.maj({ etat: "idle", erreur: "" }).catch(() => {
+            });
+            c.on("exists", () => setImmediate(() => this.relever("temps r\xE9el")));
+            while (!this.stop) await c.idle({ maxIdleTime: 4 * 6e4 });
+          } catch (e) {
+            if (this.stop) break;
+            await this.maj({ etat: "reconnexion", erreur: String(e.message).slice(0, 300) }).catch(() => {
+            });
+            await new Promise((r) => setTimeout(r, 3e4));
+          } finally {
+            if (c) await c.logout().catch(() => {
+            });
+            this.client = null;
+          }
+        }
+      }
+      async demarrer() {
+        const db = require("@saltcorn/data/db");
+        this.mdp = await db.runWithTenant(this.tenant, () => require_vault().readSecret(this.conf.secret)).catch(() => null) || process.env[this.conf.secret];
+        if (!this.mdp) {
+          await this.maj({ etat: "erreur", erreur: `mot de passe introuvable (secret ${this.conf.secret})` });
+          return;
+        }
+        await this.relever("d\xE9marrage");
+        this.timer = setInterval(() => this.relever("rel\xE8ve de secours"), 5 * 6e4);
+        this.boucle().catch(() => {
+        });
+      }
+      async arreter() {
+        this.stop = true;
+        if (this.timer) clearInterval(this.timer);
+        if (this.client) await this.client.logout().catch(() => {
+        });
+      }
+    };
+    var empreinte = (c) => JSON.stringify([c.serveur, c.port, c.utilisateur, c.secret, c.dossier, c.table_dest, c.marquer_lu, c.actif]);
+    var reconcilier = async () => {
+      if (cluster.isWorker) return 0;
+      const db = require("@saltcorn/data/db");
+      const tenant = db.getTenantSchema();
+      let T;
+      try {
+        const { ensureTables } = require_store();
+        T = await ensureTables();
+      } catch (e) {
+        return 0;
+      }
+      const rows = await T.ecouteurs.getRows({});
+      const voulus = new Map(rows.filter((r) => r.actif).map((r) => [`${tenant}|${r.nom}`, r]));
+      for (const [k, e] of G.actifs) if (k.startsWith(tenant + "|") && (!voulus.has(k) || empreinte(voulus.get(k)) !== e.empreinte)) {
+        await e.arreter();
+        G.actifs.delete(k);
+      }
+      for (const [k, conf] of voulus) if (!G.actifs.has(k)) {
+        const e = new Ecouteur(conf, tenant);
+        e.empreinte = empreinte(conf);
+        G.actifs.set(k, e);
+        e.demarrer().catch((x) => log(`${conf.nom} : ${x.message}`));
+      }
+      return [...G.actifs.keys()].filter((k) => k.startsWith(tenant + "|")).length;
+    };
+    var demarrerTous = reconcilier;
+    var surveiller = async () => {
+      if (cluster.isWorker) return;
+      const db = require("@saltcorn/data/db");
+      const tenant = db.getTenantSchema();
+      G.minuteurs = G.minuteurs || /* @__PURE__ */ new Map();
+      if (G.minuteurs.has(tenant)) clearInterval(G.minuteurs.get(tenant));
+      await reconcilier().catch(() => 0);
+      G.minuteurs.set(tenant, setInterval(() => db.runWithTenant(tenant, reconcilier).catch(() => 0), 3e4));
+    };
+    var etat = () => [...G.actifs.entries()].map(([k, e]) => ({ cle: k, nom: e.conf.nom, etat: e.conf.etat, vu_le: e.conf.vu_le, occupe: e.occupe }));
+    module2.exports = { demarrerTous, reconcilier, surveiller, etat, EVENT, Ecouteur, tableDest };
+  }
+});
+
 // src/admin2.js
 var require_admin2 = __commonJS({
   "src/admin2.js"(exports2, module2) {
@@ -95589,6 +98389,57 @@ ${rows.map((p) => `<details class="dzf-box"><summary><b>${esc(p.nom)}</b> <code>
       await points.deleteRows({ id: +(req.body || {}).id });
       expose2.forget();
       go(res, "/dysizz-flow/api", "Point supprim\xE9");
+    };
+    var ecoutePage = async (req, res) => {
+      if (!isAdmin(req)) return denied(res);
+      const { ecouteurs } = await ensureTables();
+      const rows = await ecouteurs.getRows({}, { orderBy: "nom" });
+      const vivants = new Map(require_ecouteurs().etat().map((x) => [x.nom, x]));
+      const form = (e = {}) => `<form method="post" action="/dysizz-flow/ecouteurs/save" class="dzf-point">${hidden(req)}<input type="hidden" name="id" value="${e.id || ""}">
+<label>Nom<input class="form-control form-control-sm" name="nom" value="${esc(e.nom || "")}" required pattern="[a-z0-9][a-z0-9_-]{0,60}" placeholder="ex. info-agence"></label>
+<label>Serveur IMAP<input class="form-control form-control-sm" name="serveur" value="${esc(e.serveur || "")}" required placeholder="ssl0.ovh.net"></label>
+<label>Port<input class="form-control form-control-sm" type="number" name="port" value="${esc(e.port || 993)}"></label>
+<label>Identifiant<input class="form-control form-control-sm" name="utilisateur" value="${esc(e.utilisateur || "")}" required></label>
+<label>Mot de passe (nom du secret)<input class="form-control form-control-sm" name="secret" value="${esc(e.secret || "")}" required placeholder="ex. MAIL_INFO"></label>
+<label>Dossier<input class="form-control form-control-sm" name="dossier" value="${esc(e.dossier || "INBOX")}"></label>
+<label>Table o\xF9 ranger les mails<input class="form-control form-control-sm" name="table_dest" value="${esc(e.table_dest || "")}" required placeholder="ex. mails_entrants"></label>
+<label class="dzf-check"><input type="checkbox" name="marquer_lu" ${e.marquer_lu ? "checked" : ""}> Marquer les mails comme lus (sinon : lecture seule stricte)</label>
+<label class="dzf-check"><input type="checkbox" name="actif" ${e.actif !== false ? "checked" : ""}> Actif</label>
+<button class="btn btn-primary btn-sm">Enregistrer et (re)d\xE9marrer</button></form>`;
+      page(res, req, "\xC9couteurs de bo\xEEtes mail", "ecouteurs", `<div class="dzf-intro"><p>Un \xE9couteur reste connect\xE9 \xE0 une bo\xEEte (IMAP IDLE) : chaque nouveau mail est rang\xE9 dans ta table puis l'\xE9v\xE9nement <code>DzfMailRecu</code> est \xE9mis. Cr\xE9e un workflow \xAB Quand : DzfMailRecu \xBB pour le traiter. Rel\xE8ve de secours toutes les 5 minutes. Par d\xE9faut rien n'est modifi\xE9 sur le serveur.</p></div>
+${rows.map((e) => {
+        const v = vivants.get(e.nom);
+        return `<details class="dzf-box"><summary><b>${esc(e.nom)}</b> ${esc(e.utilisateur)} \xB7 ${esc(e.dossier || "INBOX")} \u2192 <code>${esc(e.table_dest)}</code> \xB7 <span class="${e.etat === "erreur" ? "ko" : "ok"}">${esc(e.etat || (e.actif ? "en attente" : "arr\xEAt\xE9"))}</span>${e.vu_le ? " \xB7 vu " + esc(new Date(e.vu_le).toLocaleString("fr-FR")) : ""} \xB7 ${+e.recus || 0} re\xE7u(s)${e.erreur ? ` \xB7 <span class="ko">${esc(e.erreur)}</span>` : ""}</summary>${form(e)}
+<form method="post" action="/dysizz-flow/ecouteurs/delete">${hidden(req)}<input type="hidden" name="id" value="${e.id}"><button class="btn btn-outline-danger btn-sm">Supprimer</button></form></details>`;
+      }).join("") || '<p class="dzf-muted">Aucun \xE9couteur.</p>'}
+<h2>Nouvel \xE9couteur</h2>${form()}`);
+    };
+    var ecouteSave = async (req, res) => {
+      if (!isAdmin(req)) return denied(res);
+      const b = req.body || {};
+      const nom = String(b.nom || "").trim().toLowerCase();
+      if (!/^[a-z0-9][a-z0-9_-]{0,60}$/.test(nom)) return go(res, "/dysizz-flow/ecouteurs", "Nom invalide", true);
+      const table = String(b.table_dest || "").trim();
+      if (!/^[a-z][a-z0-9_]{1,60}$/.test(table)) return go(res, "/dysizz-flow/ecouteurs", "Nom de table invalide (minuscules, chiffres, _)", true);
+      const row = { nom, serveur: String(b.serveur || "").trim(), port: +b.port || 993, utilisateur: String(b.utilisateur || "").trim(), secret: String(b.secret || "").replace(/[^\w.-]/g, ""), dossier: String(b.dossier || "INBOX").trim(), table_dest: table, marquer_lu: b.marquer_lu === "on", actif: b.actif === "on" };
+      const { ecouteurs } = await ensureTables();
+      try {
+        if (b.id) await ecouteurs.updateRow(row, +b.id);
+        else await ecouteurs.insertRow({ ...row, dernier_uid: 0, recus: 0 });
+      } catch (e) {
+        return go(res, "/dysizz-flow/ecouteurs", "Impossible : " + e.message, true);
+      }
+      await require_ecouteurs().tableDest(table).catch(() => {
+      });
+      await require_ecouteurs().demarrerTous().catch(() => 0);
+      go(res, "/dysizz-flow/ecouteurs", `\xC9couteur \xAB ${nom} \xBB enregistr\xE9 : il d\xE9marre dans les 30 secondes`);
+    };
+    var ecouteDelete = async (req, res) => {
+      if (!isAdmin(req)) return denied(res);
+      const { ecouteurs } = await ensureTables();
+      await ecouteurs.deleteRows({ id: +(req.body || {}).id });
+      await require_ecouteurs().demarrerTous().catch(() => 0);
+      go(res, "/dysizz-flow/ecouteurs", "\xC9couteur supprim\xE9");
     };
     var vaultPage = async (req, res) => {
       if (!isAdmin(req)) return denied(res);
@@ -95679,7 +98530,7 @@ ${errs.map((r) => `<tr class="dzf-bad"><td>${esc(new Date(r.started_at).toLocale
 <table class="dzf-table"><tr><th>Quand</th><th>Bloc</th><th>Message</th></tr>
 ${lastErr.map((r) => `<tr><td>${esc(new Date(r.quand).toLocaleString("fr-FR"))}</td><td><code>${esc(r.bloc)}</code></td><td>${esc(r.message || "")}</td></tr>`).join("") || '<tr><td colspan="3" class="dzf-muted">Aucune.</td></tr>'}</table>`);
     };
-    module2.exports = { apiPage, apiSave, apiDelete, vaultPage, vaultSave, vaultDelete, monitorPage };
+    module2.exports = { ecoutePage, ecouteSave, ecouteDelete, apiPage, apiSave, apiDelete, vaultPage, vaultSave, vaultDelete, monitorPage };
   }
 });
 
@@ -96821,6 +99672,24 @@ var require_assets = __commonJS({
   }
 });
 
+// src/lib/leads/index.js
+var require_leads2 = __commonJS({
+  "src/lib/leads/index.js"(exports2, module2) {
+    "use strict";
+    module2.exports = {
+      ...require_extraire(),
+      ...require_rapprochement(),
+      ...require_contact(),
+      ...require_routage(),
+      ...require_traiter(),
+      ...require_crm(),
+      PORTAILS: require_portails().PORTAILS,
+      valeurs: require_valeurs(),
+      texte: require_texte()
+    };
+  }
+});
+
 // src/index.js
 var { PLUGIN, VERSION } = require_core();
 var { toAction } = require_engine();
@@ -96864,7 +99733,25 @@ module.exports = {
       } catch (e) {
         return false;
       }
-    }
+    },
+    /* CRM dont les secrets sont lus dans l'environnement puis le coffre (jamais renvoyés à l'appelant) */
+    crmDepuisCoffre: (type, reglages, prefixe, mode) => {
+      const pre = String(prefixe || "LEADS_CRM").replace(/[^\w]/g, "");
+      const secret = async (k) => {
+        const n = `${pre}_${String(k).toUpperCase()}`;
+        if (process.env[n]) return process.env[n];
+        try {
+          return await require_vault().readSecret(n);
+        } catch (e) {
+          return void 0;
+        }
+      };
+      return require_crm().creerCrm(type, { ...reglages || {}, secret }, { mode });
+    },
+    /* moteur leads immobiliers (utilisé par dysizz-leads) */
+    leads: require_leads2(),
+    /* écouteurs de boîtes mail */
+    ecouteurs: { demarrerTous: () => require_ecouteurs().demarrerTous(), etat: () => require_ecouteurs().etat(), tableDest: (t) => require_ecouteurs().tableDest(t) }
   },
   /* tuiles sur l'accueil Dysizz (/dysizz, fourni par dysizz-ui) */
   dysizz_hub,
@@ -96879,7 +99766,13 @@ module.exports = {
       await registerUserBlocks();
     } catch (e) {
     }
+    try {
+      await require_ecouteurs().surveiller();
+    } catch (e) {
+    }
   },
+  /* événement émis par les écouteurs de boîtes mail : un workflow peut s'y abonner */
+  eventTypes: { DzfMailRecu: { hasChannel: true } },
   routes: [
     { url: "/dysizz-flow", method: "get", callback: withAssets(admin.library) },
     { url: "/dysizz-flow/bloc/:name", method: "get", callback: withAssets(admin.blockPage) },
@@ -96904,6 +99797,9 @@ module.exports = {
     { url: "/dysizz-flow/api", method: "get", callback: withAssets(admin2.apiPage) },
     { url: "/dysizz-flow/api/save", method: "post", callback: admin2.apiSave },
     { url: "/dysizz-flow/api/delete", method: "post", callback: admin2.apiDelete },
+    { url: "/dysizz-flow/ecouteurs", method: "get", callback: withAssets(admin2.ecoutePage) },
+    { url: "/dysizz-flow/ecouteurs/save", method: "post", callback: admin2.ecouteSave },
+    { url: "/dysizz-flow/ecouteurs/delete", method: "post", callback: admin2.ecouteDelete },
     { url: "/dysizz-flow/coffre", method: "get", callback: withAssets(admin2.vaultPage) },
     { url: "/dysizz-flow/coffre/save", method: "post", callback: admin2.vaultSave },
     { url: "/dysizz-flow/coffre/delete", method: "post", callback: admin2.vaultDelete },

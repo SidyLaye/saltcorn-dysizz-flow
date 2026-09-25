@@ -26,6 +26,7 @@ const DEFS = {
   points: { name: "dzf_points", fields: [["nom", "String", { required: true, is_unique: true }], ["workflow", "String"], ["methode", "String"], ["auth", "String"], ["secret", "String"], ["en_tete_signature", "String"], ["reponse", "String"], ["limite_minute", "Integer"], ["actif", "Bool"], ["note", "String"], ["executer_en", "String"]] },
   file: { name: "dzf_file", fields: [["file", "String", { required: true }], ["charge", "String"], ["etat", "String"], ["cree_le", "Date"], ["pris_le", "Date"], ["essais", "Integer"]] },
   versions: { name: "dzf_versions", fields: [["nom", "String", { required: true }], ["version", "Integer"], ["contenu", "String"], ["quand", "Date"], ["par", "String"]] },
+  ecouteurs: { name: "dzf_ecouteurs", fields: [["nom", "String", { required: true, is_unique: true }], ["serveur", "String"], ["port", "Integer"], ["utilisateur", "String"], ["secret", "String"], ["dossier", "String"], ["table_dest", "String"], ["actif", "Bool"], ["marquer_lu", "Bool"], ["dernier_uid", "Integer"], ["uidvalidity", "String"], ["etat", "String"], ["vu_le", "Date"], ["erreur", "String"], ["recus", "Integer"]] },
   verrous: { name: "dzf_verrous", fields: [["nom", "String", { required: true, is_unique: true }], ["jusqu_a", "Date"], ["par", "String"]] },
 };
 
