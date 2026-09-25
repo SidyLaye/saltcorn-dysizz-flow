@@ -1,4 +1,4 @@
-/* dysizz-flow 2.3.0 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.3.1 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.3.0" : "dev";
+    var VERSION2 = true ? "2.3.1" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -2988,7 +2988,60 @@ var require_feeds = __commonJS({
         return "";
       }
     };
-    module2.exports = { pageImage, parseFeed, resolveYoutube, youtubeFeed, httpGet, UA };
+    var BROWSER_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0 Safari/537.36";
+    var isFeed = (t) => /<(rss|feed|rdf:RDF)[\s>]/i.test(String(t).slice(0, 3e3));
+    var getRetry = async (url) => {
+      try {
+        return await httpGet(url);
+      } catch (e) {
+        if (!/fetch failed|HTTP 5\d\d|HTTP 403|HTTP 429|délai|ECONNRESET|socket/i.test(e.message)) throw e;
+        await new Promise((r) => setTimeout(r, 1200));
+        return httpGet(url, { timeout: 2e4, headers: { "User-Agent": BROWSER_UA } });
+      }
+    };
+    var discover = (html, base) => {
+      const out = [];
+      for (const m of String(html).slice(0, 4e5).matchAll(/<link\b[^>]*>/gi)) {
+        const tag = m[0];
+        if (!/rel=["']?alternate/i.test(tag) || !/type=["']?application\/(rss|atom)\+xml/i.test(tag)) continue;
+        const h = /href=["']([^"']+)["']/i.exec(tag);
+        if (h) {
+          try {
+            out.push(new URL(h[1].replace(/&amp;/g, "&"), base).href);
+          } catch (e) {
+          }
+        }
+      }
+      return out;
+    };
+    var readFeed = async (url) => {
+      const yt = /youtube\.com\/feeds\/videos\.xml\?channel_id=UC([\w-]{22})/.exec(url);
+      let body;
+      try {
+        body = await getRetry(url);
+      } catch (e) {
+        if (yt && /HTTP (404|5\d\d)/.test(e.message)) {
+          body = await getRetry(`https://www.youtube.com/feeds/videos.xml?playlist_id=UU${yt[1]}`);
+        } else throw e;
+      }
+      if (isFeed(body)) return { items: parseFeed(body), url };
+      const tried = /* @__PURE__ */ new Set([url]);
+      const cands = discover(body, url);
+      const u0 = new URL(url);
+      for (const pth of ["/feed", "/feed/", "/rss", "/rss.xml", "/feed.xml", "/atom.xml", "/index.xml", "/blog/feed", "/blog/rss.xml", "/blog/feed.xml"]) cands.push(u0.origin + pth);
+      for (const c of cands) {
+        if (tried.has(c)) continue;
+        tried.add(c);
+        try {
+          const b = await httpGet(c, { timeout: 1e4 });
+          if (isFeed(b)) return { items: parseFeed(b), url: c, trouve: true };
+        } catch (e) {
+        }
+        if (tried.size > 8) break;
+      }
+      throw new Error("cette adresse est une page web sans flux RSS trouv\xE9 : mets l'adresse du flux (souvent \u2026/feed ou \u2026/rss.xml)");
+    };
+    module2.exports = { pageImage, parseFeed, resolveYoutube, youtubeFeed, httpGet, UA, readFeed, discover };
   }
 });
 
@@ -2997,7 +3050,7 @@ var require_reseau = __commonJS({
   "src/blocks/reseau.js"(exports2, module2) {
     "use strict";
     var { asList, pool } = require_engine();
-    var { parseFeed, resolveYoutube, youtubeFeed, httpGet, pageImage } = require_feeds();
+    var { resolveYoutube, youtubeFeed, httpGet, pageImage, readFeed } = require_feeds();
     var secret = async (api, name) => {
       const v = await api.secret(name);
       if (name && !v) throw Object.assign(new Error(`secret ${name} introuvable (variable d'environnement ou coffre)`), { permanent: true });
@@ -3129,7 +3182,9 @@ var require_reseau = __commonJS({
                 url = youtubeFeed(id);
               }
               if (!url) throw new Error("pas d'adresse");
-              return parseFeed(await httpGet(url)).slice(0, +p.max_par_source || 30).map((it) => ({ ...it, type: it.video_id ? "vid\xE9o" : "article", source: s.id ?? url, source_nom: s.nom || "", ...Object.fromEntries(copy.map((c) => [`source_${c}`, s[c]])) }));
+              const lu = await readFeed(url);
+              if (lu.trouve) chaines.push({ source: s.id, flux: lu.url });
+              return lu.items.slice(0, +p.max_par_source || 30).map((it) => ({ ...it, type: it.video_id ? "vid\xE9o" : "article", source: s.id ?? url, source_nom: s.nom || "", ...Object.fromEntries(copy.map((c) => [`source_${c}`, s[c]])) }));
             } catch (e) {
               erreurs.push({ source: s.id ?? s.url, nom: s.nom || s.url, erreur: e.message });
               return [];

@@ -97,5 +97,15 @@ const route = (re, res, type) => ({ test: (u) => re.test(u), res, type });
   const parts = await run("dzf_ia_decouper", { texte: "Phrase. ".repeat(600), taille: 500, recouvrement: 50 });
   assert(parts.length >= 8 && parts.every((x) => x.texte.length <= 760), "découpage");
 
+  /* flux : page web → flux découvert ; YouTube 404 → playlist des mises en ligne */
+  const RSS = '<?xml version="1.0"?><rss><channel><item><title>Un article</title><link>https://site.test/a</link></item></channel></rss>';
+  const ATOM = '<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom"><entry><title>Vidéo</title><link href="https://www.youtube.com/watch?v=abc"/><yt:videoId>abc</yt:videoId></entry></feed>';
+  routes = [route(/site\.test\/$/, () => '<html><head><link rel="alternate" type="application/rss+xml" href="/blog/flux.xml"></head></html>', "text/html"), route(/site\.test\/blog\/flux\.xml/, () => RSS, "application/rss+xml"),
+    { test: (u) => /channel_id=/.test(u), res: () => { throw new Error("HTTP 404"); } }, route(/playlist_id=UU/, () => ATOM, "application/atom+xml")];
+  global.fetch = ((f) => async (u, o) => { const r = routes.find((x) => x.test(String(u))); if (r && /channel_id=/.test(u)) return { ok: false, status: 404, text: async () => "" }; return f(u, o); })(global.fetch);
+  const fl = (await B("dzf_rss").run({ sources: [{ id: 1, url: "https://site.test/" }, { id: 2, youtube_id: "UC" + "a".repeat(22) }], max_par_source: 5 }, {}, { ...api, out: "articles" })).__merge;
+  assert.strictEqual(fl.articles.length, 2, JSON.stringify(fl.articles_erreurs));
+  assert.deepStrictEqual(fl.articles_chaines, [{ source: 1, flux: "https://site.test/blog/flux.xml" }]);
+
   console.log("blocs 2.3 : ok");
 })().catch((e) => { console.error(e); process.exit(1); });

@@ -100,4 +100,51 @@ const pageImage = (html, base) => {
   try { return safeUrl(new URL(u.replace(/&amp;/g, "&"), base).href); } catch (e) { return ""; }
 };
 
-module.exports = { pageImage, parseFeed, resolveYoutube, youtubeFeed, httpGet, UA };
+/* Lit un flux de façon robuste :
+   - nouvel essai (autre User-Agent) si le site coupe la connexion ou répond 5xx ;
+   - YouTube : si le flux de la chaîne répond 404 (arrive souvent), on lit la
+     playlist « mises en ligne » de la chaîne (UU…) ;
+   - page web au lieu d'un flux : on cherche le flux annoncé par la page
+     (<link rel="alternate">), puis les adresses habituelles (/feed, /rss.xml…). */
+const BROWSER_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0 Safari/537.36";
+const isFeed = (t) => /<(rss|feed|rdf:RDF)[\s>]/i.test(String(t).slice(0, 3000));
+const getRetry = async (url) => {
+  try { return await httpGet(url); }
+  catch (e) {
+    if (!/fetch failed|HTTP 5\d\d|HTTP 403|HTTP 429|délai|ECONNRESET|socket/i.test(e.message)) throw e;
+    await new Promise((r) => setTimeout(r, 1200));
+    return httpGet(url, { timeout: 20000, headers: { "User-Agent": BROWSER_UA } });
+  }
+};
+const discover = (html, base) => {
+  const out = [];
+  for (const m of String(html).slice(0, 400000).matchAll(/<link\b[^>]*>/gi)) {
+    const tag = m[0];
+    if (!/rel=["']?alternate/i.test(tag) || !/type=["']?application\/(rss|atom)\+xml/i.test(tag)) continue;
+    const h = /href=["']([^"']+)["']/i.exec(tag);
+    if (h) { try { out.push(new URL(h[1].replace(/&amp;/g, "&"), base).href); } catch (e) { /* rien */ } }
+  }
+  return out;
+};
+const readFeed = async (url) => {
+  const yt = /youtube\.com\/feeds\/videos\.xml\?channel_id=UC([\w-]{22})/.exec(url);
+  let body;
+  try { body = await getRetry(url); }
+  catch (e) {
+    if (yt && /HTTP (404|5\d\d)/.test(e.message)) { body = await getRetry(`https://www.youtube.com/feeds/videos.xml?playlist_id=UU${yt[1]}`); }
+    else throw e;
+  }
+  if (isFeed(body)) return { items: parseFeed(body), url };
+  const tried = new Set([url]);
+  const cands = discover(body, url);
+  const u0 = new URL(url);
+  for (const pth of ["/feed", "/feed/", "/rss", "/rss.xml", "/feed.xml", "/atom.xml", "/index.xml", "/blog/feed", "/blog/rss.xml", "/blog/feed.xml"]) cands.push(u0.origin + pth);
+  for (const c of cands) {
+    if (tried.has(c)) continue; tried.add(c);
+    try { const b = await httpGet(c, { timeout: 10000 }); if (isFeed(b)) return { items: parseFeed(b), url: c, trouve: true }; } catch (e) { /* suivant */ }
+    if (tried.size > 8) break;
+  }
+  throw new Error("cette adresse est une page web sans flux RSS trouvé : mets l'adresse du flux (souvent …/feed ou …/rss.xml)");
+};
+
+module.exports = { pageImage, parseFeed, resolveYoutube, youtubeFeed, httpGet, UA, readFeed, discover };

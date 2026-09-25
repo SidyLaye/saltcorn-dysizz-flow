@@ -1,7 +1,7 @@
 /* Blocs « Réseau » : appeler une API, lire des flux RSS / YouTube. */
 "use strict";
 const { asList, pool } = require("../engine");
-const { parseFeed, resolveYoutube, youtubeFeed, httpGet, pageImage } = require("../lib/feeds");
+const { resolveYoutube, youtubeFeed, httpGet, pageImage, readFeed } = require("../lib/feeds");
 
 const secret = async (api, name) => { const v = await api.secret(name); if (name && !v) throw Object.assign(new Error(`secret ${name} introuvable (variable d'environnement ou coffre)`), { permanent: true }); return v; };
 
@@ -96,7 +96,9 @@ module.exports = [
             url = youtubeFeed(id);
           }
           if (!url) throw new Error("pas d'adresse");
-          return parseFeed(await httpGet(url)).slice(0, +p.max_par_source || 30).map((it) => ({ ...it, type: it.video_id ? "vidéo" : "article", source: s.id ?? url, source_nom: s.nom || "", ...Object.fromEntries(copy.map((c) => [`source_${c}`, s[c]])) }));
+          const lu = await readFeed(url);
+          if (lu.trouve) chaines.push({ source: s.id, flux: lu.url });
+          return lu.items.slice(0, +p.max_par_source || 30).map((it) => ({ ...it, type: it.video_id ? "vidéo" : "article", source: s.id ?? url, source_nom: s.nom || "", ...Object.fromEntries(copy.map((c) => [`source_${c}`, s[c]])) }));
         } catch (e) { erreurs.push({ source: s.id ?? s.url, nom: s.nom || s.url, erreur: e.message }); return []; }
       });
       /* <sortie> : les éléments ; <sortie>_erreurs : les sources en erreur ;
