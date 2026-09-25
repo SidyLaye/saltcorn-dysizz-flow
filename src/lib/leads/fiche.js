@@ -6,7 +6,7 @@ const { cle } = require("./texte");
 
 const LIBELLES = {
   email: ["email", "e mail", "mail", "adresse e mail", "adresse email", "email address", "courriel", "mail", "e mail de contact", "votre email"],
-  telephone: ["telephone", "tel", "tel portable", "tel perso", "tel prof", "telephone portable", "phone", "phone number", "numero de telephone", "n de telephone", "numero de tel", "portable", "mobile", "telefoon", "telefono", "numero"],
+  telephone: ["telephone", "tel", "tel portable", "tel perso", "tel prof", "telephone portable", "phone", "phone number", "numero de telephone", "n de telephone", "numero de tel", "portable", "mobile", "telefoon", "telefono", "numero", "telephone principal", "telephone fixe", "telephone mobile", "tel mobile", "gsm", "numero de tel"],
   nom: ["nom", "last name", "surname", "achternaam", "nom de famille"],
   prenom: ["prenom", "first name", "voornaam", "given name"],
   nom_complet: ["nom prenom", "nom complet", "full name", "name", "naam", "customer", "client", "contact", "prospect", "nombre"],
@@ -21,7 +21,7 @@ const LIBELLES = {
   pays: ["pays", "country", "land"],
   langue: ["langue", "language"],
   type: ["type", "type de bien", "property type"],
-  surface: ["surface", "surface habitable", "living area"],
+  surface: ["surface", "surface habitable", "living area", "surface carrez", "surface du bien"],
   pieces: ["pieces", "nombre de pieces", "rooms"],
   chambres: ["chambres", "bedrooms", "nombre de chambres"],
   delai: ["delai du projet", "purchase timescale", "timescale", "delai"],
@@ -32,14 +32,16 @@ const LIBELLES = {
   r_terrain: ["surface terrain min"],
   r_pieces: ["nombre de pieces min", "pieces min"],
   r_chambres: ["nombre de chambres min", "chambres min"],
-  transaction: ["transaction"],
+  transaction: ["transaction", "operation"],
+  r_type_bis: ["bien de type"],
+  ignorer: ["identifiant client", "code client", "id client", "numero client", "reference client"],
 };
 
 const INDEX = new Map();
 for (const [champ, l] of Object.entries(LIBELLES)) for (const x of l) INDEX.set(x, champ);
 
 /* Libellés sûrs pour découper une ligne qui contient plusieurs « Libellé : valeur ». */
-const INLINE = /(?<!code|n°|num[ée]ro)\s(?=(?:client|customer|email|e-mail|t[ée]l[ée]phone|phone|nego|n[ée]go|pour l'agence|for the real estate|message du client|customer message)\s*:)/gi;
+const INLINE = /(?<!code|n°|num[ée]ro|identifiant|id|espace)\s(?=(?:client|customer|email|e-mail|t[ée]l[ée]phone|phone|nego|n[ée]go|pour l'agence|for the real estate|message du client|customer message)\s*:)/gi;
 
 const nettoyerLigne = (l) => String(l).replace(/^[\s•*·#>|-]+/, "").replace(/[\s*|]+$/, "").replace(/^\*(.+?)\*\s*:/, "$1:").trim();
 

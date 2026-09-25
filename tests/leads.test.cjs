@@ -224,5 +224,37 @@ const MAILS = {
   const encore = await B("dzf_ovh_dns").run({ cles: "OVH_CLES", region: "ovh-eu", zone: "exemple.fr", action: "créer ou mettre à jour", type: "A", sous_domaine: "crm", cible: "5.6.7.8", ttl: 0 }, {}, api);
   assert.strictEqual(encore.action, "inchangé");
 
+  /* Variantes trouvées dans l'audit des 7 658 mails AMBS (données fictives, même mise en page) */
+  {
+    const C2 = { ...CONF, id_crm_liens: ["immo-facile-(\\d{8})\\b"] };
+    const pv = extraire({ expediteur: '"ParuVendu.fr" <contact@paruvendupro.fr>', objet: "Vous avez un contact - réf. : 60999999_32000 - Vente - Maison - 250000€ - AB12",
+      texte: "Réf. Pro : 60999999_32000\n250 000€\nCahors (46000) Maison - 5 pièce(s) - 120 m²\nRépondez à ce contact au plus vite :\n(dans la journée)\nM DURAND\nTéléphone : 0611223344\nEmail : durand@example.org\nVoici son message :\nBonjour, je souhaite visiter." }, C2);
+    assert.strictEqual(pv.nature, "lead"); assert.strictEqual(pv.bien.id_crm, "60999999"); assert.strictEqual(pv.bien.reference, "32000");
+    const loc = extraire({ expediteur: "\"Bien'ici\" <no_reply@bienici.com>", objet: "Contact candidat locataire pour votre annonce 1201 à PELLEGRUE",
+      texte: "Ses coordonnéesHervé Test Téléphone : 07 00 00 00 01\nE-mail : herve@example.org\nRappel de l’annoncePhoto\nMaison 5 pièces 89 m²\n33790 PELLEGRUE\n600 €par mois charges comprises\nRÉFÉRENCE : 1201",
+      html: '<a href="https://pro.bienici.com/?at_id_compte=immo-facile-405876&x=1">b</a>' }, C2);
+    assert.strictEqual(loc.nature, "lead"); assert.strictEqual(loc.agence_crm, "405876"); assert.ok(!loc.bien.id_crm, "le compte Bien'ici n'est pas un bien");
+    const appel = extraire({ expediteur: "\"Bien'ici\" <no_reply@bienici.com>", objet: "Un prospect-acquéreur a tenté de vous contacter par téléphone. Rappelez-le au 06 47 00 00 71 !", texte: "Vous pouvez le rappeler à ce numéro :\n06 47 00 00 71" }, C2);
+    assert.strictEqual(appel.nature, "lead"); assert.strictEqual(appel.contact.telephone, "+33647000071");
+    const tr = extraire({ expediteur: '"Agence" <quarantaine@agence-exemple.fr>', objet: 'TR: Nouveau message pour "Local 45 m² RODEZ" sur leboncoin',
+      texte: "De : info@agence-exemple.fr <info@agence-exemple.fr>\nEnvoyé : mardi 18 août 2026 17:46\nÀ : quarantaine@agence-exemple.fr\nObjet : Nouveau message pour \"Local 45 m² RODEZ\" sur leboncoin\nBonjour,\nYann vous a contacté sur leboncoin.\nPrénom : yann\nNom : TEST\nE-mail : yann@example.org\nTéléphone : +33600000041\n« Est-il disponible ? »\nRéférence : 12027400400\nL'équipe leboncoin" }, C2);
+    assert.strictEqual(tr.nature, "lead"); assert.strictEqual(tr.portail, "leboncoin"); assert.strictEqual(tr.contact.email, "yann@example.org"); assert.ok(!/:/.test(tr.contact.nom_complet || ""));
+    const ga = extraire({ expediteur: '"Dupont Alphée via Green-Acres" <alphee.dupont-84cd@email.green-acres.com>', objet: "Nouveau contact pour AGENCE EXEMPLE",
+      texte: "Nouveau contact\nDupont Alphée - 18/08/2026\nBonjour,\nLa référence de l'annonce est: 615\nMerci\nRépondez à cet email pour lui écrire directement.\n✉\nagence-84cd95c2@email.green-acres.com" }, C2);
+    assert.strictEqual(ga.nature, "lead"); assert.strictEqual(ga.bien.reference, "615"); assert.strictEqual(ga.contact.email_relais, "alphee.dupont-84cd@email.green-acres.com");
+    assert.strictEqual(extraire({ expediteur: "<email@huisenaanbod.nl>", objet: "Nouvelle demande d'information via HUISenAANBOD.nl !", texte: "Nom: #Naamaanvrager\nMessage du demandeur: #Vraag" }, C2).nature, "non_lead");
+    const lux = extraire({ expediteur: "<contact@lead.seloger.com>", objet: "Un acquéreur est intéressé par un de vos biens",
+      texte: "Identifiant client : RC-1\nNouveau contact sur votre annonce 32129\nMaison\n• 6 pièces\n• 202 m²\nCARCASSONNE, 11000\n599 000 €\nRef. de l'annonce : 32129\nMessage du contact\nBonjour\nNom : Jean TESTEUR\nEmail : jean@example.org\nCet email vous est adressé par X, S.A.S au capital de 642 609 233 €" }, C2);
+    assert.strictEqual(lux.bien.ville, "CARCASSONNE"); assert.strictEqual(lux.bien.code_postal, "11000"); assert.strictEqual(lux.bien.prix, 599000); assert.strictEqual(lux.contact.nom, "TESTEUR"); assert.strictEqual(lux.contact.prenom, "Jean");
+    const b2b = await traiter({ expediteur: "Léa <lea@salon-exemple.com>", objet: "Rencontrez des maires au salon", texte: "Bonjour, nous vous proposons un stand, intéressé ? prix spécial." }, M.creer({}), C2);
+    assert.notStrictEqual(b2b.statut, "pret");
+    /* preuve faible : « 2162 » moins le dernier caractère = « 216 », bien d'une autre ville sans prix → rejeté */
+    const crmX = M.creer({ biens: [{ id: 1, reference: "216", prix: 0, surface: 0, pieces: 6, type: "maison", ville: "RODEZ", code_postal: "12000" }] });
+    const rx = await rapprocher({ bien: { reference: "2162", ville: "Raulhac", pieces: 6, type: "maison", prix: 89500 } }, crmX);
+    assert.strictEqual(rx.bien, null, "une référence tronquée ne suffit pas sans fait distinctif");
+    const r8 = await rapprocher({ bien: { reference: "985_985_61000001", prix: 530000, type: "appartement" } }, M.creer({ biens: [{ id: 61000001, reference: "985_985", prix: 510000, type: "appartement", ville: "Cannes" }, { id: 7, reference: "985", prix: 4800000, type: "maison" }] }));
+    assert.strictEqual(r8.bien && r8.bien.id, 61000001, "identifiant Immofacile caché dans la référence");
+  }
+
   console.log("leads + ovh : ok");
 })().catch((e) => { console.error(e); process.exit(1); });

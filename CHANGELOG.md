@@ -1,5 +1,20 @@
 # Journal des versions
 
+## 2.4.2
+
+Revu sur les 7 658 mails réels de la sauvegarde AMBS, comparés un par un à ce que l'ancien service a fait (journal d'exécution, champs, biens, destinataires).
+
+- Nouvelles variantes lues : ParuVendu (l'identifiant Immofacile est dans la réf. pro), Bien'ici location, bailleur et appel manqué, Green-Acres « Nouveau contact pour l'agence », SeLoger Luxe, eKonsilio transféré, Châteaux pour tous (hébergeur tiers), Stonimmo / Annonce-Immobilier, Adapt (formulaire de recherche : l'adresse est celle du prospect), Jestimo rendez-vous et « démarchage hors horaires autorisé ».
+- Mail de portail repassé par une boîte de l'agence (« TR: » depuis la boîte des non-traités) : le portail est reconnu au texte.
+- Bien'ici : « immo-facile-405876 » dans at_id_compte est le compte de l'agence, plus un identifiant de bien.
+- Identifiant Immofacile (8 chiffres) caché dans une référence (« 985_985_60945370 ») essayé en premier.
+- Rapprochement : une preuve faible (référence tronquée, segment, critères) doit avoir un fait qui distingue le bien (prix, surface, code postal, ville) ; une ville ou un type différents la bloquent sauf si deux faits distinctifs concordent. « 32562-32562 » vaut la référence complète. Loyer comparé au prix du bien loué.
+- Prix : le capital social en bas de mail n'est plus pris pour un prix ; loyer « 600 €/mois » lu à part.
+- Noms : le mot en capitales est le nom (« MATHIEU Jérémie ») ; « Nom : Jean Dupont » est découpé ; téléphone donné dans le message récupéré.
+- Mails directs : envoi en nombre, [SPAM], codes de connexion, sociétés sans référence → « à trier » ; mail direct sans bien reconnu → « à trier ». Réponse d'un particulier (« Re: ») avec la référence dans la citation → relance.
+- Signalé « à vérifier » : démarchage (photographe, brochures, référencement…), message de test, prospect qui dit avoir déjà trouvé.
+- Immofacile : relecture du contact après écriture ; ce qui n'a pas été pris est signalé (l'ancien service n'a jamais retrouvé origin / group / phone à la relecture). Contact sans négociateur rattaché à celui du bien.
+
 ## 2.4.1
 
 - Adaptateur Immofacile aligné sur la documentation OpenAPI V2 : consentement (reason 64 caractères max, consent_date, proofs[] rangées dans Documents confidentiels/Consentement), valeurs des critères par `/criterias/product/{id}/values` (code « model »), clés XML lues sur le site (NbPieces ou NbPiece), recherche de biens avec `?fetch=` (biens complets sans appel de détail), contacts triés du plus récent (createdAt, mobilePhone), suivi sans corps (409 = déjà suivi), note du prospect en action si un type d'action est réglé, recherche d'acquéreur (`/customers/{id}/search-requests`) pour les leads « recherche ».

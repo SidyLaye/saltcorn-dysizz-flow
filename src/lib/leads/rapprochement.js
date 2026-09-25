@@ -19,26 +19,45 @@ const memeVille = (a, b) => { const x = cle(a).replace(/\b(saint|st)\b/g, "st").
 
 /* Compare les faits du mail et du bien. Renvoie { accords:[], conflits:[], inconnus:[] }. */
 const comparer = (mail = {}, bien = {}, regles = REGLES) => {
-  const out = { accords: [], conflits: [], inconnus: [] };
+  const out = { accords: [], conflits: [], inconnus: [], legers: [] };
   const note = (nom, ok, ko) => (ok ? out.accords : ko ? out.conflits : out.inconnus).push(nom);
-  if (mail.prix && bien.prix) { const e = ecart(+mail.prix, +bien.prix); note("prix", e <= regles.prix_ok, e > regles.prix_ko); }
+  if (mail.prix && bien.prix) { const e = ecart(+mail.prix, +bien.prix); note("prix", e <= regles.prix_ok, e > regles.prix_ko); if (+mail.prix === +bien.prix) out.prix_exact = true; }
+  if (mail.loyer && bien.prix && +bien.prix < 20000) { const e = ecart(+mail.loyer, +bien.prix); note("prix", e <= 0.1, e > 0.25); }
   if (mail.surface && bien.surface) { const d = Math.abs(mail.surface - bien.surface), e = ecart(+mail.surface, +bien.surface); note("surface", d <= regles.surface_ok_m2 || e <= regles.surface_ok, e > regles.surface_ko && d > regles.surface_ok_m2); }
   if (mail.pieces && bien.pieces) note("pieces", +mail.pieces === +bien.pieces, Math.abs(mail.pieces - bien.pieces) >= 2);
   if (mail.code_postal && bien.code_postal) note("code_postal", mail.code_postal === bien.code_postal, mail.code_postal.slice(0, 2) !== String(bien.code_postal).slice(0, 2));
   else if (mail.departement && bien.code_postal) note("departement", String(bien.code_postal).startsWith(mail.departement), !String(bien.code_postal).startsWith(mail.departement));
-  if (mail.ville && bien.ville) note("ville", memeVille(mail.ville, bien.ville), false);
-  if (mail.type && bien.type) note("type", mail.type === bien.type, false);
+  /* Ville et type : un désaccord n'est qu'un « écart léger » (hameau / commune voisine,
+     « moulin » annoncé comme « maison »). Il ne bloque pas une preuve forte, mais bloque une preuve faible. */
+  if (mail.ville && bien.ville) { const ok = memeVille(mail.ville, bien.ville); if (ok || !mail.lieu_approche) { note("ville", ok, false); if (!ok) out.legers.push("ville"); } }
+  if (mail.type && bien.type) { const ok = mail.type === bien.type; note("type", ok, false); if (!ok) out.legers.push("type"); }
   return out;
 };
 
 /* Verdict : aucun conflit, et assez d'accords selon la solidité de la preuve d'origine. */
+const DISTINCTIFS = ["prix", "surface", "code_postal", "ville", "departement"];
 const verdict = (cmp, minAccords, preuveForte = false) => {
-  /* Référence exacte ou identifiant CRM : un seul écart (souvent le prix après une baisse)
-     est toléré si au moins deux autres faits concordent ; il est signalé. */
-  if (preuveForte && cmp.conflits.length === 1 && cmp.accords.length >= 2) return { ok: true, raison: "accords : " + cmp.accords.join(", ") + " — écart signalé : " + cmp.conflits[0], alerte: cmp.conflits[0] };
+  const legers = cmp.legers || [];
+  const distinctifs = cmp.accords.filter((a) => DISTINCTIFS.includes(a));
+  const ecart = (c) => ({ ok: true, raison: "accords : " + cmp.accords.join(", ") + " — écart signalé : " + c, alerte: c });
+  if (preuveForte) {
+    /* Référence exacte ou identifiant CRM : un seul écart (souvent le prix après une baisse, ou un code postal
+       mal saisi dans le CRM) est toléré si deux autres faits concordent, ou si le prix est exactement le même. */
+    if (!cmp.conflits.length) return { ok: true, raison: cmp.accords.length ? "accords : " + cmp.accords.join(", ") : "référence exacte, rien à comparer", alerte: legers.length ? legers.join(", ") : undefined };
+    if (cmp.conflits.length === 1 && (cmp.accords.length >= 2 || cmp.prix_exact)) return ecart(cmp.conflits[0]);
+    return { ok: false, raison: "contradiction : " + cmp.conflits.join(", ") };
+  }
+  if (minAccords <= 0 && !cmp.conflits.length) return { ok: true, raison: cmp.accords.length ? "accords : " + cmp.accords.join(", ") : "rien à comparer" };
+  /* Preuve faible (référence tronquée, segment, critères) : au moins un fait qui distingue vraiment le bien.
+     Une baisse de prix ou un nom de commune différent (portail qui affiche la ville voisine) ne passe
+     que si deux faits distinctifs concordent par ailleurs. */
+  const solide = distinctifs.length >= 2;
+  if (cmp.conflits.length === 1 && cmp.conflits[0] === "prix" && solide) return ecart("prix");
   if (cmp.conflits.length) return { ok: false, raison: "contradiction : " + cmp.conflits.join(", ") };
+  if (legers.length && !solide) return { ok: false, raison: "contradiction : " + legers.join(", ") + " (preuve faible)" };
+  if (!distinctifs.length) return { ok: false, raison: "preuves insuffisantes : seulement " + (cmp.accords.join(", ") || "rien") };
   if (cmp.accords.length < minAccords) return { ok: false, raison: `preuves insuffisantes (${cmp.accords.length}/${minAccords} accord)` };
-  return { ok: true, raison: cmp.accords.length ? "accords : " + cmp.accords.join(", ") : "référence exacte, rien à comparer" };
+  return legers.length ? ecart(legers.join(", ")) : { ok: true, raison: "accords : " + cmp.accords.join(", ") };
 };
 
 /* Variantes d'une référence : complète, sans le dernier caractère, segments de droite à gauche. */
@@ -50,6 +69,8 @@ const variantes = (ref) => {
   add(r, "reference_complete", 0);
   if (r.length > 3) add(r.slice(0, -1), "reference_moins_dernier", 1);
   const seg = r.split(/[_\-/.\s|:]+/).filter(Boolean);
+  /* « 32562-32562 » : la même référence répétée vaut la référence complète */
+  if (seg.length > 1 && new Set(seg.map((x) => x.toLowerCase())).size === 1) add(seg[0], "reference_complete", 0);
   if (seg.length > 1) for (let i = seg.length - 1; i >= 0; i--) add(seg[i], "segment_" + (seg.length - i), 1);
   const num = r.match(/\d{3,}/g) || [];
   for (let i = num.length - 1; i >= 0; i--) add(num[i], "partie_numerique", 1);
@@ -60,7 +81,7 @@ const CRITERES = ["type", "pieces", "surface", "prix", "lieu"];
 
 const rapprocher = async (lead, crm, opts = {}) => {
   const b = lead.bien || {};
-  const faits = { prix: b.prix, surface: b.surface, pieces: b.pieces, chambres: b.chambres, type: b.type, ville: b.ville, code_postal: b.code_postal, departement: b.departement };
+  const faits = { lieu_approche: b.lieu_approche, loyer: b.loyer, prix: b.prix, surface: b.surface, pieces: b.pieces, chambres: b.chambres, type: b.type, ville: b.ville, code_postal: b.code_postal, departement: b.departement };
   const etapes = [], alertes = [];
   const essayer = async (etape, requete, biens, minAccords, forte = false) => {
     const vus = new Set(), list = (biens || []).filter((x) => x && !vus.has(String(x.id)) && vus.add(String(x.id)));
@@ -78,7 +99,8 @@ const rapprocher = async (lead, crm, opts = {}) => {
   };
 
   /* 1. identifiant CRM explicite */
-  for (const id of [b.id_crm].filter(Boolean)) {
+  const idsCaches = [b.reference, b.reference_portail].flatMap((x) => String(x || "").split(/[_\-/.\s|:]+/)).filter((x) => /^6\d{7}$/.test(x));
+  for (const id of [...new Set([b.id_crm, ...idsCaches].filter(Boolean))]) {
     const x = await crm.bienParId(id).catch(() => null);
     const hit = await essayer("identifiant_crm", id, x ? [x] : [], 0, true);
     if (hit) return { bien: hit, methode: "identifiant_crm", etapes, alertes, confiance: "haute" };

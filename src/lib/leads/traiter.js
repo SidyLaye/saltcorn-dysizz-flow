@@ -33,6 +33,7 @@ const jourIso = (d) => { const x = new Date(d || Date.now()); return isNaN(x) ? 
 const trouverAgence = (r, bien, conf) => {
   const A = conf.agences || [];
   if (bien && bien.agence_id) { const a = A.find((x) => String(x.id) === String(bien.agence_id)); if (a) return { agence: a, par: "bien" }; }
+  if (r.agence_crm) { const a = A.find((x) => String(x.id) === String(r.agence_crm) || String(x.id_crm || "") === String(r.agence_crm)); if (a) return { agence: a, par: "compte de l'agence sur le portail" }; }
   const dest = String(r.destinataire || "").toLowerCase();
   const a = A.find((x) => (x.boites || []).some((b) => dest.includes(String(b).toLowerCase())));
   if (a) return { agence: a, par: "boîte de réception" };
@@ -52,6 +53,7 @@ const traiter = async (mail, crm, conf = {}) => {
     return dossier;
   }
 
+  if (r.suspect) dossier.motifs.push("à vérifier : " + r.suspect);
   /* Bien */
   const rb = await rapprocher(r, crm, conf.rapprochement || {});
   dossier.bien = rb.bien; dossier.rapprochement = { methode: rb.methode, confiance: rb.confiance, motif: rb.motif, etapes: rb.etapes };
@@ -81,7 +83,12 @@ const traiter = async (mail, crm, conf = {}) => {
 
   /* Plan d'actions CRM (rien n'est exécuté ici) */
   if (rc.action === "creer") dossier.actions.push({ op: "creerContact", donnees: { email: c.email, prenom: c.prenom, nom: c.nom, telephone: c.telephone, origine: dossier.origine.id, agence: dossier.agence && dossier.agence.id, negociateur: negoId } });
-  if (rc.action === "mettre_a_jour") { const patch = completer(rc.contact, c); if (Object.keys(patch).length) dossier.actions.push({ op: "majContact", id: rc.contact.id, donnees: patch }); }
+  if (rc.action === "mettre_a_jour") {
+    const patch = completer(rc.contact, c);
+    /* Contact sans négociateur dans le CRM : on le rattache à celui du bien (jamais de changement s'il en a un). */
+    if (negoId && rc.contact && "negociateur" in rc.contact && !rc.contact.negociateur) { patch.negociateur = negoId; if (dossier.agence) patch.agence = dossier.agence.id; }
+    if (Object.keys(patch).length) dossier.actions.push({ op: "majContact", id: rc.contact.id, donnees: patch });
+  }
   if (rb.bien && rc.action !== "impossible") dossier.actions.push({ op: "lierBien", bien: rb.bien.id, note: [r.portail_nom, r.message].filter(Boolean).join(" — ").slice(0, 4000) });
   const R = r.recherche || {};
   if (rc.action !== "impossible" && (r.nature === "recherche" || Object.keys(R).length)) {
@@ -98,6 +105,9 @@ const traiter = async (mail, crm, conf = {}) => {
   dossier.destinataires = destinataires(negoId, mail.date || mail.date_envoi || new Date(), conf.routage || {});
 
   dossier.statut = dossier.motifs.length ? "a_verifier" : "pret";
+  /* Mail direct sans bien reconnu : ce n'est peut-être pas un lead, on le range « à trier ». */
+  if (r.nature === "direct" && !rb.bien) { dossier.statut = "a_trier"; dossier.motifs.push("mail direct sans bien reconnu"); }
+  if (r.suspect === "message de test") dossier.statut = "a_trier";
   dossier.duree_ms = Date.now() - t0;
   return dossier;
 };
@@ -115,7 +125,7 @@ const executer = async (dossier, crm, { mode = "ombre" } = {}) => {
       else if (a.op === "lierBien") out = await crm.lierBien(contactId, a.bien, a.note);
       else if (a.op === "ajouterConsentement") out = await crm.ajouterConsentement(contactId, a);
       else if (a.op === "creerRecherche") out = crm.creerRecherche ? await crm.creerRecherche(contactId, a.donnees) : null;
-      res.push({ op: a.op, fait: true, resultat: out && out.id ? { id: out.id } : !!out });
+      res.push({ op: a.op, fait: true, resultat: out && out.id ? { id: out.id } : !!out, ...(out && out.non_pris ? { non_pris: out.non_pris, alerte: "écrit mais pas retrouvé à la relecture : " + out.non_pris.join(", ") } : {}) });
     } catch (e) { res.push({ op: a.op, fait: false, erreur: e.message }); if (a.op === "creerContact") break; }
   }
   return { contactId, resultats: res };

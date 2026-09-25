@@ -104,7 +104,20 @@ const creer = (cfg = {}) => {
 
   const versContact = (c) => ({ id: c.id, email: c.email || null, emails: [c.email].filter(Boolean), telephone: c.phone || null, mobile: c.mobilePhone || c.mobile_phone || null,
     telephones: [c.phone, c.mobilePhone, c.mobile_phone].filter(Boolean).map((t) => String(t).replace(/[^\d+]/g, "")), prenom: c.firstname || null, nom: c.lastname || null,
-    cree_le: c.createdAt || c.created_at || null });
+    cree_le: c.createdAt || c.created_at || null,
+    agence: idDe(c.agency ?? c.agency_id ?? c.manufacturer), negociateur: idDe(c.user ?? c.user_id ?? c.admin),
+    origine: idDe(c.origin ?? c.origin_id), groupes: [].concat(c.groups ?? c.group ?? []).map(idDe).filter(Boolean) });
+  const idDe = (x) => (x == null ? null : typeof x === "object" ? x.id ?? null : x);
+  /* Relecture après écriture : l'ancien service écrivait origin / group / phone sans jamais les
+     retrouver à la relecture (2 081 cas sur 2 127). On relit et on dit ce qui n'a pas été pris. */
+  const relire = async (id, corps) => {
+    try {
+      const c = versContact(data(await appel("GET", `/customers/${Number(id)}`)) || {});
+      const chiffres = (x) => String(x || "").replace(/\D/g, "").slice(-9);
+      const pris = { firstname: c.prenom, lastname: c.nom, phone: c.telephone, mobile_phone: c.mobile, agency_id: c.agence, user_id: c.negociateur, origin: c.origine, group: c.groupes[0] };
+      return Object.keys(corps).filter((k) => k in pris && (["phone", "mobile_phone"].includes(k) ? chiffres(pris[k]) !== chiffres(corps[k]) : String(pris[k] ?? "") !== String(corps[k])));
+    } catch (e) { return ["relecture impossible : " + e.message]; }
+  };
   /* POST /customers/search : plus récents d'abord, pagination par curseur (meta.next_cursor). */
   const chercherContacts = async (filtre) => {
     const out = [], vus = new Set(), curseurs = new Set(); let cursor = null;
@@ -147,15 +160,19 @@ const creer = (cfg = {}) => {
       if (d.telephone) corps[/^\+33[67]\d{8}$/.test(d.telephone) ? "mobile_phone" : "phone"] = d.telephone;
       if (d.agence && isFinite(+d.agence)) corps.agency_id = Number(d.agence); if (d.negociateur && isFinite(+d.negociateur)) corps.user_id = Number(d.negociateur);
       if (d.origine) corps.origin = Number(d.origine); if (cfg.groupe_demandeur) corps.group = Number(cfg.groupe_demandeur);
-      return { id: (data(await appel("POST", "/customers", corps)) || {}).id };
+      const id = (data(await appel("POST", "/customers", corps)) || {}).id;
+      const non_pris = id ? await relire(id, corps) : [];
+      return { id, ...(non_pris.length ? { non_pris } : {}) };
     },
     majContact: async (id, p) => {
       const corps = {};
       if (p.prenom) corps.firstname = p.prenom; if (p.nom) corps.lastname = p.nom;
       if (p.mobile) corps.mobile_phone = p.mobile; if (p.telephone) corps.phone = p.telephone;
+      if (p.agence && isFinite(+p.agence)) corps.agency_id = Number(p.agence); if (p.negociateur && isFinite(+p.negociateur)) corps.user_id = Number(p.negociateur);
       if (!Object.keys(corps).length) return { id };
       await appel("PATCH", `/customers/${Number(id)}`, corps);
-      return { id };
+      const non_pris = await relire(id, corps);
+      return { id, ...(non_pris.length ? { non_pris } : {}) };
     },
     /* Suivi (rapprochement) contact ↔ bien ; 409 = déjà suivi, c'est bon. La note va dans une action si un type d'action est réglé. */
     lierBien: async (contactId, bienId, note) => {
