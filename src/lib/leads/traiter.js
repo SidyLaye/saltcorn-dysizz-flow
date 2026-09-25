@@ -6,7 +6,7 @@
    opts.dossiers (facultatif) : { trouver(cles) → [dossiers] } — dossiers déjà connus du client
    dossier connu = { id, bien_id, reference, contact_id, recherche_id, negociateur, agence_id, messages: [...], maj_le } */
 "use strict";
-const { extraire } = require("./extraire");
+const { lire } = require("./lecture");
 const { rapprocher } = require("./rapprochement");
 const { resoudreContact, completer } = require("./contact");
 const { destinataires } = require("./routage");
@@ -93,7 +93,8 @@ const vide = () => ({ statut: "ignore", motifs: [], actions: [], alertes: [] });
 const traiter = async (mail, crm, conf = {}, opts = {}) => {
   const t0 = Date.now();
   const actif = Object.fromEntries(ETAPES.map((k) => [k, !(conf.etapes && conf.etapes[k] === false)]));
-  const r = extraire(mail, conf);
+  /* règles → gabarits appris → IA (voir lecture.js) ; sans opts.ia ni opts.gabarits, règles seules */
+  const r = await lire(mail, conf, { ia: opts.ia, gabarits: opts.gabarits, budget: opts.budget, noter: opts.noter });
   /* mail de portail transféré par l'agence : la conversation est celle du mail d'origine */
   const conv = C.messages(r.mail_deballe ? { ...mail, ...r.mail_deballe, html: "" } : mail, r, conf);
   const cles = C.cles(r, conv.texte, conf);
@@ -135,7 +136,12 @@ const traiter = async (mail, crm, conf = {}, opts = {}) => {
   }
   if (r.suspect) d.motifs.push("à vérifier : " + r.suspect);
   if (r.a_un_bien_a_vendre) d.alertes.push("le prospect dit avoir aussi un bien à vendre : vendeur potentiel");
-  if (r.portail === "inconnu") d.motifs.push(`nouvel expéditeur « ${r.portail_inconnu} » : à déclarer comme portail s'il en est un`);
+  if (r.portail === "inconnu" || r.lu_par.length > 1) {
+    const a = r.lecture && r.lecture.apprentissage, g = r.lecture && r.lecture.gabarit;
+    const qui = r.portail === "inconnu" ? `nouvel expéditeur « ${r.portail_inconnu} »` : `mail de ${r.portail_nom || r.portail || "source non reconnue"}`;
+    d.motifs.push(qui + (r.lu_par.includes("ia") ? ` : complété par l'IA${a && a.fait !== "rien" ? `, gabarit ${a.fait} (${a.observations} observation(s))` : ""}` : g ? ` : lu avec un gabarit appris (${g.source})` : " : lu par les règles générales"));
+  }
+  if (r.lecture && r.lecture.ia && r.lecture.ia.statut !== "ok") d.alertes.push(r.lecture.etapes.slice(-1)[0] || "IA non disponible");
 
   /* 3. Bien : celui du dossier si le mail n'en cite pas d'autre, sinon rapprochement. */
   let rb = { bien: null, methode: null, etapes: [], alertes: [] };

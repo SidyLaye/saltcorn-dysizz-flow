@@ -1,5 +1,16 @@
 # Journal des versions
 
+## 2.6.0
+
+L'IA revient, comme dans l'ancien AMBS, mais en dernier recours et avec apprentissage automatique.
+
+- Lecture en trois étages (`lecture.lire`) : règles des portails connus → gabarits appris → IA seulement si le mail reste inconnu ou incomplet. `traiter` l'utilise ; sans IA ni gabarits, rien ne change.
+- `ia` : même schéma que l'ancien nœud qualifier_ia (champs, critères du prospect, motifs regex, phrase de signature). Fournisseurs : plugin « large-language-model » de Saltcorn, OpenAI (ou API compatible), Anthropic. Le mail est placé entre balises et déclaré « donnée » ; chaque valeur rendue doit se retrouver dans le mail, sinon elle est refusée ; cache par empreinte ; nouvelles tentatives sur 429/5xx.
+- `apprentissage` : chaque motif proposé par l'IA est rejoué sur le mail et doit retrouver la valeur lue ; motif refusé s'il contient une donnée du mail ou s'il est trop coûteux. Formes regroupées (source + nature + signature) ; une variante validée 2 fois dans une forme vue 3 fois devient active (règle d'AMBS). Plusieurs mises en page actives en même temps ; un gabarit qui échoue 3 fois de suite est suspendu et l'IA réapprend. Import de `gabarit_version` d'AMBS (`depuisAmbs`).
+- Plateforme qui transmet les coordonnées de quelqu'un d'autre (adresse non personnelle) : n'est plus prise pour un mail direct du prospect (son nom affiché n'est plus pris pour celui du prospect) ; lue par gabarit ou IA.
+- API : `iaDepuisCoffre` (clé lue dans l'environnement puis le coffre, jamais renvoyée ; cache séparé par client).
+- Test : un portail jamais vu est appris en 3 mails puis lu sans IA ; changement de mise en page réappris ; IA en panne ou au plafond sans casse. Corpus AMBS : aucune régression.
+
 ## 2.5.0
 
 Moteur « leads » revu autour du dossier (prospect × bien) et de la conversation.

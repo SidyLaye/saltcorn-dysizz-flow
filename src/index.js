@@ -52,6 +52,22 @@ module.exports = {
       const secret = async (k) => { const n = `${pre}_${String(k).toUpperCase()}`; if (process.env[n]) return process.env[n]; try { return await require("./vault").readSecret(n); } catch (e) { return undefined; } };
       return require("./lib/leads/crm").creerCrm(type, { ...(reglages || {}), secret }, { mode });
     },
+    /* client IA dont la clé est lue dans l'environnement puis le coffre (jamais renvoyée) ;
+       fournisseur « saltcorn » = le plugin large-language-model déjà réglé, sans clé à ranger ici */
+    iaDepuisCoffre: (fournisseur, modele, nomCle, url) => {
+      const G = globalThis[Symbol.for("dysizz-flow.ia-cache")] || (globalThis[Symbol.for("dysizz-flow.ia-cache")] = new Map());
+      let t = "public"; try { t = require("@saltcorn/data/db").getTenantSchema(); } catch (e) { /* hors Saltcorn */ }
+      const ck = t + ":" + fournisseur + ":" + modele;   // un cache par client : jamais de lecture partagée entre clients
+      const cache = G.get(ck) || new Map(); G.set(ck, cache);
+      const IA = require("./lib/leads/ia");
+      if (fournisseur === "saltcorn") return IA.creer({ fournisseur, cache });
+      const n = String(nomCle || "LEADS_IA_CLE").replace(/[^\w]/g, "");
+      let client = null;
+      return { fournisseur, lire: async (mail, texte) => {
+        if (!client) { let k = process.env[n]; if (!k) { try { k = await require("./vault").readSecret(n); } catch (e) { k = undefined; } } if (!k) throw new Error(`clé d'IA absente (${n})`); client = IA.creer({ fournisseur, modele, url, cle: k, cache }); }
+        return client.lire(mail, texte);
+      } };
+    },
     /* compare une valeur reçue (en-tête d'un webhook…) à un secret, à temps constant, sans jamais le renvoyer */
     secretEgal: async (nom, valeur) => {
       let v; if (process.env[nom]) v = process.env[nom]; else { try { v = await require("./vault").readSecret(nom); } catch (e) { v = undefined; } }

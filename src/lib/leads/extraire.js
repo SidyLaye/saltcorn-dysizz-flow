@@ -146,6 +146,9 @@ const extraire = (mail, conf = {}) => {
     const cb = couples.some((x) => ["reference", "prix", "type", "ville", "code_postal", "surface", "id_crm"].includes(x.champ) && x.valeur);
     const autre = couples.some((x) => (x.champ === "email" && V.email(x.valeur) && V.email(x.valeur) !== V.email(mail.expediteur)) || (x.champ === "telephone" && V.telephone(x.valeur)));
     if (!persoExp && cc.size >= 2 && cb && autre) { r.nature = "lead"; r.portail = "inconnu"; r.portail_inconnu = d; r.portail_nom = d; }
+    /* Une plateforme (adresse non personnelle) qui transmet les coordonnées de QUELQU'UN D'AUTRE : ce n'est pas un mail
+       direct du prospect. Son nom affiché et son adresse ne sont pas ceux du prospect ; le reste est lu par gabarit ou IA. */
+    else if (!persoExp && autre && cc.size >= 1) { r.nature = "inconnu"; r.portail = "inconnu"; r.portail_inconnu = d; r.portail_nom = d; }
   }
   if (r.nature === "direct") {
     const ref = objet.match(/(?:r[ée]f(?:[ée]rence)?\.?\s*(?:n°)?\s*:?\s*|#)\s*([\w-]*\d[\w-]*)/i);
