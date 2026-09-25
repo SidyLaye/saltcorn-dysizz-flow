@@ -94,7 +94,7 @@ const creer = (cfg = {}) => {
       type: typeBien(lab.typebien || v.typebien || (p.category && (p.category.name || p.category.label)) || ""),
       ville: v.villeweb || v.ville_web || v.ville || null,
       code_postal: (String(v.codepostalweb || v.cpvilleweb || v.codepostal || v.cpville || "").match(/\d{5}/) || [])[0] || null,
-      negociateur_id: a.id ?? a.user_id ?? p.userId ?? p.user_id ?? null, agence_id: p.agencyId ?? p.agency_id ?? (p.agency && p.agency.id) ?? null,
+      negociateur_id: a.id ?? a.user_id ?? p.userId ?? p.user_id ?? null, proprietaire_id: p.customers_id ?? p.customer_id ?? (p.customer && p.customer.id) ?? null, agence_id: p.agencyId ?? p.agency_id ?? (p.agency && p.agency.id) ?? null,
     };
   };
   const FETCH = "criteres_text,criteres_number,assigned_to,category";
@@ -106,16 +106,17 @@ const creer = (cfg = {}) => {
     telephones: [c.phone, c.mobilePhone, c.mobile_phone].filter(Boolean).map((t) => String(t).replace(/[^\d+]/g, "")), prenom: c.firstname || null, nom: c.lastname || null,
     cree_le: c.createdAt || c.created_at || null,
     agence: idDe(c.agency ?? c.agency_id ?? c.manufacturer), negociateur: idDe(c.user ?? c.user_id ?? c.admin),
-    origine: idDe(c.origin ?? c.origin_id), groupes: [].concat(c.groups ?? c.group ?? []).map(idDe).filter(Boolean) });
+    consentement: !!(c.consent && !(c.consent.revokedAt || c.consent.revoked_at)), origine: idDe(c.origin ?? c.origin_id), groupes: [].concat(c.groups ?? c.group ?? []).map(idDe).filter(Boolean) });
   const idDe = (x) => (x == null ? null : typeof x === "object" ? x.id ?? null : x);
   /* Relecture après écriture : l'ancien service écrivait origin / group / phone sans jamais les
      retrouver à la relecture (2 081 cas sur 2 127). On relit et on dit ce qui n'a pas été pris. */
   const relire = async (id, corps) => {
     try {
-      const c = versContact(data(await appel("GET", `/customers/${Number(id)}`)) || {});
+      const c = (await lireContact(id)) || {};
+      c.groupes = c.groupes || [];
       const chiffres = (x) => String(x || "").replace(/\D/g, "").slice(-9);
       const pris = { firstname: c.prenom, lastname: c.nom, phone: c.telephone, mobile_phone: c.mobile, agency_id: c.agence, user_id: c.negociateur, origin: c.origine, group: c.groupes[0] };
-      return Object.keys(corps).filter((k) => k in pris && (["phone", "mobile_phone"].includes(k) ? chiffres(pris[k]) !== chiffres(corps[k]) : String(pris[k] ?? "") !== String(corps[k])));
+      return Object.keys(corps).filter((k) => k in pris && (k === "group" ? !c.groupes.map(String).includes(String(corps[k])) : ["phone", "mobile_phone"].includes(k) ? chiffres(pris[k]) !== chiffres(corps[k]) : String(pris[k] ?? "") !== String(corps[k])));
     } catch (e) { return ["relecture impossible : " + e.message]; }
   };
   /* POST /customers/search : plus récents d'abord, pagination par curseur (meta.next_cursor). */
@@ -130,6 +131,29 @@ const creer = (cfg = {}) => {
       curseurs.add(next); cursor = next;
     }
     return out;
+  };
+  /* Critères de recherche : clés XML réelles du site, lues une fois. */
+  let defsRecherche = null;
+  const cleRecherche = async (...candidats) => {
+    if (!defsRecherche) { const l = data(await appel("GET", "/criterias/search-requests").catch(() => ({ data: [] }))) || []; defsRecherche = (Array.isArray(l) ? l : []).map((d) => String(d.xml || d.id)); }
+    for (const c of candidats) { const x = defsRecherche.find((v) => cle(v) === cle(c)); if (x) return x; }
+    return candidats[0];
+  };
+  const criteresRecherche = async (r) => {
+    const c = [];
+    if (r.transaction) c.push({ id: await cleRecherche("TypeTransaction"), operator: "EGAL", value: r.transaction === "location" ? "Location" : "Vente" });
+    if (r.type) { const code = await codeType(r.type).catch(() => null); if (code) c.push({ id: await cleRecherche("TypeBien"), operator: "EGAL", value: code }); }
+    if (r.localisation) c.push({ id: await cleRecherche("CPVille", "CPVilleweb"), operator: "CONTIENT", value: String(r.localisation) });
+    if (r.budget_max) c.push({ id: await cleRecherche("Prix"), operator: "INFERIEUR", value: String(r.budget_max) });
+    if (r.surface_min) c.push({ id: await cleRecherche("Surface"), operator: "SUPERIEUR", value: String(r.surface_min) });
+    if (r.pieces_min) c.push({ id: await cleRecherche("NbPieces", "NbPiece"), operator: "SUPERIEUR", value: String(r.pieces_min) });
+    return c;
+  };
+  /* Contact avec ses relations : sans « include », origine et groupes ne reviennent pas
+     (c'est pour ça que l'ancien service ne les retrouvait jamais à la relecture). */
+  const lireContact = async (id) => {
+    const c = data(await appel("GET", `/customers/${Number(id)}?include=origin,groups,user,agency,searchRequests,consent`));
+    return c && c.id ? { ...versContact(c), recherches: (c.searchRequests || []).map((x) => ({ id: x.id, comment: x.comment || "" })) } : null;
   };
   const tolere409 = async (fn) => { try { return await fn(); } catch (e) { if (e.http === 409) return { deja: true }; throw e; } };
 
@@ -151,6 +175,8 @@ const creer = (cfg = {}) => {
     },
     contactsParEmail: (e) => chercherContacts({ email: e }).then((l) => l.filter((c) => c.emails.map((x) => String(x).toLowerCase()).includes(String(e).toLowerCase()))),
     contactsParTelephone: (t) => chercherContacts({ phone: String(t).replace(/^\+33/, "0") }).then((l) => l.filter((c) => c.telephones.some((x) => x.replace(/\D/g, "").slice(-9) === String(t).replace(/\D/g, "").slice(-9)))),
+    contact: lireContact,
+    capacites: ["catalogue", "contact", "suivi", "projet", "commentaire", "action", "consentement", "webhooks"],
     origines: async () => data(await appel("GET", "/customers/origins")),
     groupes: async () => data(await appel("GET", "/customers/groups")),
     /* check_duplicate: true → 409 si un doublon existe (jamais de mise à jour silencieuse). */
@@ -174,22 +200,53 @@ const creer = (cfg = {}) => {
       const non_pris = await relire(id, corps);
       return { id, ...(non_pris.length ? { non_pris } : {}) };
     },
-    /* Suivi (rapprochement) contact ↔ bien ; 409 = déjà suivi, c'est bon. La note va dans une action si un type d'action est réglé. */
-    lierBien: async (contactId, bienId, note) => {
+    /* Suivi (rapprochement) contact ↔ bien ; 409 = déjà suivi, c'est bon. */
+    lierBien: async (contactId, bienId) => {
       const r = await tolere409(() => appel("POST", `/customers/${Number(contactId)}/follow-ups/${Number(bienId)}`));
-      if (cfg.action_lead && note) await appel("POST", `/customers/${Number(contactId)}/actions`, { action_id: Number(cfg.action_lead), result: String(note).slice(0, 2000) });
       return { id: contactId, deja: !!(r && r.deja) };
     },
-    /* Recherche d'un acquéreur (leads « recherche ») : POST /customers/{id}/search-requests. */
+    /* Projet de recherche (POST /customers/{id}/search-requests), un par dossier. Les critères sont
+       ceux du bien demandé (doc API, cas d'usage 1, étape 3) ou ceux donnés par le portail.
+       Les clés XML sont celles du site (GET /criterias/search-requests). */
     creerRecherche: async (contactId, r) => {
-      const c = [];
-      if (r.type) { const code = await codeType(r.type); if (code) c.push({ id: "TypeBien", operator: "EGAL", value: code }); }
-      if (r.budget_max) c.push({ id: "Prix", operator: "INFERIEUR", value: String(r.budget_max) });
-      if (r.surface_min) c.push({ id: "Surface", operator: "SUPERIEUR", value: String(r.surface_min) });
-      if (r.pieces_min) c.push({ id: "NbPieces", operator: "SUPERIEUR", value: String(r.pieces_min) });
-      if (r.localisation) c.push({ id: "30", operator: "CONTIENT", value: String(r.localisation) });
-      if (!c.length) return null;
-      return data(await appel("POST", `/customers/${Number(contactId)}/search-requests`, { wording: String(r.libelle || "Recherche reçue par mail").slice(0, 120), alertEmail: false, criteria: c }));
+      const c = await criteresRecherche(r);
+      if (!c.length && !r.comment) return null;
+      const corps = { wording: String(r.libelle || "Demande reçue par mail").slice(0, 120), alertEmail: false, criteria: c };
+      if (r.comment) corps.comment = String(r.comment);
+      const out = data(await appel("POST", `/customers/${Number(contactId)}/search-requests`, corps));
+      return { id: out && out.id };
+    },
+    /* Mise à jour du projet : le commentaire est remplacé par la conversation reconstruite. */
+    majRecherche: async (contactId, id, r) => {
+      const corps = {};
+      if (r.comment != null) corps.comment = String(r.comment);
+      if (r.criteres) corps.criteria = await criteresRecherche(r.criteres);
+      if (!Object.keys(corps).length) return { id };
+      await appel("PATCH", `/customers/${Number(contactId)}/search-requests/${Number(id)}`, corps);
+      return { id };
+    },
+    /* Action commerciale (visible dans l'onglet si le type d'action a des actions filles). */
+    ajouterAction: async (contactId, a) => {
+      const corps = { action_id: Number(a.action_id || cfg.action_lead), result: String(a.texte || "").slice(0, 4000) };
+      if (a.negociateur && isFinite(+a.negociateur)) corps.user_id = Number(a.negociateur);
+      if (a.date) corps.date_performed = new Date(a.date).toISOString();
+      if (!corps.action_id) return null;
+      return { id: (data(await appel("POST", `/customers/${Number(contactId)}/actions`, corps)) || {}).id };
+    },
+    /* Catalogue complet ou modifié depuis une date (synchronisation du catalogue local). */
+    catalogue: async function* ({ depuis } = {}) {
+      let cursor = null; const vus = new Set();
+      for (let page = 0; page < 1000; page++) {
+        const corps = { ...(depuis ? { last_modified: new Date(depuis).toISOString().replace(/\.\d{3}Z$/, "+00:00") } : {}), ...(cursor ? { cursor } : { count: 100 }), sort_type: "id", sort_order: "asc" };
+        const j = await appel("POST", `/products/search?fetch=${FETCH}`, corps);
+        const l = Array.isArray(j && j.data) ? j.data : [];
+        const biens = [];
+        for (const p of l) if (p && p.id && !vus.has(p.id)) { vus.add(p.id); biens.push(await versBien(p)); }
+        if (biens.length) yield biens;
+        const next = j && (j.next_cursor || (j.meta && j.meta.next_cursor));
+        if (!next || !l.length || next === cursor) break;
+        cursor = next;
+      }
     },
     /* Consentement anti-démarchage (POST /customers/{id}/consent, multipart) :
        reason (64 caractères max), consent_date (ISO), proofs[] (rangées dans Documents confidentiels/Consentement). */

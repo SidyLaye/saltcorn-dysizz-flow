@@ -1,5 +1,18 @@
 # Journal des versions
 
+## 2.5.0
+
+Moteur « leads » revu autour du dossier (prospect × bien) et de la conversation.
+
+- `conversation` : qui écrit (prospect, portail, équipe), clés du fil (relais du portail, e-mail, téléphone, référence citée), messages du mail et historique recopié (« Messages précédents » de Leboncoin, citations « Le … a écrit : », « De : … Envoyé : »), dates ramenées en UTC, signatures retirées, empreinte anti-doublon, commentaire CRM reconstruit et borné.
+- `traiter` : réponse de l'équipe = événement du dossier (jamais un lead), réponse du prospect sans référence = relance avec le bien du dossier, projet de recherche créé une fois à partir des critères du bien, commentaire mis à jour ensuite, consentement une fois par contact, relances notifiées au négociateur seulement (réglable), étapes coupables par client, négociateur retrouvé par son nom ou un alias dans un titre (projets Giraffe), vendeur potentiel signalé, mail du propriétaire du bien signalé.
+- `dossiers` : dépôt en mémoire et règle de mise à jour partagée avec dysizz-leads.
+- Portails déclarés sans code (domaines, objets, libellés, référence) et détection d'un portail inconnu ; libellés coupés sur deux lignes recollés ; en-têtes de transfert en tableau HTML.
+- Immofacile : projet de recherche avec les clés XML du site (`/criterias/search-requests`), `majRecherche` (commentaire), `ajouterAction`, `contact` avec `?include=origin,groups,…` (la relecture de l'ancien service ne les demandait pas), catalogue par curseur.
+- Écouteurs : en-têtes de fil (In-Reply-To, References), empreinte, source `.eml` gardée (preuve), un seul serveur par boîte (verrou Postgres).
+- `verrou` (Postgres, verrous consultatifs) et `secretEgal` (comparaison à temps constant) exposés aux autres plugins ; blocs externes réenregistrés si un plugin se charge après dysizz-flow.
+- Tests : mutations de mails (99 variantes), fil de conversation complet, Immofacile en réel contre un faux serveur ; `tools/corpus.cjs` pour la non-régression sur un corpus réel. CI sur Node 18, 20 et 22, publication sur étiquette.
+
 ## 2.4.2
 
 Revu sur les 7 658 mails réels de la sauvegarde AMBS, comparés un par un à ce que l'ancien service a fait (journal d'exécution, champs, biens, destinataires).

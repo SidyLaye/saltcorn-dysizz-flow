@@ -23,6 +23,9 @@ const creer = ({ biens = [], contacts = [] } = {}) => {
     majContact: async (id, champs) => { ecritures.push({ op: "majContact", id, champs }); return { id }; },
     lierBien: async (contactId, bienId, note) => { ecritures.push({ op: "lierBien", contactId, bienId, note }); return true; },
     creerRecherche: async (contactId, r) => { ecritures.push({ op: "creerRecherche", contactId, r }); return { id: "r" + ecritures.length }; },
+    majRecherche: async (contactId, id, r) => { ecritures.push({ op: "majRecherche", contactId, id, r }); return { id }; },
+    ajouterAction: async (contactId, a) => { ecritures.push({ op: "ajouterAction", contactId, a }); return { id: "a" + ecritures.length }; },
+    contact: async (id) => C.find((c) => String(c.id) === String(id)) || null,
     ajouterConsentement: async (contactId, consent) => { ecritures.push({ op: "ajouterConsentement", contactId, consent: { ...consent, preuves: (consent.preuves || []).map((p) => p.nom) } }); return true; },
   };
 };

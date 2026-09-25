@@ -19,7 +19,8 @@ const telephone = (s, pays = "33") => {
   const plus = /^\s*\+/.test(t);
   let d = t.replace(/[^\d]/g, "");
   if (d.length < 8 || d.length > 15) return "";
-  if (plus) return "+" + d;
+  /* « +33 0783101855 » : le 0 national en trop après l'indicatif */
+  if (plus) return "+" + d.replace(/^(33|32|41|44|31|34|49|39)0(?=\d{9}$)/, "$1");
   if (d.startsWith("00")) return "+" + d.slice(2);
   if (/^0[1-9]\d{8}$/.test(d)) return "+" + pays + d.slice(1);
   if (/^(33|32|41|44|31|34|49|39|351|352|353|1)\d{7,12}$/.test(d) && d.length >= 10) return "+" + d;

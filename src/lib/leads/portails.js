@@ -25,6 +25,8 @@ const PORTAILS = [
       /* L'interlocuteur est la ligne après l'e-mail ; le message est entre « ». */
       const i = L.findIndex((l) => /^e-?mail\s*:/i.test(l));
       if (i >= 0 && L[i + 1] && !/[«"]/.test(L[i + 1]) && !/^[^:]{2,25}:/.test(L[i + 1]) && !r.contact.nom_complet) r.contact.nom_complet = L[i + 1];
+      /* message suivant d'une conversation : pas d'e-mail, le nom est juste avant le message « … » */
+      if (i < 0 && !r.contact.nom_complet) { const k = L.findIndex((l) => /^vous avez un nouveau message/i.test(l)); if (k >= 0 && L[k + 1] && /^[«"]/.test(L[k + 2] || "") && !/[«":]/.test(L[k + 1])) r.contact.nom_complet = L[k + 1]; }
       const g = texte.match(/«\s*([\s\S]*?)\s*»/);
       if (g) r.message = g[1].trim();
       const bonjour = L[0] && L[0].match(/^bonjour\s+(.+?),?$/i);
@@ -107,7 +109,9 @@ const PORTAILS = [
       r.bien.pieces = r.bien.pieces || V.pieces(bl); r.bien.surface = r.bien.surface || V.surface(bl);
       const m = L.findIndex((l) => /^découvrir$/i.test(l));
       if (m >= 0) { const s = L.slice(m + 1).findIndex((l) => !/^(son|projet)$/i.test(l)); if (s >= 0) r.message = bloc(L, m + 1 + s + 1, L[m + 1 + s]).replace(/\nmailto:[\s\S]*$/, ""); }
-      const tel = cherche(L, /^tel:(\+?\d+)/i); if (tel) r.contact.telephone = tel[1];
+      /* le téléphone du prospect est avant le pied de page (où SeLoger met son propre numéro) */
+      const pied = L.findIndex((l) => /^ce message a été envoyé|^pour toutes questions|^cet email vous est adressé|^mes interlocuteurs/i.test(l));
+      const tel = cherche(pied > 0 ? L.slice(0, pied) : L, /^<?tel:(\+?[\d ]{8,})/i); if (tel) r.contact.telephone = tel[1].replace(/\s+/g, "");
     },
   },
   {
@@ -136,6 +140,8 @@ const PORTAILS = [
       const rp = texte.match(/référence propriétés le figaro\s*:\s*(\d+)/i); if (rp) r.bien.reference_portail = rp[1];
       const i = L.findIndex((l) => /^son projet\s*:/i.test(l));
       if (i >= 0) { const j = L.slice(i + 1).findIndex((l) => !/^(achat|vente|location|maison|appartement|a un bien|[A-ZÀ-Ÿ][\wÀ-ÿ' -]+$)/i.test(l) || l.length > 40); if (j >= 0) r.message = bloc(L, i + 2 + j, L[i + 1 + j]); }
+      /* le projet (« Achat », la ville, les types, « A un bien à vendre ») précède le vrai message */
+      if (r.message && /a un bien à vendre\s*:/i.test(r.message)) { const v = r.message.match(/a un bien à vendre\s*:\s*(oui|non)/i); if (v) r.a_un_bien_a_vendre = /oui/i.test(v[1]); r.message = r.message.split("\n").slice(r.message.split("\n").findIndex((l) => /a un bien à vendre\s*:/i.test(l)) + 1).join("\n").trim(); }
       const k = L.findIndex((l) => /^annonce concernée/i.test(l));
       if (k >= 0) {
         const v = L.slice(k + 1, k + 6);
@@ -295,11 +301,11 @@ const PORTAILS = [
         const ty = g(/^bien de type/i); if (ty) r.recherche.type = V.typeBien(ty) || ty;
         const op = g(/^opération/i); if (op) r.projet = /location/i.test(op) ? "location" : "achat"; }
     } },
-  { id: "annonces_diverses", nom: "Autres portails", test: (d) => /(stonimmo\.com|annonce-immobilier\.com|lesiteimmo\.com|superimmo(pro)?\.com|contact\.superimmopro\.com|belles-demeures|jetrouvetous\.fr|immobilier\.email)$/.test(d), nature: (o) => (/vous avez (un|une) (nouveau |nouvelle )?(contact|demande|message)|nouveau message|nouveau contact|^\W*contact\b|contact .*annonce|internaute|demande d.information|souhaite (plus d.)?information|nouveau contact|a un contact|intéressé par/i.test(o) && !/collaborateurs|profil|page agence|saviez-vous|soyez prêt|tenez vos clients|facture|abonnement|newsletter/i.test(o) ? "lead" : "non_lead") },
+  { id: "annonces_diverses", nom: "Autres portails", test: (d) => /(stonimmo\.com|lesannoncesducommerce\.fr|annonce-immobilier\.com|lesiteimmo\.com|superimmo(pro)?\.com|contact\.superimmopro\.com|belles-demeures|jetrouvetous\.fr|immobilier\.email)$/.test(d), nature: (o) => (/vous avez (un|une) (nouveau |nouvelle )?(contact|demande|message)|nouveau message|nouveau contact|^\W*contact\b|contact .*annonce|internaute|demande d.information|souhaite (plus d.)?information|nouveau contact|a un contact|intéressé par/i.test(o) && !/collaborateurs|profil|page agence|saviez-vous|soyez prêt|tenez vos clients|facture|abonnement|newsletter/i.test(o) ? "lead" : "non_lead") },
   /* Rapport de quarantaine anti-spam : ce n'est pas un lead mais il peut en cacher. */
   { id: "vade", nom: "Rapport anti-spam", test: (d) => /vadesecure\.com$/.test(d), nature: () => "alerte_spam",
     regles: ({ texte, r }) => { r.bloques = (texte.match(/^.{3,40}\|.+\|\s*\d+\s*k\s*\|.+$/gm) || []).map((l) => l.split("|")[0].trim()).filter((x) => /properstar|green|leboncoin|seloger|figaro|bienici|rightmove|french|giraffe|ac3|immo/i.test(x)); } },
-  { id: "bruit", nom: "Service / newsletter", test: (d) => /(immo-facile\.(fr|com)|orisha\.com|gedeon\.im|canva\.com|firebaseapp\.com|toutvendre\.fr|opinionsystem\.fr|notaires\.fr|cci\.fr|tiktok\.com|news\.leboncoin\.fr|gestiviag\.com|communication-snpi\.com|centre-conventions-collectives\.fr|linkedin\.com|facebookmail\.com|google\.com)$/.test(d), nature: () => "non_lead" },
+  { id: "bruit", nom: "Service / newsletter", test: (d) => /(immo-facile\.(fr|com)|cessionpme\.com|orisha\.com|gedeon\.im|canva\.com|firebaseapp\.com|toutvendre\.fr|opinionsystem\.fr|notaires\.fr|cci\.fr|tiktok\.com|news\.leboncoin\.fr|gestiviag\.com|communication-snpi\.com|centre-conventions-collectives\.fr|linkedin\.com|facebookmail\.com|google\.com)$/.test(d), nature: () => "non_lead" },
 ];
 
 /* Signature dans le texte : sert quand l'expéditeur d'origine est perdu
@@ -326,9 +332,27 @@ const detecterParTexte = (texte) => {
   return null;
 };
 
-const detecter = (mail) => {
-  const d = dom(mail.expediteur), o = String(mail.objet || "");
-  return PORTAILS.find((p) => p.test(d, o)) || null;
+/* Portail déclaré par le client (table ld_portails), sans code :
+   { id, nom, domaines: ["exemple-immo.fr"], objets_lead: ["nouveau contact", "demande"],
+     objets_non_lead: ["facture"], libelles: { "tél. perso": "telephone" }, reference: "Réf\\s*:\\s*(\\S+)" }
+   Les expressions sont testées sans tenir compte des majuscules ; une expression invalide est ignorée. */
+const re = (x) => { try { return new RegExp(x, "i"); } catch (e) { return null; } };
+const declare = (p) => {
+  const dom_ = (p.domaines || []).map((x) => String(x).trim().toLowerCase()).filter(Boolean);
+  const oui = (p.objets_lead || []).map(re).filter(Boolean), non = (p.objets_non_lead || []).map(re).filter(Boolean);
+  const ref = p.reference ? re(p.reference) : null;
+  return {
+    id: p.id || "declare_" + (dom_[0] || "x").replace(/\W+/g, "_"), nom: p.nom || dom_[0], declare: true, libelles: p.libelles || null,
+    test: (d) => dom_.some((x) => d === x || d.endsWith("." + x)),
+    nature: (o) => (non.some((r) => r.test(o)) ? "non_lead" : !oui.length || oui.some((r) => r.test(o)) ? p.nature || "lead" : "non_lead"),
+    regles: ref ? ({ o, texte, r }) => { const m = (o + "\n" + texte).match(ref); if (m && !r.bien.reference) r.bien.reference = (m[1] || m[0]).trim(); } : undefined,
+  };
 };
 
-module.exports = { PORTAILS, detecter, detecterParTexte, dom };
+/* Portails du code d'abord (testés), puis ceux déclarés par le client. */
+const detecter = (mail, declares = []) => {
+  const d = dom(mail.expediteur), o = String(mail.objet || "");
+  return PORTAILS.find((p) => p.test(d, o)) || declares.map(declare).find((p) => p.test(d, o)) || null;
+};
+
+module.exports = { PORTAILS, detecter, detecterParTexte, declare, dom };

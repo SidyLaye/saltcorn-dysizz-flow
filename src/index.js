@@ -52,6 +52,17 @@ module.exports = {
       const secret = async (k) => { const n = `${pre}_${String(k).toUpperCase()}`; if (process.env[n]) return process.env[n]; try { return await require("./vault").readSecret(n); } catch (e) { return undefined; } };
       return require("./lib/leads/crm").creerCrm(type, { ...(reglages || {}), secret }, { mode });
     },
+    /* compare une valeur reçue (en-tête d'un webhook…) à un secret, à temps constant, sans jamais le renvoyer */
+    secretEgal: async (nom, valeur) => {
+      let v; if (process.env[nom]) v = process.env[nom]; else { try { v = await require("./vault").readSecret(nom); } catch (e) { v = undefined; } }
+      if (!v || valeur == null) return false;
+      const a = Buffer.from(String(v)), b = Buffer.from(String(valeur));
+      return a.length === b.length && require("crypto").timingSafeEqual(a, b);
+    },
+    /* un plugin qui apporte des blocs (dysizz_flow_blocks) les fait enregistrer à son chargement */
+    enregistrerBlocsExternes: () => registerExternal(),
+    /* verrous partagés entre processus et serveurs (Postgres) */
+    verrou: require("./lib/verrou"),
     /* moteur leads immobiliers (utilisé par dysizz-leads) */
     leads: require("./lib/leads"),
     /* écouteurs de boîtes mail */
@@ -63,6 +74,12 @@ module.exports = {
   /* + les blocs apportés par d'autres plugins (export dysizz_flow_blocks) */
   onLoad: async () => {
     try { registerExternal(); } catch (e) { /* rien */ }
+    /* les plugins qui apportent des blocs peuvent se charger APRÈS dysizz-flow : on repasse,
+       puis on vérifie chaque minute qu'aucun bloc externe n'a disparu (rechargement des plugins) */
+    for (const ms of [3000, 15000]) setTimeout(() => { try { registerExternal(); } catch (e) { /* rien */ } }, ms).unref?.();
+    const G = globalThis[Symbol.for("dysizz-flow.blocs-externes")] || (globalThis[Symbol.for("dysizz-flow.blocs-externes")] = {});
+    if (!G.minuteur) G.minuteur = setInterval(() => { try { const st = require("@saltcorn/data/db/state").getState(); if (require("./registry").scanPlugins().some((b) => !st.actions[b.name])) registerExternal(); } catch (e) { /* rien */ } }, 60000);
+    if (G.minuteur.unref) G.minuteur.unref();
     try { await registerUserBlocks(); } catch (e) { /* table pas encore créée : normal au 1er démarrage */ }
     try { await require("./ecouteurs").surveiller(); } catch (e) { /* rien */ }
   },

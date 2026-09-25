@@ -45,28 +45,47 @@ const INLINE = /(?<!code|n°|num[ée]ro|identifiant|id|espace)\s(?=(?:client|cus
 
 const nettoyerLigne = (l) => String(l).replace(/^[\s•*·#>|-]+/, "").replace(/[\s*|]+$/, "").replace(/^\*(.+?)\*\s*:/, "$1:").trim();
 
-const libelle = (brut) => {
-  const k = cle(brut.replace(/\(s\)/g, "")).replace(/\s+(min|max)$/, (m) => m);
+/* extra : libellés propres à un portail déclaré par le client ({ "numéro client": "ignorer", "tél. perso": "telephone" }) */
+const libelle = (brut, extra) => {
+  const k = cle(String(brut).replace(/\(s\)/g, ""));
   if (k.length > 40) return null;
-  return INDEX.get(k) || null;
+  return (extra && extra.get(k)) || INDEX.get(k) || null;
+};
+const indexExtra = (m) => (m && Object.keys(m).length ? new Map(Object.entries(m).map(([k, v]) => [cle(k), v])) : null);
+
+/* Libellé coupé sur deux lignes par la mise en page (« Ref. de » / « l'annonce : 1494 ») : on recolle. */
+const recoller = (L, extra) => {
+  const out = [];
+  for (let i = 0; i < L.length; i++) {
+    const a = L[i], b = L[i + 1];
+    if (b && !/[:：]/.test(a) && a.length <= 30 && !libelle(a, extra)) {
+      const m = (a + " " + b).match(/^([^:：]{1,45}?)\s*[:：]\s*(.*)$/);
+      const seul = b.match(/^([^:：]{1,45}?)\s*[:：]/);
+      if (m && libelle(m[1], extra) && !(seul && libelle(seul[1], extra))) { out.push(a + " " + b); i++; continue; }
+    }
+    out.push(a);
+  }
+  return out;
 };
 
 /* Découpe en couples ordonnés { champ, valeur, ligne }. */
-const lireFiche = (texte) => {
-  const L = String(texte).split("\n").flatMap((l) => l.split(INLINE)).map(nettoyerLigne).filter(Boolean);
+const lireFiche = (texte, libellesEnPlus) => {
+  const extra = indexExtra(libellesEnPlus);
+  const L = recoller(String(texte).split("\n").flatMap((l) => l.split(INLINE)).map(nettoyerLigne).filter(Boolean), extra);
   const out = [];
   for (let i = 0; i < L.length; i++) {
     const l = L[i];
     let m = l.match(/^([^:：]{1,45}?)\s*[:：]\s*(.*)$/);
-    let champ = m && libelle(m[1]);
+    let champ = m && libelle(m[1], extra);
     let val = m ? m[2].trim() : "";
-    if (!champ) { champ = libelle(l.replace(/[:：]\s*$/, "")); val = ""; m = champ ? [l] : null; }
+    if (!champ) { champ = libelle(l.replace(/[:：]\s*$/, ""), extra); val = ""; m = champ ? [l] : null; }
     if (!champ) continue;
     if (!val && i + 1 < L.length) {
       const n = L[i + 1];
       const nm = n.match(/^([^:：]{1,45}?)\s*[:：]/);
-      if (!libelle(n.replace(/[:：]\s*$/, "")) && !(nm && libelle(nm[1]))) { val = n; i++; }
+      if (!libelle(n.replace(/[:：]\s*$/, ""), extra) && !(nm && libelle(nm[1], extra))) { val = n; i++; }
     }
+    if (champ === "ignorer") continue;
     out.push({ champ, valeur: val.replace(/^\*+\s*|\s*\*+$/g, "").trim(), ligne: i, lignes: L });
   }
   return { couples: out, lignes: L };

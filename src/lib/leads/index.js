@@ -7,6 +7,8 @@ module.exports = {
   ...require("./routage"),
   ...require("./traiter"),
   ...require("./crm"),
+  conversation: require("./conversation"),
+  dossiers: require("./dossiers"),
   PORTAILS: require("./portails").PORTAILS,
   valeurs: require("./valeurs"),
   texte: require("./texte"),
