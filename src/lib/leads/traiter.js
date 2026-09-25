@@ -83,6 +83,11 @@ const traiter = async (mail, crm, conf = {}) => {
   if (rc.action === "creer") dossier.actions.push({ op: "creerContact", donnees: { email: c.email, prenom: c.prenom, nom: c.nom, telephone: c.telephone, origine: dossier.origine.id, agence: dossier.agence && dossier.agence.id, negociateur: negoId } });
   if (rc.action === "mettre_a_jour") { const patch = completer(rc.contact, c); if (Object.keys(patch).length) dossier.actions.push({ op: "majContact", id: rc.contact.id, donnees: patch }); }
   if (rb.bien && rc.action !== "impossible") dossier.actions.push({ op: "lierBien", bien: rb.bien.id, note: [r.portail_nom, r.message].filter(Boolean).join(" — ").slice(0, 4000) });
+  const R = r.recherche || {};
+  if (rc.action !== "impossible" && (r.nature === "recherche" || Object.keys(R).length)) {
+    const cr = { type: R.type, budget_max: R.budget_max, surface_min: R.surface_min, pieces_min: R.pieces_min, localisation: R.localisation, libelle: `Recherche ${r.portail_nom || r.portail || ""}`.trim() };
+    if (Object.values(cr).filter(Boolean).length > 1) dossier.actions.push({ op: "creerRecherche", donnees: cr });
+  }
   if (conf.consentement && conf.consentement.actif && rc.action !== "impossible") {
     const date = mail.date || mail.date_envoi || new Date();
     const motif = gabarit(conf.consentement.libelle || "Demande de contact via {portail} du {date}", { portail: r.site || r.portail_nom || r.portail, date: dateFr(date) });
@@ -109,6 +114,7 @@ const executer = async (dossier, crm, { mode = "ombre" } = {}) => {
       else if (a.op === "majContact") out = await crm.majContact(a.id, a.donnees);
       else if (a.op === "lierBien") out = await crm.lierBien(contactId, a.bien, a.note);
       else if (a.op === "ajouterConsentement") out = await crm.ajouterConsentement(contactId, a);
+      else if (a.op === "creerRecherche") out = crm.creerRecherche ? await crm.creerRecherche(contactId, a.donnees) : null;
       res.push({ op: a.op, fait: true, resultat: out && out.id ? { id: out.id } : !!out });
     } catch (e) { res.push({ op: a.op, fait: false, erreur: e.message }); if (a.op === "creerContact") break; }
   }

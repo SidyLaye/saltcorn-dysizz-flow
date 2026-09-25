@@ -22,6 +22,7 @@ const creer = ({ biens = [], contacts = [] } = {}) => {
     creerContact: async (c) => { const x = { id: "m" + (C.length + 1), cree_le: new Date().toISOString(), ...c }; C.push(x); ecritures.push({ op: "creerContact", c }); return x; },
     majContact: async (id, champs) => { ecritures.push({ op: "majContact", id, champs }); return { id }; },
     lierBien: async (contactId, bienId, note) => { ecritures.push({ op: "lierBien", contactId, bienId, note }); return true; },
+    creerRecherche: async (contactId, r) => { ecritures.push({ op: "creerRecherche", contactId, r }); return { id: "r" + ecritures.length }; },
     ajouterConsentement: async (contactId, consent) => { ecritures.push({ op: "ajouterConsentement", contactId, consent: { ...consent, preuves: (consent.preuves || []).map((p) => p.nom) } }); return true; },
   };
 };

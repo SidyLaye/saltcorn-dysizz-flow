@@ -1,4 +1,4 @@
-/* dysizz-flow 2.4.0 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.4.1 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.4.0" : "dev";
+    var VERSION2 = true ? "2.4.1" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -93332,6 +93332,11 @@ var require_traiter = __commonJS({
         if (Object.keys(patch).length) dossier.actions.push({ op: "majContact", id: rc.contact.id, donnees: patch });
       }
       if (rb.bien && rc.action !== "impossible") dossier.actions.push({ op: "lierBien", bien: rb.bien.id, note: [r.portail_nom, r.message].filter(Boolean).join(" \u2014 ").slice(0, 4e3) });
+      const R = r.recherche || {};
+      if (rc.action !== "impossible" && (r.nature === "recherche" || Object.keys(R).length)) {
+        const cr = { type: R.type, budget_max: R.budget_max, surface_min: R.surface_min, pieces_min: R.pieces_min, localisation: R.localisation, libelle: `Recherche ${r.portail_nom || r.portail || ""}`.trim() };
+        if (Object.values(cr).filter(Boolean).length > 1) dossier.actions.push({ op: "creerRecherche", donnees: cr });
+      }
       if (conf.consentement && conf.consentement.actif && rc.action !== "impossible") {
         const date = mail.date || mail.date_envoi || /* @__PURE__ */ new Date();
         const motif = gabarit(conf.consentement.libelle || "Demande de contact via {portail} du {date}", { portail: r.site || r.portail_nom || r.portail, date: dateFr(date) });
@@ -93358,6 +93363,7 @@ var require_traiter = __commonJS({
           } else if (a.op === "majContact") out = await crm.majContact(a.id, a.donnees);
           else if (a.op === "lierBien") out = await crm.lierBien(contactId, a.bien, a.note);
           else if (a.op === "ajouterConsentement") out = await crm.ajouterConsentement(contactId, a);
+          else if (a.op === "creerRecherche") out = crm.creerRecherche ? await crm.creerRecherche(contactId, a.donnees) : null;
           res.push({ op: a.op, fait: true, resultat: out && out.id ? { id: out.id } : !!out });
         } catch (e) {
           res.push({ op: a.op, fait: false, erreur: e.message });
@@ -93383,7 +93389,7 @@ var require_immofacile = __commonJS({
       let jeton = null, expire = 0, defs = null, typesBien = null;
       const journal = cfg.journal || (() => {
       });
-      const LECTURE = (m, p) => m === "GET" ? /^\/(discovery|customers\/\d+|customers\/(origins|groups)|criterias\/(product\/all|product\/[\w-]+|search-requests)|products\/\d+|agencies|users)(\?|\/|$)/.test(p) : m === "POST" && ["/products/search", "/customers/search"].includes(p.split("?")[0]);
+      const LECTURE = (m, p) => m === "GET" ? /^\/(discovery|customers\/\d+|customers\/(origins|groups)|criterias\/|products\/\d+|agencies|users)/.test(p) && !/\/(consent|follow-ups|actions|search-requests)/.test(p) : m === "POST" && ["/products/search", "/products/search/count", "/customers/search"].includes(p.split("?")[0]);
       const token = async () => {
         if (jeton && Date.now() < expire - 6e4) return jeton;
         const basic = await cfg.secret("basic");
@@ -93437,25 +93443,36 @@ var require_immofacile = __commonJS({
       const criteres = async () => {
         if (defs) return defs;
         const l = data(await appel("GET", "/criterias/product/all")) || [];
-        defs = new Map((Array.isArray(l) ? l : []).filter((d) => d && d.id != null).map((d) => [String(d.id), String(d.xml || d.name || d.id)]));
+        defs = new Map((Array.isArray(l) ? l : []).filter((d) => d && d.id != null).map((d) => [String(d.id), String(d.xml || d.id)]));
         return defs;
+      };
+      const cleXml = async (...candidats) => {
+        const D = await criteres().catch(() => /* @__PURE__ */ new Map());
+        const xs = [...D.values()];
+        for (const c of candidats) {
+          const x = xs.find((v) => cle(v) === cle(c));
+          if (x) return x;
+        }
+        return candidats[0];
       };
       const codeType = async (canon) => {
         if (!typesBien) {
-          const d = [...(await criteres()).entries()].find(([, x]) => cle(x) === "typebien");
-          const vals = d ? data(await appel("GET", "/criterias/product/" + d[0])) : [];
-          typesBien = (Array.isArray(vals) ? vals : vals && vals.values ? vals.values : []).map((v) => ({ code: String(v.value ?? v.id ?? v.code), libelle: String(v.label ?? v.name ?? v.value) }));
+          const D = await criteres();
+          const d = [...D.entries()].find(([, x]) => cle(x) === "typebien");
+          const vals = d ? data(await appel("GET", `/criterias/product/${d[0]}/values`).catch(() => [])) : [];
+          typesBien = (Array.isArray(vals) ? vals : []).map((v) => ({ code: String(v.model ?? v.value ?? v.id), libelle: String(v.label ?? v.model ?? "") }));
         }
-        const t = typesBien.find((x) => typeBien(x.libelle) === canon);
+        const t = typesBien.find((x) => typeBien(x.libelle) === canon || typeBien(x.code) === canon);
         return t ? t.code : null;
       };
       const versBien = async (p) => {
         if (!p) return null;
         const D = await criteres().catch(() => /* @__PURE__ */ new Map());
         const v = {}, lab = {};
-        for (const g of [p.criteres_text, p.criteres_number, p.criteres_fulltext, p.criteres_flag]) for (const c of Array.isArray(g) ? g : []) {
+        const groupes = [p.criteres_text, p.criteres_number, p.criteres_fulltext, p.criteres_flag, p.criteresText, p.criteresNumber, p.criteresFullText, p.criteresFlag];
+        for (const g of groupes) for (const c of Array.isArray(g) ? g : []) {
           const id = c.critere_id ?? c.criteria_id ?? c.criterias_id ?? c.id;
-          const x = id != null && D.get(String(id)) || c.critere_xml || c.xml;
+          const x = id != null && D.get(String(id)) || c.critere_xml || c.xml || (isNaN(+id) ? id : null);
           if (!x) continue;
           const val = c.critere_value ?? c.value ?? c.valeur;
           if (val != null && String(val).trim()) v[cle(x)] = val;
@@ -93469,23 +93486,32 @@ var require_immofacile = __commonJS({
           reference: String(p.model || "").trim(),
           prix: +p.price || n("prix"),
           surface: n("surface"),
-          pieces: n("nbpiece") || n("nbpieces"),
-          chambres: n("nbchambre") || n("chambres"),
+          pieces: n("nbpieces") || n("nbpiece"),
+          chambres: n("nbchambres") || n("nbchambre") || n("chambres"),
           type: typeBien(lab.typebien || v.typebien || p.category && (p.category.name || p.category.label) || ""),
-          ville: v.villeweb || v.ville_web || null,
-          code_postal: (String(v.codepostalweb || v.cpvilleweb || "").match(/\d{5}/) || [])[0] || null,
-          negociateur_id: a.id ?? a.user_id ?? p.user_id ?? null,
-          agence_id: p.agency_id ?? (p.agency && p.agency.id) ?? null,
-          brut_id: p.id
+          ville: v.villeweb || v.ville_web || v.ville || null,
+          code_postal: (String(v.codepostalweb || v.cpvilleweb || v.codepostal || v.cpville || "").match(/\d{5}/) || [])[0] || null,
+          negociateur_id: a.id ?? a.user_id ?? p.userId ?? p.user_id ?? null,
+          agence_id: p.agencyId ?? p.agency_id ?? (p.agency && p.agency.id) ?? null
         };
       };
-      const detail = async (id) => versBien(data(await appel("GET", `/products/${Number(id)}?fetch=criteres_text,criteres_number,assigned_to,category`)));
+      const FETCH = "criteres_text,criteres_number,assigned_to,category";
+      const detail = async (id) => versBien(data(await appel("GET", `/products/${Number(id)}?fetch=${FETCH}`)));
       const recherche = async (corps) => {
-        const j = await appel("POST", "/products/search?fetch=assigned_to", corps);
-        const l = data(j);
-        return Array.isArray(l) ? l : [];
+        const l = data(await appel("POST", `/products/search?fetch=${FETCH}`, corps));
+        return Promise.all((Array.isArray(l) ? l : []).map((p) => p && (p.criteres_text || p.criteresText) ? versBien(p) : detail(p.id || p)));
       };
-      const versContact = (c) => ({ id: c.id, email: c.email || null, emails: [c.email, ...(c.emails || []).map((e) => e.email || e)].filter(Boolean), telephone: c.phone || null, mobile: c.mobile_phone || c.mobilePhone || null, telephones: [c.phone, c.mobile_phone, c.mobilePhone].filter(Boolean).map((t) => String(t).replace(/[^\d+]/g, "")), prenom: c.firstname || null, nom: c.lastname || null, cree_le: c.created_at || c.createdAt || c.created || null, agence_id: c.agency_id || null, negociateur_id: c.user_id || null });
+      const versContact = (c) => ({
+        id: c.id,
+        email: c.email || null,
+        emails: [c.email].filter(Boolean),
+        telephone: c.phone || null,
+        mobile: c.mobilePhone || c.mobile_phone || null,
+        telephones: [c.phone, c.mobilePhone, c.mobile_phone].filter(Boolean).map((t) => String(t).replace(/[^\d+]/g, "")),
+        prenom: c.firstname || null,
+        nom: c.lastname || null,
+        cree_le: c.createdAt || c.created_at || null
+      });
       const chercherContacts = async (filtre) => {
         const out = [], vus = /* @__PURE__ */ new Set(), curseurs = /* @__PURE__ */ new Set();
         let cursor = null;
@@ -93503,43 +93529,48 @@ var require_immofacile = __commonJS({
         }
         return out;
       };
+      const tolere409 = async (fn) => {
+        try {
+          return await fn();
+        } catch (e) {
+          if (e.http === 409) return { deja: true };
+          throw e;
+        }
+      };
       return {
         nom: "immofacile",
         lectureSeule: !!cfg.lectureSeule,
-        tester: async () => ({ ok: true, discovery: data(await appel("GET", "/discovery")) }),
+        tester: async () => ({ ok: true, agences: (data(await appel("GET", "/discovery")) || []).map((a) => ({ id: a.agency_id, nom: a.name, ville: a.city })) }),
         bienParId: detail,
-        biensParReference: async (ref) => {
-          const l = await recherche({ model: String(ref), count: 5 });
-          return Promise.all(l.filter((p) => String(p.model || "").trim().toLowerCase() === String(ref).trim().toLowerCase()).slice(0, 3).map((p) => detail(p.id)));
-        },
+        biensParReference: async (ref) => (await recherche({ model: String(ref), count: 5 })).filter((b) => b && b.reference.toLowerCase() === String(ref).trim().toLowerCase()).slice(0, 3),
         biensParCriteres: async (q, { max = 2 } = {}) => {
           const c = [];
           if (q.type) {
             const code = await codeType(q.type);
-            if (code) c.push({ id: "TypeBien", operator: "EGAL", value: code });
+            if (code) c.push({ id: await cleXml("TypeBien"), operator: "EGAL", value: code });
           }
-          if (q.pieces) c.push({ id: "NbPiece", operator: "EGAL", value: String(q.pieces) });
-          if (q.surface) c.push({ id: "Surface", operator: "EGAL", value: String(q.surface) });
-          if (q.prix) c.push({ id: "Prix", operator: "EGAL", value: String(q.prix) });
-          if (q.lieu) c.push({ id: "CPVilleweb", operator: "CONTIENT", value: String(q.lieu) });
+          if (q.pieces) c.push({ id: await cleXml("NbPieces", "NbPiece"), operator: "EGAL", value: String(q.pieces) });
+          if (q.surface) c.push({ id: await cleXml("Surface"), operator: "EGAL", value: String(q.surface) });
+          if (q.prix) c.push({ id: await cleXml("Prix"), operator: "EGAL", value: String(q.prix) });
+          if (q.lieu) c.push({ id: await cleXml("CPVilleweb", "CPVille"), operator: "CONTIENT", value: String(q.lieu) });
           if (!c.length) return [];
-          const l = await recherche({ criterias: c, count: max });
-          return Promise.all(l.slice(0, max).map((p) => detail(p.id)));
+          return (await recherche({ criterias: c, count: max })).slice(0, max);
         },
         contactsParEmail: (e) => chercherContacts({ email: e }).then((l) => l.filter((c) => c.emails.map((x) => String(x).toLowerCase()).includes(String(e).toLowerCase()))),
-        contactsParTelephone: (t) => chercherContacts({ phone: t }).then((l) => l.filter((c) => c.telephones.some((x) => x.slice(-9) === String(t).replace(/\D/g, "").slice(-9)))),
+        contactsParTelephone: (t) => chercherContacts({ phone: String(t).replace(/^\+33/, "0") }).then((l) => l.filter((c) => c.telephones.some((x) => x.replace(/\D/g, "").slice(-9) === String(t).replace(/\D/g, "").slice(-9)))),
         origines: async () => data(await appel("GET", "/customers/origins")),
         groupes: async () => data(await appel("GET", "/customers/groups")),
+        /* check_duplicate: true → 409 si un doublon existe (jamais de mise à jour silencieuse). */
         creerContact: async (d) => {
           const corps = { email: d.email, check_duplicate: true };
           if (d.prenom) corps.firstname = d.prenom;
           if (d.nom) corps.lastname = d.nom;
           if (d.telephone) corps[/^\+33[67]\d{8}$/.test(d.telephone) ? "mobile_phone" : "phone"] = d.telephone;
-          if (d.agence) corps.agency_id = Number(d.agence);
-          if (d.negociateur) corps.user_id = Number(d.negociateur);
+          if (d.agence && isFinite(+d.agence)) corps.agency_id = Number(d.agence);
+          if (d.negociateur && isFinite(+d.negociateur)) corps.user_id = Number(d.negociateur);
           if (d.origine) corps.origin = Number(d.origine);
           if (cfg.groupe_demandeur) corps.group = Number(cfg.groupe_demandeur);
-          return versContact(data(await appel("POST", "/customers", corps)));
+          return { id: (data(await appel("POST", "/customers", corps)) || {}).id };
         },
         majContact: async (id, p) => {
           const corps = {};
@@ -93548,17 +93579,39 @@ var require_immofacile = __commonJS({
           if (p.mobile) corps.mobile_phone = p.mobile;
           if (p.telephone) corps.phone = p.telephone;
           if (!Object.keys(corps).length) return { id };
-          return data(await appel("PATCH", `/customers/${Number(id)}`, corps));
+          await appel("PATCH", `/customers/${Number(id)}`, corps);
+          return { id };
         },
-        lierBien: async (contactId, bienId, note) => data(await appel("POST", `/customers/${Number(contactId)}/follow-ups/${Number(bienId)}`, { comment: String(note || "").slice(0, 2e3) })),
-        /* Consentement : multipart (date, motif, preuves). Noms de champs configurables : à valider sur la doc V2 avant le passage en réel. */
+        /* Suivi (rapprochement) contact ↔ bien ; 409 = déjà suivi, c'est bon. La note va dans une action si un type d'action est réglé. */
+        lierBien: async (contactId, bienId, note) => {
+          const r = await tolere409(() => appel("POST", `/customers/${Number(contactId)}/follow-ups/${Number(bienId)}`));
+          if (cfg.action_lead && note) await appel("POST", `/customers/${Number(contactId)}/actions`, { action_id: Number(cfg.action_lead), result: String(note).slice(0, 2e3) });
+          return { id: contactId, deja: !!(r && r.deja) };
+        },
+        /* Recherche d'un acquéreur (leads « recherche ») : POST /customers/{id}/search-requests. */
+        creerRecherche: async (contactId, r) => {
+          const c = [];
+          if (r.type) {
+            const code = await codeType(r.type);
+            if (code) c.push({ id: "TypeBien", operator: "EGAL", value: code });
+          }
+          if (r.budget_max) c.push({ id: "Prix", operator: "INFERIEUR", value: String(r.budget_max) });
+          if (r.surface_min) c.push({ id: "Surface", operator: "SUPERIEUR", value: String(r.surface_min) });
+          if (r.pieces_min) c.push({ id: "NbPieces", operator: "SUPERIEUR", value: String(r.pieces_min) });
+          if (r.localisation) c.push({ id: "30", operator: "CONTIENT", value: String(r.localisation) });
+          if (!c.length) return null;
+          return data(await appel("POST", `/customers/${Number(contactId)}/search-requests`, { wording: String(r.libelle || "Recherche re\xE7ue par mail").slice(0, 120), alertEmail: false, criteria: c }));
+        },
+        /* Consentement anti-démarchage (POST /customers/{id}/consent, multipart) :
+           reason (64 caractères max), consent_date (ISO), proofs[] (rangées dans Documents confidentiels/Consentement). */
         ajouterConsentement: async (contactId, a) => {
-          const n = { date: "date", motif: "reason", preuve: "proofs[]", ...cfg.champs_consentement || {} };
           const fd = new FormData();
-          fd.append(n.date, String(a.date).slice(0, 10));
-          fd.append(n.motif, a.motif);
-          for (const p of a.preuves || []) fd.append(n.preuve, new Blob([Buffer.from(p.base64, "base64")], { type: p.type || "application/octet-stream" }), p.nom);
-          return data(await appel("POST", `/customers/${Number(contactId)}/consent`, null, { multipart: fd }));
+          fd.append("reason", String(a.motif).slice(0, 64));
+          fd.append("consent_date", new Date(a.date).toISOString());
+          if (a.hors_horaires !== void 0) fd.append("accept_outside_hours", a.hors_horaires ? "1" : "0");
+          for (const p of a.preuves || []) fd.append("proofs[]", new Blob([Buffer.from(p.base64, "base64")], { type: p.type || "application/octet-stream" }), p.nom);
+          await appel("POST", `/customers/${Number(contactId)}/consent`, null, { multipart: fd });
+          return { id: contactId };
         }
       };
     };
@@ -93657,6 +93710,12 @@ var require_salesforce = __commonJS({
           const r = await appel("POST", `/sobjects/${L.objet}`, { [L.contact]: contactId, ...L.bien && C.objet !== "Lead" ? { [L.bien]: bienId } : {}, [L.sujet]: "Nouvelle demande", [L.note]: String(note || "").slice(0, 3e4) });
           return { id: r.id };
         },
+        /* Recherche d'acquéreur : notée en tâche sur le contact (pas d'objet standard « recherche » dans Salesforce). */
+        creerRecherche: async (contactId, r) => {
+          const L = M.lien;
+          const x = await appel("POST", `/sobjects/${L.objet}`, { [L.contact]: contactId, [L.sujet]: "Recherche acqu\xE9reur", [L.note]: Object.entries(r).filter(([, v]) => v).map(([k, v]) => `${k} : ${v}`).join("\n") });
+          return { id: x.id };
+        },
         /* Consentement : la preuve devient un fichier Salesforce lié au contact ; le motif et la date vont dans le titre. */
         ajouterConsentement: async (contactId, a) => {
           const out = [];
@@ -93705,6 +93764,10 @@ var require_memoire = __commonJS({
           ecritures.push({ op: "lierBien", contactId, bienId, note });
           return true;
         },
+        creerRecherche: async (contactId, r) => {
+          ecritures.push({ op: "creerRecherche", contactId, r });
+          return { id: "r" + ecritures.length };
+        },
         ajouterConsentement: async (contactId, consent) => {
           ecritures.push({ op: "ajouterConsentement", contactId, consent: { ...consent, preuves: (consent.preuves || []).map((p) => p.nom) } });
           return true;
@@ -93719,7 +93782,7 @@ var require_memoire = __commonJS({
 var require_ombre = __commonJS({
   "src/lib/leads/crm/ombre.js"(exports2, module2) {
     "use strict";
-    var ECRITURES = ["creerContact", "majContact", "lierBien", "ajouterConsentement"];
+    var ECRITURES = ["creerContact", "majContact", "lierBien", "ajouterConsentement", "creerRecherche"];
     var ombre = (crm) => {
       const notees = [];
       const o = { ...crm, nom: crm.nom + " (ombre)", ombre: true, notees };

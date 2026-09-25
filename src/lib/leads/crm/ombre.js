@@ -1,6 +1,6 @@
 /* Mode ombre : les lectures passent, les écritures sont seulement notées. */
 "use strict";
-const ECRITURES = ["creerContact", "majContact", "lierBien", "ajouterConsentement"];
+const ECRITURES = ["creerContact", "majContact", "lierBien", "ajouterConsentement", "creerRecherche"];
 const ombre = (crm) => {
   const notees = [];
   const o = { ...crm, nom: crm.nom + " (ombre)", ombre: true, notees };

@@ -1,5 +1,9 @@
 # Journal des versions
 
+## 2.4.1
+
+- Adaptateur Immofacile aligné sur la documentation OpenAPI V2 : consentement (reason 64 caractères max, consent_date, proofs[] rangées dans Documents confidentiels/Consentement), valeurs des critères par `/criterias/product/{id}/values` (code « model »), clés XML lues sur le site (NbPieces ou NbPiece), recherche de biens avec `?fetch=` (biens complets sans appel de détail), contacts triés du plus récent (createdAt, mobilePhone), suivi sans corps (409 = déjà suivi), note du prospect en action si un type d'action est réglé, recherche d'acquéreur (`/customers/{id}/search-requests`) pour les leads « recherche ».
+
 ## 2.4.0
 
 - **Famille OVHcloud (14 blocs)** : tout gérer sans ouvrir l'espace client — clé d'accès, services qui expirent, domaines, enregistrements DNS sans doublon, sous-domaine complet en un bloc (DNS + hébergement + SSL, vérification publique), zone (export / import, DNSSEC), redirections, e-mails MX Plan, hébergement, VPS, dédiés, Public Cloud, factures. Client signé commun : horloge OVH mesurée une fois, reprise sur 429/5xx, erreurs lisibles.

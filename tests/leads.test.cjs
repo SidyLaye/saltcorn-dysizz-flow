@@ -174,16 +174,22 @@ const MAILS = {
     appels.push(`${o.method || "GET"} ${url}`);
     const J = (x, s = 200) => ({ ok: s < 400, status: s, headers: new Map(), text: async () => JSON.stringify(x) });
     if (/client\/token\/site/.test(url)) { assert.ok(/^Basic /.test(o.headers.Authorization)); return J({ access_token: "T", expires_in: 3600 }); }
-    if (/criterias\/product\/all/.test(url)) return J({ data: [{ id: 5, xml: "Surface" }, { id: 6, xml: "NbPiece" }, { id: 7, xml: "CodePostalWeb" }] });
-    if (/products\/search/.test(url)) return J({ data: [{ id: 99, model: "30123" }, { id: 98, model: "301234" }] });
-    if (/products\/99/.test(url)) return J({ data: { id: 99, model: "30123", price: 245000, criteres_number: [{ critere_id: 5, critere_value: "120" }, { critere_id: 6, critere_value: "5" }], criteres_text: [{ critere_id: 7, critere_value: "46000" }], assigned_to: { id: 866 }, agency_id: 405 } });
-    if (/customers\/search/.test(url)) return J({ data: [{ id: 1, email: "a@x.fr", created_at: "2026-01-01" }], meta: {} });
+    if (/criterias\/product\/all/.test(url)) return J({ data: [{ id: 5, xml: "Surface" }, { id: 6, xml: "NbPieces" }, { id: 7, xml: "CodePostalWeb" }, { id: 27, xml: "TypeBien" }] });
+    if (/criterias\/product\/27\/values/.test(url)) return J({ data: [{ id: 1, model: "Appartement", label: "Appartement" }, { id: 2, model: "Maison", label: "Maison" }] });
+    if (/products\/search\?fetch=/.test(url)) {
+      const b = JSON.parse(o.body);
+      if (b.criterias) { assert.deepStrictEqual(b.criterias.map((c) => c.id), ["TypeBien", "NbPieces"]); assert.strictEqual(b.criterias[0].value, "Maison"); }
+      return J({ data: [{ id: 99, model: "30123", price: 245000, criteres_number: [{ critere_id: 5, critere_value: "120" }, { critere_id: 6, critere_value: "5" }], criteres_text: [{ critere_id: 7, critere_value: "46000" }], assigned_to: { id: 866 }, agency_id: 405 }, { id: 98, model: "301234", criteres_text: [] }], next_cursor: null, has_more: false });
+    }
+    if (/customers\/search/.test(url)) return J({ data: [{ id: 1, email: "a@x.fr", createdAt: "2026-01-01", mobilePhone: "+33611111111" }], meta: { next_cursor: null } });
     return J({ erreur: "?" }, 404);
   };
   const imf = creerCrm("immofacile", { site_id: "123", fetch: fake, secret: async (k) => (k === "basic" ? "QUJD" : null) }, { mode: "ombre" });
   const bs = await imf.biensParReference("30123");
   assert.deepStrictEqual(bs.map((b) => [b.id, b.surface, b.pieces, b.code_postal, b.negociateur_id]), [[99, 120, 5, "46000", 866]]);
   assert.strictEqual((await imf.contactsParEmail("A@x.fr"))[0].id, 1);
+  assert.deepStrictEqual((await imf.biensParCriteres({ type: "maison", pieces: 5 })).map((b) => b.id), [99, 98], "deux biens → le rapprochement les jugera ambigus");
+  assert.strictEqual((await imf.contactsParTelephone("+33611111111"))[0].id, 1);
   await imf.creerContact({ email: "z@x.fr" });
   assert.ok(!appels.some((a) => /^POST .*\/customers$/.test(a)), "mode ombre : aucune création envoyée");
   const brut = require("../src/lib/leads/crm/immofacile").creer({ site_id: "1", fetch: fake, secret: async () => "QUJD", lectureSeule: true });

@@ -77,6 +77,8 @@ const creer = (cfg = {}) => {
     },
     majContact: async (id, p) => { const x = {}; if (p.prenom) x[C.prenom] = p.prenom; if (p.nom) x[C.nom] = p.nom; if (p.telephone) x[C.telephone] = p.telephone; if (p.mobile && C.mobile) x[C.mobile] = p.mobile; if (Object.keys(x).length) await appel("PATCH", `/sobjects/${C.objet}/${id}`, x); return { id }; },
     lierBien: async (contactId, bienId, note) => { const L = M.lien; const r = await appel("POST", `/sobjects/${L.objet}`, { [L.contact]: contactId, ...(L.bien && C.objet !== "Lead" ? { [L.bien]: bienId } : {}), [L.sujet]: "Nouvelle demande", [L.note]: String(note || "").slice(0, 30000) }); return { id: r.id }; },
+    /* Recherche d'acquéreur : notée en tâche sur le contact (pas d'objet standard « recherche » dans Salesforce). */
+    creerRecherche: async (contactId, r) => { const L = M.lien; const x = await appel("POST", `/sobjects/${L.objet}`, { [L.contact]: contactId, [L.sujet]: "Recherche acquéreur", [L.note]: Object.entries(r).filter(([, v]) => v).map(([k, v]) => `${k} : ${v}`).join("\n") }); return { id: x.id }; },
     /* Consentement : la preuve devient un fichier Salesforce lié au contact ; le motif et la date vont dans le titre. */
     ajouterConsentement: async (contactId, a) => {
       const out = [];
