@@ -1,5 +1,13 @@
 # Journal des versions
 
+## 2.4.2
+
+- **Exécuter un parcours** (`dzf_parcours`, catégorie Contrôle) : déroule un schéma dessiné avec le widget « parcours » de dysizz-ui (début, étapes, conditions oui/non, validations, blocs, workflows, fin). Pour construire chez un client son propre outil de workflow : ses équipes dessinent, ce bloc exécute.
+  - **Sécurité** : le schéma vient des données, pas de l'admin. Seuls les blocs et workflows listés par l'admin dans le bloc peuvent tourner ; les conditions passent toujours par le bac à sable des formules Saltcorn, même dans le tenant racine ; un parcours ne peut pas en lancer un autre ; limite d'étapes contre les boucles.
+  - **Validation** : une étape « Validation » arrête le parcours (statut `en_attente`, étapes suivantes renvoyées) ; on reprend avec « Reprendre à l'étape ».
+  - **Simulation** : suit le chemin et évalue les conditions sans rien lancer.
+  - Numéroté 2.4.2 pour ne pas entrer en collision avec les 2.5.0 / 2.6.0 restées sur le PC de Sidy.
+
 ## 2.4.1
 
 - **Cloisonnement entre tenants** (`src/garde.js`). Un admin de tenant n'est plus forcément l'admin du serveur :

@@ -1,4 +1,4 @@
-/* dysizz-flow 2.4.1 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.4.2 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.4.1" : "dev";
+    var VERSION2 = true ? "2.4.2" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -214,7 +214,19 @@ var require_garde = __commonJS({
       if (typeof f !== "function") throw new Error("expression invalide");
       return f;
     };
-    module2.exports = { estRacine, refusEnv, lireEnv, lireSecret, compiler, INTERDITES };
+    var compilerBacASable = (expr, noms) => {
+      const code = String(expr == null ? "" : expr);
+      try {
+        new Function(...noms, `"use strict"; return (${code});`);
+      } catch (e) {
+        throw new Error(`expression invalide : ${e.message}`);
+      }
+      const { eval_expression } = require("@saltcorn/data/models/expression");
+      const f = eval_expression(`(${noms.join(", ")}) => (${code})`, {}, void 0, "dysizz-flow");
+      if (typeof f !== "function") throw new Error("expression invalide");
+      return f;
+    };
+    module2.exports = { estRacine, refusEnv, lireEnv, lireSecret, compiler, compilerBacASable, INTERDITES };
   }
 });
 
@@ -97092,6 +97104,141 @@ var require_extras = __commonJS({
   }
 });
 
+// src/blocks/parcours.js
+var require_parcours = __commonJS({
+  "src/blocks/parcours.js"(exports2, module2) {
+    "use strict";
+    var { lireParcours, suivants } = /* @__PURE__ */ (() => {
+      const W = /^\s*\{\{\s*([\w.$-]+)\s*\}\}\s*$/;
+      const lire = (v, ctx) => {
+        const { getPath, parseJSON } = require_engine();
+        let d = v;
+        if (typeof d === "string" && W.test(d)) d = getPath(ctx, W.exec(d)[1]);
+        if (typeof d === "string") d = parseJSON(d, "Parcours");
+        if (!d || !Array.isArray(d.noeuds)) throw Object.assign(new Error("parcours illisible : il faut { noeuds: [...], liens: [...] }"), { permanent: true });
+        if (d.noeuds.length > 500) throw Object.assign(new Error("parcours trop grand (500 \xE9tapes au plus)"), { permanent: true });
+        return { noeuds: d.noeuds, liens: Array.isArray(d.liens) ? d.liens : [] };
+      };
+      const OUI = /^(oui|vrai|true|yes|1)$/i, NON = /^(non|faux|false|no|0)$/i;
+      const next = (doc, n, branche) => doc.liens.filter((l) => l.de === n.id && (branche === void 0 || (branche ? OUI.test(l.si || "") : NON.test(l.si || "")))).map((l) => l.vers);
+      return { lireParcours: lire, suivants: next };
+    })();
+    var liste = (v) => (Array.isArray(v) ? v : String(v || "").split(/[\s,;]+/)).map((x) => String(x).trim()).filter(Boolean);
+    var perm = (m) => Object.assign(new Error(m), { permanent: true });
+    var court = (v) => {
+      try {
+        const s = typeof v === "string" ? v : JSON.stringify(v);
+        return s === void 0 ? "" : s.length > 300 ? s.slice(0, 300) + "\u2026" : s;
+      } catch (e) {
+        return String(v);
+      }
+    };
+    module2.exports = [
+      {
+        name: "dzf_parcours",
+        label: "Ex\xE9cuter un parcours",
+        category: "Contr\xF4le",
+        icon: "fas fa-project-diagram",
+        output: "parcours",
+        timeout: 300,
+        description: "D\xE9roule un parcours dessin\xE9 avec le widget \xAB parcours \xBB (\xE9tapes, conditions, validations, blocs). Pour les outils de workflow que tu construis pour un client : il dessine, ce bloc ex\xE9cute. Mode simulation : rien n'est ex\xE9cut\xE9, tu vois le chemin.",
+        params: [
+          { name: "parcours", label: "Parcours", type: "json", raw: true, required: true, help: "Ex. {{row.schema}} : le champ o\xF9 le widget enregistre le parcours" },
+          { name: "donnees", label: "Donn\xE9es de d\xE9part (JSON)", type: "json", help: "Ajout\xE9es au contexte, lisibles dans les conditions (ctx.montant\u2026)" },
+          { name: "depart", label: "Reprendre \xE0 l'\xE9tape", help: "Identifiant d'\xE9tape. Vide : l'\xE9tape \xAB D\xE9but \xBB" },
+          { name: "blocs_autorises", label: "Blocs autoris\xE9s", help: "Noms de blocs dysizz-flow s\xE9par\xE9s par des virgules (ex. dzf_email, dzf_table_ajouter). Tout autre bloc est refus\xE9." },
+          { name: "workflows_autorises", label: "Workflows autoris\xE9s", help: "Noms de workflows Saltcorn qu'une \xE9tape peut lancer, s\xE9par\xE9s par des virgules" },
+          { name: "simulation", label: "Simulation (n'ex\xE9cute rien)", type: "bool", help: "Suit le chemin, \xE9value les conditions, montre ce qui serait lanc\xE9" },
+          { name: "max_etapes", label: "\xC9tapes au plus", type: "int", default: 200, help: "Prot\xE8ge contre les boucles sans fin" }
+        ],
+        run: async (p, ctx, api) => {
+          const { resolveParams, withTimeout, sanitize, deep, parseJSON } = require_engine();
+          const { BLOCKS: BLOCKS2 } = require_blocks();
+          const garde = require_garde();
+          const doc = lireParcours(p.parcours, ctx);
+          const blocsOk = new Set(liste(p.blocs_autorises)), wfOk = new Set(liste(p.workflows_autorises));
+          const par = new Map(doc.noeuds.map((n2) => [n2.id, n2]));
+          let data = { ...ctx, ...typeof p.donnees === "object" && p.donnees ? p.donnees : {} };
+          const trace = [];
+          const debut = p.depart ? par.get(String(p.depart)) : doc.noeuds.find((n2) => n2.type === "debut");
+          if (!debut) throw perm(p.depart ? `\xE9tape \xAB ${p.depart} \xBB introuvable dans le parcours` : "le parcours n'a pas d'\xE9tape \xAB D\xE9but \xBB");
+          const file = [debut.id];
+          const max = Math.max(1, Math.min(5e3, +p.max_etapes || 200));
+          let n = 0;
+          const fin = (statut, extra = {}) => ({ statut, etapes: n, simulation: !!p.simulation, trace, ...extra, donnees: sanitize(Object.fromEntries(Object.entries(data).filter(([k]) => k !== "user"))) });
+          while (file.length) {
+            const noeud = par.get(file.shift());
+            if (!noeud) continue;
+            if (++n > max) return fin("erreur", { erreur: `plus de ${max} \xE9tapes : boucle probable`, noeud: noeud.id });
+            const t0 = Date.now();
+            const t = { noeud: noeud.id, type: noeud.type, titre: noeud.titre || noeud.type };
+            const r = noeud.reglages || {};
+            let aSuivre;
+            try {
+              switch (noeud.type) {
+                case "condition": {
+                  if (!r.expression) throw perm("condition vide");
+                  const vrai = !!garde.compilerBacASable(r.expression, ["ctx"])(data);
+                  t.resultat = vrai ? "oui" : "non";
+                  aSuivre = suivants(doc, noeud, vrai);
+                  break;
+                }
+                case "definir": {
+                  const v = typeof r.valeurs === "string" ? parseJSON(r.valeurs, "Valeurs") : r.valeurs || {};
+                  data = { ...data, ...deep(v, data) };
+                  break;
+                }
+                case "attente":
+                  trace.push({ ...t, ok: true, ms: 0, resultat: "en attente" });
+                  return fin("en_attente", { noeud: noeud.id, suivants: suivants(doc, noeud) });
+                case "bloc": {
+                  const nom = noeud.bloc || r.bloc;
+                  if (!blocsOk.has(nom)) throw perm(`bloc \xAB ${nom} \xBB non autoris\xE9 pour ce parcours`);
+                  const b = BLOCKS2.find((x) => x.name === nom);
+                  if (!b) throw perm(`bloc \xAB ${nom} \xBB introuvable`);
+                  if (b.name === "dzf_parcours") throw perm("un parcours ne peut pas en lancer un autre");
+                  const params = resolveParams(b, r, data);
+                  const res = p.simulation ? { simulation: true, bloc: nom, reglages: params } : await withTimeout(Promise.resolve(b.run(params, data, api)), +r.delai_max || b.timeout || 30, b.label);
+                  data = { ...data, [r.sortie || b.output || noeud.id]: res };
+                  t.resultat = court(res);
+                  break;
+                }
+                case "workflow": {
+                  const nom = r.workflow;
+                  if (!wfOk.has(nom)) throw perm(`workflow \xAB ${nom} \xBB non autoris\xE9 pour ce parcours`);
+                  const Trigger = require("@saltcorn/data/models/trigger");
+                  const wf = Trigger.findOne({ name: nom });
+                  if (!wf) throw perm(`workflow \xAB ${nom} \xBB introuvable`);
+                  if (p.simulation) {
+                    t.resultat = `simulation : ${nom}`;
+                    break;
+                  }
+                  const out = await wf.runWithoutRow({ row: data, user: api.user, req: api.req });
+                  if (out && typeof out === "object") data = { ...data, ...out };
+                  t.resultat = court(out);
+                  break;
+                }
+                case "fin":
+                  aSuivre = [];
+                  break;
+                default:
+                  break;
+              }
+            } catch (e) {
+              trace.push({ ...t, ok: false, ms: Date.now() - t0, erreur: e.message });
+              return fin("erreur", { erreur: e.message, noeud: noeud.id });
+            }
+            trace.push({ ...t, ok: true, ms: Date.now() - t0 });
+            if (trace.length > 1e3) trace.splice(0, trace.length - 1e3);
+            file.push(...aSuivre || suivants(doc, noeud));
+          }
+          return fin("termine");
+        }
+      }
+    ];
+  }
+});
+
 // src/blocks/index.js
 var require_blocks = __commonJS({
   "src/blocks/index.js"(exports2, module2) {
@@ -97121,7 +97268,8 @@ var require_blocks = __commonJS({
       ...require_observabilite(),
       ...require_taches(),
       ...require_extras(),
-      ...require_controle()
+      ...require_controle(),
+      ...require_parcours()
     ];
     var CATEGORIES = ["Donn\xE9es", "Transformer", "R\xE9seau", "Messagerie", "IA", "Documents", "Stockage", "Donn\xE9es externes", "Pratique", "Services", "Blockchain", "DevOps", "OVHcloud", "Leads immobiliers", "Objets connect\xE9s", "S\xE9curit\xE9", "Surveillance", "Logs & m\xE9triques", "T\xE2ches & planification", "Contr\xF4le", "Extensions", "Mes blocs"];
     var seen = /* @__PURE__ */ new Set();

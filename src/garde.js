@@ -62,4 +62,16 @@ const compiler = (expr, noms) => {
   return f;
 };
 
-module.exports = { estRacine, refusEnv, lireEnv, lireSecret, compiler, INTERDITES };
+/* Même chose, mais TOUJOURS dans le bac à sable, y compris dans le tenant racine :
+   pour du code qui vient des données (un parcours enregistré dans une table et
+   modifiable par des utilisateurs), jamais d'un réglage d'admin. */
+const compilerBacASable = (expr, noms) => {
+  const code = String(expr == null ? "" : expr);
+  try { new Function(...noms, `"use strict"; return (${code});`); } catch (e) { throw new Error(`expression invalide : ${e.message}`); }
+  const { eval_expression } = require("@saltcorn/data/models/expression");
+  const f = eval_expression(`(${noms.join(", ")}) => (${code})`, {}, undefined, "dysizz-flow");
+  if (typeof f !== "function") throw new Error("expression invalide");
+  return f;
+};
+
+module.exports = { estRacine, refusEnv, lireEnv, lireSecret, compiler, compilerBacASable, INTERDITES };
