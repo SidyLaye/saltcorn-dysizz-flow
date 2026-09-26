@@ -1,4 +1,4 @@
-/* dysizz-flow 2.4.0 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.4.2 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.4.0" : "dev";
+    var VERSION2 = true ? "2.4.2" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -166,6 +166,70 @@ var require_vault = __commonJS({
   }
 });
 
+// src/garde.js
+var require_garde = __commonJS({
+  "src/garde.js"(exports2, module2) {
+    "use strict";
+    var INTERDITES = /^(PG[A-Z0-9_]*|POSTGRES_[A-Z0-9_]*|DATABASE_URL|SALTCORN_[A-Z0-9_]*|DZF_CLE_COFFRE|DZF_ENV_PARTAGEES|REDIS_URL|REDIS_PASSWORD|NODE_OPTIONS)$/i;
+    var estRacine = () => {
+      let db;
+      try {
+        db = require("@saltcorn/data/db");
+      } catch (e) {
+        return false;
+      }
+      if (!db || typeof db.getTenantSchema !== "function") return true;
+      try {
+        return db.getTenantSchema() === (db.connectObj && db.connectObj.default_schema);
+      } catch (e) {
+        return false;
+      }
+    };
+    var partagees = () => new Set(String(process.env.DZF_ENV_PARTAGEES || "").split(",").map((s) => s.trim()).filter(Boolean));
+    var refusEnv = (nom) => {
+      const n = String(nom || "");
+      if (!/^[A-Za-z_][A-Za-z0-9_]{0,100}$/.test(n)) return "nom de variable invalide";
+      if (INTERDITES.test(n)) return "secret du serveur, jamais lisible depuis un workflow";
+      if (!estRacine() && !partagees().has(n)) return "variable non partag\xE9e avec ce tenant (DZF_ENV_PARTAGEES)";
+      return null;
+    };
+    var lireEnv = (nom) => nom && !refusEnv(nom) ? process.env[nom] : void 0;
+    var lireSecret = async (nom) => {
+      if (!nom) return void 0;
+      const v = lireEnv(nom);
+      if (v) return v;
+      return require_vault().readSecret(nom);
+    };
+    var compiler = (expr, noms) => {
+      const code = String(expr == null ? "" : expr);
+      let direct;
+      try {
+        direct = new Function(...noms, `"use strict"; return (${code});`);
+      } catch (e) {
+        throw new Error(`expression invalide : ${e.message}`);
+      }
+      if (estRacine()) return direct;
+      const { eval_expression } = require("@saltcorn/data/models/expression");
+      const f = eval_expression(`(${noms.join(", ")}) => (${code})`, {}, void 0, "dysizz-flow");
+      if (typeof f !== "function") throw new Error("expression invalide");
+      return f;
+    };
+    var compilerBacASable = (expr, noms) => {
+      const code = String(expr == null ? "" : expr);
+      try {
+        new Function(...noms, `"use strict"; return (${code});`);
+      } catch (e) {
+        throw new Error(`expression invalide : ${e.message}`);
+      }
+      const { eval_expression } = require("@saltcorn/data/models/expression");
+      const f = eval_expression(`(${noms.join(", ")}) => (${code})`, {}, void 0, "dysizz-flow");
+      if (typeof f !== "function") throw new Error("expression invalide");
+      return f;
+    };
+    module2.exports = { estRacine, refusEnv, lireEnv, lireSecret, compiler, compilerBacASable, INTERDITES };
+  }
+});
+
 // src/engine.js
 var require_engine = __commonJS({
   "src/engine.js"(exports2, module2) {
@@ -273,13 +337,11 @@ var require_engine = __commonJS({
       Table: require("@saltcorn/data/models/table"),
       user,
       req,
-      env: (name) => name ? process.env[name] : void 0,
-      /* secret : variable d'environnement d'abord, sinon le coffre chiffré (table dzf_secrets) */
-      secret: async (name) => {
-        if (!name) return void 0;
-        if (process.env[name]) return process.env[name];
-        return require_vault().readSecret(name);
-      },
+      /* variables d'environnement et secrets : règles de src/garde.js (jamais les secrets du
+         serveur ; hors tenant racine, seulement les variables partagées) */
+      env: (name) => require_garde().lireEnv(name),
+      /* secret : variable d'environnement autorisée d'abord, sinon le coffre chiffré (table dzf_secrets) */
+      secret: (name) => require_garde().lireSecret(name),
       log: (...a) => {
         try {
           require("@saltcorn/data/db/state").getState().log(5, `[dysizz-flow] ${a.join(" ")}`);
@@ -580,13 +642,7 @@ var require_transformer = __commonJS({
     "use strict";
     var { asList, deep, getPath, parseJSON } = require_engine();
     var { plain } = require_core();
-    var fn = (expr, args) => {
-      try {
-        return new Function(...args, `"use strict"; return (${expr});`);
-      } catch (e) {
-        throw new Error(`condition invalide : ${e.message}`);
-      }
-    };
+    var fn = (expr, args) => require_garde().compiler(expr, args);
     var OPS = {
       "=": (a, b) => String(a ?? "") === String(b ?? ""),
       "\u2260": (a, b) => String(a ?? "") !== String(b ?? ""),
@@ -690,7 +746,7 @@ var require_transformer = __commonJS({
           { name: "champ", label: "Champ", help: "Ex. theme ou source.nom" },
           { name: "operateur", label: "Op\xE9rateur", type: "select", options: Object.keys(OPS), default: "=" },
           { name: "valeur", label: "Valeur", help: "Peut contenir des {{variables}}" },
-          { name: "expression", label: "\u2026ou expression JavaScript", help: "Remplace les 3 r\xE9glages au-dessus. Ex. item.prix > 100 && item.stock" }
+          { name: "expression", label: "\u2026ou expression JavaScript", raw: true, help: "Remplace les 3 r\xE9glages au-dessus. Ex. item.prix > 100 && item.stock. Les variables s'\xE9crivent ctx.nom (pas de {{ }} : une valeur re\xE7ue ne doit jamais devenir du code)." }
         ],
         run: async (p, ctx) => {
           const list = asList(p.liste);
@@ -95675,7 +95731,7 @@ var require_controle = __commonJS({
         run: async (p, ctx) => {
           let ok;
           try {
-            ok = !!new Function("ctx", `"use strict"; return (${p.condition});`)(ctx);
+            ok = !!require_garde().compiler(p.condition, ["ctx"])(ctx);
           } catch (e) {
             throw new Error(`condition invalide : ${e.message}`);
           }
@@ -97048,6 +97104,141 @@ var require_extras = __commonJS({
   }
 });
 
+// src/blocks/parcours.js
+var require_parcours = __commonJS({
+  "src/blocks/parcours.js"(exports2, module2) {
+    "use strict";
+    var { lireParcours, suivants } = /* @__PURE__ */ (() => {
+      const W = /^\s*\{\{\s*([\w.$-]+)\s*\}\}\s*$/;
+      const lire = (v, ctx) => {
+        const { getPath, parseJSON } = require_engine();
+        let d = v;
+        if (typeof d === "string" && W.test(d)) d = getPath(ctx, W.exec(d)[1]);
+        if (typeof d === "string") d = parseJSON(d, "Parcours");
+        if (!d || !Array.isArray(d.noeuds)) throw Object.assign(new Error("parcours illisible : il faut { noeuds: [...], liens: [...] }"), { permanent: true });
+        if (d.noeuds.length > 500) throw Object.assign(new Error("parcours trop grand (500 \xE9tapes au plus)"), { permanent: true });
+        return { noeuds: d.noeuds, liens: Array.isArray(d.liens) ? d.liens : [] };
+      };
+      const OUI = /^(oui|vrai|true|yes|1)$/i, NON = /^(non|faux|false|no|0)$/i;
+      const next = (doc, n, branche) => doc.liens.filter((l) => l.de === n.id && (branche === void 0 || (branche ? OUI.test(l.si || "") : NON.test(l.si || "")))).map((l) => l.vers);
+      return { lireParcours: lire, suivants: next };
+    })();
+    var liste = (v) => (Array.isArray(v) ? v : String(v || "").split(/[\s,;]+/)).map((x) => String(x).trim()).filter(Boolean);
+    var perm = (m) => Object.assign(new Error(m), { permanent: true });
+    var court = (v) => {
+      try {
+        const s = typeof v === "string" ? v : JSON.stringify(v);
+        return s === void 0 ? "" : s.length > 300 ? s.slice(0, 300) + "\u2026" : s;
+      } catch (e) {
+        return String(v);
+      }
+    };
+    module2.exports = [
+      {
+        name: "dzf_parcours",
+        label: "Ex\xE9cuter un parcours",
+        category: "Contr\xF4le",
+        icon: "fas fa-project-diagram",
+        output: "parcours",
+        timeout: 300,
+        description: "D\xE9roule un parcours dessin\xE9 avec le widget \xAB parcours \xBB (\xE9tapes, conditions, validations, blocs). Pour les outils de workflow que tu construis pour un client : il dessine, ce bloc ex\xE9cute. Mode simulation : rien n'est ex\xE9cut\xE9, tu vois le chemin.",
+        params: [
+          { name: "parcours", label: "Parcours", type: "json", raw: true, required: true, help: "Ex. {{row.schema}} : le champ o\xF9 le widget enregistre le parcours" },
+          { name: "donnees", label: "Donn\xE9es de d\xE9part (JSON)", type: "json", help: "Ajout\xE9es au contexte, lisibles dans les conditions (ctx.montant\u2026)" },
+          { name: "depart", label: "Reprendre \xE0 l'\xE9tape", help: "Identifiant d'\xE9tape. Vide : l'\xE9tape \xAB D\xE9but \xBB" },
+          { name: "blocs_autorises", label: "Blocs autoris\xE9s", help: "Noms de blocs dysizz-flow s\xE9par\xE9s par des virgules (ex. dzf_email, dzf_table_ajouter). Tout autre bloc est refus\xE9." },
+          { name: "workflows_autorises", label: "Workflows autoris\xE9s", help: "Noms de workflows Saltcorn qu'une \xE9tape peut lancer, s\xE9par\xE9s par des virgules" },
+          { name: "simulation", label: "Simulation (n'ex\xE9cute rien)", type: "bool", help: "Suit le chemin, \xE9value les conditions, montre ce qui serait lanc\xE9" },
+          { name: "max_etapes", label: "\xC9tapes au plus", type: "int", default: 200, help: "Prot\xE8ge contre les boucles sans fin" }
+        ],
+        run: async (p, ctx, api) => {
+          const { resolveParams, withTimeout, sanitize, deep, parseJSON } = require_engine();
+          const { BLOCKS: BLOCKS2 } = require_blocks();
+          const garde = require_garde();
+          const doc = lireParcours(p.parcours, ctx);
+          const blocsOk = new Set(liste(p.blocs_autorises)), wfOk = new Set(liste(p.workflows_autorises));
+          const par = new Map(doc.noeuds.map((n2) => [n2.id, n2]));
+          let data = { ...ctx, ...typeof p.donnees === "object" && p.donnees ? p.donnees : {} };
+          const trace = [];
+          const debut = p.depart ? par.get(String(p.depart)) : doc.noeuds.find((n2) => n2.type === "debut");
+          if (!debut) throw perm(p.depart ? `\xE9tape \xAB ${p.depart} \xBB introuvable dans le parcours` : "le parcours n'a pas d'\xE9tape \xAB D\xE9but \xBB");
+          const file = [debut.id];
+          const max = Math.max(1, Math.min(5e3, +p.max_etapes || 200));
+          let n = 0;
+          const fin = (statut, extra = {}) => ({ statut, etapes: n, simulation: !!p.simulation, trace, ...extra, donnees: sanitize(Object.fromEntries(Object.entries(data).filter(([k]) => k !== "user"))) });
+          while (file.length) {
+            const noeud = par.get(file.shift());
+            if (!noeud) continue;
+            if (++n > max) return fin("erreur", { erreur: `plus de ${max} \xE9tapes : boucle probable`, noeud: noeud.id });
+            const t0 = Date.now();
+            const t = { noeud: noeud.id, type: noeud.type, titre: noeud.titre || noeud.type };
+            const r = noeud.reglages || {};
+            let aSuivre;
+            try {
+              switch (noeud.type) {
+                case "condition": {
+                  if (!r.expression) throw perm("condition vide");
+                  const vrai = !!garde.compilerBacASable(r.expression, ["ctx"])(data);
+                  t.resultat = vrai ? "oui" : "non";
+                  aSuivre = suivants(doc, noeud, vrai);
+                  break;
+                }
+                case "definir": {
+                  const v = typeof r.valeurs === "string" ? parseJSON(r.valeurs, "Valeurs") : r.valeurs || {};
+                  data = { ...data, ...deep(v, data) };
+                  break;
+                }
+                case "attente":
+                  trace.push({ ...t, ok: true, ms: 0, resultat: "en attente" });
+                  return fin("en_attente", { noeud: noeud.id, suivants: suivants(doc, noeud) });
+                case "bloc": {
+                  const nom = noeud.bloc || r.bloc;
+                  if (!blocsOk.has(nom)) throw perm(`bloc \xAB ${nom} \xBB non autoris\xE9 pour ce parcours`);
+                  const b = BLOCKS2.find((x) => x.name === nom);
+                  if (!b) throw perm(`bloc \xAB ${nom} \xBB introuvable`);
+                  if (b.name === "dzf_parcours") throw perm("un parcours ne peut pas en lancer un autre");
+                  const params = resolveParams(b, r, data);
+                  const res = p.simulation ? { simulation: true, bloc: nom, reglages: params } : await withTimeout(Promise.resolve(b.run(params, data, api)), +r.delai_max || b.timeout || 30, b.label);
+                  data = { ...data, [r.sortie || b.output || noeud.id]: res };
+                  t.resultat = court(res);
+                  break;
+                }
+                case "workflow": {
+                  const nom = r.workflow;
+                  if (!wfOk.has(nom)) throw perm(`workflow \xAB ${nom} \xBB non autoris\xE9 pour ce parcours`);
+                  const Trigger = require("@saltcorn/data/models/trigger");
+                  const wf = Trigger.findOne({ name: nom });
+                  if (!wf) throw perm(`workflow \xAB ${nom} \xBB introuvable`);
+                  if (p.simulation) {
+                    t.resultat = `simulation : ${nom}`;
+                    break;
+                  }
+                  const out = await wf.runWithoutRow({ row: data, user: api.user, req: api.req });
+                  if (out && typeof out === "object") data = { ...data, ...out };
+                  t.resultat = court(out);
+                  break;
+                }
+                case "fin":
+                  aSuivre = [];
+                  break;
+                default:
+                  break;
+              }
+            } catch (e) {
+              trace.push({ ...t, ok: false, ms: Date.now() - t0, erreur: e.message });
+              return fin("erreur", { erreur: e.message, noeud: noeud.id });
+            }
+            trace.push({ ...t, ok: true, ms: Date.now() - t0 });
+            if (trace.length > 1e3) trace.splice(0, trace.length - 1e3);
+            file.push(...aSuivre || suivants(doc, noeud));
+          }
+          return fin("termine");
+        }
+      }
+    ];
+  }
+});
+
 // src/blocks/index.js
 var require_blocks = __commonJS({
   "src/blocks/index.js"(exports2, module2) {
@@ -97077,7 +97268,8 @@ var require_blocks = __commonJS({
       ...require_observabilite(),
       ...require_taches(),
       ...require_extras(),
-      ...require_controle()
+      ...require_controle(),
+      ...require_parcours()
     ];
     var CATEGORIES = ["Donn\xE9es", "Transformer", "R\xE9seau", "Messagerie", "IA", "Documents", "Stockage", "Donn\xE9es externes", "Pratique", "Services", "Blockchain", "DevOps", "OVHcloud", "Leads immobiliers", "Objets connect\xE9s", "S\xE9curit\xE9", "Surveillance", "Logs & m\xE9triques", "T\xE2ches & planification", "Contr\xF4le", "Extensions", "Mes blocs"];
     var seen = /* @__PURE__ */ new Set();
@@ -97562,12 +97754,7 @@ var require_expose = __commonJS({
       const x = Buffer.from(String(a || "")), y = Buffer.from(String(b || ""));
       return x.length === y.length && x.length > 0 && crypto.timingSafeEqual(x, y);
     };
-    var secretOf = async (name) => {
-      if (!name) return void 0;
-      if (process.env[name]) return process.env[name];
-      const { readSecret } = require_vault();
-      return readSecret(name);
-    };
+    var secretOf = (name) => require_garde().lireSecret(name);
     var safeHeaders = (h = {}) => Object.fromEntries(Object.entries(h).filter(([k]) => !/^(cookie|authorization|x-api-key|proxy-authorization)$/i.test(k)).map(([k, v]) => [k, String(v).slice(0, 500)]));
     var clientIp = (req) => String(req.ip || req.socket && req.socket.remoteAddress || "").replace(/^::ffff:/, "");
     var PUBLIC = { role_id: 100 };
@@ -98259,7 +98446,8 @@ var require_ecouteurs = __commonJS({
       }
       async demarrer() {
         const db = require("@saltcorn/data/db");
-        this.mdp = await db.runWithTenant(this.tenant, () => require_vault().readSecret(this.conf.secret)).catch(() => null) || process.env[this.conf.secret];
+        const nom = this.conf.secret;
+        this.mdp = await db.runWithTenant(this.tenant, async () => await require_vault().readSecret(nom).catch(() => null) || require_garde().lireEnv(nom)).catch(() => null);
         if (!this.mdp) {
           await this.maj({ etat: "erreur", erreur: `mot de passe introuvable (secret ${this.conf.secret})` });
           return;
@@ -98449,9 +98637,9 @@ ${rows.map((e) => {
       page(res, req, "Coffre", "coffre", `
 <div class="dzf-head"><div><h1>Coffre de secrets</h1>
 <p>Mots de passe, cl\xE9s d'API, jetons : rang\xE9s <b>chiffr\xE9s</b> (AES-256-GCM) dans la base. Une sauvegarde de la base ne les montre jamais en clair. Une fois enregistr\xE9, un secret n'est plus jamais r\xE9affich\xE9 : on peut seulement le remplacer ou le supprimer.</p>
-<p class="dzf-muted">Dans les blocs, tu donnes le <b>nom</b> du secret. Une variable d'environnement du m\xEAme nom passe toujours avant le coffre. ${keyOk ? process.env.DZF_CLE_COFFRE ? "Cl\xE9 : DZF_CLE_COFFRE \u2713" : "Cl\xE9 d\xE9riv\xE9e de SALTCORN_SESSION_SECRET. Mieux : d\xE9finis DZF_CLE_COFFRE sur le serveur (et garde-la de c\xF4t\xE9, sans elle les secrets sont perdus)." : '<b class="text-danger">Aucune cl\xE9 : d\xE9finis DZF_CLE_COFFRE sur le serveur.</b>'}</p></div></div>
+<p class="dzf-muted">Dans les blocs, tu donnes le <b>nom</b> du secret. Une variable d'environnement du m\xEAme nom passe avant le coffre, sauf les secrets du serveur (base, sessions, coffre, Redis), jamais lisibles ; hors tenant racine, seules les variables list\xE9es dans <code>DZF_ENV_PARTAGEES</code> sont lisibles. ${keyOk ? process.env.DZF_CLE_COFFRE ? "Cl\xE9 : DZF_CLE_COFFRE \u2713" : "Cl\xE9 d\xE9riv\xE9e de SALTCORN_SESSION_SECRET. Mieux : d\xE9finis DZF_CLE_COFFRE sur le serveur (et garde-la de c\xF4t\xE9, sans elle les secrets sont perdus)." : '<b class="text-danger">Aucune cl\xE9 : d\xE9finis DZF_CLE_COFFRE sur le serveur.</b>'}</p></div></div>
 <table class="dzf-table"><tr><th>Nom</th><th>Note</th><th>Modifi\xE9</th><th>Env. prioritaire</th><th></th></tr>
-${rows.map((r) => `<tr><td><code>${esc(r.nom)}</code></td><td>${esc(r.note || "")}</td><td>${r.maj_le ? esc(new Date(r.maj_le).toLocaleString("fr-FR")) : ""}</td><td>${process.env[r.nom] ? "oui" : ""}</td><td><form method="post" action="/dysizz-flow/coffre/delete">${hidden(req)}<input type="hidden" name="nom" value="${esc(r.nom)}"><button class="btn btn-sm btn-outline-danger" onclick="return confirm('Supprimer ce secret ?')">Supprimer</button></form></td></tr>`).join("") || '<tr><td colspan="5" class="dzf-muted">Le coffre est vide.</td></tr>'}</table>
+${rows.map((r) => `<tr><td><code>${esc(r.nom)}</code></td><td>${esc(r.note || "")}</td><td>${r.maj_le ? esc(new Date(r.maj_le).toLocaleString("fr-FR")) : ""}</td><td>${require_garde().lireEnv(r.nom) ? "oui" : ""}</td><td><form method="post" action="/dysizz-flow/coffre/delete">${hidden(req)}<input type="hidden" name="nom" value="${esc(r.nom)}"><button class="btn btn-sm btn-outline-danger" onclick="return confirm('Supprimer ce secret ?')">Supprimer</button></form></td></tr>`).join("") || '<tr><td colspan="5" class="dzf-muted">Le coffre est vide.</td></tr>'}</table>
 <h2>Ajouter ou remplacer</h2>
 <form method="post" action="/dysizz-flow/coffre/save" class="dzf-point" autocomplete="off">${hidden(req)}
 <label>Nom<input class="form-control form-control-sm" name="nom" required pattern="[A-Za-z_][A-Za-z0-9_.-]{0,79}" placeholder="ex. OVH_IMAP_MDP"></label>
@@ -99727,6 +99915,8 @@ module.exports = {
   /* pour les autres plugins (ex. Me) : ranger un secret dans le coffre, savoir s'il existe */
   dysizz_flow_api: {
     writeSecret: (nom, valeur, note) => require_vault().writeSecret(nom, valeur, note),
+    /* variable d'environnement lisible par ce tenant (règles de src/garde.js), sinon undefined */
+    lireEnv: (nom) => require_garde().lireEnv(nom),
     hasSecret: async (nom) => {
       try {
         return await require_vault().readSecret(nom) !== void 0;
@@ -99739,9 +99929,8 @@ module.exports = {
       const pre = String(prefixe || "LEADS_CRM").replace(/[^\w]/g, "");
       const secret = async (k) => {
         const n = `${pre}_${String(k).toUpperCase()}`;
-        if (process.env[n]) return process.env[n];
         try {
-          return await require_vault().readSecret(n);
+          return await require_garde().lireSecret(n);
         } catch (e) {
           return void 0;
         }

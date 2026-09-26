@@ -3,10 +3,9 @@
 const { asList, deep, getPath, parseJSON } = require("../engine");
 const { plain } = require("../core");
 
-/* condition écrite en JavaScript (réservé aux admins, comme les formules de Saltcorn) */
-const fn = (expr, args) => {
-  try { return new Function(...args, `"use strict"; return (${expr});`); } catch (e) { throw new Error(`condition invalide : ${e.message}`); }
-};
+/* condition écrite en JavaScript (réservé aux admins) : directe dans le tenant racine,
+   dans le bac à sable des formules Saltcorn ailleurs (src/garde.js) */
+const fn = (expr, args) => require("../garde").compiler(expr, args);
 const OPS = {
   "=": (a, b) => String(a ?? "") === String(b ?? ""),
   "≠": (a, b) => String(a ?? "") !== String(b ?? ""),
@@ -73,7 +72,7 @@ module.exports = [
       { name: "champ", label: "Champ", help: "Ex. theme ou source.nom" },
       { name: "operateur", label: "Opérateur", type: "select", options: Object.keys(OPS), default: "=" },
       { name: "valeur", label: "Valeur", help: "Peut contenir des {{variables}}" },
-      { name: "expression", label: "…ou expression JavaScript", help: "Remplace les 3 réglages au-dessus. Ex. item.prix > 100 && item.stock" }],
+      { name: "expression", label: "…ou expression JavaScript", raw: true, help: "Remplace les 3 réglages au-dessus. Ex. item.prix > 100 && item.stock. Les variables s'écrivent ctx.nom (pas de {{ }} : une valeur reçue ne doit jamais devenir du code)." }],
     run: async (p, ctx) => {
       const list = asList(p.liste);
       if (p.expression) { const f = fn(p.expression, ["item", "index", "ctx"]); return list.filter((x, i) => f(x, i, ctx)); }

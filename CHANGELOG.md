@@ -1,5 +1,22 @@
 # Journal des versions
 
+## 2.4.2
+
+- **Exécuter un parcours** (`dzf_parcours`, catégorie Contrôle) : déroule un schéma dessiné avec le widget « parcours » de dysizz-ui (début, étapes, conditions oui/non, validations, blocs, workflows, fin). Pour construire chez un client son propre outil de workflow : ses équipes dessinent, ce bloc exécute.
+  - **Sécurité** : le schéma vient des données, pas de l'admin. Seuls les blocs et workflows listés par l'admin dans le bloc peuvent tourner ; les conditions passent toujours par le bac à sable des formules Saltcorn, même dans le tenant racine ; un parcours ne peut pas en lancer un autre ; limite d'étapes contre les boucles.
+  - **Validation** : une étape « Validation » arrête le parcours (statut `en_attente`, étapes suivantes renvoyées) ; on reprend avec « Reprendre à l'étape ».
+  - **Simulation** : suit le chemin et évalue les conditions sans rien lancer.
+  - Numéroté 2.4.2 pour ne pas entrer en collision avec les 2.5.0 / 2.6.0 restées sur le PC de Sidy.
+
+## 2.4.1
+
+- **Cloisonnement entre tenants** (`src/garde.js`). Un admin de tenant n'est plus forcément l'admin du serveur :
+  - les secrets du serveur (base, sessions, clé du coffre, Redis) ne sont **jamais** lisibles depuis un workflow, un point d'API, un écouteur ou un CRM, même demandés par leur nom ;
+  - hors tenant racine, seules les variables listées dans `DZF_ENV_PARTAGEES` (réglée sur le serveur) sont lisibles ; sinon chaque tenant utilise son propre coffre ;
+  - les conditions et expressions JavaScript (« Liste : filtrer », « Vérifier une condition ») tournent dans le bac à sable des formules Saltcorn hors tenant racine, compilées une seule fois par liste.
+- « Liste : filtrer » : l'expression n'est plus interpolée (`{{ }}`). Une valeur reçue ne peut plus devenir du code ; les variables s'écrivent `ctx.nom`.
+- Build : `index.js` identique quel que soit le dossier de lancement (la CI était rouge à chaque push).
+
 ## 2.4.0
 
 - **Famille OVHcloud (14 blocs)** : tout gérer sans ouvrir l'espace client — clé d'accès, services qui expirent, domaines, enregistrements DNS sans doublon, sous-domaine complet en un bloc (DNS + hébergement + SSL, vérification publique), zone (export / import, DNSSEC), redirections, e-mails MX Plan, hébergement, VPS, dédiés, Public Cloud, factures. Client signé commun : horloge OVH mesurée une fois, reprise sur 429/5xx, erreurs lisibles.

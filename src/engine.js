@@ -110,13 +110,11 @@ const makeApi = ({ user, req, out }) => ({
   out,
   Table: require("@saltcorn/data/models/table"),
   user, req,
-  env: (name) => (name ? process.env[name] : undefined),
-  /* secret : variable d'environnement d'abord, sinon le coffre chiffré (table dzf_secrets) */
-  secret: async (name) => {
-    if (!name) return undefined;
-    if (process.env[name]) return process.env[name];
-    return require("./vault").readSecret(name);
-  },
+  /* variables d'environnement et secrets : règles de src/garde.js (jamais les secrets du
+     serveur ; hors tenant racine, seulement les variables partagées) */
+  env: (name) => require("./garde").lireEnv(name),
+  /* secret : variable d'environnement autorisée d'abord, sinon le coffre chiffré (table dzf_secrets) */
+  secret: (name) => require("./garde").lireSecret(name),
   log: (...a) => { try { require("@saltcorn/data/db/state").getState().log(5, `[dysizz-flow] ${a.join(" ")}`); } catch (e) { /* rien */ } },
 });
 

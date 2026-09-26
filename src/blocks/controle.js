@@ -54,7 +54,7 @@ module.exports = [
       { name: "si_faux", label: "Si c'est faux", type: "select", options: ["renvoyer faux", "arrêter en erreur"], default: "renvoyer faux" }, { name: "message", label: "Message d'erreur", default: "Condition non remplie" }],
     run: async (p, ctx) => {
       let ok;
-      try { ok = !!new Function("ctx", `"use strict"; return (${p.condition});`)(ctx); } catch (e) { throw new Error(`condition invalide : ${e.message}`); }
+      try { ok = !!require("../garde").compiler(p.condition, ["ctx"])(ctx); } catch (e) { throw new Error(`condition invalide : ${e.message}`); }
       if (!ok && p.si_faux === "arrêter en erreur") throw new Error(p.message || "Condition non remplie");
       return ok;
     },

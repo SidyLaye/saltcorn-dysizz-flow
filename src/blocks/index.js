@@ -28,6 +28,7 @@ const BLOCKS = [
   ...require("./taches"),
   ...require("./extras"),
   ...require("./controle"),
+  ...require("./parcours"),
 ];
 const CATEGORIES = ["Données", "Transformer", "Réseau", "Messagerie", "IA", "Documents", "Stockage", "Données externes", "Pratique", "Services", "Blockchain", "DevOps", "OVHcloud", "Leads immobiliers", "Objets connectés", "Sécurité", "Surveillance", "Logs & métriques", "Tâches & planification", "Contrôle", "Extensions", "Mes blocs"];
 

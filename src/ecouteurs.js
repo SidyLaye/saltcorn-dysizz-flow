@@ -95,7 +95,9 @@ class Ecouteur {
   }
   async demarrer() {
     const db = require("@saltcorn/data/db");
-    this.mdp = await db.runWithTenant(this.tenant, () => require("./vault").readSecret(this.conf.secret)).catch(() => null) || process.env[this.conf.secret];
+    /* coffre du tenant, sinon variable d'environnement autorisée pour ce tenant (src/garde.js) */
+    const nom = this.conf.secret;
+    this.mdp = await db.runWithTenant(this.tenant, async () => (await require("./vault").readSecret(nom).catch(() => null)) || require("./garde").lireEnv(nom)).catch(() => null);
     if (!this.mdp) { await this.maj({ etat: "erreur", erreur: `mot de passe introuvable (secret ${this.conf.secret})` }); return; }
     await this.relever("démarrage");
     this.timer = setInterval(() => this.relever("relève de secours"), 5 * 60000);
