@@ -12,7 +12,7 @@
 ## Commandes
 - Build : `cd tools && npm ci && node build.mjs` (même résultat lancé depuis la racine :
   `absWorkingDir` fixe les chemins écrits dans `index.js`).
-- Tests : `NODE_PATH=tools/node_modules node tests/run.cjs` (`npm test` est cassé).
+- Tests : `cd tools && npm test` (ou `node tests/run.cjs` depuis la racine).
 
 ## Règles
 - `index.js` est GÉNÉRÉ depuis `src/` et `client/` : jamais modifié à la main, toujours commité après build.
@@ -23,8 +23,9 @@
 - Instance réelle : analyse, puis simulation sans écriture, puis écriture.
 
 ## Pièges
-- Un admin de tenant peut lire les variables d'environnement et lancer du JS hors bac à sable
-  (`engine.js:113`, `blocks/transformer.js:8`). À cloisonner si un tiers devient admin (AUDIT F7, Q1).
+- Multi-tenant : tout nom de variable ou code venant d'un réglage passe par `src/garde.js`
+  (secrets du serveur jamais lisibles ; hors racine, `DZF_ENV_PARTAGEES` et bac à sable). Ne jamais lire
+  `process.env[nom]` ni faire `new Function` sur un réglage ailleurs que dans ce fichier.
 - Les versions 2.5.0 / 2.6.0 et `dysizz-leads` existent sur le PC de Sidy : vérifier qu'elles
   sont poussées avant de modifier ce dépôt (AUDIT F6).
 - `tryCatchInTransaction` et `forupdate` ne protègent rien sur les requêtes HTTP tant que la
