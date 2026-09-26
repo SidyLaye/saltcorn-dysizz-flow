@@ -45,11 +45,13 @@ module.exports = {
   /* pour les autres plugins (ex. Me) : ranger un secret dans le coffre, savoir s'il existe */
   dysizz_flow_api: {
     writeSecret: (nom, valeur, note) => require("./vault").writeSecret(nom, valeur, note),
+    /* variable d'environnement lisible par ce tenant (règles de src/garde.js), sinon undefined */
+    lireEnv: (nom) => require("./garde").lireEnv(nom),
     hasSecret: async (nom) => { try { return (await require("./vault").readSecret(nom)) !== undefined; } catch (e) { return false; } },
     /* CRM dont les secrets sont lus dans l'environnement puis le coffre (jamais renvoyés à l'appelant) */
     crmDepuisCoffre: (type, reglages, prefixe, mode) => {
       const pre = String(prefixe || "LEADS_CRM").replace(/[^\w]/g, "");
-      const secret = async (k) => { const n = `${pre}_${String(k).toUpperCase()}`; if (process.env[n]) return process.env[n]; try { return await require("./vault").readSecret(n); } catch (e) { return undefined; } };
+      const secret = async (k) => { const n = `${pre}_${String(k).toUpperCase()}`; try { return await require("./garde").lireSecret(n); } catch (e) { return undefined; } };
       return require("./lib/leads/crm").creerCrm(type, { ...(reglages || {}), secret }, { mode });
     },
     /* moteur leads immobiliers (utilisé par dysizz-leads) */

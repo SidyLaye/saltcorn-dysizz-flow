@@ -38,12 +38,7 @@ const same = (a, b) => {
   const x = Buffer.from(String(a || "")), y = Buffer.from(String(b || ""));
   return x.length === y.length && x.length > 0 && crypto.timingSafeEqual(x, y);
 };
-const secretOf = async (name) => {
-  if (!name) return undefined;
-  if (process.env[name]) return process.env[name];
-  const { readSecret } = require("./vault");
-  return readSecret(name);
-};
+const secretOf = (name) => require("./garde").lireSecret(name);
 /* en-têtes transmis au workflow : jamais les cookies ni l'autorisation */
 const safeHeaders = (h = {}) => Object.fromEntries(Object.entries(h).filter(([k]) => !/^(cookie|authorization|x-api-key|proxy-authorization)$/i.test(k)).map(([k, v]) => [k, String(v).slice(0, 500)]));
 const clientIp = (req) => String(req.ip || (req.socket && req.socket.remoteAddress) || "").replace(/^::ffff:/, "");

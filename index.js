@@ -1,4 +1,4 @@
-/* dysizz-flow 2.4.0 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.4.1 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.4.0" : "dev";
+    var VERSION2 = true ? "2.4.1" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -166,6 +166,58 @@ var require_vault = __commonJS({
   }
 });
 
+// src/garde.js
+var require_garde = __commonJS({
+  "src/garde.js"(exports2, module2) {
+    "use strict";
+    var INTERDITES = /^(PG[A-Z0-9_]*|POSTGRES_[A-Z0-9_]*|DATABASE_URL|SALTCORN_[A-Z0-9_]*|DZF_CLE_COFFRE|DZF_ENV_PARTAGEES|REDIS_URL|REDIS_PASSWORD|NODE_OPTIONS)$/i;
+    var estRacine = () => {
+      let db;
+      try {
+        db = require("@saltcorn/data/db");
+      } catch (e) {
+        return false;
+      }
+      if (!db || typeof db.getTenantSchema !== "function") return true;
+      try {
+        return db.getTenantSchema() === (db.connectObj && db.connectObj.default_schema);
+      } catch (e) {
+        return false;
+      }
+    };
+    var partagees = () => new Set(String(process.env.DZF_ENV_PARTAGEES || "").split(",").map((s) => s.trim()).filter(Boolean));
+    var refusEnv = (nom) => {
+      const n = String(nom || "");
+      if (!/^[A-Za-z_][A-Za-z0-9_]{0,100}$/.test(n)) return "nom de variable invalide";
+      if (INTERDITES.test(n)) return "secret du serveur, jamais lisible depuis un workflow";
+      if (!estRacine() && !partagees().has(n)) return "variable non partag\xE9e avec ce tenant (DZF_ENV_PARTAGEES)";
+      return null;
+    };
+    var lireEnv = (nom) => nom && !refusEnv(nom) ? process.env[nom] : void 0;
+    var lireSecret = async (nom) => {
+      if (!nom) return void 0;
+      const v = lireEnv(nom);
+      if (v) return v;
+      return require_vault().readSecret(nom);
+    };
+    var compiler = (expr, noms) => {
+      const code = String(expr == null ? "" : expr);
+      let direct;
+      try {
+        direct = new Function(...noms, `"use strict"; return (${code});`);
+      } catch (e) {
+        throw new Error(`expression invalide : ${e.message}`);
+      }
+      if (estRacine()) return direct;
+      const { eval_expression } = require("@saltcorn/data/models/expression");
+      const f = eval_expression(`(${noms.join(", ")}) => (${code})`, {}, void 0, "dysizz-flow");
+      if (typeof f !== "function") throw new Error("expression invalide");
+      return f;
+    };
+    module2.exports = { estRacine, refusEnv, lireEnv, lireSecret, compiler, INTERDITES };
+  }
+});
+
 // src/engine.js
 var require_engine = __commonJS({
   "src/engine.js"(exports2, module2) {
@@ -273,13 +325,11 @@ var require_engine = __commonJS({
       Table: require("@saltcorn/data/models/table"),
       user,
       req,
-      env: (name) => name ? process.env[name] : void 0,
-      /* secret : variable d'environnement d'abord, sinon le coffre chiffré (table dzf_secrets) */
-      secret: async (name) => {
-        if (!name) return void 0;
-        if (process.env[name]) return process.env[name];
-        return require_vault().readSecret(name);
-      },
+      /* variables d'environnement et secrets : règles de src/garde.js (jamais les secrets du
+         serveur ; hors tenant racine, seulement les variables partagées) */
+      env: (name) => require_garde().lireEnv(name),
+      /* secret : variable d'environnement autorisée d'abord, sinon le coffre chiffré (table dzf_secrets) */
+      secret: (name) => require_garde().lireSecret(name),
       log: (...a) => {
         try {
           require("@saltcorn/data/db/state").getState().log(5, `[dysizz-flow] ${a.join(" ")}`);
@@ -580,13 +630,7 @@ var require_transformer = __commonJS({
     "use strict";
     var { asList, deep, getPath, parseJSON } = require_engine();
     var { plain } = require_core();
-    var fn = (expr, args) => {
-      try {
-        return new Function(...args, `"use strict"; return (${expr});`);
-      } catch (e) {
-        throw new Error(`condition invalide : ${e.message}`);
-      }
-    };
+    var fn = (expr, args) => require_garde().compiler(expr, args);
     var OPS = {
       "=": (a, b) => String(a ?? "") === String(b ?? ""),
       "\u2260": (a, b) => String(a ?? "") !== String(b ?? ""),
@@ -690,7 +734,7 @@ var require_transformer = __commonJS({
           { name: "champ", label: "Champ", help: "Ex. theme ou source.nom" },
           { name: "operateur", label: "Op\xE9rateur", type: "select", options: Object.keys(OPS), default: "=" },
           { name: "valeur", label: "Valeur", help: "Peut contenir des {{variables}}" },
-          { name: "expression", label: "\u2026ou expression JavaScript", help: "Remplace les 3 r\xE9glages au-dessus. Ex. item.prix > 100 && item.stock" }
+          { name: "expression", label: "\u2026ou expression JavaScript", raw: true, help: "Remplace les 3 r\xE9glages au-dessus. Ex. item.prix > 100 && item.stock. Les variables s'\xE9crivent ctx.nom (pas de {{ }} : une valeur re\xE7ue ne doit jamais devenir du code)." }
         ],
         run: async (p, ctx) => {
           const list = asList(p.liste);
@@ -95675,7 +95719,7 @@ var require_controle = __commonJS({
         run: async (p, ctx) => {
           let ok;
           try {
-            ok = !!new Function("ctx", `"use strict"; return (${p.condition});`)(ctx);
+            ok = !!require_garde().compiler(p.condition, ["ctx"])(ctx);
           } catch (e) {
             throw new Error(`condition invalide : ${e.message}`);
           }
@@ -97562,12 +97606,7 @@ var require_expose = __commonJS({
       const x = Buffer.from(String(a || "")), y = Buffer.from(String(b || ""));
       return x.length === y.length && x.length > 0 && crypto.timingSafeEqual(x, y);
     };
-    var secretOf = async (name) => {
-      if (!name) return void 0;
-      if (process.env[name]) return process.env[name];
-      const { readSecret } = require_vault();
-      return readSecret(name);
-    };
+    var secretOf = (name) => require_garde().lireSecret(name);
     var safeHeaders = (h = {}) => Object.fromEntries(Object.entries(h).filter(([k]) => !/^(cookie|authorization|x-api-key|proxy-authorization)$/i.test(k)).map(([k, v]) => [k, String(v).slice(0, 500)]));
     var clientIp = (req) => String(req.ip || req.socket && req.socket.remoteAddress || "").replace(/^::ffff:/, "");
     var PUBLIC = { role_id: 100 };
@@ -98259,7 +98298,8 @@ var require_ecouteurs = __commonJS({
       }
       async demarrer() {
         const db = require("@saltcorn/data/db");
-        this.mdp = await db.runWithTenant(this.tenant, () => require_vault().readSecret(this.conf.secret)).catch(() => null) || process.env[this.conf.secret];
+        const nom = this.conf.secret;
+        this.mdp = await db.runWithTenant(this.tenant, async () => await require_vault().readSecret(nom).catch(() => null) || require_garde().lireEnv(nom)).catch(() => null);
         if (!this.mdp) {
           await this.maj({ etat: "erreur", erreur: `mot de passe introuvable (secret ${this.conf.secret})` });
           return;
@@ -98449,9 +98489,9 @@ ${rows.map((e) => {
       page(res, req, "Coffre", "coffre", `
 <div class="dzf-head"><div><h1>Coffre de secrets</h1>
 <p>Mots de passe, cl\xE9s d'API, jetons : rang\xE9s <b>chiffr\xE9s</b> (AES-256-GCM) dans la base. Une sauvegarde de la base ne les montre jamais en clair. Une fois enregistr\xE9, un secret n'est plus jamais r\xE9affich\xE9 : on peut seulement le remplacer ou le supprimer.</p>
-<p class="dzf-muted">Dans les blocs, tu donnes le <b>nom</b> du secret. Une variable d'environnement du m\xEAme nom passe toujours avant le coffre. ${keyOk ? process.env.DZF_CLE_COFFRE ? "Cl\xE9 : DZF_CLE_COFFRE \u2713" : "Cl\xE9 d\xE9riv\xE9e de SALTCORN_SESSION_SECRET. Mieux : d\xE9finis DZF_CLE_COFFRE sur le serveur (et garde-la de c\xF4t\xE9, sans elle les secrets sont perdus)." : '<b class="text-danger">Aucune cl\xE9 : d\xE9finis DZF_CLE_COFFRE sur le serveur.</b>'}</p></div></div>
+<p class="dzf-muted">Dans les blocs, tu donnes le <b>nom</b> du secret. Une variable d'environnement du m\xEAme nom passe avant le coffre, sauf les secrets du serveur (base, sessions, coffre, Redis), jamais lisibles ; hors tenant racine, seules les variables list\xE9es dans <code>DZF_ENV_PARTAGEES</code> sont lisibles. ${keyOk ? process.env.DZF_CLE_COFFRE ? "Cl\xE9 : DZF_CLE_COFFRE \u2713" : "Cl\xE9 d\xE9riv\xE9e de SALTCORN_SESSION_SECRET. Mieux : d\xE9finis DZF_CLE_COFFRE sur le serveur (et garde-la de c\xF4t\xE9, sans elle les secrets sont perdus)." : '<b class="text-danger">Aucune cl\xE9 : d\xE9finis DZF_CLE_COFFRE sur le serveur.</b>'}</p></div></div>
 <table class="dzf-table"><tr><th>Nom</th><th>Note</th><th>Modifi\xE9</th><th>Env. prioritaire</th><th></th></tr>
-${rows.map((r) => `<tr><td><code>${esc(r.nom)}</code></td><td>${esc(r.note || "")}</td><td>${r.maj_le ? esc(new Date(r.maj_le).toLocaleString("fr-FR")) : ""}</td><td>${process.env[r.nom] ? "oui" : ""}</td><td><form method="post" action="/dysizz-flow/coffre/delete">${hidden(req)}<input type="hidden" name="nom" value="${esc(r.nom)}"><button class="btn btn-sm btn-outline-danger" onclick="return confirm('Supprimer ce secret ?')">Supprimer</button></form></td></tr>`).join("") || '<tr><td colspan="5" class="dzf-muted">Le coffre est vide.</td></tr>'}</table>
+${rows.map((r) => `<tr><td><code>${esc(r.nom)}</code></td><td>${esc(r.note || "")}</td><td>${r.maj_le ? esc(new Date(r.maj_le).toLocaleString("fr-FR")) : ""}</td><td>${require_garde().lireEnv(r.nom) ? "oui" : ""}</td><td><form method="post" action="/dysizz-flow/coffre/delete">${hidden(req)}<input type="hidden" name="nom" value="${esc(r.nom)}"><button class="btn btn-sm btn-outline-danger" onclick="return confirm('Supprimer ce secret ?')">Supprimer</button></form></td></tr>`).join("") || '<tr><td colspan="5" class="dzf-muted">Le coffre est vide.</td></tr>'}</table>
 <h2>Ajouter ou remplacer</h2>
 <form method="post" action="/dysizz-flow/coffre/save" class="dzf-point" autocomplete="off">${hidden(req)}
 <label>Nom<input class="form-control form-control-sm" name="nom" required pattern="[A-Za-z_][A-Za-z0-9_.-]{0,79}" placeholder="ex. OVH_IMAP_MDP"></label>
@@ -99727,6 +99767,8 @@ module.exports = {
   /* pour les autres plugins (ex. Me) : ranger un secret dans le coffre, savoir s'il existe */
   dysizz_flow_api: {
     writeSecret: (nom, valeur, note) => require_vault().writeSecret(nom, valeur, note),
+    /* variable d'environnement lisible par ce tenant (règles de src/garde.js), sinon undefined */
+    lireEnv: (nom) => require_garde().lireEnv(nom),
     hasSecret: async (nom) => {
       try {
         return await require_vault().readSecret(nom) !== void 0;
@@ -99739,9 +99781,8 @@ module.exports = {
       const pre = String(prefixe || "LEADS_CRM").replace(/[^\w]/g, "");
       const secret = async (k) => {
         const n = `${pre}_${String(k).toUpperCase()}`;
-        if (process.env[n]) return process.env[n];
         try {
-          return await require_vault().readSecret(n);
+          return await require_garde().lireSecret(n);
         } catch (e) {
           return void 0;
         }
