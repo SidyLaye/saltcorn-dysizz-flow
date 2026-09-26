@@ -19,6 +19,7 @@ fs.mkdirSync(r("src", "generated"), { recursive: true });
 fs.writeFileSync(r("src", "generated", "assets.js"), `/* généré par tools/build.mjs */\nmodule.exports = { ASSETS: ${JSON.stringify(assets)} };\n`);
 
 await build({
+  absWorkingDir: root, /* chemins identiques quel que soit le dossier de lancement */
   entryPoints: [r("src", "index.js")],
   outfile: r("index.js"),
   bundle: true, platform: "node", target: "node18", format: "cjs",

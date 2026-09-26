@@ -10,8 +10,8 @@
 - Créer un bloc : `docs/CREER-UN-BLOC.md`.
 
 ## Commandes
-- Build : `cd tools && npm ci`, puis **depuis la racine** `node tools/build.mjs`.
-  Lancé depuis `tools/`, les chemins changent dans `index.js` et la CI échoue (AUDIT F3).
+- Build : `cd tools && npm ci && node build.mjs` (même résultat lancé depuis la racine :
+  `absWorkingDir` fixe les chemins écrits dans `index.js`).
 - Tests : `NODE_PATH=tools/node_modules node tests/run.cjs` (`npm test` est cassé).
 
 ## Règles
