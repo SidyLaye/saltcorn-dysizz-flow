@@ -54,6 +54,33 @@ module.exports = {
       const secret = async (k) => { const n = `${pre}_${String(k).toUpperCase()}`; try { return await require("./garde").lireSecret(n); } catch (e) { return undefined; } };
       return require("./lib/leads/crm").creerCrm(type, { ...(reglages || {}), secret }, { mode });
     },
+    /* client IA dont la clé est lue dans l'environnement puis le coffre (jamais renvoyée) ;
+       fournisseur « saltcorn » = le plugin large-language-model déjà réglé, sans clé à ranger ici */
+    iaDepuisCoffre: (fournisseur, modele, nomCle, url) => {
+      const G = globalThis[Symbol.for("dysizz-flow.ia-cache")] || (globalThis[Symbol.for("dysizz-flow.ia-cache")] = new Map());
+      let t = "public"; try { t = require("@saltcorn/data/db").getTenantSchema(); } catch (e) { /* hors Saltcorn */ }
+      const ck = JSON.stringify([t, fournisseur, modele, nomCle || "LEADS_IA_CLE", url || ""]);
+      const cache = G.get(ck) || new Map(); G.set(ck, cache);
+      const IA = require("./lib/leads/ia");
+      if (fournisseur === "saltcorn") return IA.creer({ fournisseur, cache });
+      const n = String(nomCle || "LEADS_IA_CLE").replace(/[^\w]/g, "");
+      let client = null;
+      return { fournisseur, lire: async (mail, texte) => {
+        if (!client) { let k; try { k = await require("./garde").lireSecret(n); } catch (e) { k = undefined; } if (!k) throw new Error(`clé d'IA absente (${n})`); client = IA.creer({ fournisseur, modele, url, cle: k, cache }); }
+        return client.lire(mail, texte);
+      } };
+    },
+    /* compare une valeur reçue (en-tête d'un webhook…) à un secret, à temps constant, sans jamais le renvoyer */
+    secretEgal: async (nom, valeur) => {
+      let v; try { v = await require("./garde").lireSecret(nom); } catch (e) { v = undefined; }
+      if (!v || valeur == null) return false;
+      const a = Buffer.from(String(v)), b = Buffer.from(String(valeur));
+      return a.length === b.length && require("crypto").timingSafeEqual(a, b);
+    },
+    /* un plugin qui apporte des blocs (dysizz_flow_blocks) les fait enregistrer à son chargement */
+    enregistrerBlocsExternes: () => registerExternal(),
+    /* verrous partagés entre processus et serveurs (Postgres) */
+    verrou: require("./lib/verrou"),
     /* moteur leads immobiliers (utilisé par dysizz-leads) */
     leads: require("./lib/leads"),
     /* écouteurs de boîtes mail */
@@ -65,6 +92,12 @@ module.exports = {
   /* + les blocs apportés par d'autres plugins (export dysizz_flow_blocks) */
   onLoad: async () => {
     try { registerExternal(); } catch (e) { /* rien */ }
+    /* les plugins qui apportent des blocs peuvent se charger APRÈS dysizz-flow : on repasse,
+       puis on vérifie chaque minute qu'aucun bloc externe n'a disparu (rechargement des plugins) */
+    for (const ms of [3000, 15000]) setTimeout(() => { try { registerExternal(); } catch (e) { /* rien */ } }, ms).unref?.();
+    const G = globalThis[Symbol.for("dysizz-flow.blocs-externes")] || (globalThis[Symbol.for("dysizz-flow.blocs-externes")] = {});
+    if (!G.minuteur) G.minuteur = setInterval(() => { try { const st = require("@saltcorn/data/db/state").getState(); if (require("./registry").scanPlugins().some((b) => !st.actions[b.name])) registerExternal(); } catch (e) { /* rien */ } }, 60000);
+    if (G.minuteur.unref) G.minuteur.unref();
     try { await registerUserBlocks(); } catch (e) { /* table pas encore créée : normal au 1er démarrage */ }
     try { await require("./ecouteurs").surveiller(); } catch (e) { /* rien */ }
   },

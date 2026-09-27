@@ -6,7 +6,7 @@ const { cle } = require("./texte");
 
 const LIBELLES = {
   email: ["email", "e mail", "mail", "adresse e mail", "adresse email", "email address", "courriel", "mail", "e mail de contact", "votre email"],
-  telephone: ["telephone", "tel", "tel portable", "tel perso", "tel prof", "telephone portable", "phone", "phone number", "numero de telephone", "n de telephone", "numero de tel", "portable", "mobile", "telefoon", "telefono", "numero"],
+  telephone: ["telephone", "tel", "tel portable", "tel perso", "tel prof", "telephone portable", "phone", "phone number", "numero de telephone", "n de telephone", "numero de tel", "portable", "mobile", "telefoon", "telefono", "numero", "telephone principal", "telephone fixe", "telephone mobile", "tel mobile", "gsm", "numero de tel"],
   nom: ["nom", "last name", "surname", "achternaam", "nom de famille"],
   prenom: ["prenom", "first name", "voornaam", "given name"],
   nom_complet: ["nom prenom", "nom complet", "full name", "name", "naam", "customer", "client", "contact", "prospect", "nombre"],
@@ -21,7 +21,7 @@ const LIBELLES = {
   pays: ["pays", "country", "land"],
   langue: ["langue", "language"],
   type: ["type", "type de bien", "property type"],
-  surface: ["surface", "surface habitable", "living area"],
+  surface: ["surface", "surface habitable", "living area", "surface carrez", "surface du bien"],
   pieces: ["pieces", "nombre de pieces", "rooms"],
   chambres: ["chambres", "bedrooms", "nombre de chambres"],
   delai: ["delai du projet", "purchase timescale", "timescale", "delai"],
@@ -32,39 +32,60 @@ const LIBELLES = {
   r_terrain: ["surface terrain min"],
   r_pieces: ["nombre de pieces min", "pieces min"],
   r_chambres: ["nombre de chambres min", "chambres min"],
-  transaction: ["transaction"],
+  transaction: ["transaction", "operation"],
+  r_type_bis: ["bien de type"],
+  ignorer: ["identifiant client", "code client", "id client", "numero client", "reference client"],
 };
 
 const INDEX = new Map();
 for (const [champ, l] of Object.entries(LIBELLES)) for (const x of l) INDEX.set(x, champ);
 
 /* Libellés sûrs pour découper une ligne qui contient plusieurs « Libellé : valeur ». */
-const INLINE = /(?<!code|n°|num[ée]ro)\s(?=(?:client|customer|email|e-mail|t[ée]l[ée]phone|phone|nego|n[ée]go|pour l'agence|for the real estate|message du client|customer message)\s*:)/gi;
+const INLINE = /(?<!code|n°|num[ée]ro|identifiant|id|espace)\s(?=(?:client|customer|email|e-mail|t[ée]l[ée]phone|phone|nego|n[ée]go|pour l'agence|for the real estate|message du client|customer message)\s*:)/gi;
 
 const nettoyerLigne = (l) => String(l).replace(/^[\s•*·#>|-]+/, "").replace(/[\s*|]+$/, "").replace(/^\*(.+?)\*\s*:/, "$1:").trim();
 
-const libelle = (brut) => {
-  const k = cle(brut.replace(/\(s\)/g, "")).replace(/\s+(min|max)$/, (m) => m);
+/* extra : libellés propres à un portail déclaré par le client ({ "numéro client": "ignorer", "tél. perso": "telephone" }) */
+const libelle = (brut, extra) => {
+  const k = cle(String(brut).replace(/\(s\)/g, ""));
   if (k.length > 40) return null;
-  return INDEX.get(k) || null;
+  return (extra && extra.get(k)) || INDEX.get(k) || null;
+};
+const indexExtra = (m) => (m && Object.keys(m).length ? new Map(Object.entries(m).map(([k, v]) => [cle(k), v])) : null);
+
+/* Libellé coupé sur deux lignes par la mise en page (« Ref. de » / « l'annonce : 1494 ») : on recolle. */
+const recoller = (L, extra) => {
+  const out = [];
+  for (let i = 0; i < L.length; i++) {
+    const a = L[i], b = L[i + 1];
+    if (b && !/[:：]/.test(a) && a.length <= 30 && !libelle(a, extra)) {
+      const m = (a + " " + b).match(/^([^:：]{1,45}?)\s*[:：]\s*(.*)$/);
+      const seul = b.match(/^([^:：]{1,45}?)\s*[:：]/);
+      if (m && libelle(m[1], extra) && !(seul && libelle(seul[1], extra))) { out.push(a + " " + b); i++; continue; }
+    }
+    out.push(a);
+  }
+  return out;
 };
 
 /* Découpe en couples ordonnés { champ, valeur, ligne }. */
-const lireFiche = (texte) => {
-  const L = String(texte).split("\n").flatMap((l) => l.split(INLINE)).map(nettoyerLigne).filter(Boolean);
+const lireFiche = (texte, libellesEnPlus) => {
+  const extra = indexExtra(libellesEnPlus);
+  const L = recoller(String(texte).split("\n").flatMap((l) => l.split(INLINE)).map(nettoyerLigne).filter(Boolean), extra);
   const out = [];
   for (let i = 0; i < L.length; i++) {
     const l = L[i];
     let m = l.match(/^([^:：]{1,45}?)\s*[:：]\s*(.*)$/);
-    let champ = m && libelle(m[1]);
+    let champ = m && libelle(m[1], extra);
     let val = m ? m[2].trim() : "";
-    if (!champ) { champ = libelle(l.replace(/[:：]\s*$/, "")); val = ""; m = champ ? [l] : null; }
+    if (!champ) { champ = libelle(l.replace(/[:：]\s*$/, ""), extra); val = ""; m = champ ? [l] : null; }
     if (!champ) continue;
     if (!val && i + 1 < L.length) {
       const n = L[i + 1];
       const nm = n.match(/^([^:：]{1,45}?)\s*[:：]/);
-      if (!libelle(n.replace(/[:：]\s*$/, "")) && !(nm && libelle(nm[1]))) { val = n; i++; }
+      if (!libelle(n.replace(/[:：]\s*$/, ""), extra) && !(nm && libelle(nm[1], extra))) { val = n; i++; }
     }
+    if (champ === "ignorer") continue;
     out.push({ champ, valeur: val.replace(/^\*+\s*|\s*\*+$/g, "").trim(), ligne: i, lignes: L });
   }
   return { couples: out, lignes: L };

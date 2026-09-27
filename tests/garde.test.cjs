@@ -82,5 +82,9 @@ const B = (n) => BLOCKS.find((b) => b.name === n);
   const p = B("dzf_liste_filtrer").params.find((x) => x.name === "expression");
   assert.strictEqual(p.raw, true);
 
-  console.log("garde multi-tenant ok");
+  const plugin = require("../index.js");
+  const exported = plugin.dysizz_flow_api;
+  assert.strictEqual(await exported.secretEgal("PGPASSWORD", "base"), false);
+  await assert.rejects(exported.iaDepuisCoffre("openai", "modele-test", "PGPASSWORD").lire({}, "Test"), /absente/);
+  console.log("garde multi-tenant ok (IA et comparaison de secrets incluses)");
 })().catch((e) => { console.error(e); process.exit(1); });

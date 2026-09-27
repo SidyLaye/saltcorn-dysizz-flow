@@ -5,12 +5,18 @@
      parcours de toute la table à chaque relève ;
    - chaque mail est rangé dans la table choisie (une seule fois : clé uid + message_id)
      puis l'événement « DzfMailRecu » est émis : un workflow Saltcorn peut s'y abonner.
-   Un seul processus écoute (le processus principal de Saltcorn). */
+   Un seul processus écoute par serveur (le processus principal de Saltcorn) et, avec plusieurs
+   serveurs derrière un répartiteur, un seul serveur tient une boîte (verrou Postgres) : si ce serveur
+   tombe, un autre prend la main au passage suivant (30 s).
+   Chaque mail garde ses en-têtes de fil (In-Reply-To, References), une empreinte, et la source .eml
+   (preuve de consentement), sauf si « garder_source » est coupé. */
 "use strict";
 const cluster = require("cluster");
 const G = globalThis[Symbol.for("dysizz-flow.ecouteurs")] || (globalThis[Symbol.for("dysizz-flow.ecouteurs")] = { actifs: new Map() });
 const EVENT = "DzfMailRecu";
-const CHAMPS = [["uid", "Integer"], ["dossier", "String"], ["message_id", "String"], ["expediteur", "String"], ["destinataire", "String"], ["objet", "String"], ["date_envoi", "Date"], ["corps_texte", "String"], ["corps_html", "String"], ["recu_le", "Date"], ["ecouteur", "String"]];
+const CHAMPS = [["uid", "Integer"], ["dossier", "String"], ["message_id", "String"], ["expediteur", "String"], ["destinataire", "String"], ["objet", "String"], ["date_envoi", "Date"], ["corps_texte", "String"], ["corps_html", "String"], ["recu_le", "Date"], ["ecouteur", "String"],
+  ["in_reply_to", "String"], ["references_fil", "String"], ["repondre_a", "String"], ["copie", "String"], ["empreinte", "String"], ["taille", "Integer"], ["pieces_jointes", "String"], ["source_eml", "String"]];
+const MAX_SOURCE = 2 * 1024 * 1024;
 
 const log = (m) => { try { require("@saltcorn/data/db/state").getState().log(4, "[dysizz-flow écouteur] " + m); } catch (e) { /* rien */ } };
 
@@ -62,11 +68,16 @@ class Ecouteur {
           const deja = await T.getRow(mid ? { message_id: mid, dossier: this.conf.dossier || "INBOX" } : { uid, ecouteur: this.conf.nom });
           if (deja) continue;
           const p = await simpleParser(m.source);
-          const row = { uid, dossier: this.conf.dossier || "INBOX", message_id: mid, expediteur: p.from ? p.from.text : "", destinataire: p.to ? [].concat(p.to).map((x) => x.text).join(", ") : "", objet: p.subject || "", date_envoi: p.date || m.internalDate || new Date(), corps_texte: p.text || "", corps_html: typeof p.html === "string" ? p.html : "", recu_le: new Date(), ecouteur: this.conf.nom };
+          const txt = (x) => (x ? [].concat(x).map((y) => y.text || y).join(", ") : "");
+          const row = { uid, dossier: this.conf.dossier || "INBOX", message_id: mid, expediteur: p.from ? p.from.text : "", destinataire: txt(p.to), objet: p.subject || "", date_envoi: p.date || m.internalDate || new Date(), corps_texte: p.text || "", corps_html: typeof p.html === "string" ? p.html : "", recu_le: new Date(), ecouteur: this.conf.nom,
+            in_reply_to: String(p.inReplyTo || "").slice(0, 300), references_fil: [].concat(p.references || []).join(" ").slice(0, 2000), repondre_a: txt(p.replyTo).slice(0, 300), copie: txt(p.cc).slice(0, 1000),
+            empreinte: require("crypto").createHash("sha256").update(m.source).digest("hex"), taille: m.source.length,
+            pieces_jointes: (p.attachments || []).map((a) => a.filename).filter(Boolean).join(", ").slice(0, 1000),
+            source_eml: this.conf.garder_source === false || m.source.length > MAX_SOURCE ? "" : m.source.toString("utf8") };
           const id = await T.insertRow(row);
           n++;
           if (this.conf.marquer_lu) await c.messageFlagsAdd(String(uid), ["\\Seen"], { uid: true }).catch(() => {});
-          await Trigger.emitEvent(EVENT, this.conf.nom, null, { id, table: this.conf.table_dest, ...row, corps_html: undefined });
+          await Trigger.emitEvent(EVENT, this.conf.nom, null, { id, table: this.conf.table_dest, ...row, corps_html: undefined, source_eml: undefined, corps_texte: undefined });
         }
         await this.maj({ dernier_uid: max, uidvalidity: validity, etat: this.conf.etat === "idle" ? "idle" : "ok", vu_le: new Date(), erreur: "", recus: (+this.conf.recus || 0) + n });
       });
@@ -103,7 +114,7 @@ class Ecouteur {
     this.timer = setInterval(() => this.relever("relève de secours"), 5 * 60000);
     this.boucle().catch(() => {});
   }
-  async arreter() { this.stop = true; if (this.timer) clearInterval(this.timer); if (this.client) await this.client.logout().catch(() => {}); }
+  async arreter() { this.stop = true; if (this.timer) clearInterval(this.timer); if (this.client) await this.client.logout().catch(() => {}); if (this.jeton) await this.jeton.rendre(); }
 }
 
 /* Empreinte des réglages d'un écouteur : un changement → redémarrage. */
@@ -122,7 +133,10 @@ const reconcilier = async () => {
   const voulus = new Map(rows.filter((r) => r.actif).map((r) => [`${tenant}|${r.nom}`, r]));
   for (const [k, e] of G.actifs) if (k.startsWith(tenant + "|") && (!voulus.has(k) || empreinte(voulus.get(k)) !== e.empreinte)) { await e.arreter(); G.actifs.delete(k); }
   for (const [k, conf] of voulus) if (!G.actifs.has(k)) {
-    const e = new Ecouteur(conf, tenant); e.empreinte = empreinte(conf);
+    /* un seul serveur par boîte */
+    const jeton = await require("./lib/verrou").prendre("ecouteur:" + conf.nom).catch(() => null);
+    if (!jeton) continue;
+    const e = new Ecouteur(conf, tenant); e.empreinte = empreinte(conf); e.jeton = jeton;
     G.actifs.set(k, e);
     e.demarrer().catch((x) => log(`${conf.nom} : ${x.message}`));
   }

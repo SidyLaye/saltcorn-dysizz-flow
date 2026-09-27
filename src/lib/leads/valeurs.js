@@ -19,7 +19,8 @@ const telephone = (s, pays = "33") => {
   const plus = /^\s*\+/.test(t);
   let d = t.replace(/[^\d]/g, "");
   if (d.length < 8 || d.length > 15) return "";
-  if (plus) return "+" + d;
+  /* « +33 0783101855 » : le 0 national en trop après l'indicatif */
+  if (plus) return "+" + d.replace(/^(33|32|41|44|31|34|49|39)0(?=\d{9}$)/, "$1");
   if (d.startsWith("00")) return "+" + d.slice(2);
   if (/^0[1-9]\d{8}$/.test(d)) return "+" + pays + d.slice(1);
   if (/^(33|32|41|44|31|34|49|39|351|352|353|1)\d{7,12}$/.test(d) && d.length >= 10) return "+" + d;
@@ -34,12 +35,14 @@ const prix = (s) => {
   const N = "(\\d{1,3}(?:( |\\.|,|’|')\\d{3})(?:\\2\\d{3})*|\\d{4,9})";
   const re1 = new RegExp("(?:€|\\beur\\b|\\beuros?\\b)\\s*" + N + "(?![\\d/]|[.,]\\d)", "gi");
   const re2 = new RegExp("(?<![\\d.,])" + N + "(?:[.,]\\d{1,2})?\\s*(?:€|\\beur\\b|\\beuros?\\b)(?!\\s*\\/)", "gi");
-  const tous = [...t.matchAll(re1), ...t.matchAll(re2)].filter((x) => !/^\s*\/\s*m/i.test(t.slice(x.index + x[0].length, x.index + x[0].length + 4))).sort((a, b) => a.index - b.index);
+  const tous = [...t.matchAll(re1), ...t.matchAll(re2)].filter((x) => !/^\s*\/\s*m/i.test(t.slice(x.index + x[0].length, x.index + x[0].length + 4)) && !/capital\s+(social\s+)?(de\s+)?$/i.test(t.slice(Math.max(0, x.index - 25), x.index))).sort((a, b) => a.index - b.index);
   const m = tous[0];
   if (!m) return null;
   const n = +String(m[1]).replace(/[ .,’']/g, "");
-  return n >= 1000 && n < 1e9 ? n : null;
+  return n >= 1000 && n < 1e8 ? n : null;
 };
+/* Loyer mensuel : « 600 €/mois », « 600 € par mois charges comprises ». */
+const loyer = (s) => { const m = String(s || "").replace(/[\u00A0\u202F]/g, " ").match(/(\d[\d .]{0,6})\s*€\s*(?:\/|par)\s*mois/i); return m ? +m[1].replace(/[ .]/g, "") || null : null; };
 
 const nombre = (s) => { const m = String(s || "").match(/\d+(?:[.,]\d+)?/); return m ? +m[0].replace(",", ".") : null; };
 const surface = (s) => { const m = String(s || "").replace(/[\u00A0\u202F]/g, " ").match(/(?<![\d.,])(\d{1,3}(?: \d{3})?|\d{1,6})(?:[.,](\d+))?\s*(?:m²|m2|sq\.? ?m)/i); if (!m) return null; const n = +(m[1].replace(/\s/g, "") + (m[2] ? "." + m[2] : "")); return n > 5 && n < 100000 ? Math.round(n) : null; };
@@ -95,14 +98,15 @@ const decouperNom = (s, ordre = "auto") => {
   if (mots.length === 1) return estPrenom(t) ? { prenom: t } : { nom: t };
   const premier = mots[0], dernier = mots[mots.length - 1];
   const a = { prenom: premier, nom: mots.slice(1).join(" ") }, b = { nom: premier, prenom: mots.slice(1).join(" ") };
+  /* Majuscules d'origine (« MATHIEU Jérémie ») : le mot tout en capitales est le nom. */
+  const orig = String(s || "").trim().split(/\s+/);
+  const maj = (w) => w && w.length > 1 && w === w.toUpperCase() && /[A-ZÀ-Ÿ]/.test(w);
+  if (orig.length === mots.length && maj(orig[0]) !== maj(orig[orig.length - 1])) return maj(orig[0]) ? b : a;
   const pa = estPrenom(premier), pb = estPrenom(dernier);
   if (pa && !pb) return a;
   if (pb && !pa) return mots.length === 2 ? b : { prenom: dernier, nom: mots.slice(0, -1).join(" ") };
-  const maj = (w) => w.length > 1 && w === w.toUpperCase() && /[A-Z]/.test(w);
-  if (maj(premier) && !maj(dernier)) return b;
-  if (maj(dernier) && !maj(premier)) return a;
   if (ordre === "nom_prenom" || (tiret.length === 2 && ordre !== "prenom_nom")) return b;
   return a;
 };
 
-module.exports = { estPrenom, EMAIL_RE, email, telephone, prix, nombre, surface, pieces, chambres, typeBien, lieu, faitsTitre, nomPropre, decouperNom };
+module.exports = { loyer, estPrenom, EMAIL_RE, email, telephone, prix, nombre, surface, pieces, chambres, typeBien, lieu, faitsTitre, nomPropre, decouperNom };

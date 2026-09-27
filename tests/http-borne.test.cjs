@@ -1,0 +1,25 @@
+"use strict";
+const assert = require("node:assert/strict");
+const { appeler } = require("../src/lib/http-borne");
+const { resolveParams } = require("../src/engine");
+const attente = signal => new Promise((_, reject) => signal.addEventListener("abort", () => reject(new Error("aborted")), { once: true }));
+(async () => {
+  const pBrut = resolveParams({ params: [{ name: "corps", type: "text", raw: true }] }, { corps: "site_id=demo&literal={{texte}}" }, { texte: "ne pas interpoler" });
+  assert.equal(pBrut.corps, "site_id=demo&literal={{texte}}");
+  let n = 0;
+  const p = { url: "https://service.example.test/rows", delai_s: 0.005, tentatives_max: 3 };
+  await assert.rejects(appeler(p, { fetch: async (_, o) => { n++; return { text: () => attente(o.signal) }; }, attendre: async () => {} }), /délai/);
+  assert.equal(n, 3);
+  n = 0;
+  const sortie = await appeler(p, { fetch: async () => { n++; return new Response('{"ok":true}', { status: n < 2 ? 503 : 200 }); }, attendre: async () => {} });
+  assert.equal(sortie.status, 200);
+  assert.equal(n, 2);
+  n = 0;
+  await assert.rejects(appeler({ ...p, methode: "POST", corps: "fictif" }, { fetch: async () => { n++; return new Response("contenu privé", { status: 503 }); } }), e => e.ambiguous && e.permanent && !e.message.includes("privé"));
+  assert.equal(n, 1);
+  n = 0;
+  await appeler({ ...p, methode: "POST", rejouer_ecriture: true }, { fetch: async () => { n++; return new Response("{}", { status: n < 2 ? 503 : 200 }); }, attendre: async () => {} });
+  assert.equal(n, 2);
+  await appeler(p, { fetch: async (_, o) => { assert.equal(o.redirect, "error"); return new Response("OK"); } });
+  console.log("HTTP borné : corps interrompu, lectures reprises, écritures protégées, redirections refusées OK");
+})().catch(e => { console.error(e); process.exitCode = 1; });

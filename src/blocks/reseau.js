@@ -25,6 +25,20 @@ const request = async (p, api) => {
 
 module.exports = [
   {
+    name: "dzf_http_borne", label: "HTTP : appel borné sans doublon", category: "Réseau", icon: "fas fa-shield-alt", output: "http", timeout: 90,
+    description: "Délai de 15 secondes au maximum par tentative, lecture du corps comprise. Les écritures ne sont pas rejouées automatiquement. Les redirections sont refusées pour ne pas transférer les secrets.",
+    params: [
+      { name: "url", label: "Adresse", required: true },
+      { name: "methode", label: "Méthode", type: "select", options: ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD"], default: "GET" },
+      { name: "entetes", label: "En-têtes", type: "json", raw: true },
+      { name: "corps", label: "Corps transmis tel quel (texte ou JSON)", type: "text", raw: true },
+      { name: "delai_s", label: "Délai par tentative (secondes, maximum 15)", type: "int", default: 15 },
+      { name: "tentatives_max", label: "Tentatives de lecture (maximum 3)", type: "int", default: 3 },
+      { name: "rejouer_ecriture", label: "Cette écriture est idempotente et peut être rejouée", type: "bool", default: false },
+    ],
+    run: p => require("../lib/http-borne").appeler(p),
+  },
+  {
     name: "dzf_http", label: "HTTP : appeler une API", category: "Réseau", icon: "fas fa-globe", output: "http", timeout: 60,
     description: "Appelle n'importe quelle API (GET, POST…). Le secret (jeton, clé) se lit dans une variable d'environnement, jamais dans la base. Réessaie tout seul si l'API répond 429 ou 5xx.",
     params: [
