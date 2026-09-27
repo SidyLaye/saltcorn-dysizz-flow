@@ -100763,764 +100763,764 @@ var require_hub = __commonJS({
 // src/generated/assets.js
 var require_assets = __commonJS({
   "src/generated/assets.js"(exports2, module2) {
-    module2.exports = { ASSETS: { "dzf.css": { "src": ".dzf{--f-surface:var(--dz-surface,#fff);--f-s2:var(--dz-surface-2,#f2f2f5);--f-border:var(--dz-border,rgba(0,0,0,.1));--f-text:var(--dz-text,#16161a);--f-mute:var(--dz-text-mute,#777);--f-ink:var(--dz-primary-ink,#4b4bd8);--f-soft:var(--dz-primary-soft,rgba(91,91,240,.12));--f-r:var(--dz-radius,14px);--f-mono:var(--dz-font-mono,ui-monospace,Menlo,monospace);max-width:1280px;margin:0 auto}\n.dzf h1{font-weight:750;letter-spacing:-.02em;display:flex;gap:.6rem;align-items:center}\n.dzf h2{font-size:1.02rem;font-weight:700;margin:1.8rem 0 .8rem}\n.dzf h2 small{color:var(--f-mute);font-weight:500}\n.dzf code{font-family:var(--f-mono);font-size:.82em}\n.dzf-tabs{display:flex;flex-wrap:wrap;gap:.35rem;margin:0 0 1.2rem;padding-bottom:.8rem;border-bottom:1px solid var(--f-border)}\n.dzf-tabs a{display:inline-flex;gap:.5rem;align-items:center;padding:.45rem .9rem;border-radius:99px;color:var(--f-mute)!important;text-decoration:none!important;font-weight:600;font-size:.9rem}\n.dzf-tabs a:hover{background:var(--f-s2);color:var(--f-text)!important}\n.dzf-tabs a.on{background:var(--f-text);color:var(--f-surface)!important}\n.dzf-tabs .dzf-ext{margin-left:auto}\n.dzf-head{display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap;align-items:flex-start}\n.dzf-head p{color:var(--f-mute);max-width:80ch}\n.dzf-actions{display:flex;gap:.5rem;flex-wrap:wrap;align-items:flex-start}\n.dzf-import{display:flex;gap:.4rem}.dzf-import textarea{width:220px}\n.dzf-muted{color:var(--f-mute)}\n.dzf-search{max-width:520px;margin:.5rem 0 1rem;border-radius:12px}\n.dzf-grid{display:grid;gap:.8rem;grid-template-columns:repeat(auto-fill,minmax(min(100%,320px),1fr))}\n.dzf-card{display:flex;gap:.8rem;padding:.95rem 1rem;border-radius:var(--f-r);border:1px solid var(--f-border);background:var(--f-surface);color:var(--f-text)!important;text-decoration:none!important;transition:transform .15s,border-color .15s}\n.dzf-card:hover{transform:translateY(-2px);border-color:var(--f-ink)}\n.dzf-card b{display:block;font-size:.95rem}.dzf-card small{display:block;color:var(--f-mute);line-height:1.4;margin:.2rem 0 .35rem;font-size:.82rem}\n.dzf-card code{color:var(--f-mute);font-size:.72rem}\n.dzf-off{opacity:.55}\n.dzf-ic{width:40px;height:40px;flex:none;border-radius:11px;display:grid;place-items:center;background:var(--f-soft);color:var(--f-ink)}\n.dzf-cat h2 small{font-family:var(--f-mono);font-size:.72rem}\n.dzf-table{width:100%;font-size:.88rem;border-collapse:collapse;background:var(--f-surface);border-radius:12px;overflow:hidden}\n.dzf-table th{font:600 .68rem var(--f-mono);text-transform:uppercase;letter-spacing:.06em;color:var(--f-mute);padding:.55rem .7rem;text-align:left;background:var(--f-s2)}\n.dzf-table td{padding:.55rem .7rem;border-top:1px solid var(--f-border);vertical-align:top}\n.dzf-table .dzf-common td{color:var(--f-mute);font-size:.82rem}\n.dzf-bad td{background:color-mix(in srgb,#e5484d 7%,transparent)}\n.dzf-req{font:600 .62rem var(--f-mono);text-transform:uppercase;color:#e5484d}\n.dzf .dzf-code,.dzf .dzf-out{margin:0;padding:1rem;border-radius:12px;background:#0f1117!important;color:#e6e6ea!important;font:.8rem/1.55 var(--f-mono);white-space:pre-wrap;max-height:520px;overflow:auto}\n.dzf-out.ok{border-left:4px solid #30a46c}.dzf-out.ko{border-left:4px solid #e5484d}\n.dzf-mono{font-family:var(--f-mono)!important;font-size:.82rem!important}\n.dzf-try{display:grid;gap:.8rem;grid-template-columns:1fr 1fr}\n.dzf-try label{font-size:.8rem;font-weight:600;color:var(--f-mute)}\n.dzf-try-bar,.dzf-try .dzf-out{grid-column:1/-1}\n.dzf-try-bar{display:flex;gap:.8rem;align-items:center}\n@media(max-width:760px){.dzf-try{grid-template-columns:1fr}}\n.dzf-flash{padding:.75rem 1rem;border-radius:10px;margin:0 0 1rem;font-size:.9rem}\n.dzf-flash.ok{background:color-mix(in srgb,#30a46c 13%,transparent)}.dzf-flash.ko{background:color-mix(in srgb,#e5484d 13%,transparent)}\n.dzf-ed-grid{display:grid;gap:.8rem 1rem;grid-template-columns:repeat(auto-fill,minmax(240px,1fr))}\n.dzf-ed-grid label{font-size:.8rem;font-weight:600;color:var(--f-mute);display:grid;gap:.25rem}\n.dzf-ed-grid small{font-weight:400}\n.dzf-wide{grid-column:1/-1}\n.dzf-check{display:flex!important;align-items:center;gap:.5rem}\n.dzf-params{display:grid;gap:.4rem;margin-bottom:.6rem}\n.dzf-prm{display:grid;gap:.35rem;grid-template-columns:1fr 1.2fr 1fr 1fr 1fr 1.4fr auto auto auto;align-items:center;padding:.4rem;border-radius:10px;background:var(--f-s2)}\n.dzf-prm .form-control,.dzf-prm .form-select{font-size:.82rem;padding:.3rem .5rem}\n.dzf-req-l{font-size:.78rem;white-space:nowrap;display:flex;gap:.3rem;align-items:center}\n@media(max-width:900px){.dzf-prm{grid-template-columns:1fr 1fr}}\n.dzf-codearea{min-height:320px;tab-size:2}\n.dzf-save{display:flex;gap:.6rem;margin-top:1rem}\n.dzf-tpls{display:grid;gap:.7rem}\n.dzf-tpl{border:1px solid var(--f-border);border-radius:var(--f-r);background:var(--f-surface);padding:.9rem 1rem}\n.dzf-tpl summary{display:flex;gap:.8rem;cursor:pointer;list-style:none}\n.dzf-tpl summary::-webkit-details-marker{display:none}\n.dzf-tpl summary b{display:block}.dzf-tpl summary small{display:block;color:var(--f-mute);margin:.15rem 0}.dzf-tpl summary em{font-style:normal;font:600 .7rem var(--f-mono);color:var(--f-mute)}\n.dzf-steps{margin:1rem 0;padding-left:1.4rem;display:grid;gap:.35rem;font-size:.88rem}\n.dzf-steps i{width:1.3em;color:var(--f-ink);text-align:center;margin-right:.3rem}\n.dzf-steps small{color:var(--f-mute)}\n.dzf-tpl-form{display:grid;gap:.6rem 1rem;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));align-items:end;padding-top:.8rem;border-top:1px dashed var(--f-border)}\n.dzf-tpl-form label{font-size:.8rem;font-weight:600;color:var(--f-mute);display:grid;gap:.25rem}\n.dzf-point{display:grid;gap:.7rem;grid-template-columns:repeat(auto-fill,minmax(min(100%,220px),1fr));align-items:end;padding:1rem;border:1px solid var(--f-border);border-radius:var(--f-r);background:var(--f-surface)}\n.dzf-point label{display:flex;flex-direction:column;gap:.25rem;font-size:.82rem;font-weight:600;color:var(--f-mute)}\n.dzf-point .dzf-save{grid-column:1/-1;display:flex;gap:.5rem}\n.dzf-box{border:1px solid var(--f-border);border-radius:var(--f-r);background:var(--f-surface);margin:.5rem 0}\n.dzf-box>summary{padding:.75rem 1rem;cursor:pointer;display:flex;gap:.6rem;flex-wrap:wrap;align-items:center}\n.dzf-box>summary code{overflow-wrap:anywhere}\n.dzf-box .dzf-point{border:0;border-top:1px solid var(--f-border);border-radius:0 0 var(--f-r) var(--f-r)}\n.dzf-kpis{display:grid;gap:.8rem;grid-template-columns:repeat(auto-fill,minmax(min(100%,200px),1fr));margin:1rem 0}\n.dzf-kpi{display:flex;flex-direction:column;gap:.15rem;padding:.9rem 1rem;border:1px solid var(--f-border);border-radius:var(--f-r);background:var(--f-surface)}\n.dzf-kpi small{color:var(--f-mute);font-size:.78rem}\n.dzf-kpi b{font-size:1.5rem;font-weight:750;letter-spacing:-.02em}\n.dzf-bar{display:inline-block;width:120px;height:8px;border-radius:99px;background:var(--f-s2);overflow:hidden;vertical-align:middle}\n.dzf-bar i{display:block;height:100%;background:var(--f-ink);border-radius:99px}\n.dzf-bar.bad i{background:#d9534f}\n.dzf-wfs{display:flex;flex-direction:column;gap:.6rem}\n.dzf-wf{display:flex;gap:1rem;align-items:center;justify-content:space-between;padding:.85rem 1rem;border:1px solid var(--f-border);border-radius:var(--f-r);background:var(--f-surface)}\n.dzf-wf:hover{border-color:var(--f-ink)}\n.dzf-wf-main{display:flex;gap:.9rem;align-items:flex-start;color:var(--f-text)!important;text-decoration:none!important;min-width:0;flex:1}\n.dzf-wf-main>span:last-child{display:flex;flex-direction:column;min-width:0}\n.dzf-wf-main small{color:var(--f-mute)}\n.dzf-wf-ic{width:42px;height:42px;border-radius:12px;display:grid;place-items:center;background:var(--f-soft);color:var(--f-ink);flex:none}\n.dzf-wf-meta{display:flex;flex-wrap:wrap;gap:.3rem .9rem;margin-top:.35rem;font-size:.78rem;color:var(--f-mute)}\n.dzf-wf-meta .ok{color:#12a150}.dzf-wf-meta .ko{color:#e5484d;font-weight:600}.dzf-wf-meta .mute{opacity:.7}\n.dzf-wf-actions{display:flex;gap:.35rem;flex:none}\n.dzf-empty{text-align:center;padding:2.5rem 1rem;color:var(--f-mute);border:1px dashed var(--f-border);border-radius:var(--f-r)}\n.dzf-empty i{font-size:2rem;opacity:.5}\n@media (max-width:640px){.dzf-wf{flex-direction:column;align-items:stretch}.dzf-wf-actions{justify-content:flex-end}}\n.dzf-chipsbar{display:flex;flex-wrap:wrap;gap:.35rem;margin:0 0 1rem}\n.dzf-chipsbar button{border:1px solid var(--f-border);background:var(--f-surface);border-radius:99px;padding:.3rem .8rem;font-size:.85rem;font-weight:600;color:var(--f-mute)}\n.dzf-chipsbar button.on{background:var(--f-text);color:var(--f-surface);border-color:var(--f-text)}\n.dzf-chipsbar small{opacity:.65}\n.dzf-tplgrid{display:grid;gap:1rem;grid-template-columns:repeat(auto-fill,minmax(min(100%,330px),1fr));align-items:start}\n.dzf-tplc{border:1px solid var(--f-border);border-radius:var(--f-r);background:var(--f-surface);padding:1rem 1.1rem;display:flex;flex-direction:column;gap:.55rem;border-top:4px solid var(--c)}\n.dzf-tplc h3{font-size:1.02rem;font-weight:700;margin:0}.dzf-tplc p{margin:0;color:var(--f-mute);font-size:.88rem}\n.dzf-tplc-top{display:flex;justify-content:space-between;font-size:.76rem;color:var(--f-mute)}\n.dzf-tplc-cat{color:var(--c);font-weight:700;text-transform:uppercase;letter-spacing:.04em}\n.dzf-mini{display:flex;align-items:center;flex-wrap:wrap;gap:0;padding:.6rem;background:var(--f-s2);border-radius:12px;margin:.2rem 0}\n.dzf-mini-n{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;background:var(--f-surface);color:var(--c);border:1px solid var(--f-border);font-size:.8rem;flex:none}\n.dzf-mini-n.trig{background:var(--c);color:#fff;border-color:var(--c)}\n.dzf-mini-l{width:14px;height:2px;background:var(--f-border);flex:none}.dzf-mini-l.if{background:repeating-linear-gradient(90deg,var(--c) 0 3px,transparent 3px 6px)}\n.dzf-mini-more{font-size:.75rem;color:var(--f-mute);margin-left:.4rem}\n.dzf-tplc-use summary{list-style:none;display:inline-flex;gap:.4rem;align-items:center;cursor:pointer}\n.dzf-tplc-use summary::-webkit-details-marker{display:none}\n.dzf-tplc-use[open] summary{display:none}\n.dzf-tplc-form{display:flex;flex-direction:column;gap:.55rem;padding-top:.3rem}\n.dzf-tplc-form label{display:flex;flex-direction:column;gap:.2rem;font-size:.82rem;font-weight:600}\n.dzf-tplc-form label small{font-weight:400;color:var(--f-mute)}\n.dzf-tplc-form .dzf-check{flex-direction:row;gap:.5rem;align-items:center;font-weight:500}" }, "dzf.js": { "src": `/* dysizz-flow \u2014 script des pages d'administration (aucune d\xE9pendance). */\r
-(function () {\r
-  "use strict";\r
-  var doc = document;\r
-  var esc = function (s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); };\r
-\r
-  /* recherche dans la biblioth\xE8que */\r
-  window.dzfSearch = function (q) {\r
-    q = String(q || "").toLowerCase().trim();\r
-    doc.querySelectorAll(".dzf-cat").forEach(function (sec) {\r
-      var any = false;\r
-      sec.querySelectorAll(".dzf-card").forEach(function (c) { var ok = !q || (c.getAttribute("data-search") || "").indexOf(q) >= 0; c.hidden = !ok; if (ok) any = true; });\r
-      sec.hidden = !any && !!q;\r
-    });\r
-  };\r
-\r
-  window.dzfSearchWf = function (q) {\r
-    q = String(q || "").toLowerCase().trim();\r
-    doc.querySelectorAll(".dzf-wf,.dzf-tplc").forEach(function (c) { c.hidden = !!q && (c.getAttribute("data-search") || "").indexOf(q) < 0; });\r
-  };\r
-\r
-  window.dzfCat = function (btn, cat) {\r
-    btn.parentNode.querySelectorAll("button").forEach(function (b) { b.classList.toggle("on", b === btn); });\r
-    doc.querySelectorAll(".dzf-tplc").forEach(function (c) { c.hidden = !!cat && c.getAttribute("data-cat") !== cat; });\r
-  };\r
-\r
-  /* essai d'un bloc */\r
-  window.dzfTry = function (btn) {\r
-    var box = btn.closest(".dzf-try"), out = box.querySelector("[data-out]");\r
-    out.textContent = "\u2026";\r
-    out.className = "dzf-out";\r
-    fetch("/dysizz-flow/essayer", {\r
-      method: "POST", credentials: "same-origin",\r
-      headers: { "Content-Type": "application/json", "CSRF-Token": (doc.getElementById("dzf-csrf") || {}).value || window._sc_globalCsrf || "" },\r
-      body: JSON.stringify({ bloc: box.getAttribute("data-bloc"), cfg: box.querySelector("[data-cfg]").value, ctx: box.querySelector("[data-ctx]").value }),\r
-    }).then(function (r) { return r.json(); }).then(function (j) {\r
-      out.className = "dzf-out " + (j.error ? "ko" : "ok");\r
-      out.textContent = j.error ? "Erreur (" + (j.ms || 0) + " ms) : " + j.error : "OK en " + j.ms + " ms\\n\\nSortie :\\n" + JSON.stringify(j.sortie, null, 2);\r
-    }).catch(function (e) { out.className = "dzf-out ko"; out.textContent = e.message; });\r
-  };\r
-\r
-  /* \xE9diteur des r\xE9glages d'un bloc perso */\r
-  var holder = doc.querySelector("[data-params]");\r
-  var form = holder && holder.closest("form");\r
-  var types = window.__dzfTypes || [];\r
-  function rowHtml(p) {\r
-    return '<div class="dzf-prm">' +\r
-      '<input class="form-control" data-k="name" placeholder="nom" value="' + esc(p.name) + '">' +\r
-      '<input class="form-control" data-k="label" placeholder="libell\xE9" value="' + esc(p.label) + '">' +\r
-      '<select class="form-select" data-k="type">' + types.map(function (t) { return '<option value="' + t[0] + '"' + (t[0] === (p.type || "texte") ? " selected" : "") + ">" + esc(t[1]) + "</option>"; }).join("") + "</select>" +\r
-      '<input class="form-control" data-k="default" placeholder="par d\xE9faut" value="' + esc(typeof p.default === "object" ? JSON.stringify(p.default) : p.default) + '">' +\r
-      '<input class="form-control" data-k="options" placeholder="choix (a,b,c)" value="' + esc([].concat(p.options || []).join(",")) + '">' +\r
-      '<input class="form-control" data-k="help" placeholder="aide" value="' + esc(p.help) + '">' +\r
-      '<label class="dzf-req-l"><input type="checkbox" data-k="required"' + (p.required ? " checked" : "") + "> requis</label>" +\r
-      '<button type="button" class="btn btn-sm btn-link" title="Monter" onclick="dzfMove(this,-1)">\u2191</button>' +\r
-      '<button type="button" class="btn btn-sm btn-link text-danger" title="Retirer" onclick="this.parentNode.remove()">\u2715</button></div>';\r
-  }\r
-  if (holder && form) {\r
-    var initial = [];\r
-    try { initial = JSON.parse(form.querySelector("[name=params]").value || "[]"); } catch (e) { initial = []; }\r
-    holder.innerHTML = initial.map(rowHtml).join("");\r
-  }\r
-  window.dzfAddParam = function () { holder.insertAdjacentHTML("beforeend", rowHtml({ type: "texte" })); };\r
-  window.dzfMove = function (b, d) { var r = b.parentNode, s = d < 0 ? r.previousElementSibling : r.nextElementSibling; if (s) r.parentNode.insertBefore(r, d < 0 ? s : s.nextSibling); };\r
-  window.dzfBeforeSave = function (f) {\r
-    var list = [];\r
-    f.querySelectorAll(".dzf-prm").forEach(function (r) {\r
-      var p = {};\r
-      r.querySelectorAll("[data-k]").forEach(function (i) { p[i.getAttribute("data-k")] = i.type === "checkbox" ? i.checked : i.value; });\r
-      if (p.name) list.push(p);\r
-    });\r
-    f.querySelector("[name=params]").value = JSON.stringify(list);\r
-    return true;\r
-  };\r
-\r
-  /* tabulation dans le code */\r
-  doc.querySelectorAll(".dzf-codearea").forEach(function (t) {\r
-    t.addEventListener("keydown", function (e) {\r
-      if (e.key !== "Tab") return;\r
-      e.preventDefault();\r
-      var s = t.selectionStart, en = t.selectionEnd;\r
-      t.value = t.value.slice(0, s) + "  " + t.value.slice(en);\r
-      t.selectionStart = t.selectionEnd = s + 2;\r
-    });\r
-  });\r
-})();\r
-` }, "editeur.css": { "src": '.dzfe{--bg:var(--dz-bg,#f4f5f8);--sf:var(--dz-surface,#fff);--s2:var(--dz-surface-2,#eef0f4);--bd:var(--dz-border,rgba(15,20,40,.12));--tx:var(--dz-text,#161a26);--mu:var(--dz-text-mute,#6b7285);--pr:var(--dz-primary,#5b5bf0);--pk:var(--dz-primary-ink,#4545d8);--ok:#12a150;--ko:#e5484d;--wa:#f5a524;--mono:var(--dz-font-mono,ui-monospace,SFMono-Regular,Menlo,monospace);\nposition:fixed;inset:0;z-index:4000;display:flex;flex-direction:column;background:var(--bg);color:var(--tx);font-size:14px;line-height:1.4}\n@media (prefers-color-scheme:dark){.dzfe:not(.light){--bg:#0f1117;--sf:#171a23;--s2:#1f2330;--bd:rgba(255,255,255,.1);--tx:#eceef5;--mu:#9aa1b5}}\n[data-dz-theme="dark"] .dzfe,html.dark .dzfe{--bg:#0f1117;--sf:#171a23;--s2:#1f2330;--bd:rgba(255,255,255,.1);--tx:#eceef5;--mu:#9aa1b5}\n.dzfe *{box-sizing:border-box}\n.dzfe-loading{margin:auto;color:var(--mu)}\n.dzfe button{font:inherit;color:inherit}\n.dzfe-top{display:flex;align-items:center;gap:.5rem;padding:.55rem .8rem;background:var(--sf);border-bottom:1px solid var(--bd);min-height:54px}\n.dzfe-back{width:36px;height:36px;display:grid;place-items:center;border-radius:10px;color:var(--mu)!important;text-decoration:none!important}\n.dzfe-back:hover{background:var(--s2)}\n.dzfe-name{border:1px solid transparent;background:transparent;font-weight:650;font-size:1.05rem;padding:.35rem .5rem;border-radius:8px;min-width:120px;width:min(340px,40vw);color:var(--tx)}\n.dzfe-name:hover,.dzfe-name:focus{border-color:var(--bd);background:var(--bg);outline:none}\n.dzfe-status{font-size:.78rem;color:var(--mu)}.dzfe-status.dirty{color:var(--wa)}\n.dzfe-sp{flex:1}\n.dzfe-btn{display:inline-flex;align-items:center;gap:.45rem;border:1px solid var(--bd);background:var(--sf);padding:.42rem .75rem;border-radius:10px;cursor:pointer;font-weight:550;white-space:nowrap}\n.dzfe-btn:hover{background:var(--s2)}.dzfe-btn:disabled{opacity:.5}\n.dzfe-btn.primary{background:var(--pr);border-color:var(--pr);color:#fff}.dzfe-btn.primary:hover{filter:brightness(1.07)}\n.dzfe-btn.danger{color:var(--ko);border-color:color-mix(in srgb,var(--ko) 40%,transparent)}\n.dzfe-body{flex:1;display:grid;grid-template-columns:270px minmax(0,1fr) 360px;min-height:0}\n.dzfe-pal{background:var(--sf);border-right:1px solid var(--bd);display:flex;flex-direction:column;min-height:0}\n.dzfe-pal-head{padding:.6rem;display:flex;gap:.4rem;border-bottom:1px solid var(--bd)}\n.dzfe-pal-q,.dzfe-in-q{width:100%;border:1px solid var(--bd);background:var(--bg);border-radius:10px;padding:.5rem .7rem;color:var(--tx)}\n.dzfe-pal-list{overflow:auto;padding:.3rem .4rem 2rem}\n.dzfe-cat summary{cursor:pointer;font-weight:650;font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--mu);padding:.6rem .4rem .35rem;list-style:none}\n.dzfe-cat summary::-webkit-details-marker{display:none}.dzfe-cat summary small{font-weight:500;opacity:.7}\n.dzfe-pb{display:flex;gap:.6rem;align-items:flex-start;padding:.5rem .55rem;border-radius:10px;cursor:grab;border:1px solid transparent;background:none;width:100%;text-align:left}\n.dzfe-pb:hover{background:var(--s2);border-color:var(--bd)}\n.dzfe-pb i{width:30px;height:30px;flex:none;display:grid;place-items:center;border-radius:8px;background:color-mix(in srgb,var(--pr) 13%,transparent);color:var(--pk);font-size:.9rem}\n.dzfe-pb span{display:flex;flex-direction:column;min-width:0}.dzfe-pb b{font-weight:600;font-size:.86rem}\n.dzfe-pb small{color:var(--mu);font-size:.74rem;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}\n.dzfe-canvas{position:relative;overflow:hidden;background-color:var(--bg);background-image:radial-gradient(color-mix(in srgb,var(--tx) 14%,transparent) 1px,transparent 1px);background-size:22px 22px;cursor:grab;touch-action:none;outline:none}\n.dzfe-canvas:active{cursor:grabbing}\n.dzfe-world{position:absolute;left:0;top:0;transform-origin:0 0}\n.dzfe-svg{position:absolute;left:-5000px;top:-5000px;width:10000px;height:10000px;overflow:visible;pointer-events:none}\n.dzfe-svg>*{transform:translate(5000px,5000px)}\n.dzfe-edge{fill:none;stroke:color-mix(in srgb,var(--tx) 45%,transparent);stroke-width:2}\n.dzfe-edge.dashed{stroke-dasharray:6 5}.dzfe-edge.yes{stroke:var(--ok)}.dzfe-edge.no{stroke:var(--ko)}\n.dzfe-edge.live{stroke:var(--pr);stroke-dasharray:5 4}\n.dzfe-arrow{fill:color-mix(in srgb,var(--tx) 55%,transparent)}\n.dzfe-el{font-size:11px;fill:var(--mu);paint-order:stroke;stroke:var(--bg);stroke-width:4px;text-anchor:middle}\n.dzfe-node{position:absolute;width:232px;min-height:66px;display:flex;gap:.6rem;align-items:center;padding:.55rem .7rem;background:var(--sf);border:1.5px solid var(--bd);border-radius:14px;box-shadow:0 1px 2px rgba(0,0,0,.06),0 6px 18px rgba(20,20,60,.06);cursor:pointer;user-select:none;transition:border-color .12s,box-shadow .12s}\n.dzfe-node:hover{border-color:color-mix(in srgb,var(--pr) 50%,var(--bd))}\n.dzfe-node.sel{border-color:var(--pr);box-shadow:0 0 0 4px color-mix(in srgb,var(--pr) 20%,transparent)}\n.dzfe-node.target{border-color:var(--ok);box-shadow:0 0 0 4px color-mix(in srgb,var(--ok) 22%,transparent)}\n.dzfe-node.err{border-color:var(--ko);box-shadow:0 0 0 4px color-mix(in srgb,var(--ko) 20%,transparent)}\n.dzfe-node.ok::after{content:"\\2713";position:absolute;right:-8px;top:-8px;width:20px;height:20px;border-radius:50%;background:var(--ok);color:#fff;font-size:12px;display:grid;place-items:center}\n.dzfe-node.trig{background:linear-gradient(135deg,color-mix(in srgb,var(--pr) 16%,var(--sf)),var(--sf))}\n.dzfe-ic{width:38px;height:38px;flex:none;border-radius:10px;display:grid;place-items:center;background:color-mix(in srgb,var(--pr) 14%,transparent);color:var(--pk);font-size:1rem}\n.dzfe-ic.trig,.dzfe-node.trig .dzfe-ic{background:var(--pr);color:#fff}\n.dzfe-node.builtin .dzfe-ic{background:color-mix(in srgb,var(--wa) 20%,transparent);color:#a86b00}\n.dzfe-nt{display:flex;flex-direction:column;min-width:0}\n.dzfe-nt b{font-size:.86rem;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}\n.dzfe-nt small{font-size:.72rem;color:var(--mu);font-family:var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}\n.dzfe-nt em{font-style:normal;font-size:.72rem;color:var(--mu);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}\n.dzfe-if{position:absolute;left:-10px;top:-10px;width:22px;height:22px;border-radius:50%;background:var(--wa);color:#fff;font-size:10px;display:grid;place-items:center}\n.dzfe-in{position:absolute;left:50%;top:-6px;width:12px;height:12px;margin-left:-6px;border-radius:50%;background:var(--sf);border:2px solid color-mix(in srgb,var(--tx) 30%,transparent)}\n.dzfe-node.trig .dzfe-in{display:none}\n.dzfe-port{position:absolute;left:50%;bottom:-8px;width:16px;height:16px;margin-left:-8px;border-radius:50%;background:var(--pr);border:3px solid var(--sf);cursor:crosshair;box-shadow:0 0 0 1px var(--pr);transition:transform .1s}\n.dzfe-port:hover{transform:scale(1.35)}\n.dzfe-port.yes,.dzfe-port.no{width:auto;height:18px;padding:0 6px;border-radius:9px;font-size:10px;font-weight:700;color:#fff;border-width:2px;display:grid;place-items:center;margin-left:0;bottom:-10px}\n.dzfe-port.yes{left:30%;transform:translateX(-50%);background:var(--ok);box-shadow:0 0 0 1px var(--ok)}\n.dzfe-port.no{left:70%;transform:translateX(-50%);background:var(--ko);box-shadow:0 0 0 1px var(--ko)}\n.dzfe-port.side{left:auto;right:-8px;bottom:auto;top:50%;margin:-8px 0 0;background:var(--wa);box-shadow:0 0 0 1px var(--wa)}\n.dzfe-zoom{position:absolute;left:12px;bottom:12px;display:flex;flex-direction:column;background:var(--sf);border:1px solid var(--bd);border-radius:10px;overflow:hidden}\n.dzfe-zoom button{border:0;background:none;width:34px;height:32px;cursor:pointer;font-size:1rem}.dzfe-zoom button:hover{background:var(--s2)}\n.dzfe-hint{position:absolute;left:50%;top:45%;transform:translate(-50%,-50%);pointer-events:none}\n.dzfe-hint>div{pointer-events:auto;max-width:380px;text-align:center;background:var(--sf);border:1px dashed var(--bd);border-radius:16px;padding:1.2rem 1.4rem;color:var(--mu)}\n.dzfe-hint i{font-size:1.6rem;color:var(--pr);display:block;margin-bottom:.4rem}.dzfe-hint b{color:var(--tx);font-size:1.05rem}\n.dzfe-panel{background:var(--sf);border-left:1px solid var(--bd);overflow:auto;min-height:0}\n.dzfe-ph{display:flex;gap:.7rem;align-items:center;padding:.9rem 1rem .5rem;position:sticky;top:0;background:var(--sf);z-index:2}\n.dzfe-ph b{display:block;font-size:1rem}.dzfe-ph small{color:var(--mu)}\n.dzfe-x{margin-left:auto;border:0;background:none;width:32px;height:32px;border-radius:8px;cursor:pointer;color:var(--mu)}.dzfe-x:hover{background:var(--s2)}\n.dzfe-desc{padding:0 1rem;color:var(--mu);font-size:.84rem;margin:.2rem 0 .6rem}.dzfe-desc a{white-space:nowrap}\n.dzfe-tabs{display:flex;gap:.2rem;padding:0 1rem;border-bottom:1px solid var(--bd);position:sticky;top:62px;background:var(--sf);z-index:2}\n.dzfe-tabs button{border:0;background:none;padding:.55rem .6rem;cursor:pointer;color:var(--mu);font-weight:600;border-bottom:2px solid transparent}\n.dzfe-tabs button.on{color:var(--pk);border-bottom-color:var(--pr)}\n.dzfe-pb-body{padding:.9rem 1rem 3rem;display:flex;flex-direction:column;gap:.85rem}\n.dzfe-f{display:flex;flex-direction:column;gap:.3rem;position:relative}\n.dzfe-f>label{font-weight:600;font-size:.84rem}.dzfe-f>label small{font-weight:400;color:var(--mu)}\n.dzfe-f .req{color:var(--ko)}\n.dzfe-fi{display:flex;gap:.35rem;align-items:flex-start}\n.dzfe-f input:not([type=checkbox]):not([type=radio]),.dzfe-f select,.dzfe-f textarea,.dzfe-ctx,.dzfe-all,.dzfe-json{width:100%;border:1px solid var(--bd);background:var(--bg);color:var(--tx);border-radius:10px;padding:.5rem .65rem;font:inherit;font-size:.88rem}\n.dzfe-f input:focus,.dzfe-f select:focus,.dzfe-f textarea:focus{outline:none;border-color:var(--pr);box-shadow:0 0 0 3px color-mix(in srgb,var(--pr) 18%,transparent)}\n.dzfe .mono{font-family:var(--mono)!important;font-size:.8rem!important;line-height:1.5;tab-size:2}\n.dzfe-f .help{color:var(--mu);font-size:.76rem}.dzfe-ferr{color:var(--ko);font-size:.76rem}.dzfe-ferr:empty{display:none}\n.dzfe-vb{flex:none;border:1px solid var(--bd);background:var(--s2);border-radius:8px;padding:.45rem .5rem;cursor:pointer;font-family:var(--mono);font-size:.78rem;font-weight:700;color:var(--pk)}\n.dzfe-vm{position:absolute;right:0;top:100%;z-index:10;width:300px;max-height:320px;overflow:auto;background:var(--sf);border:1px solid var(--bd);border-radius:12px;box-shadow:0 12px 30px rgba(0,0,0,.18);padding:.5rem;display:flex;flex-direction:column;gap:.15rem}\n.dzfe-vm>b{font-size:.78rem;color:var(--mu);padding:.2rem .3rem}\n.dzfe-vm button{border:0;background:none;text-align:left;padding:.35rem .4rem;border-radius:8px;cursor:pointer;display:flex;flex-direction:column}\n.dzfe-vm button:hover{background:var(--s2)}.dzfe-vm code{font-size:.8rem;color:var(--pk)}.dzfe-vm small{color:var(--mu);font-size:.72rem}\n.dzfe-sw{display:flex!important;align-items:center;gap:.6rem;cursor:pointer;font-weight:600;font-size:.86rem}\n.dzfe-sw input{position:absolute;opacity:0;width:0;height:0}\n.dzfe-sw span{width:38px;height:22px;border-radius:11px;background:color-mix(in srgb,var(--tx) 22%,transparent);position:relative;flex:none;transition:background .15s}\n.dzfe-sw span::after{content:"";position:absolute;left:3px;top:3px;width:16px;height:16px;border-radius:50%;background:#fff;transition:transform .15s}\n.dzfe-sw input:checked+span{background:var(--pr)}.dzfe-sw input:checked+span::after{transform:translateX(16px)}\n.dzfe-sw input:focus-visible+span{box-shadow:0 0 0 3px color-mix(in srgb,var(--pr) 30%,transparent)}\n.dzfe-adv{border:1px solid var(--bd);border-radius:12px;padding:.5rem .75rem}\n.dzfe-adv summary{cursor:pointer;font-weight:600;font-size:.84rem;color:var(--mu)}\n.dzfe-adv[open]{display:flex;flex-direction:column;gap:.8rem}\n.dzfe-when{display:flex;flex-direction:column;gap:.3rem}\n.dzfe-when label{display:flex;gap:.55rem;align-items:center;border:1px solid var(--bd);border-radius:10px;padding:.5rem .65rem;cursor:pointer;font-size:.86rem}\n.dzfe-when label.on{border-color:var(--pr);background:color-mix(in srgb,var(--pr) 8%,transparent)}\n.dzfe-seg{display:flex;border:1px solid var(--bd);border-radius:10px;overflow:hidden}\n.dzfe-seg button{flex:1;border:0;background:none;padding:.45rem .3rem;cursor:pointer;font-size:.8rem;font-weight:600;color:var(--mu)}\n.dzfe-seg button+button{border-left:1px solid var(--bd)}.dzfe-seg button.on{background:var(--pr);color:#fff}\n.dzfe-chips{display:flex;flex-wrap:wrap;gap:.25rem}.dzfe-chips button{border:1px solid var(--bd);background:var(--s2);border-radius:99px;padding:.1rem .5rem;font-family:var(--mono);font-size:.72rem;cursor:pointer}\n.dzfe-danger{margin-top:.8rem;padding-top:.8rem;border-top:1px solid var(--bd)}\n.dzfe-pe{padding:2rem 1.3rem;color:var(--mu)}.dzfe-pe>i{font-size:1.6rem;color:var(--pr)}.dzfe-pe b{display:block;color:var(--tx);font-size:1rem;margin:.5rem 0}\n.dzfe-pe ul{padding-left:1.1rem;display:flex;flex-direction:column;gap:.4rem;font-size:.84rem}\n.dzfe-mute{color:var(--mu);font-size:.84rem}.dzfe-warn{color:var(--wa)}.dzfe-note{font-size:.82rem;background:var(--s2);border-radius:10px;padding:.6rem .7rem}\n.dzfe-fh{margin:.4rem 0 0;font-size:.8rem;text-transform:uppercase;letter-spacing:.05em;color:var(--mu)}\n.dzfe-run{position:fixed;left:270px;right:360px;bottom:0;max-height:0;overflow:hidden;background:var(--sf);border-top:1px solid var(--bd);box-shadow:0 -10px 30px rgba(0,0,0,.08);transition:max-height .2s;z-index:3}\n.dzfe-run.open{max-height:45vh;overflow:auto}\n.dzfe-rh{display:flex;gap:.8rem;align-items:center;padding:.6rem 1rem;position:sticky;top:0;background:var(--sf)}\n.dzfe-rh .ok{color:var(--ok)}.dzfe-rh .ko{color:var(--ko)}.dzfe-rh span{color:var(--mu);font-size:.82rem}\n.dzfe-rerr{margin:0 1rem .6rem;padding:.6rem .8rem;border-radius:10px;background:color-mix(in srgb,var(--ko) 10%,transparent);color:var(--ko);font-size:.86rem}\n.dzfe-rctx{padding:0 1rem 1rem;font-size:.82rem;font-family:var(--mono)}\n.dzfe-rctx ul{list-style:none;margin:.2rem 0 .2rem .9rem;padding:0;border-left:1px dashed var(--bd);padding-left:.6rem}\n.dzfe-rctx summary{cursor:pointer;color:var(--mu)}.dzfe-rctx b{color:var(--pk);font-weight:600}\n.dzfe-rctx .string{color:#b35900}.dzfe-rctx .number{color:#0b7a55}.dzfe-rctx .boolean{color:#7a3fd1}.dzfe-rctx .n{color:var(--mu)}\n.dzfe-modal{position:fixed;inset:0;background:rgba(10,12,20,.45);display:none;align-items:center;justify-content:center;z-index:10;padding:1rem}\n.dzfe-modal.open{display:flex}\n.dzfe-mb{background:var(--sf);border-radius:16px;padding:1.2rem 1.3rem;width:min(640px,100%);max-height:88vh;overflow:auto;display:flex;flex-direction:column;gap:.7rem;box-shadow:0 30px 80px rgba(0,0,0,.3)}\n.dzfe-mb h3{margin:0;font-size:1.1rem}\n.dzfe-mact{display:flex;gap:.5rem;justify-content:flex-end}\n.dzfe-pick{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:.3rem;max-height:50vh;overflow:auto}\n.dzfe-toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--tx);color:var(--bg);padding:.6rem 1rem;border-radius:12px;z-index:20;font-weight:600;transition:opacity .3s}\n.dzfe-toast.bad{background:var(--ko);color:#fff}.dzfe-toast.out{opacity:0}\n.dzfe-only-m,.dzfe-fab{display:none}\n@media (max-width:1100px){\n.dzfe-body{grid-template-columns:minmax(0,1fr)}\n.dzfe-pal{position:fixed;left:0;top:54px;bottom:0;width:min(320px,88vw);z-index:6;transform:translateX(-102%);transition:transform .2s;box-shadow:10px 0 30px rgba(0,0,0,.15)}\n.dzfe.pal-open .dzfe-pal{transform:none}\n.dzfe-panel{position:fixed;left:0;right:0;bottom:0;max-height:62vh;z-index:5;border-left:0;border-top:1px solid var(--bd);border-radius:18px 18px 0 0;transform:translateY(102%);transition:transform .2s;box-shadow:0 -10px 30px rgba(0,0,0,.15)}\n.dzfe.panel-open .dzfe-panel{transform:none}\n.dzfe-tabs{top:58px}\n.dzfe-only-m{display:inline-flex}\n.dzfe-fab{display:grid;place-items:center;position:absolute;right:16px;bottom:16px;width:52px;height:52px;border-radius:50%;border:0;background:var(--pr);color:#fff;font-size:1.2rem;box-shadow:0 8px 20px rgba(0,0,0,.2)}\n.dzfe-run{left:0;right:0}\n.dzfe-btn span{display:none}\n.dzfe-top{gap:.3rem;padding:.45rem .5rem}\n.dzfe-name{min-width:0;width:auto;flex:1;font-size:.95rem}\n.dzfe-sp{display:none}\n.dzfe-top [data-a="undo"],.dzfe-top [data-a="redo"],.dzfe-top [data-a="tidy"]{display:none}\n.dzfe-status{display:none}\n}\n@media (prefers-reduced-motion:reduce){.dzfe *{transition:none!important}}\n.dzfe code{color:var(--pk)!important;background:var(--s2)!important;padding:.05rem .3rem;border-radius:5px;font-family:var(--mono)!important;font-size:.85em!important}' }, "editeur.js": { "src": `/* =====================================================================\r
-   dysizz-flow \u2014 \xE9diteur visuel de workflows (toile fa\xE7on n8n).\r
-   Aucune d\xE9pendance. Tout se passe dans le navigateur ; le serveur n'est\r
-   appel\xE9 que pour lire les r\xE9glages d'un bloc, enregistrer et essayer.\r
-   ===================================================================== */\r
-(function () {\r
-  "use strict";\r
-  var root = document.getElementById("dzfe");\r
-  var dataEl = document.getElementById("dzfe-data");\r
-  if (!root || !dataEl) return;\r
-  var B = JSON.parse(dataEl.textContent);\r
-  var NW = 232, NH = 66, TRIG = "__trigger";\r
-\r
-  /* ---------------- \xE9tat ---------------- */\r
-  var S = {\r
-    wf: B.wf, steps: B.wf.steps.map(clone), layout: clone(B.wf.layout || {}),\r
-    sel: null, zoom: 1, px: 40, py: 30, dirty: false, fields: {}, run: null, tab: "form",\r
-    undo: [], redo: [],\r
-  };\r
-  var BY = {}; B.palette.blocks.forEach(function (b) { BY[b.name] = b; });\r
-\r
-  function clone(o) { return JSON.parse(JSON.stringify(o)); }\r
-  function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }\r
-  function $(sel, el) { return (el || root).querySelector(sel); }\r
-  function $$(sel, el) { return Array.prototype.slice.call((el || root).querySelectorAll(sel)); }\r
-  function stepBy(name) { for (var i = 0; i < S.steps.length; i++) if (S.steps[i].name === name) return S.steps[i]; return null; }\r
-  function blockOf(s) { return BY[s.action_name] || { label: s.action_name, icon: "fas fa-question", category: "?" }; }\r
-  function snapshot() { return JSON.stringify({ steps: S.steps, layout: S.layout, wf: { name: S.wf.name, description: S.wf.description, when_trigger: S.wf.when_trigger, table: S.wf.table } }); }\r
-  function push() { S.undo.push(snapshot()); if (S.undo.length > 60) S.undo.shift(); S.redo = []; }\r
-  function restore(snap) { var o = JSON.parse(snap); S.steps = o.steps; S.layout = o.layout; Object.assign(S.wf, o.wf); if (S.sel && S.sel !== TRIG && !stepBy(S.sel)) S.sel = null; changed(true); }\r
-  function changed(full) { S.dirty = true; drawAll(); if (full) panel(); status(); }\r
-  function status() { var el = $(".dzfe-status"); if (el) { el.textContent = S.dirty ? "Modifications non enregistr\xE9es" : "Tout est enregistr\xE9"; el.className = "dzfe-status" + (S.dirty ? " dirty" : ""); } }\r
-\r
-  /* ---------------- routage : ce que devient next_step ---------------- */\r
-  var COND = /^\\s*\\(?\\s*([\\s\\S]+?)\\s*\\)?\\s*\\?\\s*"([^"]*)"\\s*:\\s*"([^"]*)"\\s*$/;\r
-  function routeOf(s) {\r
-    var n = (s.next_step || "").trim();\r
-    if (!n) return { mode: "end" };\r
-    if (stepBy(n) || /^[A-Za-z_][A-Za-z0-9_]*$/.test(n)) return { mode: "simple", to: n };\r
-    var m = COND.exec(n);\r
-    if (m) return { mode: "cond", expr: m[1], yes: m[2], no: m[3] };\r
-    var t = []; n.replace(/"([A-Za-z_][A-Za-z0-9_]*)"/g, function (_, x) { if (stepBy(x)) t.push(x); });\r
-    return { mode: "expr", expr: n, targets: t };\r
-  }\r
-  function setRoute(s, r) {\r
-    if (r.mode === "end") s.next_step = "";\r
-    else if (r.mode === "simple") s.next_step = r.to || "";\r
-    else if (r.mode === "cond") s.next_step = (r.expr || "true") + ' ? "' + (r.yes || "") + '" : "' + (r.no || "") + '"';\r
-    else s.next_step = r.expr || "";\r
-  }\r
-  function edges() {\r
-    var out = [];\r
-    var first = S.steps.filter(function (s) { return s.initial_step; })[0];\r
-    if (first) out.push({ from: TRIG, port: "out", to: first.name });\r
-    S.steps.forEach(function (s) {\r
-      var r = routeOf(s);\r
-      if (r.mode === "simple" && stepBy(r.to)) out.push({ from: s.name, port: "out", to: r.to });\r
-      if (r.mode === "cond") { if (stepBy(r.yes)) out.push({ from: s.name, port: "yes", to: r.yes, kind: "oui" }); if (stepBy(r.no)) out.push({ from: s.name, port: "no", to: r.no, kind: "non" }); }\r
-      if (r.mode === "expr") r.targets.forEach(function (t) { out.push({ from: s.name, port: "out", to: t, label: "?", dashed: true }); });\r
-      var c = s.configuration || {};\r
-      if (s.action_name === "ForLoop" && stepBy(c.loop_body_initial_step)) out.push({ from: s.name, port: "loop", to: c.loop_body_initial_step, label: "pour chaque", dashed: true });\r
-      if (s.action_name === "SetErrorHandler" && stepBy(c.error_handling_step)) out.push({ from: s.name, port: "loop", to: c.error_handling_step, label: "si erreur", dashed: true });\r
-    });\r
-    return out;\r
-  }\r
-  function renameRefs(oldN, newN) {\r
-    S.steps.forEach(function (s) {\r
-      var r = routeOf(s);\r
-      if (r.mode === "simple" && r.to === oldN) r.to = newN;\r
-      if (r.mode === "cond") { if (r.yes === oldN) r.yes = newN; if (r.no === oldN) r.no = newN; }\r
-      if (r.mode === "expr") r.expr = r.expr.split('"' + oldN + '"').join('"' + newN + '"');\r
-      setRoute(s, r);\r
-      var c = s.configuration || {};\r
-      if (c.loop_body_initial_step === oldN) c.loop_body_initial_step = newN;\r
-      if (c.error_handling_step === oldN) c.error_handling_step = newN;\r
-    });\r
-    if (S.layout[oldN]) { S.layout[newN] = S.layout[oldN]; delete S.layout[oldN]; }\r
-  }\r
-\r
-  /* ---------------- disposition automatique ---------------- */\r
-  function autoLayout(force) {\r
-    var need = force || S.steps.some(function (s) { return !S.layout[s.name]; }) || !S.layout[TRIG];\r
-    if (!need) return;\r
-    var level = {}, order = [], q = [];\r
-    var first = S.steps.filter(function (s) { return s.initial_step; })[0];\r
-    if (first) { level[first.name] = 1; q.push(first.name); }\r
-    var es = edges();\r
-    while (q.length) {\r
-      var n = q.shift(); order.push(n);\r
-      es.filter(function (e) { return e.from === n; }).forEach(function (e) { if (level[e.to] === undefined) { level[e.to] = level[n] + 1; q.push(e.to); } });\r
-    }\r
-    var maxL = Math.max.apply(null, [1].concat(Object.keys(level).map(function (k) { return level[k]; })));\r
-    S.steps.forEach(function (s) { if (level[s.name] === undefined) { level[s.name] = ++maxL; } });\r
-    var rows = {};\r
-    S.steps.forEach(function (s) { var l = level[s.name]; (rows[l] = rows[l] || []).push(s.name); });\r
-    if (force || !S.layout[TRIG]) S.layout[TRIG] = { x: 0, y: 0 };\r
-    Object.keys(rows).forEach(function (l) {\r
-      var r = rows[l];\r
-      r.forEach(function (n, i) { if (force || !S.layout[n]) S.layout[n] = { x: (i - (r.length - 1) / 2) * (NW + 60), y: l * (NH + 56) }; });\r
-    });\r
-  }\r
-\r
-  /* ---------------- structure de la page ---------------- */\r
-  root.innerHTML =\r
-    '<div class="dzfe-top">' +\r
-    '<a class="dzfe-back" href="/dysizz-flow/workflows" title="Tous les workflows"><i class="fas fa-arrow-left"></i></a>' +\r
-    '<input class="dzfe-name" placeholder="Nom du workflow (ex. releve_mails)" value="' + esc(S.wf.name) + '">' +\r
-    '<span class="dzfe-status"></span>' +\r
-    '<span class="dzfe-sp"></span>' +\r
-    '<button class="dzfe-btn" data-a="undo" title="Annuler (Ctrl Z)"><i class="fas fa-undo"></i></button>' +\r
-    '<button class="dzfe-btn" data-a="redo" title="R\xE9tablir (Ctrl Y)"><i class="fas fa-redo"></i></button>' +\r
-    '<button class="dzfe-btn" data-a="tidy" title="Ranger les blocs"><i class="fas fa-magic"></i><span>Ranger</span></button>' +\r
-    '<button class="dzfe-btn" data-a="code" title="Tout le workflow en JSON"><i class="fas fa-code"></i><span>Code</span></button>' +\r
-    '<button class="dzfe-btn" data-a="run" title="Lancer un essai"><i class="fas fa-play"></i><span>Essayer</span></button>' +\r
-    '<button class="dzfe-btn primary" data-a="save" title="Enregistrer (Ctrl S)"><i class="fas fa-save"></i><span>Enregistrer</span></button>' +\r
-    "</div>" +\r
-    '<div class="dzfe-body">' +\r
-    '<aside class="dzfe-pal"><div class="dzfe-pal-head"><input class="dzfe-pal-q" placeholder="Chercher un bloc (mail, table, IA\u2026)"><button class="dzfe-btn dzfe-only-m" data-a="pal"><i class="fas fa-times"></i></button></div><div class="dzfe-pal-list"></div></aside>' +\r
-    '<section class="dzfe-canvas" tabindex="0"><div class="dzfe-world"><svg class="dzfe-svg"></svg><div class="dzfe-nodes"></div></div>' +\r
-    '<div class="dzfe-zoom"><button data-a="zin" title="Zoomer">+</button><button data-a="zout" title="D\xE9zoomer">\u2212</button><button data-a="fit" title="Tout voir"><i class="fas fa-expand"></i></button></div>' +\r
-    '<button class="dzfe-fab dzfe-only-m" data-a="pal"><i class="fas fa-plus"></i></button>' +\r
-    '<div class="dzfe-hint"></div></section>' +\r
-    '<aside class="dzfe-panel"></aside>' +\r
-    "</div>" +\r
-    '<div class="dzfe-run"></div><div class="dzfe-modal"></div>';\r
-\r
-  /* ---------------- palette ---------------- */\r
-  function drawPalette() {\r
-    var q = ($(".dzfe-pal-q").value || "").toLowerCase().trim();\r
-    var html = "";\r
-    B.palette.categories.forEach(function (c) {\r
-      var bs = B.palette.blocks.filter(function (b) { return (b.category || "Actions Saltcorn et modules") === c && (!q || (b.label + " " + b.description + " " + b.name).toLowerCase().indexOf(q) >= 0); });\r
-      if (!bs.length) return;\r
-      html += '<details class="dzfe-cat"' + (q || c === "Donn\xE9es" || c === "Transformer" ? " open" : "") + "><summary>" + esc(c) + " <small>" + bs.length + "</small></summary>" +\r
-        bs.map(function (b) {\r
-          return '<div class="dzfe-pb" draggable="true" data-b="' + esc(b.name) + '" title="' + esc(b.description) + '"><i class="' + esc(b.icon || "fas fa-cube") + '"></i><span><b>' + esc(b.label) + "</b><small>" + esc(b.description || b.name) + "</small></span></div>";\r
-        }).join("") + "</details>";\r
-    });\r
-    $(".dzfe-pal-list").innerHTML = html || '<p class="dzfe-mute">Aucun bloc ne correspond.</p>';\r
-  }\r
-  $(".dzfe-pal-q").addEventListener("input", drawPalette);\r
-  $(".dzfe-pal-list").addEventListener("click", function (e) { var p = e.target.closest(".dzfe-pb"); if (p) { addStep(p.dataset.b); root.classList.remove("pal-open"); } });\r
-  $(".dzfe-pal-list").addEventListener("dragstart", function (e) { var p = e.target.closest(".dzfe-pb"); if (p) e.dataTransfer.setData("text/dzf", p.dataset.b); });\r
-\r
-  /* ---------------- ajout / suppression d'\xE9tapes ---------------- */\r
-  function uniqueName(base) {\r
-    base = String(base || "etape").replace(/^dzf_u?_?/, "").replace(/[^A-Za-z0-9_]/g, "_").replace(/^[^A-Za-z_]/, "e_").slice(0, 40) || "etape";\r
-    var n = base, i = 2; while (stepBy(n)) n = base + "_" + i++; return n;\r
-  }\r
-  function defaults(action) {\r
-    return getFields(action).then(function (F) {\r
-      var c = {};\r
-      (F.fields || []).concat(F.advanced || []).forEach(function (f) {\r
-        if (!f.required || f.def === undefined || f.def === null || f.def === "") return;\r
-        if (f.name === "si_erreur" || f.name === "delai_max" || f.name === "essais" || f.name === "pause_essais") return;\r
-        c[f.name] = typeof f.def === "object" ? JSON.stringify(f.def) : f.def;\r
-      });\r
-      if (F.dz) c.sortie = F.output || "resultat";\r
-      return c;\r
-    });\r
-  }\r
-  function addStep(action, pos) {\r
-    defaults(action).then(function (cfg) {\r
-      push();\r
-      var b = BY[action] || {};\r
-      var name = uniqueName(cfg.sortie || b.output || action);\r
-      if (cfg.sortie) cfg.sortie = uniqueVar(cfg.sortie);\r
-      var s = { id: null, name: name, action_name: action, configuration: cfg, next_step: "", only_if: "", initial_step: !S.steps.length };\r
-      var prev = S.sel && S.sel !== TRIG ? stepBy(S.sel) : null;\r
-      if (!prev && S.sel === TRIG && S.steps.length) { /* ins\xE9rer en t\xEAte */\r
-        var first = S.steps.filter(function (x) { return x.initial_step; })[0];\r
-        if (first) { first.initial_step = false; s.initial_step = true; s.next_step = first.name; }\r
-      }\r
-      if (!prev && !pos && !S.sel && S.steps.length) prev = lastStep();\r
-      if (prev) { var r = routeOf(prev); if (r.mode === "simple" || r.mode === "end") { s.next_step = r.mode === "simple" ? r.to : ""; prev.next_step = name; } }\r
-      S.steps.push(s);\r
-      if (pos) S.layout[name] = pos;\r
-      else { var ref = prev ? S.layout[prev.name] : S.layout[TRIG]; S.layout[name] = { x: ref ? ref.x : 0, y: (ref ? ref.y : 0) + NH + 56 }; shiftBelow(name); }\r
-      S.sel = name; S.tab = "form";\r
-      changed(true);\r
-    });\r
-  }\r
-  function uniqueVar(v) { var used = {}; S.steps.forEach(function (s) { if (s.configuration && s.configuration.sortie) used[s.configuration.sortie] = 1; }); var n = v, i = 2; while (used[n]) n = v + i++; return n; }\r
-  function lastStep() { var ends = S.steps.filter(function (s) { return routeOf(s).mode === "end"; }); return ends.length ? ends[ends.length - 1] : S.steps[S.steps.length - 1]; }\r
-  function shiftBelow(name) {\r
-    var p = S.layout[name];\r
-    S.steps.forEach(function (s) { if (s.name === name) return; var l = S.layout[s.name]; if (l && Math.abs(l.x - p.x) < NW && l.y >= p.y - 10 && l.y < p.y + NH + 40) l.y += NH + 56; });\r
-  }\r
-  function removeStep(name) {\r
-    var s = stepBy(name); if (!s) return;\r
-    push();\r
-    var r = routeOf(s), next = r.mode === "simple" ? r.to : "";\r
-    S.steps.forEach(function (x) {\r
-      var rx = routeOf(x);\r
-      if (rx.mode === "simple" && rx.to === name) rx.to = next;\r
-      if (rx.mode === "cond") { if (rx.yes === name) rx.yes = next; if (rx.no === name) rx.no = next; }\r
-      setRoute(x, rx);\r
-      if (rx.mode === "simple" && !rx.to) x.next_step = "";\r
-    });\r
-    if (s.initial_step && next && stepBy(next)) stepBy(next).initial_step = true;\r
-    S.steps = S.steps.filter(function (x) { return x !== s; });\r
-    if (S.steps.length && !S.steps.some(function (x) { return x.initial_step; })) S.steps[0].initial_step = true;\r
-    delete S.layout[name];\r
-    S.sel = null; changed(true);\r
-  }\r
-\r
-  /* ---------------- dessin de la toile ---------------- */\r
-  var world = $(".dzfe-world"), svg = $(".dzfe-svg"), nodesEl = $(".dzfe-nodes"), canvas = $(".dzfe-canvas");\r
-  function applyView() { world.style.transform = "translate(" + S.px + "px," + S.py + "px) scale(" + S.zoom + ")"; }\r
-  function summary(s) {\r
-    var c = s.configuration || {};\r
-    var keys = ["table", "url", "cibles", "sources", "workflow", "modele", "message", "titre", "operation", "array_expression", "code", "valeurs", "liste"];\r
-    for (var i = 0; i < keys.length; i++) if (c[keys[i]]) return keys[i] === "code" ? "code JavaScript" : String(c[keys[i]]).replace(/\\s+/g, " ").slice(0, 46);\r
-    return "";\r
-  }\r
-  function nodeHtml(s) {\r
-    var b = blockOf(s), r = routeOf(s), c = s.configuration || {};\r
-    var err = S.run && S.run.errStep === s.name, done = S.run && S.run.okSteps && S.run.okSteps[s.name];\r
-    var ports = r.mode === "cond" ? '<span class="dzfe-port yes" data-p="yes" title="Si oui">oui</span><span class="dzfe-port no" data-p="no" title="Sinon">non</span>' : '<span class="dzfe-port" data-p="out" title="Tirer pour relier \xE0 l\\'\xE9tape suivante"></span>';\r
-    if (s.action_name === "ForLoop" || s.action_name === "SetErrorHandler") ports += '<span class="dzfe-port side" data-p="loop" title="' + (s.action_name === "ForLoop" ? "Premi\xE8re \xE9tape de la boucle" : "\xC9tape en cas d'erreur") + '"></span>';\r
-    return '<div class="dzfe-node' + (S.sel === s.name ? " sel" : "") + (err ? " err" : "") + (done ? " ok" : "") + (b.builtin ? " builtin" : "") + '" data-n="' + esc(s.name) + '" style="left:' + S.layout[s.name].x + "px;top:" + S.layout[s.name].y + 'px">' +\r
-      '<span class="dzfe-ic"><i class="' + esc(b.icon || "fas fa-cube") + '"></i></span><span class="dzfe-nt"><b>' + esc(b.label) + "</b><small>" + esc(s.name) + (c.sortie ? " \u2192 " + esc(c.sortie) : "") + "</small>" +\r
-      (summary(s) ? '<em>' + esc(summary(s)) + "</em>" : "") + "</span>" +\r
-      (s.only_if ? '<span class="dzfe-if" title="Seulement si : ' + esc(s.only_if) + '"><i class="fas fa-filter"></i></span>' : "") +\r
-      '<span class="dzfe-in"></span>' + ports + "</div>";\r
-  }\r
-  function drawNodes() {\r
-    var t = S.layout[TRIG] || { x: 0, y: 0 };\r
-    var wl = (B.when.filter(function (w) { return w[0] === S.wf.when_trigger; })[0] || [0, S.wf.when_trigger])[1];\r
-    var html = '<div class="dzfe-node trig' + (S.sel === TRIG ? " sel" : "") + '" data-n="' + TRIG + '" style="left:' + t.x + "px;top:" + t.y + 'px"><span class="dzfe-ic"><i class="fas fa-bolt"></i></span><span class="dzfe-nt"><b>D\xE9clencheur</b><small>' + esc(wl) + (S.wf.table ? " \xB7 " + esc(S.wf.table) : "") + '</small></span><span class="dzfe-port" data-p="out" title="Tirer vers la premi\xE8re \xE9tape"></span></div>';\r
-    html += S.steps.map(nodeHtml).join("");\r
-    nodesEl.innerHTML = html;\r
-    var hint = $(".dzfe-hint");\r
-    hint.innerHTML = S.steps.length ? "" : '<div><i class="fas fa-hand-pointer"></i><b>Commence ici</b><p>Clique sur un bloc \xE0 gauche (ou glisse-le sur la toile) : il se relie tout seul au d\xE9clencheur. Tu peux aussi partir d\\'un <a href="/dysizz-flow/modeles">mod\xE8le pr\xEAt \xE0 l\\'emploi</a>.</p></div>';\r
-  }\r
-  function portPos(name, port) {\r
-    var l = S.layout[name] || { x: 0, y: 0 };\r
-    if (port === "yes") return { x: l.x + NW * 0.3, y: l.y + NH };\r
-    if (port === "no") return { x: l.x + NW * 0.7, y: l.y + NH };\r
-    if (port === "loop") return { x: l.x + NW, y: l.y + NH / 2 };\r
-    return { x: l.x + NW / 2, y: l.y + NH };\r
-  }\r
-  function path(a, b, side) {\r
-    if (side) { var dx = Math.max(60, Math.abs(b.x - a.x) / 2); return "M" + a.x + "," + a.y + " C" + (a.x + dx) + "," + a.y + " " + (b.x + dx) + "," + (b.y - 40) + " " + b.x + "," + b.y; }\r
-    var dy = Math.max(40, Math.abs(b.y - a.y) / 2);\r
-    if (b.y < a.y) dy = Math.max(120, Math.abs(b.y - a.y) / 2);\r
-    return "M" + a.x + "," + a.y + " C" + a.x + "," + (a.y + dy) + " " + b.x + "," + (b.y - dy) + " " + b.x + "," + b.y;\r
-  }\r
-  function drawEdges(extra) {\r
-    var html = '<defs><marker id="dzfe-arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="dzfe-arrow"/></marker></defs>';\r
-    edges().forEach(function (e) {\r
-      var a = portPos(e.from, e.port), tl = S.layout[e.to]; if (!tl) return;\r
-      var b = { x: tl.x + NW / 2, y: tl.y };\r
-      var d = path(a, b, e.port === "loop");\r
-      html += '<path class="dzfe-edge' + (e.dashed ? " dashed" : "") + (e.kind === "non" ? " no" : e.kind === "oui" ? " yes" : "") + '" d="' + d + '" marker-end="url(#dzfe-arr)" data-from="' + esc(e.from) + '" data-port="' + e.port + '"/>';\r
-      if (e.label) { var mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2; html += '<text class="dzfe-el" x="' + mx + '" y="' + my + '">' + esc(e.label) + "</text>"; }\r
-    });\r
-    if (extra) html += '<path class="dzfe-edge live" d="' + extra + '"/>';\r
-    svg.innerHTML = html;\r
-  }\r
-  function drawAll() { autoLayout(false); drawNodes(); drawEdges(); applyView(); }\r
-\r
-  /* ---------------- d\xE9placer, relier, zoomer ---------------- */\r
-  var drag = null;\r
-  function toWorld(ev) { var r = canvas.getBoundingClientRect(); return { x: (ev.clientX - r.left - S.px) / S.zoom, y: (ev.clientY - r.top - S.py) / S.zoom }; }\r
-  canvas.addEventListener("pointerdown", function (ev) {\r
-    if (ev.button !== 0 || ev.target.closest(".dzfe-zoom,.dzfe-fab,.dzfe-hint a")) return;\r
-    var port = ev.target.closest(".dzfe-port"), node = ev.target.closest(".dzfe-node");\r
-    if (port && node) { drag = { kind: "link", from: node.dataset.n, port: port.dataset.p }; ev.preventDefault(); canvas.setPointerCapture(ev.pointerId); return; }\r
-    if (node) {\r
-      var n = node.dataset.n, w = toWorld(ev), l = S.layout[n];\r
-      drag = { kind: "move", n: n, dx: w.x - l.x, dy: w.y - l.y, moved: false };\r
-      canvas.setPointerCapture(ev.pointerId); return;\r
-    }\r
-    drag = { kind: "pan", x: ev.clientX, y: ev.clientY, px: S.px, py: S.py, moved: false };\r
-    canvas.setPointerCapture(ev.pointerId);\r
-  });\r
-  canvas.addEventListener("pointermove", function (ev) {\r
-    if (!drag) return;\r
-    if (drag.kind === "pan") { S.px = drag.px + ev.clientX - drag.x; S.py = drag.py + ev.clientY - drag.y; if (Math.abs(ev.clientX - drag.x) + Math.abs(ev.clientY - drag.y) > 3) drag.moved = true; applyView(); return; }\r
-    var w = toWorld(ev);\r
-    if (drag.kind === "move") {\r
-      if (!drag.moved) { push(); drag.moved = true; }\r
-      S.layout[drag.n] = { x: Math.round((w.x - drag.dx) / 8) * 8, y: Math.round((w.y - drag.dy) / 8) * 8 };\r
-      var el = nodesEl.querySelector('[data-n="' + cssEsc(drag.n) + '"]'); if (el) { el.style.left = S.layout[drag.n].x + "px"; el.style.top = S.layout[drag.n].y + "px"; }\r
-      drawEdges(); return;\r
-    }\r
-    if (drag.kind === "link") { var a = portPos(drag.from, drag.port); drawEdges(path(a, w, drag.port === "loop")); var over = document.elementFromPoint(ev.clientX, ev.clientY); $$(".dzfe-node.target").forEach(function (x) { x.classList.remove("target"); }); var tn = over && over.closest && over.closest(".dzfe-node"); if (tn && tn.dataset.n !== drag.from && tn.dataset.n !== TRIG) tn.classList.add("target"); }\r
-  });\r
-  canvas.addEventListener("pointerup", function (ev) {\r
-    if (!drag) return;\r
-    var d = drag; drag = null;\r
-    if (d.kind === "pan" && !d.moved) { S.sel = null; drawNodes(); panel(); return; }\r
-    if (d.kind === "move") { if (d.moved) { S.dirty = true; status(); } else { S.sel = d.n; S.tab = "form"; drawNodes(); panel(); } return; }\r
-    if (d.kind === "link") {\r
-      var over = document.elementFromPoint(ev.clientX, ev.clientY), tn = over && over.closest && over.closest(".dzfe-node");\r
-      $$(".dzfe-node.target").forEach(function (x) { x.classList.remove("target"); });\r
-      if (tn && tn.dataset.n !== d.from && tn.dataset.n !== TRIG) link(d.from, d.port, tn.dataset.n);\r
-      else if (!tn) { S.sel = d.from === TRIG ? TRIG : d.from; pickNext(d.from, d.port, toWorld(ev)); }\r
-      drawEdges();\r
-    }\r
-  });\r
-  function cssEsc(s) { return String(s).replace(/"/g, '\\\\"'); }\r
-  function link(from, port, to) {\r
-    push();\r
-    if (from === TRIG) { S.steps.forEach(function (s) { s.initial_step = s.name === to; }); changed(true); return; }\r
-    var s = stepBy(from), r = routeOf(s);\r
-    if (port === "loop") { s.configuration = s.configuration || {}; s.configuration[s.action_name === "ForLoop" ? "loop_body_initial_step" : "error_handling_step"] = to; }\r
-    else if (port === "yes" || port === "no") { r[port] = to; setRoute(s, r); }\r
-    else setRoute(s, { mode: "simple", to: to });\r
-    changed(true);\r
-  }\r
-  /* rel\xE2ch\xE9 dans le vide : on propose d'ajouter un bloc \xE0 cet endroit */\r
-  function pickNext(from, port, pos) {\r
-    modal('<h3>Ajouter une \xE9tape ici</h3><input class="dzfe-in-q" placeholder="Chercher un bloc\u2026" autofocus><div class="dzfe-pick"></div>', function (m) {\r
-      var q = m.querySelector(".dzfe-in-q"), list = m.querySelector(".dzfe-pick");\r
-      function draw() { var v = q.value.toLowerCase(); list.innerHTML = B.palette.blocks.filter(function (b) { return !v || (b.label + " " + b.description).toLowerCase().indexOf(v) >= 0; }).slice(0, 40).map(function (b) { return '<button class="dzfe-pb" data-b="' + esc(b.name) + '"><i class="' + esc(b.icon) + '"></i><span><b>' + esc(b.label) + "</b><small>" + esc(b.category) + "</small></span></button>"; }).join(""); }\r
-      q.addEventListener("input", draw); draw(); setTimeout(function () { q.focus(); }, 30);\r
-      list.addEventListener("click", function (e) {\r
-        var p = e.target.closest(".dzfe-pb"); if (!p) return; closeModal();\r
-        defaults(p.dataset.b).then(function (cfg) {\r
-          push();\r
-          var name = uniqueName(cfg.sortie || p.dataset.b); if (cfg.sortie) cfg.sortie = uniqueVar(cfg.sortie);\r
-          S.steps.push({ id: null, name: name, action_name: p.dataset.b, configuration: cfg, next_step: "", only_if: "", initial_step: false });\r
-          S.layout[name] = { x: Math.round(pos.x - NW / 2), y: Math.round(pos.y) };\r
-          if (from === TRIG) S.steps.forEach(function (s) { s.initial_step = s.name === name; });\r
-          else { var s = stepBy(from), r = routeOf(s); if (port === "loop") s.configuration[s.action_name === "ForLoop" ? "loop_body_initial_step" : "error_handling_step"] = name; else if (port === "yes" || port === "no") { r[port] = name; setRoute(s, r); } else setRoute(s, { mode: "simple", to: name }); }\r
-          S.sel = name; changed(true);\r
-        });\r
-      });\r
-    });\r
-  }\r
-  canvas.addEventListener("dragover", function (e) { e.preventDefault(); });\r
-  canvas.addEventListener("drop", function (e) { var b = e.dataTransfer.getData("text/dzf"); if (!b) return; e.preventDefault(); var w = toWorld(e); S.sel = null; addStep(b, { x: Math.round(w.x - NW / 2), y: Math.round(w.y - NH / 2) }); });\r
-  canvas.addEventListener("wheel", function (e) {\r
-    e.preventDefault();\r
-    if (!e.ctrlKey && Math.abs(e.deltaX) + Math.abs(e.deltaY) < 50 && !e.deltaMode) { S.px -= e.deltaX; S.py -= e.deltaY; applyView(); return; }\r
-    zoomAt(e.deltaY < 0 ? 1.1 : 1 / 1.1, e.clientX, e.clientY);\r
-  }, { passive: false });\r
-  function zoomAt(f, cx, cy) {\r
-    var r = canvas.getBoundingClientRect(); cx = cx === undefined ? r.left + r.width / 2 : cx; cy = cy === undefined ? r.top + r.height / 2 : cy;\r
-    var nz = Math.min(2, Math.max(0.3, S.zoom * f)), k = nz / S.zoom;\r
-    S.px = cx - r.left - (cx - r.left - S.px) * k; S.py = cy - r.top - (cy - r.top - S.py) * k; S.zoom = nz; applyView();\r
-  }\r
-  function fit() {\r
-    var ns = [TRIG].concat(S.steps.map(function (s) { return s.name; })).map(function (n) { return S.layout[n]; }).filter(Boolean);\r
-    if (!ns.length) return;\r
-    var x0 = Math.min.apply(null, ns.map(function (l) { return l.x; })), y0 = Math.min.apply(null, ns.map(function (l) { return l.y; }));\r
-    var x1 = Math.max.apply(null, ns.map(function (l) { return l.x + NW; })), y1 = Math.max.apply(null, ns.map(function (l) { return l.y + NH; }));\r
-    var r = canvas.getBoundingClientRect();\r
-    S.zoom = Math.min(1.2, Math.max(0.3, Math.min((r.width - 80) / (x1 - x0 || 1), (r.height - 80) / (y1 - y0 || 1))));\r
-    S.px = (r.width - (x1 - x0) * S.zoom) / 2 - x0 * S.zoom; S.py = 40 - y0 * S.zoom; applyView();\r
-  }\r
-\r
-  /* ---------------- panneau de droite ---------------- */\r
-  var panelEl = $(".dzfe-panel");\r
-  function getFields(action) {\r
-    if (S.fields[action]) return Promise.resolve(S.fields[action]);\r
-    return fetch("/dysizz-flow/editeur-api/fields/" + encodeURIComponent(action) + "?table=" + encodeURIComponent(S.wf.table || ""), { credentials: "same-origin" })\r
-      .then(function (r) { return r.json(); }).then(function (j) { S.fields[action] = j; return j; }).catch(function () { return { fields: [] }; });\r
-  }\r
-  function vars(upto) {\r
-    var out = [{ v: "user.email", l: "l'utilisateur" }];\r
-    var t = B.tables.filter(function (x) { return x.name === S.wf.table; })[0];\r
-    if (t) t.fields.forEach(function (f) { out.push({ v: f, l: "champ de la ligne (" + S.wf.table + ")" }); });\r
-    if (S.wf.when_trigger === "API call") out.push({ v: "corps", l: "donn\xE9es re\xE7ues" });\r
-    var seen = {}, order = [], first = S.steps.filter(function (s) { return s.initial_step; })[0];\r
-    (function walk(s) { if (!s || seen[s.name]) return; seen[s.name] = 1; order.push(s); edges().filter(function (e) { return e.from === s.name; }).forEach(function (e) { walk(stepBy(e.to)); }); })(first);\r
-    S.steps.forEach(function (s) { if (!seen[s.name]) order.push(s); });\r
-    for (var i = 0; i < order.length; i++) {\r
-      var s = order[i]; if (s.name === upto) break;\r
-      var c = s.configuration || {};\r
-      if (c.sortie) out.push({ v: c.sortie, l: "r\xE9sultat de \xAB " + blockOf(s).label + " \xBB" });\r
-      if (s.action_name === "ForLoop" && c.item_variable) out.push({ v: c.item_variable, l: "\xE9l\xE9ment de la boucle" });\r
-      if (s.action_name === "TableQuery" && c.query_variable) out.push({ v: c.query_variable, l: "lignes lues" });\r
-    }\r
-    return out;\r
-  }\r
-  function fieldHtml(f, val, withVars) {\r
-    var id = "f_" + f.name, v = val === undefined || val === null ? "" : val, ph = f.def !== undefined && f.def !== null && typeof f.def !== "object" ? String(f.def) : "";\r
-    var head = '<label for="' + id + '">' + esc(f.label) + (f.required ? ' <span class="req">*</span>' : "") + "</label>";\r
-    var help = f.help ? '<small class="help">' + esc(f.help) + "</small>" : "";\r
-    var vb = withVars && f.vars !== false ? '<button type="button" class="dzfe-vb" data-for="' + id + '" title="Ins\xE9rer une variable">{ }</button>' : "";\r
-    var input;\r
-    if (f.kind === "header") return '<h4 class="dzfe-fh">' + esc(f.label) + "</h4>";\r
-    if (f.kind === "bool") input = '<label class="dzfe-sw"><input type="checkbox" id="' + id + '" data-f="' + esc(f.name) + '"' + (v === true || v === "true" || v === "on" ? " checked" : "") + '><span></span>' + esc(f.label) + "</label>";\r
-    else if (f.options && f.options.length) {\r
-      var has = f.options.some(function (o) { return o.v === String(v); });\r
-      input = '<select id="' + id + '" data-f="' + esc(f.name) + '"><option value=""' + (!v ? " selected" : "") + ">" + (ph ? "(par d\xE9faut : " + esc(ph) + ")" : "\u2014 choisir \u2014") + "</option>" +\r
-        f.options.map(function (o) { return '<option value="' + esc(o.v) + '"' + (o.v === String(v) ? " selected" : "") + ">" + esc(o.l) + "</option>"; }).join("") +\r
-        (v && !has ? '<option value="' + esc(v) + '" selected>' + esc(v) + "</option>" : "") + "</select>";\r
-    } else if (f.kind === "json" || f.kind === "code" || f.kind === "text") {\r
-      input = '<textarea id="' + id + '" data-f="' + esc(f.name) + '" class="' + (f.kind !== "text" ? "mono" : "") + '" rows="' + (f.kind === "code" ? 12 : f.kind === "json" ? 6 : 4) + '" spellcheck="false" placeholder="' + esc(ph) + '">' + esc(typeof v === "object" ? JSON.stringify(v, null, 2) : v) + "</textarea>";\r
-    } else input = '<input id="' + id + '" data-f="' + esc(f.name) + '" type="' + (f.kind === "number" ? "number" : f.kind === "password" ? "password" : "text") + '" value="' + esc(v) + '" placeholder="' + esc(ph) + '">';\r
-    return '<div class="dzfe-f' + (f.kind === "bool" ? " bool" : "") + '" data-show=\\'' + esc(JSON.stringify(f.showIf || null)) + "'>" + (f.kind === "bool" ? "" : head) + '<div class="dzfe-fi">' + input + vb + "</div>" + help + '<small class="dzfe-ferr"></small></div>';\r
-  }\r
-  function panel() {\r
-    root.classList.toggle("panel-open", !!S.sel);\r
-    if (!S.sel) { panelEl.innerHTML = panelEmpty(); return; }\r
-    if (S.sel === TRIG) return panelTrigger();\r
-    var s = stepBy(S.sel); if (!s) { S.sel = null; return panel(); }\r
-    var b = blockOf(s);\r
-    panelEl.innerHTML = '<div class="dzfe-ph"><span class="dzfe-ic"><i class="' + esc(b.icon) + '"></i></span><div><b>' + esc(b.label) + '</b><small>' + esc(b.category || "") + '</small></div><button class="dzfe-x" data-a="close" title="Fermer"><i class="fas fa-times"></i></button></div>' +\r
-      '<p class="dzfe-desc">' + esc(b.description || "") + (b.dz ? ' <a href="/dysizz-flow/bloc/' + encodeURIComponent(s.action_name) + '" target="_blank">Exemples et essai <i class="fas fa-external-link-alt"></i></a>' : "") + "</p>" +\r
-      '<div class="dzfe-tabs"><button data-tab="form" class="' + (S.tab === "form" ? "on" : "") + '">R\xE9glages</button><button data-tab="flow" class="' + (S.tab === "flow" ? "on" : "") + '">Encha\xEEnement</button><button data-tab="json" class="' + (S.tab === "json" ? "on" : "") + '">Code</button></div>' +\r
-      '<div class="dzfe-pb-body">Chargement\u2026</div>';\r
-    var body = $(".dzfe-pb-body", panelEl);\r
-    if (S.tab === "json") return panelJson(s, body);\r
-    if (S.tab === "flow") return panelFlow(s, body);\r
-    getFields(s.action_name).then(function (F) {\r
-      if (S.sel !== s.name || S.tab !== "form") return;\r
-      var c = s.configuration || {};\r
-      var html = '<div class="dzfe-f"><label>Nom de l\\'\xE9tape</label><div class="dzfe-fi"><input data-meta="name" value="' + esc(s.name) + '"></div><small class="help">Lettres, chiffres et _. Sert \xE0 relier les \xE9tapes.</small><small class="dzfe-ferr"></small></div>';\r
-      if (F.unknown) html += '<p class="dzfe-warn">Ce bloc n\\'existe pas (module retir\xE9 ?). Ses r\xE9glages restent visibles dans l\\'onglet Code.</p>';\r
-      html += (F.fields || []).map(function (f) { return fieldHtml(f, c[f.name], F.dz); }).join("") || '<p class="dzfe-mute">Ce bloc n\\'a pas de r\xE9glage.</p>';\r
-      if ((F.advanced || []).length) html += '<details class="dzfe-adv"><summary>R\xE9glages avanc\xE9s (r\xE9sultat, erreurs, essais)</summary>' + F.advanced.map(function (f) { return fieldHtml(f, c[f.name], false); }).join("") + "</details>";\r
-      body.innerHTML = html;\r
-      showIfs(body, s);\r
-    });\r
-  }\r
-  function showIfs(body, s) {\r
-    $$(".dzfe-f", body).forEach(function (el) {\r
-      var cond = JSON.parse(el.getAttribute("data-show") || "null"); if (!cond) return;\r
-      var ok = Object.keys(cond).every(function (k) { var want = [].concat(cond[k]); var v = (s.configuration || {})[k]; return want.some(function (w) { return String(w) === String(v) || (w === true && (v === true || v === "on")); }); });\r
-      el.style.display = ok ? "" : "none";\r
-    });\r
-  }\r
-  function panelEmpty() {\r
-    return '<div class="dzfe-pe"><i class="fas fa-mouse-pointer"></i><b>Clique sur un bloc pour le r\xE9gler</b><p>Astuces :</p><ul>' +\r
-      "<li>Tire le petit rond sous un bloc vers un autre pour les relier.</li><li>Rel\xE2che dans le vide pour ajouter une \xE9tape \xE0 cet endroit.</li>" +\r
-      "<li>Chaque \xE9tape range son r\xE9sultat dans une variable ; les suivantes la lisent avec <code>{{nom}}</code> (bouton <b>{ }</b>).</li>" +\r
-      "<li>Molette : se d\xE9placer \xB7 Ctrl + molette : zoomer \xB7 Suppr : effacer le bloc choisi.</li><li>Ctrl S : enregistrer \xB7 Ctrl Z : annuler.</li></ul></div>";\r
-  }\r
-  function panelTrigger() {\r
-    var need = B.tableWhen.indexOf(S.wf.when_trigger) >= 0;\r
-    panelEl.innerHTML = '<div class="dzfe-ph"><span class="dzfe-ic trig"><i class="fas fa-bolt"></i></span><div><b>D\xE9clencheur</b><small>Quand le workflow d\xE9marre</small></div><button class="dzfe-x" data-a="close"><i class="fas fa-times"></i></button></div>' +\r
-      '<div class="dzfe-pb-body"><div class="dzfe-f"><label>Nom du workflow</label><div class="dzfe-fi"><input data-w="name" value="' + esc(S.wf.name) + '" placeholder="ex. releve_mails"></div></div>' +\r
-      '<div class="dzfe-f"><label>Description</label><div class="dzfe-fi"><textarea data-w="description" rows="2" placeholder="Ce que fait ce workflow, en une phrase">' + esc(S.wf.description) + "</textarea></div></div>" +\r
-      '<div class="dzfe-f"><label>Quand d\xE9marre-t-il ?</label><div class="dzfe-when">' + B.when.map(function (w) { return '<label class="' + (S.wf.when_trigger === w[0] ? "on" : "") + '"><input type="radio" name="when" value="' + esc(w[0]) + '"' + (S.wf.when_trigger === w[0] ? " checked" : "") + ">" + esc(w[1]) + "</label>"; }).join("") + "</div></div>" +\r
-      '<div class="dzfe-f" style="' + (need ? "" : "display:none") + '"><label>Quelle table ?</label><div class="dzfe-fi"><select data-w="table"><option value="">\u2014 choisir \u2014</option>' + B.tables.map(function (t) { return '<option' + (t.name === S.wf.table ? " selected" : "") + ">" + esc(t.name) + "</option>"; }).join("") + '</select></div><small class="help">Dans les \xE9tapes, les champs de la ligne sont disponibles directement : {{nom_du_champ}}.</small></div>' +\r
-      (S.wf.when_trigger === "API call" ? '<p class="dzfe-note">Adresse Saltcorn : <code>POST /api/action/' + esc(S.wf.name || "nom") + '</code>. Pour une adresse publique prot\xE9g\xE9e (jeton, signature, limite), utilise plut\xF4t les <a href="/dysizz-flow/api" target="_blank">Points d\\'API</a> : laisse ce workflow \xAB \xE0 la main \xBB et choisis-le dans un point.</p>' : "") +\r
-      "</div>";\r
-  }\r
-  function panelFlow(s, body) {\r
-    var r = routeOf(s), others = S.steps.filter(function (x) { return x !== s; }).map(function (x) { return x.name; });\r
-    function opts(cur) { return '<option value="">(fin du workflow)</option>' + others.map(function (n) { return "<option" + (n === cur ? " selected" : "") + ">" + esc(n) + "</option>"; }).join(""); }\r
-    body.innerHTML =\r
-      '<div class="dzfe-f"><label>Seulement si\u2026 <small>(sinon l\\'\xE9tape est saut\xE9e)</small></label><div class="dzfe-fi"><input data-meta="only_if" value="' + esc(s.only_if) + '" placeholder="ex. nouveaux.length > 0" class="mono"></div><small class="help">Une condition JavaScript sur les variables du contexte. Vide = toujours.</small><div class="dzfe-chips">' +\r
-      vars(s.name).slice(0, 12).map(function (v) { return '<button type="button" data-ins="only_if" data-v="' + esc(v.v) + '" title="' + esc(v.l) + '">' + esc(v.v) + "</button>"; }).join("") + "</div></div>" +\r
-      '<div class="dzfe-f"><label>Ensuite</label><div class="dzfe-seg">' +\r
-      [["end", "Fin"], ["simple", "\xC9tape suivante"], ["cond", "Si\u2026 sinon\u2026"], ["expr", "Expression"]].map(function (m) { return '<button type="button" data-mode="' + m[0] + '" class="' + (r.mode === m[0] ? "on" : "") + '">' + m[1] + "</button>"; }).join("") + "</div></div>" +\r
-      (r.mode === "simple" ? '<div class="dzfe-f"><label>Aller \xE0</label><div class="dzfe-fi"><select data-r="to">' + opts(r.to) + "</select></div></div>" : "") +\r
-      (r.mode === "cond" ? '<div class="dzfe-f"><label>Si cette condition est vraie</label><div class="dzfe-fi"><input data-r="expr" class="mono" value="' + esc(r.expr) + '" placeholder="ex. verrou"></div></div><div class="dzfe-f"><label>alors aller \xE0</label><div class="dzfe-fi"><select data-r="yes">' + opts(r.yes) + '</select></div></div><div class="dzfe-f"><label>sinon aller \xE0</label><div class="dzfe-fi"><select data-r="no">' + opts(r.no) + "</select></div></div>" : "") +\r
-      (r.mode === "expr" ? '<div class="dzfe-f"><label>Expression qui donne le nom de l\\'\xE9tape suivante</label><div class="dzfe-fi"><textarea data-r="expr" class="mono" rows="3">' + esc(r.expr) + '</textarea></div><small class="help">JavaScript. Ex. <code>statut === "urgent" ? "alerte" : "ranger"</code></small></div>' : "") +\r
-      '<div class="dzfe-f"><label class="dzfe-sw"><input type="checkbox" data-meta="initial_step"' + (s.initial_step ? " checked" : "") + "><span></span>Premi\xE8re \xE9tape du workflow</label></div>" +\r
-      '<div class="dzfe-danger"><button type="button" class="dzfe-btn danger" data-a="del"><i class="far fa-trash-alt"></i> Supprimer cette \xE9tape</button></div>';\r
-  }\r
-  function panelJson(s, body) {\r
-    body.innerHTML = '<p class="dzfe-mute">Pour les techniciens : l\\'\xE9tape telle que Saltcorn la range. Modifie puis applique.</p><textarea class="mono dzfe-json" rows="22" spellcheck="false">' + esc(JSON.stringify({ action_name: s.action_name, configuration: s.configuration, only_if: s.only_if, next_step: s.next_step }, null, 2)) + '</textarea><small class="dzfe-ferr"></small><button type="button" class="dzfe-btn primary" data-a="applyjson">Appliquer</button>';\r
-  }\r
-\r
-  /* saisie dans le panneau : l'\xE9tat change, seul le bloc concern\xE9 est redessin\xE9 (pas de lag) */\r
-  var typing = null;\r
-  panelEl.addEventListener("focusin", function (e) { if (e.target.matches("input,textarea,select") && !typing) { push(); typing = true; } });\r
-  panelEl.addEventListener("focusout", function () { typing = null; });\r
-  panelEl.addEventListener("input", onPanelInput);\r
-  panelEl.addEventListener("change", onPanelInput);\r
-  function onPanelInput(e) {\r
-    var t = e.target;\r
-    if (t.name === "when") { S.wf.when_trigger = t.value; changed(false); panelTrigger(); return; }\r
-    if (t.dataset.w) { S.wf[t.dataset.w] = t.value; if (t.dataset.w === "name") $(".dzfe-name").value = t.value; if (t.dataset.w === "table") S.fields = {}; S.dirty = true; status(); drawNodes(); return; }\r
-    var s = stepBy(S.sel); if (!s) return;\r
-    if (t.dataset.f) {\r
-      s.configuration = s.configuration || {};\r
-      var v = t.type === "checkbox" ? t.checked : t.type === "number" ? (t.value === "" ? "" : Number(t.value)) : t.value;\r
-      if (v === "" && t.type !== "checkbox") delete s.configuration[t.dataset.f]; else s.configuration[t.dataset.f] = v;\r
-      var err = t.closest(".dzfe-f").querySelector(".dzfe-ferr");\r
-      if (err) { err.textContent = ""; if (t.classList.contains("mono") && /^\\s*[\\[{]/.test(t.value) && e.type === "change") { try { JSON.parse(t.value.replace(/\\{\\{[^}]*\\}\\}/g, "0")); } catch (x) { err.textContent = "JSON invalide : " + x.message; } } }\r
-      showIfs(panelEl, s); redrawNode(s); return;\r
-    }\r
-    if (t.dataset.meta === "name") {\r
-      var nv = t.value.trim(), err2 = t.closest(".dzfe-f").querySelector(".dzfe-ferr");\r
-      if (!/^[A-Za-z_][A-Za-z0-9_]{0,60}$/.test(nv)) { err2.textContent = "Lettres, chiffres et _ seulement"; return; }\r
-      if (nv !== s.name && stepBy(nv)) { err2.textContent = "Ce nom est d\xE9j\xE0 pris"; return; }\r
-      err2.textContent = ""; renameRefs(s.name, nv); s.name = nv; S.sel = nv; S.dirty = true; status(); drawNodes(); drawEdges(); return;\r
-    }\r
-    if (t.dataset.meta === "only_if") { s.only_if = t.value; redrawNode(s); S.dirty = true; status(); return; }\r
-    if (t.dataset.meta === "initial_step") { S.steps.forEach(function (x) { x.initial_step = x === s ? t.checked : false; }); if (!S.steps.some(function (x) { return x.initial_step; })) s.initial_step = true; changed(false); return; }\r
-    if (t.dataset.r) { var r = routeOf(s); r[t.dataset.r] = t.value; if (r.mode === "simple" && !r.to) r = { mode: "end" }; setRoute(s, r); S.dirty = true; status(); drawEdges(); redrawNode(s); }\r
-  }\r
-  function redrawNode(s) { var el = nodesEl.querySelector('[data-n="' + cssEsc(s.name) + '"]'); if (!el) return drawNodes(); var tmp = document.createElement("div"); tmp.innerHTML = nodeHtml(s); el.replaceWith(tmp.firstChild); S.dirty = true; status(); }\r
-  panelEl.addEventListener("click", function (e) {\r
-    var t = e.target.closest("button"); if (!t) return;\r
-    var s = stepBy(S.sel);\r
-    if (t.dataset.tab) { S.tab = t.dataset.tab; panel(); return; }\r
-    if (t.dataset.a === "close") { S.sel = null; drawNodes(); panel(); return; }\r
-    if (t.dataset.a === "del" && s && confirm("Supprimer l'\xE9tape \xAB " + s.name + " \xBB ?")) { removeStep(s.name); return; }\r
-    if (t.dataset.mode && s) {\r
-      push(); var r = routeOf(s), m = t.dataset.mode, next = r.mode === "simple" ? r.to : r.mode === "cond" ? r.yes : "";\r
-      if (m === "end") setRoute(s, { mode: "end" });\r
-      if (m === "simple") setRoute(s, { mode: "simple", to: next || "" });\r
-      if (m === "cond") setRoute(s, { mode: "cond", expr: r.expr && r.mode !== "expr" ? r.expr : "true", yes: next, no: "" });\r
-      if (m === "expr") setRoute(s, { mode: "expr", expr: s.next_step || '""' });\r
-      if (m === "simple" && !next) s.next_step = "";\r
-      S.tab = "flow"; changed(true); return;\r
-    }\r
-    if (t.dataset.ins && s) { var inp = panelEl.querySelector('[data-meta="' + t.dataset.ins + '"]'); inp.value = (inp.value ? inp.value + " " : "") + t.dataset.v; inp.dispatchEvent(new Event("input", { bubbles: true })); inp.focus(); return; }\r
-    if (t.dataset.a === "applyjson" && s) {\r
-      var ta = panelEl.querySelector(".dzfe-json"), er = panelEl.querySelector(".dzfe-ferr");\r
-      try { var o = JSON.parse(ta.value); push(); s.action_name = o.action_name || s.action_name; s.configuration = o.configuration || {}; s.only_if = o.only_if || ""; s.next_step = o.next_step || ""; er.textContent = ""; changed(true); } catch (x) { er.textContent = "JSON invalide : " + x.message; }\r
-      return;\r
-    }\r
-    if (t.classList.contains("dzfe-vb")) varMenu(t);\r
-  });\r
-  function varMenu(btn) {\r
-    var s = stepBy(S.sel), input = panelEl.querySelector("#" + btn.dataset.for), list = vars(s ? s.name : "");\r
-    var old = panelEl.querySelector(".dzfe-vm"); if (old) { old.remove(); if (old.dataset.for === btn.dataset.for) return; }\r
-    var m = document.createElement("div"); m.className = "dzfe-vm"; m.dataset.for = btn.dataset.for;\r
-    m.innerHTML = "<b>Ins\xE9rer une variable</b>" + list.map(function (v) { return '<button type="button" data-v="' + esc(v.v) + '"><code>{{' + esc(v.v) + "}}</code><small>" + esc(v.l) + "</small></button>"; }).join("") + '<small class="help">Pour un champ d\\'un r\xE9sultat : <code>{{resultat.champ}}</code>. Dans une liste transform\xE9e : <code>{{item.champ}}</code>.</small>';\r
-    btn.closest(".dzfe-f").appendChild(m);\r
-    m.addEventListener("click", function (e) {\r
-      var b = e.target.closest("button"); if (!b) return;\r
-      var ins = "{{" + b.dataset.v + "}}", st = input.selectionStart || input.value.length, en = input.selectionEnd || st;\r
-      input.value = input.value.slice(0, st) + ins + input.value.slice(en); input.focus(); input.selectionStart = input.selectionEnd = st + ins.length;\r
-      input.dispatchEvent(new Event("input", { bubbles: true })); m.remove();\r
-    });\r
-  }\r
-  /* Tab dans les zones de code */\r
-  root.addEventListener("keydown", function (e) {\r
-    if (e.key === "Tab" && e.target.matches("textarea.mono")) { e.preventDefault(); var t = e.target, a = t.selectionStart; t.value = t.value.slice(0, a) + "  " + t.value.slice(t.selectionEnd); t.selectionStart = t.selectionEnd = a + 2; t.dispatchEvent(new Event("input", { bubbles: true })); }\r
-  });\r
-  $(".dzfe-name").addEventListener("input", function (e) { S.wf.name = e.target.value; S.dirty = true; status(); var x = panelEl.querySelector('[data-w="name"]'); if (x) x.value = e.target.value; });\r
-\r
-  /* ---------------- barre du haut ---------------- */\r
-  root.addEventListener("click", function (e) {\r
-    var b = e.target.closest("[data-a]"); if (!b || panelEl.contains(b)) return;\r
-    var a = b.dataset.a;\r
-    if (a === "undo" && S.undo.length) { S.redo.push(snapshot()); restore(S.undo.pop()); }\r
-    if (a === "redo" && S.redo.length) { S.undo.push(snapshot()); restore(S.redo.pop()); }\r
-    if (a === "tidy") { push(); autoLayout(true); changed(false); fit(); }\r
-    if (a === "zin") zoomAt(1.2); if (a === "zout") zoomAt(1 / 1.2); if (a === "fit") fit();\r
-    if (a === "save") save();\r
-    if (a === "run") runDialog();\r
-    if (a === "code") codeDialog();\r
-    if (a === "pal") root.classList.toggle("pal-open");\r
-  });\r
-  document.addEventListener("keydown", function (e) {\r
-    var inField = e.target.matches && e.target.matches("input,textarea,select");\r
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); save(); return; }\r
-    if (inField) return;\r
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") { e.preventDefault(); if (S.undo.length) { S.redo.push(snapshot()); restore(S.undo.pop()); } }\r
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "y") { e.preventDefault(); if (S.redo.length) { S.undo.push(snapshot()); restore(S.redo.pop()); } }\r
-    if ((e.key === "Delete" || e.key === "Backspace") && S.sel && S.sel !== TRIG) { e.preventDefault(); removeStep(S.sel); }\r
-    if (e.key === "Escape") { closeModal(); S.sel = null; drawNodes(); panel(); }\r
-  });\r
-  window.addEventListener("beforeunload", function (e) { if (S.dirty) { e.preventDefault(); e.returnValue = ""; } });\r
-\r
-  function post(url, body) {\r
-    return fetch(url, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json", "CSRF-Token": B.csrf, "X-Requested-With": "XMLHttpRequest" }, body: JSON.stringify(Object.assign({ _csrf: B.csrf }, body)) }).then(function (r) { return r.json(); });\r
-  }\r
-  function toast(msg, bad) { var t = document.createElement("div"); t.className = "dzfe-toast" + (bad ? " bad" : ""); t.textContent = msg; root.appendChild(t); setTimeout(function () { t.classList.add("out"); }, 3200); setTimeout(function () { t.remove(); }, 3700); }\r
-  function save() {\r
-    if (!S.wf.name) { S.sel = TRIG; panel(); toast("Donne d'abord un nom au workflow", true); return Promise.reject(); }\r
-    var btn = root.querySelector('[data-a="save"]'); btn.disabled = true;\r
-    return post("/dysizz-flow/editeur-api/save", { id: S.wf.id, name: S.wf.name, description: S.wf.description, when_trigger: S.wf.when_trigger, table: S.wf.table, layout: S.layout, steps: S.steps })\r
-      .then(function (j) {\r
-        btn.disabled = false;\r
-        if (j.error) { toast(j.error, true); throw new Error(j.error); }\r
-        var isNew = !S.wf.id;\r
-        S.wf.id = j.wf.id; S.steps.forEach(function (s) { var m = j.wf.steps.filter(function (x) { return x.name === s.name; })[0]; if (m) s.id = m.id; });\r
-        S.dirty = false; status(); toast("Enregistr\xE9");\r
-        if (isNew) history.replaceState(null, "", "/dysizz-flow/editeur/" + j.wf.id);\r
-        return j;\r
-      }, function (e) { btn.disabled = false; toast("Enregistrement impossible : " + e.message, true); throw e; });\r
-  }\r
-\r
-  /* ---------------- essai ---------------- */\r
-  function exampleCtx() {\r
-    var t = B.tables.filter(function (x) { return x.name === S.wf.table; })[0];\r
-    if (t) { var o = {}; t.fields.forEach(function (f) { if (f !== "id") o[f] = ""; }); return JSON.stringify(o, null, 2); }\r
-    if (S.wf.when_trigger === "API call") return '{\\n  "corps": {}\\n}';\r
-    return "{}";\r
-  }\r
-  function runDialog() {\r
-    modal('<h3>Lancer un essai</h3><p class="dzfe-mute">Le workflow s\\'ex\xE9cute vraiment (\xE9critures, envois compris). Donn\xE9es de d\xE9part (JSON) :</p><textarea class="mono dzfe-ctx" rows="8" spellcheck="false">' + esc(S.lastCtx || exampleCtx()) + '</textarea><div class="dzfe-mact"><button class="dzfe-btn" data-m="cancel">Annuler</button><button class="dzfe-btn primary" data-m="go"><i class="fas fa-play"></i> Lancer</button></div>', function (m) {\r
-      m.addEventListener("click", function (e) {\r
-        var b = e.target.closest("[data-m]"); if (!b) return;\r
-        if (b.dataset.m === "cancel") return closeModal();\r
-        var ctx = m.querySelector(".dzfe-ctx").value; S.lastCtx = ctx;\r
-        try { JSON.parse(ctx || "{}"); } catch (x) { toast("JSON invalide : " + x.message, true); return; }\r
-        closeModal();\r
-        (S.dirty || !S.wf.id ? save() : Promise.resolve()).then(function () {\r
-          showRun({ pending: true });\r
-          return post("/dysizz-flow/editeur-api/run", { id: S.wf.id, contexte: ctx });\r
-        }).then(function (j) { if (j) showRun(j); }).catch(function () {});\r
-      });\r
-    });\r
-  }\r
-  function showRun(j) {\r
-    var el = $(".dzfe-run");\r
-    if (j.pending) { el.className = "dzfe-run open"; el.innerHTML = '<div class="dzfe-rh"><b><i class="fas fa-spinner fa-spin"></i> Essai en cours\u2026</b></div>'; return; }\r
-    var errStep = !j.ok && j.step ? [].concat(j.step)[0] : null;\r
-    S.run = { errStep: errStep, okSteps: {} };\r
-    if (j.context) S.steps.forEach(function (s) { var c = s.configuration || {}; if (c.sortie && j.context[c.sortie] !== undefined) S.run.okSteps[s.name] = true; });\r
-    drawNodes();\r
-    el.className = "dzfe-run open";\r
-    el.innerHTML = '<div class="dzfe-rh"><b class="' + (j.ok ? "ok" : "ko") + '">' + (j.ok ? '<i class="fas fa-check-circle"></i> Termin\xE9' : j.status === "Waiting" ? '<i class="fas fa-pause-circle"></i> En attente' : '<i class="fas fa-times-circle"></i> Erreur') + "</b><span>" + (j.ms || 0) + " ms" + (j.run_id ? ' \xB7 <a href="/actions/run/' + j.run_id + '" target="_blank">d\xE9tail Saltcorn</a>' : "") + '</span><button class="dzfe-x" data-rc><i class="fas fa-times"></i></button></div>' +\r
-      (j.error ? '<div class="dzfe-rerr">' + (errStep ? "\xC9tape <b>" + esc(errStep) + "</b> : " : "") + esc(j.error) + "</div>" : "") +\r
-      '<div class="dzfe-rctx">' + tree(j.context || {}, 0) + "</div>";\r
-    el.querySelector("[data-rc]").addEventListener("click", function () { el.className = "dzfe-run"; S.run = null; drawNodes(); });\r
-  }\r
-  function tree(v, d) {\r
-    if (v === null || v === undefined) return '<span class="n">vide</span>';\r
-    if (typeof v !== "object") return '<span class="' + typeof v + '">' + esc(typeof v === "string" && v.length > 300 ? v.slice(0, 300) + "\u2026" : v) + "</span>";\r
-    var keys = Object.keys(v), arr = Array.isArray(v);\r
-    if (!keys.length) return arr ? "[ ]" : "{ }";\r
-    return '<details' + (d < 1 ? " open" : "") + "><summary>" + (arr ? "liste \xB7 " + keys.length + " \xE9l\xE9ment(s)" : keys.length + " champ(s)") + "</summary><ul>" +\r
-      keys.slice(0, 100).map(function (k) { return "<li><b>" + esc(k) + "</b> " + tree(v[k], d + 1) + "</li>"; }).join("") + (keys.length > 100 ? "<li>\u2026</li>" : "") + "</ul></details>";\r
-  }\r
-\r
-  /* ---------------- code du workflow entier ---------------- */\r
-  function codeDialog() {\r
-    var txt = JSON.stringify({ name: S.wf.name, description: S.wf.description, when_trigger: S.wf.when_trigger, table: S.wf.table, steps: S.steps.map(function (s) { return { name: s.name, action_name: s.action_name, initial_step: s.initial_step, only_if: s.only_if, next_step: s.next_step, configuration: s.configuration }; }) }, null, 2);\r
-    modal('<h3>Le workflow en JSON</h3><p class="dzfe-mute">Copie-le pour le partager ou le versionner, ou colle un workflow pour le remplacer.</p><textarea class="mono dzfe-all" rows="22" spellcheck="false">' + esc(txt) + '</textarea><small class="dzfe-ferr"></small><div class="dzfe-mact"><button class="dzfe-btn" data-m="copy"><i class="far fa-copy"></i> Copier</button><button class="dzfe-btn" data-m="cancel">Fermer</button><button class="dzfe-btn primary" data-m="apply">Appliquer</button></div>', function (m) {\r
-      m.addEventListener("click", function (e) {\r
-        var b = e.target.closest("[data-m]"); if (!b) return;\r
-        var ta = m.querySelector(".dzfe-all");\r
-        if (b.dataset.m === "cancel") return closeModal();\r
-        if (b.dataset.m === "copy") { ta.select(); try { navigator.clipboard.writeText(ta.value); } catch (x) { document.execCommand("copy"); } toast("Copi\xE9"); return; }\r
-        try {\r
-          var o = JSON.parse(ta.value); if (!Array.isArray(o.steps)) throw new Error("\xAB steps \xBB doit \xEAtre une liste");\r
-          push();\r
-          var ids = {}; S.steps.forEach(function (s) { ids[s.name] = s.id; });\r
-          S.steps = o.steps.map(function (s) { return { id: ids[s.name] || null, name: s.name, action_name: s.action_name, configuration: s.configuration || {}, next_step: s.next_step || "", only_if: s.only_if || "", initial_step: !!s.initial_step }; });\r
-          ["name", "description", "when_trigger", "table"].forEach(function (k) { if (o[k] !== undefined) S.wf[k] = o[k]; });\r
-          $(".dzfe-name").value = S.wf.name; S.layout = {}; closeModal(); changed(true); fit();\r
-        } catch (x) { m.querySelector(".dzfe-ferr").textContent = "JSON invalide : " + x.message; }\r
-      });\r
-    });\r
-  }\r
-\r
-  /* ---------------- fen\xEAtre ---------------- */\r
-  function modal(html, init) { var m = $(".dzfe-modal"); m.innerHTML = '<div class="dzfe-mb">' + html + "</div>"; m.classList.add("open"); m.onclick = function (e) { if (e.target === m) closeModal(); }; init(m.firstChild); }\r
-  function closeModal() { var m = $(".dzfe-modal"); m.classList.remove("open"); m.innerHTML = ""; }\r
-\r
-  /* ---------------- d\xE9marrage ---------------- */\r
-  drawPalette();\r
-  autoLayout(false);\r
-  drawAll();\r
-  panel();\r
-  status();\r
-  setTimeout(fit, 30);\r
-  if (!S.wf.id) { S.sel = TRIG; panel(); }\r
-  var ok = new URLSearchParams(location.search).get("ok");\r
-  if (ok) { toast(ok); history.replaceState(null, "", location.pathname); }\r
-})();\r
-` }, "hook.js": { "src": `/* dysizz-flow : sur les pages natives des workflows Saltcorn, un raccourci vers l'\xE9diteur visuel */\r
-(function () {\r
-  var m = location.pathname.match(/^\\/actions\\/(configure|testrun|workflow)\\/(\\d+)/);\r
-  var onList = /^\\/actions\\/?$/.test(location.pathname);\r
-  if (!m && !onList) return;\r
-  function add() {\r
-    if (document.getElementById("dzf-hook")) return;\r
-    var a = document.createElement("a");\r
-    a.id = "dzf-hook";\r
-    a.href = m ? "/dysizz-flow/editeur/" + m[2] : "/dysizz-flow/workflows";\r
-    a.innerHTML = '<i class="fas fa-project-diagram"></i> ' + (m ? "Ouvrir dans l'\xE9diteur visuel" : "Workflows en sch\xE9ma (Dysizz)");\r
-    a.setAttribute("style", "position:fixed;right:18px;bottom:18px;z-index:3000;background:#5b5bf0;color:#fff;padding:.65rem 1rem;border-radius:99px;font-weight:600;text-decoration:none;box-shadow:0 8px 24px rgba(0,0,0,.2);font-size:.9rem");\r
-    document.body.appendChild(a);\r
-  }\r
-  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", add); else add();\r
-})();\r
+    module2.exports = { ASSETS: { "dzf.css": { "src": ".dzf{--f-surface:var(--dz-surface,#fff);--f-s2:var(--dz-surface-2,#f2f2f5);--f-border:var(--dz-border,rgba(0,0,0,.1));--f-text:var(--dz-text,#16161a);--f-mute:var(--dz-text-mute,#777);--f-ink:var(--dz-primary-ink,#4b4bd8);--f-soft:var(--dz-primary-soft,rgba(91,91,240,.12));--f-r:var(--dz-radius,14px);--f-mono:var(--dz-font-mono,ui-monospace,Menlo,monospace);max-width:1280px;margin:0 auto}\n.dzf h1{font-weight:750;letter-spacing:-.02em;display:flex;gap:.6rem;align-items:center}\n.dzf h2{font-size:1.02rem;font-weight:700;margin:1.8rem 0 .8rem}\n.dzf h2 small{color:var(--f-mute);font-weight:500}\n.dzf code{font-family:var(--f-mono);font-size:.82em}\n.dzf-tabs{display:flex;flex-wrap:wrap;gap:.35rem;margin:0 0 1.2rem;padding-bottom:.8rem;border-bottom:1px solid var(--f-border)}\n.dzf-tabs a{display:inline-flex;gap:.5rem;align-items:center;padding:.45rem .9rem;border-radius:99px;color:var(--f-mute)!important;text-decoration:none!important;font-weight:600;font-size:.9rem}\n.dzf-tabs a:hover{background:var(--f-s2);color:var(--f-text)!important}\n.dzf-tabs a.on{background:var(--f-text);color:var(--f-surface)!important}\n.dzf-tabs .dzf-ext{margin-left:auto}\n.dzf-head{display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap;align-items:flex-start}\n.dzf-head p{color:var(--f-mute);max-width:80ch}\n.dzf-actions{display:flex;gap:.5rem;flex-wrap:wrap;align-items:flex-start}\n.dzf-import{display:flex;gap:.4rem}.dzf-import textarea{width:220px}\n.dzf-muted{color:var(--f-mute)}\n.dzf-search{max-width:520px;margin:.5rem 0 1rem;border-radius:12px}\n.dzf-grid{display:grid;gap:.8rem;grid-template-columns:repeat(auto-fill,minmax(min(100%,320px),1fr))}\n.dzf-card{display:flex;gap:.8rem;padding:.95rem 1rem;border-radius:var(--f-r);border:1px solid var(--f-border);background:var(--f-surface);color:var(--f-text)!important;text-decoration:none!important;transition:transform .15s,border-color .15s}\n.dzf-card:hover{transform:translateY(-2px);border-color:var(--f-ink)}\n.dzf-card b{display:block;font-size:.95rem}.dzf-card small{display:block;color:var(--f-mute);line-height:1.4;margin:.2rem 0 .35rem;font-size:.82rem}\n.dzf-card code{color:var(--f-mute);font-size:.72rem}\n.dzf-off{opacity:.55}\n.dzf-ic{width:40px;height:40px;flex:none;border-radius:11px;display:grid;place-items:center;background:var(--f-soft);color:var(--f-ink)}\n.dzf-cat h2 small{font-family:var(--f-mono);font-size:.72rem}\n.dzf-table{width:100%;font-size:.88rem;border-collapse:collapse;background:var(--f-surface);border-radius:12px;overflow:hidden}\n.dzf-table th{font:600 .68rem var(--f-mono);text-transform:uppercase;letter-spacing:.06em;color:var(--f-mute);padding:.55rem .7rem;text-align:left;background:var(--f-s2)}\n.dzf-table td{padding:.55rem .7rem;border-top:1px solid var(--f-border);vertical-align:top}\n.dzf-table .dzf-common td{color:var(--f-mute);font-size:.82rem}\n.dzf-bad td{background:color-mix(in srgb,#e5484d 7%,transparent)}\n.dzf-req{font:600 .62rem var(--f-mono);text-transform:uppercase;color:#e5484d}\n.dzf .dzf-code,.dzf .dzf-out{margin:0;padding:1rem;border-radius:12px;background:#0f1117!important;color:#e6e6ea!important;font:.8rem/1.55 var(--f-mono);white-space:pre-wrap;max-height:520px;overflow:auto}\n.dzf-out.ok{border-left:4px solid #30a46c}.dzf-out.ko{border-left:4px solid #e5484d}\n.dzf-mono{font-family:var(--f-mono)!important;font-size:.82rem!important}\n.dzf-try{display:grid;gap:.8rem;grid-template-columns:1fr 1fr}\n.dzf-try label{font-size:.8rem;font-weight:600;color:var(--f-mute)}\n.dzf-try-bar,.dzf-try .dzf-out{grid-column:1/-1}\n.dzf-try-bar{display:flex;gap:.8rem;align-items:center}\n@media(max-width:760px){.dzf-try{grid-template-columns:1fr}}\n.dzf-flash{padding:.75rem 1rem;border-radius:10px;margin:0 0 1rem;font-size:.9rem}\n.dzf-flash.ok{background:color-mix(in srgb,#30a46c 13%,transparent)}.dzf-flash.ko{background:color-mix(in srgb,#e5484d 13%,transparent)}\n.dzf-ed-grid{display:grid;gap:.8rem 1rem;grid-template-columns:repeat(auto-fill,minmax(240px,1fr))}\n.dzf-ed-grid label{font-size:.8rem;font-weight:600;color:var(--f-mute);display:grid;gap:.25rem}\n.dzf-ed-grid small{font-weight:400}\n.dzf-wide{grid-column:1/-1}\n.dzf-check{display:flex!important;align-items:center;gap:.5rem}\n.dzf-params{display:grid;gap:.4rem;margin-bottom:.6rem}\n.dzf-prm{display:grid;gap:.35rem;grid-template-columns:1fr 1.2fr 1fr 1fr 1fr 1.4fr auto auto auto;align-items:center;padding:.4rem;border-radius:10px;background:var(--f-s2)}\n.dzf-prm .form-control,.dzf-prm .form-select{font-size:.82rem;padding:.3rem .5rem}\n.dzf-req-l{font-size:.78rem;white-space:nowrap;display:flex;gap:.3rem;align-items:center}\n@media(max-width:900px){.dzf-prm{grid-template-columns:1fr 1fr}}\n.dzf-codearea{min-height:320px;tab-size:2}\n.dzf-save{display:flex;gap:.6rem;margin-top:1rem}\n.dzf-tpls{display:grid;gap:.7rem}\n.dzf-tpl{border:1px solid var(--f-border);border-radius:var(--f-r);background:var(--f-surface);padding:.9rem 1rem}\n.dzf-tpl summary{display:flex;gap:.8rem;cursor:pointer;list-style:none}\n.dzf-tpl summary::-webkit-details-marker{display:none}\n.dzf-tpl summary b{display:block}.dzf-tpl summary small{display:block;color:var(--f-mute);margin:.15rem 0}.dzf-tpl summary em{font-style:normal;font:600 .7rem var(--f-mono);color:var(--f-mute)}\n.dzf-steps{margin:1rem 0;padding-left:1.4rem;display:grid;gap:.35rem;font-size:.88rem}\n.dzf-steps i{width:1.3em;color:var(--f-ink);text-align:center;margin-right:.3rem}\n.dzf-steps small{color:var(--f-mute)}\n.dzf-tpl-form{display:grid;gap:.6rem 1rem;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));align-items:end;padding-top:.8rem;border-top:1px dashed var(--f-border)}\n.dzf-tpl-form label{font-size:.8rem;font-weight:600;color:var(--f-mute);display:grid;gap:.25rem}\n.dzf-point{display:grid;gap:.7rem;grid-template-columns:repeat(auto-fill,minmax(min(100%,220px),1fr));align-items:end;padding:1rem;border:1px solid var(--f-border);border-radius:var(--f-r);background:var(--f-surface)}\n.dzf-point label{display:flex;flex-direction:column;gap:.25rem;font-size:.82rem;font-weight:600;color:var(--f-mute)}\n.dzf-point .dzf-save{grid-column:1/-1;display:flex;gap:.5rem}\n.dzf-box{border:1px solid var(--f-border);border-radius:var(--f-r);background:var(--f-surface);margin:.5rem 0}\n.dzf-box>summary{padding:.75rem 1rem;cursor:pointer;display:flex;gap:.6rem;flex-wrap:wrap;align-items:center}\n.dzf-box>summary code{overflow-wrap:anywhere}\n.dzf-box .dzf-point{border:0;border-top:1px solid var(--f-border);border-radius:0 0 var(--f-r) var(--f-r)}\n.dzf-kpis{display:grid;gap:.8rem;grid-template-columns:repeat(auto-fill,minmax(min(100%,200px),1fr));margin:1rem 0}\n.dzf-kpi{display:flex;flex-direction:column;gap:.15rem;padding:.9rem 1rem;border:1px solid var(--f-border);border-radius:var(--f-r);background:var(--f-surface)}\n.dzf-kpi small{color:var(--f-mute);font-size:.78rem}\n.dzf-kpi b{font-size:1.5rem;font-weight:750;letter-spacing:-.02em}\n.dzf-bar{display:inline-block;width:120px;height:8px;border-radius:99px;background:var(--f-s2);overflow:hidden;vertical-align:middle}\n.dzf-bar i{display:block;height:100%;background:var(--f-ink);border-radius:99px}\n.dzf-bar.bad i{background:#d9534f}\n.dzf-wfs{display:flex;flex-direction:column;gap:.6rem}\n.dzf-wf{display:flex;gap:1rem;align-items:center;justify-content:space-between;padding:.85rem 1rem;border:1px solid var(--f-border);border-radius:var(--f-r);background:var(--f-surface)}\n.dzf-wf:hover{border-color:var(--f-ink)}\n.dzf-wf-main{display:flex;gap:.9rem;align-items:flex-start;color:var(--f-text)!important;text-decoration:none!important;min-width:0;flex:1}\n.dzf-wf-main>span:last-child{display:flex;flex-direction:column;min-width:0}\n.dzf-wf-main small{color:var(--f-mute)}\n.dzf-wf-ic{width:42px;height:42px;border-radius:12px;display:grid;place-items:center;background:var(--f-soft);color:var(--f-ink);flex:none}\n.dzf-wf-meta{display:flex;flex-wrap:wrap;gap:.3rem .9rem;margin-top:.35rem;font-size:.78rem;color:var(--f-mute)}\n.dzf-wf-meta .ok{color:#12a150}.dzf-wf-meta .ko{color:#e5484d;font-weight:600}.dzf-wf-meta .mute{opacity:.7}\n.dzf-wf-actions{display:flex;gap:.35rem;flex:none}\n.dzf-empty{text-align:center;padding:2.5rem 1rem;color:var(--f-mute);border:1px dashed var(--f-border);border-radius:var(--f-r)}\n.dzf-empty i{font-size:2rem;opacity:.5}\n@media (max-width:640px){.dzf-wf{flex-direction:column;align-items:stretch}.dzf-wf-actions{justify-content:flex-end}}\n.dzf-chipsbar{display:flex;flex-wrap:wrap;gap:.35rem;margin:0 0 1rem}\n.dzf-chipsbar button{border:1px solid var(--f-border);background:var(--f-surface);border-radius:99px;padding:.3rem .8rem;font-size:.85rem;font-weight:600;color:var(--f-mute)}\n.dzf-chipsbar button.on{background:var(--f-text);color:var(--f-surface);border-color:var(--f-text)}\n.dzf-chipsbar small{opacity:.65}\n.dzf-tplgrid{display:grid;gap:1rem;grid-template-columns:repeat(auto-fill,minmax(min(100%,330px),1fr));align-items:start}\n.dzf-tplc{border:1px solid var(--f-border);border-radius:var(--f-r);background:var(--f-surface);padding:1rem 1.1rem;display:flex;flex-direction:column;gap:.55rem;border-top:4px solid var(--c)}\n.dzf-tplc h3{font-size:1.02rem;font-weight:700;margin:0}.dzf-tplc p{margin:0;color:var(--f-mute);font-size:.88rem}\n.dzf-tplc-top{display:flex;justify-content:space-between;font-size:.76rem;color:var(--f-mute)}\n.dzf-tplc-cat{color:var(--c);font-weight:700;text-transform:uppercase;letter-spacing:.04em}\n.dzf-mini{display:flex;align-items:center;flex-wrap:wrap;gap:0;padding:.6rem;background:var(--f-s2);border-radius:12px;margin:.2rem 0}\n.dzf-mini-n{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;background:var(--f-surface);color:var(--c);border:1px solid var(--f-border);font-size:.8rem;flex:none}\n.dzf-mini-n.trig{background:var(--c);color:#fff;border-color:var(--c)}\n.dzf-mini-l{width:14px;height:2px;background:var(--f-border);flex:none}.dzf-mini-l.if{background:repeating-linear-gradient(90deg,var(--c) 0 3px,transparent 3px 6px)}\n.dzf-mini-more{font-size:.75rem;color:var(--f-mute);margin-left:.4rem}\n.dzf-tplc-use summary{list-style:none;display:inline-flex;gap:.4rem;align-items:center;cursor:pointer}\n.dzf-tplc-use summary::-webkit-details-marker{display:none}\n.dzf-tplc-use[open] summary{display:none}\n.dzf-tplc-form{display:flex;flex-direction:column;gap:.55rem;padding-top:.3rem}\n.dzf-tplc-form label{display:flex;flex-direction:column;gap:.2rem;font-size:.82rem;font-weight:600}\n.dzf-tplc-form label small{font-weight:400;color:var(--f-mute)}\n.dzf-tplc-form .dzf-check{flex-direction:row;gap:.5rem;align-items:center;font-weight:500}" }, "dzf.js": { "src": `/* dysizz-flow \u2014 script des pages d'administration (aucune d\xE9pendance). */
+(function () {
+  "use strict";
+  var doc = document;
+  var esc = function (s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); };
+
+  /* recherche dans la biblioth\xE8que */
+  window.dzfSearch = function (q) {
+    q = String(q || "").toLowerCase().trim();
+    doc.querySelectorAll(".dzf-cat").forEach(function (sec) {
+      var any = false;
+      sec.querySelectorAll(".dzf-card").forEach(function (c) { var ok = !q || (c.getAttribute("data-search") || "").indexOf(q) >= 0; c.hidden = !ok; if (ok) any = true; });
+      sec.hidden = !any && !!q;
+    });
+  };
+
+  window.dzfSearchWf = function (q) {
+    q = String(q || "").toLowerCase().trim();
+    doc.querySelectorAll(".dzf-wf,.dzf-tplc").forEach(function (c) { c.hidden = !!q && (c.getAttribute("data-search") || "").indexOf(q) < 0; });
+  };
+
+  window.dzfCat = function (btn, cat) {
+    btn.parentNode.querySelectorAll("button").forEach(function (b) { b.classList.toggle("on", b === btn); });
+    doc.querySelectorAll(".dzf-tplc").forEach(function (c) { c.hidden = !!cat && c.getAttribute("data-cat") !== cat; });
+  };
+
+  /* essai d'un bloc */
+  window.dzfTry = function (btn) {
+    var box = btn.closest(".dzf-try"), out = box.querySelector("[data-out]");
+    out.textContent = "\u2026";
+    out.className = "dzf-out";
+    fetch("/dysizz-flow/essayer", {
+      method: "POST", credentials: "same-origin",
+      headers: { "Content-Type": "application/json", "CSRF-Token": (doc.getElementById("dzf-csrf") || {}).value || window._sc_globalCsrf || "" },
+      body: JSON.stringify({ bloc: box.getAttribute("data-bloc"), cfg: box.querySelector("[data-cfg]").value, ctx: box.querySelector("[data-ctx]").value }),
+    }).then(function (r) { return r.json(); }).then(function (j) {
+      out.className = "dzf-out " + (j.error ? "ko" : "ok");
+      out.textContent = j.error ? "Erreur (" + (j.ms || 0) + " ms) : " + j.error : "OK en " + j.ms + " ms\\n\\nSortie :\\n" + JSON.stringify(j.sortie, null, 2);
+    }).catch(function (e) { out.className = "dzf-out ko"; out.textContent = e.message; });
+  };
+
+  /* \xE9diteur des r\xE9glages d'un bloc perso */
+  var holder = doc.querySelector("[data-params]");
+  var form = holder && holder.closest("form");
+  var types = window.__dzfTypes || [];
+  function rowHtml(p) {
+    return '<div class="dzf-prm">' +
+      '<input class="form-control" data-k="name" placeholder="nom" value="' + esc(p.name) + '">' +
+      '<input class="form-control" data-k="label" placeholder="libell\xE9" value="' + esc(p.label) + '">' +
+      '<select class="form-select" data-k="type">' + types.map(function (t) { return '<option value="' + t[0] + '"' + (t[0] === (p.type || "texte") ? " selected" : "") + ">" + esc(t[1]) + "</option>"; }).join("") + "</select>" +
+      '<input class="form-control" data-k="default" placeholder="par d\xE9faut" value="' + esc(typeof p.default === "object" ? JSON.stringify(p.default) : p.default) + '">' +
+      '<input class="form-control" data-k="options" placeholder="choix (a,b,c)" value="' + esc([].concat(p.options || []).join(",")) + '">' +
+      '<input class="form-control" data-k="help" placeholder="aide" value="' + esc(p.help) + '">' +
+      '<label class="dzf-req-l"><input type="checkbox" data-k="required"' + (p.required ? " checked" : "") + "> requis</label>" +
+      '<button type="button" class="btn btn-sm btn-link" title="Monter" onclick="dzfMove(this,-1)">\u2191</button>' +
+      '<button type="button" class="btn btn-sm btn-link text-danger" title="Retirer" onclick="this.parentNode.remove()">\u2715</button></div>';
+  }
+  if (holder && form) {
+    var initial = [];
+    try { initial = JSON.parse(form.querySelector("[name=params]").value || "[]"); } catch (e) { initial = []; }
+    holder.innerHTML = initial.map(rowHtml).join("");
+  }
+  window.dzfAddParam = function () { holder.insertAdjacentHTML("beforeend", rowHtml({ type: "texte" })); };
+  window.dzfMove = function (b, d) { var r = b.parentNode, s = d < 0 ? r.previousElementSibling : r.nextElementSibling; if (s) r.parentNode.insertBefore(r, d < 0 ? s : s.nextSibling); };
+  window.dzfBeforeSave = function (f) {
+    var list = [];
+    f.querySelectorAll(".dzf-prm").forEach(function (r) {
+      var p = {};
+      r.querySelectorAll("[data-k]").forEach(function (i) { p[i.getAttribute("data-k")] = i.type === "checkbox" ? i.checked : i.value; });
+      if (p.name) list.push(p);
+    });
+    f.querySelector("[name=params]").value = JSON.stringify(list);
+    return true;
+  };
+
+  /* tabulation dans le code */
+  doc.querySelectorAll(".dzf-codearea").forEach(function (t) {
+    t.addEventListener("keydown", function (e) {
+      if (e.key !== "Tab") return;
+      e.preventDefault();
+      var s = t.selectionStart, en = t.selectionEnd;
+      t.value = t.value.slice(0, s) + "  " + t.value.slice(en);
+      t.selectionStart = t.selectionEnd = s + 2;
+    });
+  });
+})();
+` }, "editeur.css": { "src": '.dzfe{--bg:var(--dz-bg,#f4f5f8);--sf:var(--dz-surface,#fff);--s2:var(--dz-surface-2,#eef0f4);--bd:var(--dz-border,rgba(15,20,40,.12));--tx:var(--dz-text,#161a26);--mu:var(--dz-text-mute,#6b7285);--pr:var(--dz-primary,#5b5bf0);--pk:var(--dz-primary-ink,#4545d8);--ok:#12a150;--ko:#e5484d;--wa:#f5a524;--mono:var(--dz-font-mono,ui-monospace,SFMono-Regular,Menlo,monospace);\nposition:fixed;inset:0;z-index:4000;display:flex;flex-direction:column;background:var(--bg);color:var(--tx);font-size:14px;line-height:1.4}\n@media (prefers-color-scheme:dark){.dzfe:not(.light){--bg:#0f1117;--sf:#171a23;--s2:#1f2330;--bd:rgba(255,255,255,.1);--tx:#eceef5;--mu:#9aa1b5}}\n[data-dz-theme="dark"] .dzfe,html.dark .dzfe{--bg:#0f1117;--sf:#171a23;--s2:#1f2330;--bd:rgba(255,255,255,.1);--tx:#eceef5;--mu:#9aa1b5}\n.dzfe *{box-sizing:border-box}\n.dzfe-loading{margin:auto;color:var(--mu)}\n.dzfe button{font:inherit;color:inherit}\n.dzfe-top{display:flex;align-items:center;gap:.5rem;padding:.55rem .8rem;background:var(--sf);border-bottom:1px solid var(--bd);min-height:54px}\n.dzfe-back{width:36px;height:36px;display:grid;place-items:center;border-radius:10px;color:var(--mu)!important;text-decoration:none!important}\n.dzfe-back:hover{background:var(--s2)}\n.dzfe-name{border:1px solid transparent;background:transparent;font-weight:650;font-size:1.05rem;padding:.35rem .5rem;border-radius:8px;min-width:120px;width:min(340px,40vw);color:var(--tx)}\n.dzfe-name:hover,.dzfe-name:focus{border-color:var(--bd);background:var(--bg);outline:none}\n.dzfe-status{font-size:.78rem;color:var(--mu)}.dzfe-status.dirty{color:var(--wa)}\n.dzfe-sp{flex:1}\n.dzfe-btn{display:inline-flex;align-items:center;gap:.45rem;border:1px solid var(--bd);background:var(--sf);padding:.42rem .75rem;border-radius:10px;cursor:pointer;font-weight:550;white-space:nowrap}\n.dzfe-btn:hover{background:var(--s2)}.dzfe-btn:disabled{opacity:.5}\n.dzfe-btn.primary{background:var(--pr);border-color:var(--pr);color:#fff}.dzfe-btn.primary:hover{filter:brightness(1.07)}\n.dzfe-btn.danger{color:var(--ko);border-color:color-mix(in srgb,var(--ko) 40%,transparent)}\n.dzfe-body{flex:1;display:grid;grid-template-columns:270px minmax(0,1fr) 360px;min-height:0}\n.dzfe-pal{background:var(--sf);border-right:1px solid var(--bd);display:flex;flex-direction:column;min-height:0}\n.dzfe-pal-head{padding:.6rem;display:flex;gap:.4rem;border-bottom:1px solid var(--bd)}\n.dzfe-pal-q,.dzfe-in-q{width:100%;border:1px solid var(--bd);background:var(--bg);border-radius:10px;padding:.5rem .7rem;color:var(--tx)}\n.dzfe-pal-list{overflow:auto;padding:.3rem .4rem 2rem}\n.dzfe-cat summary{cursor:pointer;font-weight:650;font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--mu);padding:.6rem .4rem .35rem;list-style:none}\n.dzfe-cat summary::-webkit-details-marker{display:none}.dzfe-cat summary small{font-weight:500;opacity:.7}\n.dzfe-pb{display:flex;gap:.6rem;align-items:flex-start;padding:.5rem .55rem;border-radius:10px;cursor:grab;border:1px solid transparent;background:none;width:100%;text-align:left}\n.dzfe-pb:hover{background:var(--s2);border-color:var(--bd)}\n.dzfe-pb i{width:30px;height:30px;flex:none;display:grid;place-items:center;border-radius:8px;background:color-mix(in srgb,var(--pr) 13%,transparent);color:var(--pk);font-size:.9rem}\n.dzfe-pb span{display:flex;flex-direction:column;min-width:0}.dzfe-pb b{font-weight:600;font-size:.86rem}\n.dzfe-pb small{color:var(--mu);font-size:.74rem;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}\n.dzfe-canvas{position:relative;overflow:hidden;background-color:var(--bg);background-image:radial-gradient(color-mix(in srgb,var(--tx) 14%,transparent) 1px,transparent 1px);background-size:22px 22px;cursor:grab;touch-action:none;outline:none}\n.dzfe-canvas:active{cursor:grabbing}\n.dzfe-world{position:absolute;left:0;top:0;transform-origin:0 0}\n.dzfe-svg{position:absolute;left:-5000px;top:-5000px;width:10000px;height:10000px;overflow:visible;pointer-events:none}\n.dzfe-svg>*{transform:translate(5000px,5000px)}\n.dzfe-edge{fill:none;stroke:color-mix(in srgb,var(--tx) 45%,transparent);stroke-width:2}\n.dzfe-edge.dashed{stroke-dasharray:6 5}.dzfe-edge.yes{stroke:var(--ok)}.dzfe-edge.no{stroke:var(--ko)}\n.dzfe-edge.live{stroke:var(--pr);stroke-dasharray:5 4}\n.dzfe-arrow{fill:color-mix(in srgb,var(--tx) 55%,transparent)}\n.dzfe-el{font-size:11px;fill:var(--mu);paint-order:stroke;stroke:var(--bg);stroke-width:4px;text-anchor:middle}\n.dzfe-node{position:absolute;width:232px;min-height:66px;display:flex;gap:.6rem;align-items:center;padding:.55rem .7rem;background:var(--sf);border:1.5px solid var(--bd);border-radius:14px;box-shadow:0 1px 2px rgba(0,0,0,.06),0 6px 18px rgba(20,20,60,.06);cursor:pointer;user-select:none;transition:border-color .12s,box-shadow .12s}\n.dzfe-node:hover{border-color:color-mix(in srgb,var(--pr) 50%,var(--bd))}\n.dzfe-node.sel{border-color:var(--pr);box-shadow:0 0 0 4px color-mix(in srgb,var(--pr) 20%,transparent)}\n.dzfe-node.target{border-color:var(--ok);box-shadow:0 0 0 4px color-mix(in srgb,var(--ok) 22%,transparent)}\n.dzfe-node.err{border-color:var(--ko);box-shadow:0 0 0 4px color-mix(in srgb,var(--ko) 20%,transparent)}\n.dzfe-node.ok::after{content:"\\2713";position:absolute;right:-8px;top:-8px;width:20px;height:20px;border-radius:50%;background:var(--ok);color:#fff;font-size:12px;display:grid;place-items:center}\n.dzfe-node.trig{background:linear-gradient(135deg,color-mix(in srgb,var(--pr) 16%,var(--sf)),var(--sf))}\n.dzfe-ic{width:38px;height:38px;flex:none;border-radius:10px;display:grid;place-items:center;background:color-mix(in srgb,var(--pr) 14%,transparent);color:var(--pk);font-size:1rem}\n.dzfe-ic.trig,.dzfe-node.trig .dzfe-ic{background:var(--pr);color:#fff}\n.dzfe-node.builtin .dzfe-ic{background:color-mix(in srgb,var(--wa) 20%,transparent);color:#a86b00}\n.dzfe-nt{display:flex;flex-direction:column;min-width:0}\n.dzfe-nt b{font-size:.86rem;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}\n.dzfe-nt small{font-size:.72rem;color:var(--mu);font-family:var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}\n.dzfe-nt em{font-style:normal;font-size:.72rem;color:var(--mu);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}\n.dzfe-if{position:absolute;left:-10px;top:-10px;width:22px;height:22px;border-radius:50%;background:var(--wa);color:#fff;font-size:10px;display:grid;place-items:center}\n.dzfe-in{position:absolute;left:50%;top:-6px;width:12px;height:12px;margin-left:-6px;border-radius:50%;background:var(--sf);border:2px solid color-mix(in srgb,var(--tx) 30%,transparent)}\n.dzfe-node.trig .dzfe-in{display:none}\n.dzfe-port{position:absolute;left:50%;bottom:-8px;width:16px;height:16px;margin-left:-8px;border-radius:50%;background:var(--pr);border:3px solid var(--sf);cursor:crosshair;box-shadow:0 0 0 1px var(--pr);transition:transform .1s}\n.dzfe-port:hover{transform:scale(1.35)}\n.dzfe-port.yes,.dzfe-port.no{width:auto;height:18px;padding:0 6px;border-radius:9px;font-size:10px;font-weight:700;color:#fff;border-width:2px;display:grid;place-items:center;margin-left:0;bottom:-10px}\n.dzfe-port.yes{left:30%;transform:translateX(-50%);background:var(--ok);box-shadow:0 0 0 1px var(--ok)}\n.dzfe-port.no{left:70%;transform:translateX(-50%);background:var(--ko);box-shadow:0 0 0 1px var(--ko)}\n.dzfe-port.side{left:auto;right:-8px;bottom:auto;top:50%;margin:-8px 0 0;background:var(--wa);box-shadow:0 0 0 1px var(--wa)}\n.dzfe-zoom{position:absolute;left:12px;bottom:12px;display:flex;flex-direction:column;background:var(--sf);border:1px solid var(--bd);border-radius:10px;overflow:hidden}\n.dzfe-zoom button{border:0;background:none;width:34px;height:32px;cursor:pointer;font-size:1rem}.dzfe-zoom button:hover{background:var(--s2)}\n.dzfe-hint{position:absolute;left:50%;top:45%;transform:translate(-50%,-50%);pointer-events:none}\n.dzfe-hint>div{pointer-events:auto;max-width:380px;text-align:center;background:var(--sf);border:1px dashed var(--bd);border-radius:16px;padding:1.2rem 1.4rem;color:var(--mu)}\n.dzfe-hint i{font-size:1.6rem;color:var(--pr);display:block;margin-bottom:.4rem}.dzfe-hint b{color:var(--tx);font-size:1.05rem}\n.dzfe-panel{background:var(--sf);border-left:1px solid var(--bd);overflow:auto;min-height:0}\n.dzfe-ph{display:flex;gap:.7rem;align-items:center;padding:.9rem 1rem .5rem;position:sticky;top:0;background:var(--sf);z-index:2}\n.dzfe-ph b{display:block;font-size:1rem}.dzfe-ph small{color:var(--mu)}\n.dzfe-x{margin-left:auto;border:0;background:none;width:32px;height:32px;border-radius:8px;cursor:pointer;color:var(--mu)}.dzfe-x:hover{background:var(--s2)}\n.dzfe-desc{padding:0 1rem;color:var(--mu);font-size:.84rem;margin:.2rem 0 .6rem}.dzfe-desc a{white-space:nowrap}\n.dzfe-tabs{display:flex;gap:.2rem;padding:0 1rem;border-bottom:1px solid var(--bd);position:sticky;top:62px;background:var(--sf);z-index:2}\n.dzfe-tabs button{border:0;background:none;padding:.55rem .6rem;cursor:pointer;color:var(--mu);font-weight:600;border-bottom:2px solid transparent}\n.dzfe-tabs button.on{color:var(--pk);border-bottom-color:var(--pr)}\n.dzfe-pb-body{padding:.9rem 1rem 3rem;display:flex;flex-direction:column;gap:.85rem}\n.dzfe-f{display:flex;flex-direction:column;gap:.3rem;position:relative}\n.dzfe-f>label{font-weight:600;font-size:.84rem}.dzfe-f>label small{font-weight:400;color:var(--mu)}\n.dzfe-f .req{color:var(--ko)}\n.dzfe-fi{display:flex;gap:.35rem;align-items:flex-start}\n.dzfe-f input:not([type=checkbox]):not([type=radio]),.dzfe-f select,.dzfe-f textarea,.dzfe-ctx,.dzfe-all,.dzfe-json{width:100%;border:1px solid var(--bd);background:var(--bg);color:var(--tx);border-radius:10px;padding:.5rem .65rem;font:inherit;font-size:.88rem}\n.dzfe-f input:focus,.dzfe-f select:focus,.dzfe-f textarea:focus{outline:none;border-color:var(--pr);box-shadow:0 0 0 3px color-mix(in srgb,var(--pr) 18%,transparent)}\n.dzfe .mono{font-family:var(--mono)!important;font-size:.8rem!important;line-height:1.5;tab-size:2}\n.dzfe-f .help{color:var(--mu);font-size:.76rem}.dzfe-ferr{color:var(--ko);font-size:.76rem}.dzfe-ferr:empty{display:none}\n.dzfe-vb{flex:none;border:1px solid var(--bd);background:var(--s2);border-radius:8px;padding:.45rem .5rem;cursor:pointer;font-family:var(--mono);font-size:.78rem;font-weight:700;color:var(--pk)}\n.dzfe-vm{position:absolute;right:0;top:100%;z-index:10;width:300px;max-height:320px;overflow:auto;background:var(--sf);border:1px solid var(--bd);border-radius:12px;box-shadow:0 12px 30px rgba(0,0,0,.18);padding:.5rem;display:flex;flex-direction:column;gap:.15rem}\n.dzfe-vm>b{font-size:.78rem;color:var(--mu);padding:.2rem .3rem}\n.dzfe-vm button{border:0;background:none;text-align:left;padding:.35rem .4rem;border-radius:8px;cursor:pointer;display:flex;flex-direction:column}\n.dzfe-vm button:hover{background:var(--s2)}.dzfe-vm code{font-size:.8rem;color:var(--pk)}.dzfe-vm small{color:var(--mu);font-size:.72rem}\n.dzfe-sw{display:flex!important;align-items:center;gap:.6rem;cursor:pointer;font-weight:600;font-size:.86rem}\n.dzfe-sw input{position:absolute;opacity:0;width:0;height:0}\n.dzfe-sw span{width:38px;height:22px;border-radius:11px;background:color-mix(in srgb,var(--tx) 22%,transparent);position:relative;flex:none;transition:background .15s}\n.dzfe-sw span::after{content:"";position:absolute;left:3px;top:3px;width:16px;height:16px;border-radius:50%;background:#fff;transition:transform .15s}\n.dzfe-sw input:checked+span{background:var(--pr)}.dzfe-sw input:checked+span::after{transform:translateX(16px)}\n.dzfe-sw input:focus-visible+span{box-shadow:0 0 0 3px color-mix(in srgb,var(--pr) 30%,transparent)}\n.dzfe-adv{border:1px solid var(--bd);border-radius:12px;padding:.5rem .75rem}\n.dzfe-adv summary{cursor:pointer;font-weight:600;font-size:.84rem;color:var(--mu)}\n.dzfe-adv[open]{display:flex;flex-direction:column;gap:.8rem}\n.dzfe-when{display:flex;flex-direction:column;gap:.3rem}\n.dzfe-when label{display:flex;gap:.55rem;align-items:center;border:1px solid var(--bd);border-radius:10px;padding:.5rem .65rem;cursor:pointer;font-size:.86rem}\n.dzfe-when label.on{border-color:var(--pr);background:color-mix(in srgb,var(--pr) 8%,transparent)}\n.dzfe-seg{display:flex;border:1px solid var(--bd);border-radius:10px;overflow:hidden}\n.dzfe-seg button{flex:1;border:0;background:none;padding:.45rem .3rem;cursor:pointer;font-size:.8rem;font-weight:600;color:var(--mu)}\n.dzfe-seg button+button{border-left:1px solid var(--bd)}.dzfe-seg button.on{background:var(--pr);color:#fff}\n.dzfe-chips{display:flex;flex-wrap:wrap;gap:.25rem}.dzfe-chips button{border:1px solid var(--bd);background:var(--s2);border-radius:99px;padding:.1rem .5rem;font-family:var(--mono);font-size:.72rem;cursor:pointer}\n.dzfe-danger{margin-top:.8rem;padding-top:.8rem;border-top:1px solid var(--bd)}\n.dzfe-pe{padding:2rem 1.3rem;color:var(--mu)}.dzfe-pe>i{font-size:1.6rem;color:var(--pr)}.dzfe-pe b{display:block;color:var(--tx);font-size:1rem;margin:.5rem 0}\n.dzfe-pe ul{padding-left:1.1rem;display:flex;flex-direction:column;gap:.4rem;font-size:.84rem}\n.dzfe-mute{color:var(--mu);font-size:.84rem}.dzfe-warn{color:var(--wa)}.dzfe-note{font-size:.82rem;background:var(--s2);border-radius:10px;padding:.6rem .7rem}\n.dzfe-fh{margin:.4rem 0 0;font-size:.8rem;text-transform:uppercase;letter-spacing:.05em;color:var(--mu)}\n.dzfe-run{position:fixed;left:270px;right:360px;bottom:0;max-height:0;overflow:hidden;background:var(--sf);border-top:1px solid var(--bd);box-shadow:0 -10px 30px rgba(0,0,0,.08);transition:max-height .2s;z-index:3}\n.dzfe-run.open{max-height:45vh;overflow:auto}\n.dzfe-rh{display:flex;gap:.8rem;align-items:center;padding:.6rem 1rem;position:sticky;top:0;background:var(--sf)}\n.dzfe-rh .ok{color:var(--ok)}.dzfe-rh .ko{color:var(--ko)}.dzfe-rh span{color:var(--mu);font-size:.82rem}\n.dzfe-rerr{margin:0 1rem .6rem;padding:.6rem .8rem;border-radius:10px;background:color-mix(in srgb,var(--ko) 10%,transparent);color:var(--ko);font-size:.86rem}\n.dzfe-rctx{padding:0 1rem 1rem;font-size:.82rem;font-family:var(--mono)}\n.dzfe-rctx ul{list-style:none;margin:.2rem 0 .2rem .9rem;padding:0;border-left:1px dashed var(--bd);padding-left:.6rem}\n.dzfe-rctx summary{cursor:pointer;color:var(--mu)}.dzfe-rctx b{color:var(--pk);font-weight:600}\n.dzfe-rctx .string{color:#b35900}.dzfe-rctx .number{color:#0b7a55}.dzfe-rctx .boolean{color:#7a3fd1}.dzfe-rctx .n{color:var(--mu)}\n.dzfe-modal{position:fixed;inset:0;background:rgba(10,12,20,.45);display:none;align-items:center;justify-content:center;z-index:10;padding:1rem}\n.dzfe-modal.open{display:flex}\n.dzfe-mb{background:var(--sf);border-radius:16px;padding:1.2rem 1.3rem;width:min(640px,100%);max-height:88vh;overflow:auto;display:flex;flex-direction:column;gap:.7rem;box-shadow:0 30px 80px rgba(0,0,0,.3)}\n.dzfe-mb h3{margin:0;font-size:1.1rem}\n.dzfe-mact{display:flex;gap:.5rem;justify-content:flex-end}\n.dzfe-pick{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:.3rem;max-height:50vh;overflow:auto}\n.dzfe-toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--tx);color:var(--bg);padding:.6rem 1rem;border-radius:12px;z-index:20;font-weight:600;transition:opacity .3s}\n.dzfe-toast.bad{background:var(--ko);color:#fff}.dzfe-toast.out{opacity:0}\n.dzfe-only-m,.dzfe-fab{display:none}\n@media (max-width:1100px){\n.dzfe-body{grid-template-columns:minmax(0,1fr)}\n.dzfe-pal{position:fixed;left:0;top:54px;bottom:0;width:min(320px,88vw);z-index:6;transform:translateX(-102%);transition:transform .2s;box-shadow:10px 0 30px rgba(0,0,0,.15)}\n.dzfe.pal-open .dzfe-pal{transform:none}\n.dzfe-panel{position:fixed;left:0;right:0;bottom:0;max-height:62vh;z-index:5;border-left:0;border-top:1px solid var(--bd);border-radius:18px 18px 0 0;transform:translateY(102%);transition:transform .2s;box-shadow:0 -10px 30px rgba(0,0,0,.15)}\n.dzfe.panel-open .dzfe-panel{transform:none}\n.dzfe-tabs{top:58px}\n.dzfe-only-m{display:inline-flex}\n.dzfe-fab{display:grid;place-items:center;position:absolute;right:16px;bottom:16px;width:52px;height:52px;border-radius:50%;border:0;background:var(--pr);color:#fff;font-size:1.2rem;box-shadow:0 8px 20px rgba(0,0,0,.2)}\n.dzfe-run{left:0;right:0}\n.dzfe-btn span{display:none}\n.dzfe-top{gap:.3rem;padding:.45rem .5rem}\n.dzfe-name{min-width:0;width:auto;flex:1;font-size:.95rem}\n.dzfe-sp{display:none}\n.dzfe-top [data-a="undo"],.dzfe-top [data-a="redo"],.dzfe-top [data-a="tidy"]{display:none}\n.dzfe-status{display:none}\n}\n@media (prefers-reduced-motion:reduce){.dzfe *{transition:none!important}}\n.dzfe code{color:var(--pk)!important;background:var(--s2)!important;padding:.05rem .3rem;border-radius:5px;font-family:var(--mono)!important;font-size:.85em!important}' }, "editeur.js": { "src": `/* =====================================================================
+   dysizz-flow \u2014 \xE9diteur visuel de workflows (toile fa\xE7on n8n).
+   Aucune d\xE9pendance. Tout se passe dans le navigateur ; le serveur n'est
+   appel\xE9 que pour lire les r\xE9glages d'un bloc, enregistrer et essayer.
+   ===================================================================== */
+(function () {
+  "use strict";
+  var root = document.getElementById("dzfe");
+  var dataEl = document.getElementById("dzfe-data");
+  if (!root || !dataEl) return;
+  var B = JSON.parse(dataEl.textContent);
+  var NW = 232, NH = 66, TRIG = "__trigger";
+
+  /* ---------------- \xE9tat ---------------- */
+  var S = {
+    wf: B.wf, steps: B.wf.steps.map(clone), layout: clone(B.wf.layout || {}),
+    sel: null, zoom: 1, px: 40, py: 30, dirty: false, fields: {}, run: null, tab: "form",
+    undo: [], redo: [],
+  };
+  var BY = {}; B.palette.blocks.forEach(function (b) { BY[b.name] = b; });
+
+  function clone(o) { return JSON.parse(JSON.stringify(o)); }
+  function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+  function $(sel, el) { return (el || root).querySelector(sel); }
+  function $$(sel, el) { return Array.prototype.slice.call((el || root).querySelectorAll(sel)); }
+  function stepBy(name) { for (var i = 0; i < S.steps.length; i++) if (S.steps[i].name === name) return S.steps[i]; return null; }
+  function blockOf(s) { return BY[s.action_name] || { label: s.action_name, icon: "fas fa-question", category: "?" }; }
+  function snapshot() { return JSON.stringify({ steps: S.steps, layout: S.layout, wf: { name: S.wf.name, description: S.wf.description, when_trigger: S.wf.when_trigger, table: S.wf.table } }); }
+  function push() { S.undo.push(snapshot()); if (S.undo.length > 60) S.undo.shift(); S.redo = []; }
+  function restore(snap) { var o = JSON.parse(snap); S.steps = o.steps; S.layout = o.layout; Object.assign(S.wf, o.wf); if (S.sel && S.sel !== TRIG && !stepBy(S.sel)) S.sel = null; changed(true); }
+  function changed(full) { S.dirty = true; drawAll(); if (full) panel(); status(); }
+  function status() { var el = $(".dzfe-status"); if (el) { el.textContent = S.dirty ? "Modifications non enregistr\xE9es" : "Tout est enregistr\xE9"; el.className = "dzfe-status" + (S.dirty ? " dirty" : ""); } }
+
+  /* ---------------- routage : ce que devient next_step ---------------- */
+  var COND = /^\\s*\\(?\\s*([\\s\\S]+?)\\s*\\)?\\s*\\?\\s*"([^"]*)"\\s*:\\s*"([^"]*)"\\s*$/;
+  function routeOf(s) {
+    var n = (s.next_step || "").trim();
+    if (!n) return { mode: "end" };
+    if (stepBy(n) || /^[A-Za-z_][A-Za-z0-9_]*$/.test(n)) return { mode: "simple", to: n };
+    var m = COND.exec(n);
+    if (m) return { mode: "cond", expr: m[1], yes: m[2], no: m[3] };
+    var t = []; n.replace(/"([A-Za-z_][A-Za-z0-9_]*)"/g, function (_, x) { if (stepBy(x)) t.push(x); });
+    return { mode: "expr", expr: n, targets: t };
+  }
+  function setRoute(s, r) {
+    if (r.mode === "end") s.next_step = "";
+    else if (r.mode === "simple") s.next_step = r.to || "";
+    else if (r.mode === "cond") s.next_step = (r.expr || "true") + ' ? "' + (r.yes || "") + '" : "' + (r.no || "") + '"';
+    else s.next_step = r.expr || "";
+  }
+  function edges() {
+    var out = [];
+    var first = S.steps.filter(function (s) { return s.initial_step; })[0];
+    if (first) out.push({ from: TRIG, port: "out", to: first.name });
+    S.steps.forEach(function (s) {
+      var r = routeOf(s);
+      if (r.mode === "simple" && stepBy(r.to)) out.push({ from: s.name, port: "out", to: r.to });
+      if (r.mode === "cond") { if (stepBy(r.yes)) out.push({ from: s.name, port: "yes", to: r.yes, kind: "oui" }); if (stepBy(r.no)) out.push({ from: s.name, port: "no", to: r.no, kind: "non" }); }
+      if (r.mode === "expr") r.targets.forEach(function (t) { out.push({ from: s.name, port: "out", to: t, label: "?", dashed: true }); });
+      var c = s.configuration || {};
+      if (s.action_name === "ForLoop" && stepBy(c.loop_body_initial_step)) out.push({ from: s.name, port: "loop", to: c.loop_body_initial_step, label: "pour chaque", dashed: true });
+      if (s.action_name === "SetErrorHandler" && stepBy(c.error_handling_step)) out.push({ from: s.name, port: "loop", to: c.error_handling_step, label: "si erreur", dashed: true });
+    });
+    return out;
+  }
+  function renameRefs(oldN, newN) {
+    S.steps.forEach(function (s) {
+      var r = routeOf(s);
+      if (r.mode === "simple" && r.to === oldN) r.to = newN;
+      if (r.mode === "cond") { if (r.yes === oldN) r.yes = newN; if (r.no === oldN) r.no = newN; }
+      if (r.mode === "expr") r.expr = r.expr.split('"' + oldN + '"').join('"' + newN + '"');
+      setRoute(s, r);
+      var c = s.configuration || {};
+      if (c.loop_body_initial_step === oldN) c.loop_body_initial_step = newN;
+      if (c.error_handling_step === oldN) c.error_handling_step = newN;
+    });
+    if (S.layout[oldN]) { S.layout[newN] = S.layout[oldN]; delete S.layout[oldN]; }
+  }
+
+  /* ---------------- disposition automatique ---------------- */
+  function autoLayout(force) {
+    var need = force || S.steps.some(function (s) { return !S.layout[s.name]; }) || !S.layout[TRIG];
+    if (!need) return;
+    var level = {}, order = [], q = [];
+    var first = S.steps.filter(function (s) { return s.initial_step; })[0];
+    if (first) { level[first.name] = 1; q.push(first.name); }
+    var es = edges();
+    while (q.length) {
+      var n = q.shift(); order.push(n);
+      es.filter(function (e) { return e.from === n; }).forEach(function (e) { if (level[e.to] === undefined) { level[e.to] = level[n] + 1; q.push(e.to); } });
+    }
+    var maxL = Math.max.apply(null, [1].concat(Object.keys(level).map(function (k) { return level[k]; })));
+    S.steps.forEach(function (s) { if (level[s.name] === undefined) { level[s.name] = ++maxL; } });
+    var rows = {};
+    S.steps.forEach(function (s) { var l = level[s.name]; (rows[l] = rows[l] || []).push(s.name); });
+    if (force || !S.layout[TRIG]) S.layout[TRIG] = { x: 0, y: 0 };
+    Object.keys(rows).forEach(function (l) {
+      var r = rows[l];
+      r.forEach(function (n, i) { if (force || !S.layout[n]) S.layout[n] = { x: (i - (r.length - 1) / 2) * (NW + 60), y: l * (NH + 56) }; });
+    });
+  }
+
+  /* ---------------- structure de la page ---------------- */
+  root.innerHTML =
+    '<div class="dzfe-top">' +
+    '<a class="dzfe-back" href="/dysizz-flow/workflows" title="Tous les workflows"><i class="fas fa-arrow-left"></i></a>' +
+    '<input class="dzfe-name" placeholder="Nom du workflow (ex. releve_mails)" value="' + esc(S.wf.name) + '">' +
+    '<span class="dzfe-status"></span>' +
+    '<span class="dzfe-sp"></span>' +
+    '<button class="dzfe-btn" data-a="undo" title="Annuler (Ctrl Z)"><i class="fas fa-undo"></i></button>' +
+    '<button class="dzfe-btn" data-a="redo" title="R\xE9tablir (Ctrl Y)"><i class="fas fa-redo"></i></button>' +
+    '<button class="dzfe-btn" data-a="tidy" title="Ranger les blocs"><i class="fas fa-magic"></i><span>Ranger</span></button>' +
+    '<button class="dzfe-btn" data-a="code" title="Tout le workflow en JSON"><i class="fas fa-code"></i><span>Code</span></button>' +
+    '<button class="dzfe-btn" data-a="run" title="Lancer un essai"><i class="fas fa-play"></i><span>Essayer</span></button>' +
+    '<button class="dzfe-btn primary" data-a="save" title="Enregistrer (Ctrl S)"><i class="fas fa-save"></i><span>Enregistrer</span></button>' +
+    "</div>" +
+    '<div class="dzfe-body">' +
+    '<aside class="dzfe-pal"><div class="dzfe-pal-head"><input class="dzfe-pal-q" placeholder="Chercher un bloc (mail, table, IA\u2026)"><button class="dzfe-btn dzfe-only-m" data-a="pal"><i class="fas fa-times"></i></button></div><div class="dzfe-pal-list"></div></aside>' +
+    '<section class="dzfe-canvas" tabindex="0"><div class="dzfe-world"><svg class="dzfe-svg"></svg><div class="dzfe-nodes"></div></div>' +
+    '<div class="dzfe-zoom"><button data-a="zin" title="Zoomer">+</button><button data-a="zout" title="D\xE9zoomer">\u2212</button><button data-a="fit" title="Tout voir"><i class="fas fa-expand"></i></button></div>' +
+    '<button class="dzfe-fab dzfe-only-m" data-a="pal"><i class="fas fa-plus"></i></button>' +
+    '<div class="dzfe-hint"></div></section>' +
+    '<aside class="dzfe-panel"></aside>' +
+    "</div>" +
+    '<div class="dzfe-run"></div><div class="dzfe-modal"></div>';
+
+  /* ---------------- palette ---------------- */
+  function drawPalette() {
+    var q = ($(".dzfe-pal-q").value || "").toLowerCase().trim();
+    var html = "";
+    B.palette.categories.forEach(function (c) {
+      var bs = B.palette.blocks.filter(function (b) { return (b.category || "Actions Saltcorn et modules") === c && (!q || (b.label + " " + b.description + " " + b.name).toLowerCase().indexOf(q) >= 0); });
+      if (!bs.length) return;
+      html += '<details class="dzfe-cat"' + (q || c === "Donn\xE9es" || c === "Transformer" ? " open" : "") + "><summary>" + esc(c) + " <small>" + bs.length + "</small></summary>" +
+        bs.map(function (b) {
+          return '<div class="dzfe-pb" draggable="true" data-b="' + esc(b.name) + '" title="' + esc(b.description) + '"><i class="' + esc(b.icon || "fas fa-cube") + '"></i><span><b>' + esc(b.label) + "</b><small>" + esc(b.description || b.name) + "</small></span></div>";
+        }).join("") + "</details>";
+    });
+    $(".dzfe-pal-list").innerHTML = html || '<p class="dzfe-mute">Aucun bloc ne correspond.</p>';
+  }
+  $(".dzfe-pal-q").addEventListener("input", drawPalette);
+  $(".dzfe-pal-list").addEventListener("click", function (e) { var p = e.target.closest(".dzfe-pb"); if (p) { addStep(p.dataset.b); root.classList.remove("pal-open"); } });
+  $(".dzfe-pal-list").addEventListener("dragstart", function (e) { var p = e.target.closest(".dzfe-pb"); if (p) e.dataTransfer.setData("text/dzf", p.dataset.b); });
+
+  /* ---------------- ajout / suppression d'\xE9tapes ---------------- */
+  function uniqueName(base) {
+    base = String(base || "etape").replace(/^dzf_u?_?/, "").replace(/[^A-Za-z0-9_]/g, "_").replace(/^[^A-Za-z_]/, "e_").slice(0, 40) || "etape";
+    var n = base, i = 2; while (stepBy(n)) n = base + "_" + i++; return n;
+  }
+  function defaults(action) {
+    return getFields(action).then(function (F) {
+      var c = {};
+      (F.fields || []).concat(F.advanced || []).forEach(function (f) {
+        if (!f.required || f.def === undefined || f.def === null || f.def === "") return;
+        if (f.name === "si_erreur" || f.name === "delai_max" || f.name === "essais" || f.name === "pause_essais") return;
+        c[f.name] = typeof f.def === "object" ? JSON.stringify(f.def) : f.def;
+      });
+      if (F.dz) c.sortie = F.output || "resultat";
+      return c;
+    });
+  }
+  function addStep(action, pos) {
+    defaults(action).then(function (cfg) {
+      push();
+      var b = BY[action] || {};
+      var name = uniqueName(cfg.sortie || b.output || action);
+      if (cfg.sortie) cfg.sortie = uniqueVar(cfg.sortie);
+      var s = { id: null, name: name, action_name: action, configuration: cfg, next_step: "", only_if: "", initial_step: !S.steps.length };
+      var prev = S.sel && S.sel !== TRIG ? stepBy(S.sel) : null;
+      if (!prev && S.sel === TRIG && S.steps.length) { /* ins\xE9rer en t\xEAte */
+        var first = S.steps.filter(function (x) { return x.initial_step; })[0];
+        if (first) { first.initial_step = false; s.initial_step = true; s.next_step = first.name; }
+      }
+      if (!prev && !pos && !S.sel && S.steps.length) prev = lastStep();
+      if (prev) { var r = routeOf(prev); if (r.mode === "simple" || r.mode === "end") { s.next_step = r.mode === "simple" ? r.to : ""; prev.next_step = name; } }
+      S.steps.push(s);
+      if (pos) S.layout[name] = pos;
+      else { var ref = prev ? S.layout[prev.name] : S.layout[TRIG]; S.layout[name] = { x: ref ? ref.x : 0, y: (ref ? ref.y : 0) + NH + 56 }; shiftBelow(name); }
+      S.sel = name; S.tab = "form";
+      changed(true);
+    });
+  }
+  function uniqueVar(v) { var used = {}; S.steps.forEach(function (s) { if (s.configuration && s.configuration.sortie) used[s.configuration.sortie] = 1; }); var n = v, i = 2; while (used[n]) n = v + i++; return n; }
+  function lastStep() { var ends = S.steps.filter(function (s) { return routeOf(s).mode === "end"; }); return ends.length ? ends[ends.length - 1] : S.steps[S.steps.length - 1]; }
+  function shiftBelow(name) {
+    var p = S.layout[name];
+    S.steps.forEach(function (s) { if (s.name === name) return; var l = S.layout[s.name]; if (l && Math.abs(l.x - p.x) < NW && l.y >= p.y - 10 && l.y < p.y + NH + 40) l.y += NH + 56; });
+  }
+  function removeStep(name) {
+    var s = stepBy(name); if (!s) return;
+    push();
+    var r = routeOf(s), next = r.mode === "simple" ? r.to : "";
+    S.steps.forEach(function (x) {
+      var rx = routeOf(x);
+      if (rx.mode === "simple" && rx.to === name) rx.to = next;
+      if (rx.mode === "cond") { if (rx.yes === name) rx.yes = next; if (rx.no === name) rx.no = next; }
+      setRoute(x, rx);
+      if (rx.mode === "simple" && !rx.to) x.next_step = "";
+    });
+    if (s.initial_step && next && stepBy(next)) stepBy(next).initial_step = true;
+    S.steps = S.steps.filter(function (x) { return x !== s; });
+    if (S.steps.length && !S.steps.some(function (x) { return x.initial_step; })) S.steps[0].initial_step = true;
+    delete S.layout[name];
+    S.sel = null; changed(true);
+  }
+
+  /* ---------------- dessin de la toile ---------------- */
+  var world = $(".dzfe-world"), svg = $(".dzfe-svg"), nodesEl = $(".dzfe-nodes"), canvas = $(".dzfe-canvas");
+  function applyView() { world.style.transform = "translate(" + S.px + "px," + S.py + "px) scale(" + S.zoom + ")"; }
+  function summary(s) {
+    var c = s.configuration || {};
+    var keys = ["table", "url", "cibles", "sources", "workflow", "modele", "message", "titre", "operation", "array_expression", "code", "valeurs", "liste"];
+    for (var i = 0; i < keys.length; i++) if (c[keys[i]]) return keys[i] === "code" ? "code JavaScript" : String(c[keys[i]]).replace(/\\s+/g, " ").slice(0, 46);
+    return "";
+  }
+  function nodeHtml(s) {
+    var b = blockOf(s), r = routeOf(s), c = s.configuration || {};
+    var err = S.run && S.run.errStep === s.name, done = S.run && S.run.okSteps && S.run.okSteps[s.name];
+    var ports = r.mode === "cond" ? '<span class="dzfe-port yes" data-p="yes" title="Si oui">oui</span><span class="dzfe-port no" data-p="no" title="Sinon">non</span>' : '<span class="dzfe-port" data-p="out" title="Tirer pour relier \xE0 l\\'\xE9tape suivante"></span>';
+    if (s.action_name === "ForLoop" || s.action_name === "SetErrorHandler") ports += '<span class="dzfe-port side" data-p="loop" title="' + (s.action_name === "ForLoop" ? "Premi\xE8re \xE9tape de la boucle" : "\xC9tape en cas d'erreur") + '"></span>';
+    return '<div class="dzfe-node' + (S.sel === s.name ? " sel" : "") + (err ? " err" : "") + (done ? " ok" : "") + (b.builtin ? " builtin" : "") + '" data-n="' + esc(s.name) + '" style="left:' + S.layout[s.name].x + "px;top:" + S.layout[s.name].y + 'px">' +
+      '<span class="dzfe-ic"><i class="' + esc(b.icon || "fas fa-cube") + '"></i></span><span class="dzfe-nt"><b>' + esc(b.label) + "</b><small>" + esc(s.name) + (c.sortie ? " \u2192 " + esc(c.sortie) : "") + "</small>" +
+      (summary(s) ? '<em>' + esc(summary(s)) + "</em>" : "") + "</span>" +
+      (s.only_if ? '<span class="dzfe-if" title="Seulement si : ' + esc(s.only_if) + '"><i class="fas fa-filter"></i></span>' : "") +
+      '<span class="dzfe-in"></span>' + ports + "</div>";
+  }
+  function drawNodes() {
+    var t = S.layout[TRIG] || { x: 0, y: 0 };
+    var wl = (B.when.filter(function (w) { return w[0] === S.wf.when_trigger; })[0] || [0, S.wf.when_trigger])[1];
+    var html = '<div class="dzfe-node trig' + (S.sel === TRIG ? " sel" : "") + '" data-n="' + TRIG + '" style="left:' + t.x + "px;top:" + t.y + 'px"><span class="dzfe-ic"><i class="fas fa-bolt"></i></span><span class="dzfe-nt"><b>D\xE9clencheur</b><small>' + esc(wl) + (S.wf.table ? " \xB7 " + esc(S.wf.table) : "") + '</small></span><span class="dzfe-port" data-p="out" title="Tirer vers la premi\xE8re \xE9tape"></span></div>';
+    html += S.steps.map(nodeHtml).join("");
+    nodesEl.innerHTML = html;
+    var hint = $(".dzfe-hint");
+    hint.innerHTML = S.steps.length ? "" : '<div><i class="fas fa-hand-pointer"></i><b>Commence ici</b><p>Clique sur un bloc \xE0 gauche (ou glisse-le sur la toile) : il se relie tout seul au d\xE9clencheur. Tu peux aussi partir d\\'un <a href="/dysizz-flow/modeles">mod\xE8le pr\xEAt \xE0 l\\'emploi</a>.</p></div>';
+  }
+  function portPos(name, port) {
+    var l = S.layout[name] || { x: 0, y: 0 };
+    if (port === "yes") return { x: l.x + NW * 0.3, y: l.y + NH };
+    if (port === "no") return { x: l.x + NW * 0.7, y: l.y + NH };
+    if (port === "loop") return { x: l.x + NW, y: l.y + NH / 2 };
+    return { x: l.x + NW / 2, y: l.y + NH };
+  }
+  function path(a, b, side) {
+    if (side) { var dx = Math.max(60, Math.abs(b.x - a.x) / 2); return "M" + a.x + "," + a.y + " C" + (a.x + dx) + "," + a.y + " " + (b.x + dx) + "," + (b.y - 40) + " " + b.x + "," + b.y; }
+    var dy = Math.max(40, Math.abs(b.y - a.y) / 2);
+    if (b.y < a.y) dy = Math.max(120, Math.abs(b.y - a.y) / 2);
+    return "M" + a.x + "," + a.y + " C" + a.x + "," + (a.y + dy) + " " + b.x + "," + (b.y - dy) + " " + b.x + "," + b.y;
+  }
+  function drawEdges(extra) {
+    var html = '<defs><marker id="dzfe-arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="dzfe-arrow"/></marker></defs>';
+    edges().forEach(function (e) {
+      var a = portPos(e.from, e.port), tl = S.layout[e.to]; if (!tl) return;
+      var b = { x: tl.x + NW / 2, y: tl.y };
+      var d = path(a, b, e.port === "loop");
+      html += '<path class="dzfe-edge' + (e.dashed ? " dashed" : "") + (e.kind === "non" ? " no" : e.kind === "oui" ? " yes" : "") + '" d="' + d + '" marker-end="url(#dzfe-arr)" data-from="' + esc(e.from) + '" data-port="' + e.port + '"/>';
+      if (e.label) { var mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2; html += '<text class="dzfe-el" x="' + mx + '" y="' + my + '">' + esc(e.label) + "</text>"; }
+    });
+    if (extra) html += '<path class="dzfe-edge live" d="' + extra + '"/>';
+    svg.innerHTML = html;
+  }
+  function drawAll() { autoLayout(false); drawNodes(); drawEdges(); applyView(); }
+
+  /* ---------------- d\xE9placer, relier, zoomer ---------------- */
+  var drag = null;
+  function toWorld(ev) { var r = canvas.getBoundingClientRect(); return { x: (ev.clientX - r.left - S.px) / S.zoom, y: (ev.clientY - r.top - S.py) / S.zoom }; }
+  canvas.addEventListener("pointerdown", function (ev) {
+    if (ev.button !== 0 || ev.target.closest(".dzfe-zoom,.dzfe-fab,.dzfe-hint a")) return;
+    var port = ev.target.closest(".dzfe-port"), node = ev.target.closest(".dzfe-node");
+    if (port && node) { drag = { kind: "link", from: node.dataset.n, port: port.dataset.p }; ev.preventDefault(); canvas.setPointerCapture(ev.pointerId); return; }
+    if (node) {
+      var n = node.dataset.n, w = toWorld(ev), l = S.layout[n];
+      drag = { kind: "move", n: n, dx: w.x - l.x, dy: w.y - l.y, moved: false };
+      canvas.setPointerCapture(ev.pointerId); return;
+    }
+    drag = { kind: "pan", x: ev.clientX, y: ev.clientY, px: S.px, py: S.py, moved: false };
+    canvas.setPointerCapture(ev.pointerId);
+  });
+  canvas.addEventListener("pointermove", function (ev) {
+    if (!drag) return;
+    if (drag.kind === "pan") { S.px = drag.px + ev.clientX - drag.x; S.py = drag.py + ev.clientY - drag.y; if (Math.abs(ev.clientX - drag.x) + Math.abs(ev.clientY - drag.y) > 3) drag.moved = true; applyView(); return; }
+    var w = toWorld(ev);
+    if (drag.kind === "move") {
+      if (!drag.moved) { push(); drag.moved = true; }
+      S.layout[drag.n] = { x: Math.round((w.x - drag.dx) / 8) * 8, y: Math.round((w.y - drag.dy) / 8) * 8 };
+      var el = nodesEl.querySelector('[data-n="' + cssEsc(drag.n) + '"]'); if (el) { el.style.left = S.layout[drag.n].x + "px"; el.style.top = S.layout[drag.n].y + "px"; }
+      drawEdges(); return;
+    }
+    if (drag.kind === "link") { var a = portPos(drag.from, drag.port); drawEdges(path(a, w, drag.port === "loop")); var over = document.elementFromPoint(ev.clientX, ev.clientY); $$(".dzfe-node.target").forEach(function (x) { x.classList.remove("target"); }); var tn = over && over.closest && over.closest(".dzfe-node"); if (tn && tn.dataset.n !== drag.from && tn.dataset.n !== TRIG) tn.classList.add("target"); }
+  });
+  canvas.addEventListener("pointerup", function (ev) {
+    if (!drag) return;
+    var d = drag; drag = null;
+    if (d.kind === "pan" && !d.moved) { S.sel = null; drawNodes(); panel(); return; }
+    if (d.kind === "move") { if (d.moved) { S.dirty = true; status(); } else { S.sel = d.n; S.tab = "form"; drawNodes(); panel(); } return; }
+    if (d.kind === "link") {
+      var over = document.elementFromPoint(ev.clientX, ev.clientY), tn = over && over.closest && over.closest(".dzfe-node");
+      $$(".dzfe-node.target").forEach(function (x) { x.classList.remove("target"); });
+      if (tn && tn.dataset.n !== d.from && tn.dataset.n !== TRIG) link(d.from, d.port, tn.dataset.n);
+      else if (!tn) { S.sel = d.from === TRIG ? TRIG : d.from; pickNext(d.from, d.port, toWorld(ev)); }
+      drawEdges();
+    }
+  });
+  function cssEsc(s) { return String(s).replace(/"/g, '\\\\"'); }
+  function link(from, port, to) {
+    push();
+    if (from === TRIG) { S.steps.forEach(function (s) { s.initial_step = s.name === to; }); changed(true); return; }
+    var s = stepBy(from), r = routeOf(s);
+    if (port === "loop") { s.configuration = s.configuration || {}; s.configuration[s.action_name === "ForLoop" ? "loop_body_initial_step" : "error_handling_step"] = to; }
+    else if (port === "yes" || port === "no") { r[port] = to; setRoute(s, r); }
+    else setRoute(s, { mode: "simple", to: to });
+    changed(true);
+  }
+  /* rel\xE2ch\xE9 dans le vide : on propose d'ajouter un bloc \xE0 cet endroit */
+  function pickNext(from, port, pos) {
+    modal('<h3>Ajouter une \xE9tape ici</h3><input class="dzfe-in-q" placeholder="Chercher un bloc\u2026" autofocus><div class="dzfe-pick"></div>', function (m) {
+      var q = m.querySelector(".dzfe-in-q"), list = m.querySelector(".dzfe-pick");
+      function draw() { var v = q.value.toLowerCase(); list.innerHTML = B.palette.blocks.filter(function (b) { return !v || (b.label + " " + b.description).toLowerCase().indexOf(v) >= 0; }).slice(0, 40).map(function (b) { return '<button class="dzfe-pb" data-b="' + esc(b.name) + '"><i class="' + esc(b.icon) + '"></i><span><b>' + esc(b.label) + "</b><small>" + esc(b.category) + "</small></span></button>"; }).join(""); }
+      q.addEventListener("input", draw); draw(); setTimeout(function () { q.focus(); }, 30);
+      list.addEventListener("click", function (e) {
+        var p = e.target.closest(".dzfe-pb"); if (!p) return; closeModal();
+        defaults(p.dataset.b).then(function (cfg) {
+          push();
+          var name = uniqueName(cfg.sortie || p.dataset.b); if (cfg.sortie) cfg.sortie = uniqueVar(cfg.sortie);
+          S.steps.push({ id: null, name: name, action_name: p.dataset.b, configuration: cfg, next_step: "", only_if: "", initial_step: false });
+          S.layout[name] = { x: Math.round(pos.x - NW / 2), y: Math.round(pos.y) };
+          if (from === TRIG) S.steps.forEach(function (s) { s.initial_step = s.name === name; });
+          else { var s = stepBy(from), r = routeOf(s); if (port === "loop") s.configuration[s.action_name === "ForLoop" ? "loop_body_initial_step" : "error_handling_step"] = name; else if (port === "yes" || port === "no") { r[port] = name; setRoute(s, r); } else setRoute(s, { mode: "simple", to: name }); }
+          S.sel = name; changed(true);
+        });
+      });
+    });
+  }
+  canvas.addEventListener("dragover", function (e) { e.preventDefault(); });
+  canvas.addEventListener("drop", function (e) { var b = e.dataTransfer.getData("text/dzf"); if (!b) return; e.preventDefault(); var w = toWorld(e); S.sel = null; addStep(b, { x: Math.round(w.x - NW / 2), y: Math.round(w.y - NH / 2) }); });
+  canvas.addEventListener("wheel", function (e) {
+    e.preventDefault();
+    if (!e.ctrlKey && Math.abs(e.deltaX) + Math.abs(e.deltaY) < 50 && !e.deltaMode) { S.px -= e.deltaX; S.py -= e.deltaY; applyView(); return; }
+    zoomAt(e.deltaY < 0 ? 1.1 : 1 / 1.1, e.clientX, e.clientY);
+  }, { passive: false });
+  function zoomAt(f, cx, cy) {
+    var r = canvas.getBoundingClientRect(); cx = cx === undefined ? r.left + r.width / 2 : cx; cy = cy === undefined ? r.top + r.height / 2 : cy;
+    var nz = Math.min(2, Math.max(0.3, S.zoom * f)), k = nz / S.zoom;
+    S.px = cx - r.left - (cx - r.left - S.px) * k; S.py = cy - r.top - (cy - r.top - S.py) * k; S.zoom = nz; applyView();
+  }
+  function fit() {
+    var ns = [TRIG].concat(S.steps.map(function (s) { return s.name; })).map(function (n) { return S.layout[n]; }).filter(Boolean);
+    if (!ns.length) return;
+    var x0 = Math.min.apply(null, ns.map(function (l) { return l.x; })), y0 = Math.min.apply(null, ns.map(function (l) { return l.y; }));
+    var x1 = Math.max.apply(null, ns.map(function (l) { return l.x + NW; })), y1 = Math.max.apply(null, ns.map(function (l) { return l.y + NH; }));
+    var r = canvas.getBoundingClientRect();
+    S.zoom = Math.min(1.2, Math.max(0.3, Math.min((r.width - 80) / (x1 - x0 || 1), (r.height - 80) / (y1 - y0 || 1))));
+    S.px = (r.width - (x1 - x0) * S.zoom) / 2 - x0 * S.zoom; S.py = 40 - y0 * S.zoom; applyView();
+  }
+
+  /* ---------------- panneau de droite ---------------- */
+  var panelEl = $(".dzfe-panel");
+  function getFields(action) {
+    if (S.fields[action]) return Promise.resolve(S.fields[action]);
+    return fetch("/dysizz-flow/editeur-api/fields/" + encodeURIComponent(action) + "?table=" + encodeURIComponent(S.wf.table || ""), { credentials: "same-origin" })
+      .then(function (r) { return r.json(); }).then(function (j) { S.fields[action] = j; return j; }).catch(function () { return { fields: [] }; });
+  }
+  function vars(upto) {
+    var out = [{ v: "user.email", l: "l'utilisateur" }];
+    var t = B.tables.filter(function (x) { return x.name === S.wf.table; })[0];
+    if (t) t.fields.forEach(function (f) { out.push({ v: f, l: "champ de la ligne (" + S.wf.table + ")" }); });
+    if (S.wf.when_trigger === "API call") out.push({ v: "corps", l: "donn\xE9es re\xE7ues" });
+    var seen = {}, order = [], first = S.steps.filter(function (s) { return s.initial_step; })[0];
+    (function walk(s) { if (!s || seen[s.name]) return; seen[s.name] = 1; order.push(s); edges().filter(function (e) { return e.from === s.name; }).forEach(function (e) { walk(stepBy(e.to)); }); })(first);
+    S.steps.forEach(function (s) { if (!seen[s.name]) order.push(s); });
+    for (var i = 0; i < order.length; i++) {
+      var s = order[i]; if (s.name === upto) break;
+      var c = s.configuration || {};
+      if (c.sortie) out.push({ v: c.sortie, l: "r\xE9sultat de \xAB " + blockOf(s).label + " \xBB" });
+      if (s.action_name === "ForLoop" && c.item_variable) out.push({ v: c.item_variable, l: "\xE9l\xE9ment de la boucle" });
+      if (s.action_name === "TableQuery" && c.query_variable) out.push({ v: c.query_variable, l: "lignes lues" });
+    }
+    return out;
+  }
+  function fieldHtml(f, val, withVars) {
+    var id = "f_" + f.name, v = val === undefined || val === null ? "" : val, ph = f.def !== undefined && f.def !== null && typeof f.def !== "object" ? String(f.def) : "";
+    var head = '<label for="' + id + '">' + esc(f.label) + (f.required ? ' <span class="req">*</span>' : "") + "</label>";
+    var help = f.help ? '<small class="help">' + esc(f.help) + "</small>" : "";
+    var vb = withVars && f.vars !== false ? '<button type="button" class="dzfe-vb" data-for="' + id + '" title="Ins\xE9rer une variable">{ }</button>' : "";
+    var input;
+    if (f.kind === "header") return '<h4 class="dzfe-fh">' + esc(f.label) + "</h4>";
+    if (f.kind === "bool") input = '<label class="dzfe-sw"><input type="checkbox" id="' + id + '" data-f="' + esc(f.name) + '"' + (v === true || v === "true" || v === "on" ? " checked" : "") + '><span></span>' + esc(f.label) + "</label>";
+    else if (f.options && f.options.length) {
+      var has = f.options.some(function (o) { return o.v === String(v); });
+      input = '<select id="' + id + '" data-f="' + esc(f.name) + '"><option value=""' + (!v ? " selected" : "") + ">" + (ph ? "(par d\xE9faut : " + esc(ph) + ")" : "\u2014 choisir \u2014") + "</option>" +
+        f.options.map(function (o) { return '<option value="' + esc(o.v) + '"' + (o.v === String(v) ? " selected" : "") + ">" + esc(o.l) + "</option>"; }).join("") +
+        (v && !has ? '<option value="' + esc(v) + '" selected>' + esc(v) + "</option>" : "") + "</select>";
+    } else if (f.kind === "json" || f.kind === "code" || f.kind === "text") {
+      input = '<textarea id="' + id + '" data-f="' + esc(f.name) + '" class="' + (f.kind !== "text" ? "mono" : "") + '" rows="' + (f.kind === "code" ? 12 : f.kind === "json" ? 6 : 4) + '" spellcheck="false" placeholder="' + esc(ph) + '">' + esc(typeof v === "object" ? JSON.stringify(v, null, 2) : v) + "</textarea>";
+    } else input = '<input id="' + id + '" data-f="' + esc(f.name) + '" type="' + (f.kind === "number" ? "number" : f.kind === "password" ? "password" : "text") + '" value="' + esc(v) + '" placeholder="' + esc(ph) + '">';
+    return '<div class="dzfe-f' + (f.kind === "bool" ? " bool" : "") + '" data-show=\\'' + esc(JSON.stringify(f.showIf || null)) + "'>" + (f.kind === "bool" ? "" : head) + '<div class="dzfe-fi">' + input + vb + "</div>" + help + '<small class="dzfe-ferr"></small></div>';
+  }
+  function panel() {
+    root.classList.toggle("panel-open", !!S.sel);
+    if (!S.sel) { panelEl.innerHTML = panelEmpty(); return; }
+    if (S.sel === TRIG) return panelTrigger();
+    var s = stepBy(S.sel); if (!s) { S.sel = null; return panel(); }
+    var b = blockOf(s);
+    panelEl.innerHTML = '<div class="dzfe-ph"><span class="dzfe-ic"><i class="' + esc(b.icon) + '"></i></span><div><b>' + esc(b.label) + '</b><small>' + esc(b.category || "") + '</small></div><button class="dzfe-x" data-a="close" title="Fermer"><i class="fas fa-times"></i></button></div>' +
+      '<p class="dzfe-desc">' + esc(b.description || "") + (b.dz ? ' <a href="/dysizz-flow/bloc/' + encodeURIComponent(s.action_name) + '" target="_blank">Exemples et essai <i class="fas fa-external-link-alt"></i></a>' : "") + "</p>" +
+      '<div class="dzfe-tabs"><button data-tab="form" class="' + (S.tab === "form" ? "on" : "") + '">R\xE9glages</button><button data-tab="flow" class="' + (S.tab === "flow" ? "on" : "") + '">Encha\xEEnement</button><button data-tab="json" class="' + (S.tab === "json" ? "on" : "") + '">Code</button></div>' +
+      '<div class="dzfe-pb-body">Chargement\u2026</div>';
+    var body = $(".dzfe-pb-body", panelEl);
+    if (S.tab === "json") return panelJson(s, body);
+    if (S.tab === "flow") return panelFlow(s, body);
+    getFields(s.action_name).then(function (F) {
+      if (S.sel !== s.name || S.tab !== "form") return;
+      var c = s.configuration || {};
+      var html = '<div class="dzfe-f"><label>Nom de l\\'\xE9tape</label><div class="dzfe-fi"><input data-meta="name" value="' + esc(s.name) + '"></div><small class="help">Lettres, chiffres et _. Sert \xE0 relier les \xE9tapes.</small><small class="dzfe-ferr"></small></div>';
+      if (F.unknown) html += '<p class="dzfe-warn">Ce bloc n\\'existe pas (module retir\xE9 ?). Ses r\xE9glages restent visibles dans l\\'onglet Code.</p>';
+      html += (F.fields || []).map(function (f) { return fieldHtml(f, c[f.name], F.dz); }).join("") || '<p class="dzfe-mute">Ce bloc n\\'a pas de r\xE9glage.</p>';
+      if ((F.advanced || []).length) html += '<details class="dzfe-adv"><summary>R\xE9glages avanc\xE9s (r\xE9sultat, erreurs, essais)</summary>' + F.advanced.map(function (f) { return fieldHtml(f, c[f.name], false); }).join("") + "</details>";
+      body.innerHTML = html;
+      showIfs(body, s);
+    });
+  }
+  function showIfs(body, s) {
+    $$(".dzfe-f", body).forEach(function (el) {
+      var cond = JSON.parse(el.getAttribute("data-show") || "null"); if (!cond) return;
+      var ok = Object.keys(cond).every(function (k) { var want = [].concat(cond[k]); var v = (s.configuration || {})[k]; return want.some(function (w) { return String(w) === String(v) || (w === true && (v === true || v === "on")); }); });
+      el.style.display = ok ? "" : "none";
+    });
+  }
+  function panelEmpty() {
+    return '<div class="dzfe-pe"><i class="fas fa-mouse-pointer"></i><b>Clique sur un bloc pour le r\xE9gler</b><p>Astuces :</p><ul>' +
+      "<li>Tire le petit rond sous un bloc vers un autre pour les relier.</li><li>Rel\xE2che dans le vide pour ajouter une \xE9tape \xE0 cet endroit.</li>" +
+      "<li>Chaque \xE9tape range son r\xE9sultat dans une variable ; les suivantes la lisent avec <code>{{nom}}</code> (bouton <b>{ }</b>).</li>" +
+      "<li>Molette : se d\xE9placer \xB7 Ctrl + molette : zoomer \xB7 Suppr : effacer le bloc choisi.</li><li>Ctrl S : enregistrer \xB7 Ctrl Z : annuler.</li></ul></div>";
+  }
+  function panelTrigger() {
+    var need = B.tableWhen.indexOf(S.wf.when_trigger) >= 0;
+    panelEl.innerHTML = '<div class="dzfe-ph"><span class="dzfe-ic trig"><i class="fas fa-bolt"></i></span><div><b>D\xE9clencheur</b><small>Quand le workflow d\xE9marre</small></div><button class="dzfe-x" data-a="close"><i class="fas fa-times"></i></button></div>' +
+      '<div class="dzfe-pb-body"><div class="dzfe-f"><label>Nom du workflow</label><div class="dzfe-fi"><input data-w="name" value="' + esc(S.wf.name) + '" placeholder="ex. releve_mails"></div></div>' +
+      '<div class="dzfe-f"><label>Description</label><div class="dzfe-fi"><textarea data-w="description" rows="2" placeholder="Ce que fait ce workflow, en une phrase">' + esc(S.wf.description) + "</textarea></div></div>" +
+      '<div class="dzfe-f"><label>Quand d\xE9marre-t-il ?</label><div class="dzfe-when">' + B.when.map(function (w) { return '<label class="' + (S.wf.when_trigger === w[0] ? "on" : "") + '"><input type="radio" name="when" value="' + esc(w[0]) + '"' + (S.wf.when_trigger === w[0] ? " checked" : "") + ">" + esc(w[1]) + "</label>"; }).join("") + "</div></div>" +
+      '<div class="dzfe-f" style="' + (need ? "" : "display:none") + '"><label>Quelle table ?</label><div class="dzfe-fi"><select data-w="table"><option value="">\u2014 choisir \u2014</option>' + B.tables.map(function (t) { return '<option' + (t.name === S.wf.table ? " selected" : "") + ">" + esc(t.name) + "</option>"; }).join("") + '</select></div><small class="help">Dans les \xE9tapes, les champs de la ligne sont disponibles directement : {{nom_du_champ}}.</small></div>' +
+      (S.wf.when_trigger === "API call" ? '<p class="dzfe-note">Adresse Saltcorn : <code>POST /api/action/' + esc(S.wf.name || "nom") + '</code>. Pour une adresse publique prot\xE9g\xE9e (jeton, signature, limite), utilise plut\xF4t les <a href="/dysizz-flow/api" target="_blank">Points d\\'API</a> : laisse ce workflow \xAB \xE0 la main \xBB et choisis-le dans un point.</p>' : "") +
+      "</div>";
+  }
+  function panelFlow(s, body) {
+    var r = routeOf(s), others = S.steps.filter(function (x) { return x !== s; }).map(function (x) { return x.name; });
+    function opts(cur) { return '<option value="">(fin du workflow)</option>' + others.map(function (n) { return "<option" + (n === cur ? " selected" : "") + ">" + esc(n) + "</option>"; }).join(""); }
+    body.innerHTML =
+      '<div class="dzfe-f"><label>Seulement si\u2026 <small>(sinon l\\'\xE9tape est saut\xE9e)</small></label><div class="dzfe-fi"><input data-meta="only_if" value="' + esc(s.only_if) + '" placeholder="ex. nouveaux.length > 0" class="mono"></div><small class="help">Une condition JavaScript sur les variables du contexte. Vide = toujours.</small><div class="dzfe-chips">' +
+      vars(s.name).slice(0, 12).map(function (v) { return '<button type="button" data-ins="only_if" data-v="' + esc(v.v) + '" title="' + esc(v.l) + '">' + esc(v.v) + "</button>"; }).join("") + "</div></div>" +
+      '<div class="dzfe-f"><label>Ensuite</label><div class="dzfe-seg">' +
+      [["end", "Fin"], ["simple", "\xC9tape suivante"], ["cond", "Si\u2026 sinon\u2026"], ["expr", "Expression"]].map(function (m) { return '<button type="button" data-mode="' + m[0] + '" class="' + (r.mode === m[0] ? "on" : "") + '">' + m[1] + "</button>"; }).join("") + "</div></div>" +
+      (r.mode === "simple" ? '<div class="dzfe-f"><label>Aller \xE0</label><div class="dzfe-fi"><select data-r="to">' + opts(r.to) + "</select></div></div>" : "") +
+      (r.mode === "cond" ? '<div class="dzfe-f"><label>Si cette condition est vraie</label><div class="dzfe-fi"><input data-r="expr" class="mono" value="' + esc(r.expr) + '" placeholder="ex. verrou"></div></div><div class="dzfe-f"><label>alors aller \xE0</label><div class="dzfe-fi"><select data-r="yes">' + opts(r.yes) + '</select></div></div><div class="dzfe-f"><label>sinon aller \xE0</label><div class="dzfe-fi"><select data-r="no">' + opts(r.no) + "</select></div></div>" : "") +
+      (r.mode === "expr" ? '<div class="dzfe-f"><label>Expression qui donne le nom de l\\'\xE9tape suivante</label><div class="dzfe-fi"><textarea data-r="expr" class="mono" rows="3">' + esc(r.expr) + '</textarea></div><small class="help">JavaScript. Ex. <code>statut === "urgent" ? "alerte" : "ranger"</code></small></div>' : "") +
+      '<div class="dzfe-f"><label class="dzfe-sw"><input type="checkbox" data-meta="initial_step"' + (s.initial_step ? " checked" : "") + "><span></span>Premi\xE8re \xE9tape du workflow</label></div>" +
+      '<div class="dzfe-danger"><button type="button" class="dzfe-btn danger" data-a="del"><i class="far fa-trash-alt"></i> Supprimer cette \xE9tape</button></div>';
+  }
+  function panelJson(s, body) {
+    body.innerHTML = '<p class="dzfe-mute">Pour les techniciens : l\\'\xE9tape telle que Saltcorn la range. Modifie puis applique.</p><textarea class="mono dzfe-json" rows="22" spellcheck="false">' + esc(JSON.stringify({ action_name: s.action_name, configuration: s.configuration, only_if: s.only_if, next_step: s.next_step }, null, 2)) + '</textarea><small class="dzfe-ferr"></small><button type="button" class="dzfe-btn primary" data-a="applyjson">Appliquer</button>';
+  }
+
+  /* saisie dans le panneau : l'\xE9tat change, seul le bloc concern\xE9 est redessin\xE9 (pas de lag) */
+  var typing = null;
+  panelEl.addEventListener("focusin", function (e) { if (e.target.matches("input,textarea,select") && !typing) { push(); typing = true; } });
+  panelEl.addEventListener("focusout", function () { typing = null; });
+  panelEl.addEventListener("input", onPanelInput);
+  panelEl.addEventListener("change", onPanelInput);
+  function onPanelInput(e) {
+    var t = e.target;
+    if (t.name === "when") { S.wf.when_trigger = t.value; changed(false); panelTrigger(); return; }
+    if (t.dataset.w) { S.wf[t.dataset.w] = t.value; if (t.dataset.w === "name") $(".dzfe-name").value = t.value; if (t.dataset.w === "table") S.fields = {}; S.dirty = true; status(); drawNodes(); return; }
+    var s = stepBy(S.sel); if (!s) return;
+    if (t.dataset.f) {
+      s.configuration = s.configuration || {};
+      var v = t.type === "checkbox" ? t.checked : t.type === "number" ? (t.value === "" ? "" : Number(t.value)) : t.value;
+      if (v === "" && t.type !== "checkbox") delete s.configuration[t.dataset.f]; else s.configuration[t.dataset.f] = v;
+      var err = t.closest(".dzfe-f").querySelector(".dzfe-ferr");
+      if (err) { err.textContent = ""; if (t.classList.contains("mono") && /^\\s*[\\[{]/.test(t.value) && e.type === "change") { try { JSON.parse(t.value.replace(/\\{\\{[^}]*\\}\\}/g, "0")); } catch (x) { err.textContent = "JSON invalide : " + x.message; } } }
+      showIfs(panelEl, s); redrawNode(s); return;
+    }
+    if (t.dataset.meta === "name") {
+      var nv = t.value.trim(), err2 = t.closest(".dzfe-f").querySelector(".dzfe-ferr");
+      if (!/^[A-Za-z_][A-Za-z0-9_]{0,60}$/.test(nv)) { err2.textContent = "Lettres, chiffres et _ seulement"; return; }
+      if (nv !== s.name && stepBy(nv)) { err2.textContent = "Ce nom est d\xE9j\xE0 pris"; return; }
+      err2.textContent = ""; renameRefs(s.name, nv); s.name = nv; S.sel = nv; S.dirty = true; status(); drawNodes(); drawEdges(); return;
+    }
+    if (t.dataset.meta === "only_if") { s.only_if = t.value; redrawNode(s); S.dirty = true; status(); return; }
+    if (t.dataset.meta === "initial_step") { S.steps.forEach(function (x) { x.initial_step = x === s ? t.checked : false; }); if (!S.steps.some(function (x) { return x.initial_step; })) s.initial_step = true; changed(false); return; }
+    if (t.dataset.r) { var r = routeOf(s); r[t.dataset.r] = t.value; if (r.mode === "simple" && !r.to) r = { mode: "end" }; setRoute(s, r); S.dirty = true; status(); drawEdges(); redrawNode(s); }
+  }
+  function redrawNode(s) { var el = nodesEl.querySelector('[data-n="' + cssEsc(s.name) + '"]'); if (!el) return drawNodes(); var tmp = document.createElement("div"); tmp.innerHTML = nodeHtml(s); el.replaceWith(tmp.firstChild); S.dirty = true; status(); }
+  panelEl.addEventListener("click", function (e) {
+    var t = e.target.closest("button"); if (!t) return;
+    var s = stepBy(S.sel);
+    if (t.dataset.tab) { S.tab = t.dataset.tab; panel(); return; }
+    if (t.dataset.a === "close") { S.sel = null; drawNodes(); panel(); return; }
+    if (t.dataset.a === "del" && s && confirm("Supprimer l'\xE9tape \xAB " + s.name + " \xBB ?")) { removeStep(s.name); return; }
+    if (t.dataset.mode && s) {
+      push(); var r = routeOf(s), m = t.dataset.mode, next = r.mode === "simple" ? r.to : r.mode === "cond" ? r.yes : "";
+      if (m === "end") setRoute(s, { mode: "end" });
+      if (m === "simple") setRoute(s, { mode: "simple", to: next || "" });
+      if (m === "cond") setRoute(s, { mode: "cond", expr: r.expr && r.mode !== "expr" ? r.expr : "true", yes: next, no: "" });
+      if (m === "expr") setRoute(s, { mode: "expr", expr: s.next_step || '""' });
+      if (m === "simple" && !next) s.next_step = "";
+      S.tab = "flow"; changed(true); return;
+    }
+    if (t.dataset.ins && s) { var inp = panelEl.querySelector('[data-meta="' + t.dataset.ins + '"]'); inp.value = (inp.value ? inp.value + " " : "") + t.dataset.v; inp.dispatchEvent(new Event("input", { bubbles: true })); inp.focus(); return; }
+    if (t.dataset.a === "applyjson" && s) {
+      var ta = panelEl.querySelector(".dzfe-json"), er = panelEl.querySelector(".dzfe-ferr");
+      try { var o = JSON.parse(ta.value); push(); s.action_name = o.action_name || s.action_name; s.configuration = o.configuration || {}; s.only_if = o.only_if || ""; s.next_step = o.next_step || ""; er.textContent = ""; changed(true); } catch (x) { er.textContent = "JSON invalide : " + x.message; }
+      return;
+    }
+    if (t.classList.contains("dzfe-vb")) varMenu(t);
+  });
+  function varMenu(btn) {
+    var s = stepBy(S.sel), input = panelEl.querySelector("#" + btn.dataset.for), list = vars(s ? s.name : "");
+    var old = panelEl.querySelector(".dzfe-vm"); if (old) { old.remove(); if (old.dataset.for === btn.dataset.for) return; }
+    var m = document.createElement("div"); m.className = "dzfe-vm"; m.dataset.for = btn.dataset.for;
+    m.innerHTML = "<b>Ins\xE9rer une variable</b>" + list.map(function (v) { return '<button type="button" data-v="' + esc(v.v) + '"><code>{{' + esc(v.v) + "}}</code><small>" + esc(v.l) + "</small></button>"; }).join("") + '<small class="help">Pour un champ d\\'un r\xE9sultat : <code>{{resultat.champ}}</code>. Dans une liste transform\xE9e : <code>{{item.champ}}</code>.</small>';
+    btn.closest(".dzfe-f").appendChild(m);
+    m.addEventListener("click", function (e) {
+      var b = e.target.closest("button"); if (!b) return;
+      var ins = "{{" + b.dataset.v + "}}", st = input.selectionStart || input.value.length, en = input.selectionEnd || st;
+      input.value = input.value.slice(0, st) + ins + input.value.slice(en); input.focus(); input.selectionStart = input.selectionEnd = st + ins.length;
+      input.dispatchEvent(new Event("input", { bubbles: true })); m.remove();
+    });
+  }
+  /* Tab dans les zones de code */
+  root.addEventListener("keydown", function (e) {
+    if (e.key === "Tab" && e.target.matches("textarea.mono")) { e.preventDefault(); var t = e.target, a = t.selectionStart; t.value = t.value.slice(0, a) + "  " + t.value.slice(t.selectionEnd); t.selectionStart = t.selectionEnd = a + 2; t.dispatchEvent(new Event("input", { bubbles: true })); }
+  });
+  $(".dzfe-name").addEventListener("input", function (e) { S.wf.name = e.target.value; S.dirty = true; status(); var x = panelEl.querySelector('[data-w="name"]'); if (x) x.value = e.target.value; });
+
+  /* ---------------- barre du haut ---------------- */
+  root.addEventListener("click", function (e) {
+    var b = e.target.closest("[data-a]"); if (!b || panelEl.contains(b)) return;
+    var a = b.dataset.a;
+    if (a === "undo" && S.undo.length) { S.redo.push(snapshot()); restore(S.undo.pop()); }
+    if (a === "redo" && S.redo.length) { S.undo.push(snapshot()); restore(S.redo.pop()); }
+    if (a === "tidy") { push(); autoLayout(true); changed(false); fit(); }
+    if (a === "zin") zoomAt(1.2); if (a === "zout") zoomAt(1 / 1.2); if (a === "fit") fit();
+    if (a === "save") save();
+    if (a === "run") runDialog();
+    if (a === "code") codeDialog();
+    if (a === "pal") root.classList.toggle("pal-open");
+  });
+  document.addEventListener("keydown", function (e) {
+    var inField = e.target.matches && e.target.matches("input,textarea,select");
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); save(); return; }
+    if (inField) return;
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") { e.preventDefault(); if (S.undo.length) { S.redo.push(snapshot()); restore(S.undo.pop()); } }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "y") { e.preventDefault(); if (S.redo.length) { S.undo.push(snapshot()); restore(S.redo.pop()); } }
+    if ((e.key === "Delete" || e.key === "Backspace") && S.sel && S.sel !== TRIG) { e.preventDefault(); removeStep(S.sel); }
+    if (e.key === "Escape") { closeModal(); S.sel = null; drawNodes(); panel(); }
+  });
+  window.addEventListener("beforeunload", function (e) { if (S.dirty) { e.preventDefault(); e.returnValue = ""; } });
+
+  function post(url, body) {
+    return fetch(url, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json", "CSRF-Token": B.csrf, "X-Requested-With": "XMLHttpRequest" }, body: JSON.stringify(Object.assign({ _csrf: B.csrf }, body)) }).then(function (r) { return r.json(); });
+  }
+  function toast(msg, bad) { var t = document.createElement("div"); t.className = "dzfe-toast" + (bad ? " bad" : ""); t.textContent = msg; root.appendChild(t); setTimeout(function () { t.classList.add("out"); }, 3200); setTimeout(function () { t.remove(); }, 3700); }
+  function save() {
+    if (!S.wf.name) { S.sel = TRIG; panel(); toast("Donne d'abord un nom au workflow", true); return Promise.reject(); }
+    var btn = root.querySelector('[data-a="save"]'); btn.disabled = true;
+    return post("/dysizz-flow/editeur-api/save", { id: S.wf.id, name: S.wf.name, description: S.wf.description, when_trigger: S.wf.when_trigger, table: S.wf.table, layout: S.layout, steps: S.steps })
+      .then(function (j) {
+        btn.disabled = false;
+        if (j.error) { toast(j.error, true); throw new Error(j.error); }
+        var isNew = !S.wf.id;
+        S.wf.id = j.wf.id; S.steps.forEach(function (s) { var m = j.wf.steps.filter(function (x) { return x.name === s.name; })[0]; if (m) s.id = m.id; });
+        S.dirty = false; status(); toast("Enregistr\xE9");
+        if (isNew) history.replaceState(null, "", "/dysizz-flow/editeur/" + j.wf.id);
+        return j;
+      }, function (e) { btn.disabled = false; toast("Enregistrement impossible : " + e.message, true); throw e; });
+  }
+
+  /* ---------------- essai ---------------- */
+  function exampleCtx() {
+    var t = B.tables.filter(function (x) { return x.name === S.wf.table; })[0];
+    if (t) { var o = {}; t.fields.forEach(function (f) { if (f !== "id") o[f] = ""; }); return JSON.stringify(o, null, 2); }
+    if (S.wf.when_trigger === "API call") return '{\\n  "corps": {}\\n}';
+    return "{}";
+  }
+  function runDialog() {
+    modal('<h3>Lancer un essai</h3><p class="dzfe-mute">Le workflow s\\'ex\xE9cute vraiment (\xE9critures, envois compris). Donn\xE9es de d\xE9part (JSON) :</p><textarea class="mono dzfe-ctx" rows="8" spellcheck="false">' + esc(S.lastCtx || exampleCtx()) + '</textarea><div class="dzfe-mact"><button class="dzfe-btn" data-m="cancel">Annuler</button><button class="dzfe-btn primary" data-m="go"><i class="fas fa-play"></i> Lancer</button></div>', function (m) {
+      m.addEventListener("click", function (e) {
+        var b = e.target.closest("[data-m]"); if (!b) return;
+        if (b.dataset.m === "cancel") return closeModal();
+        var ctx = m.querySelector(".dzfe-ctx").value; S.lastCtx = ctx;
+        try { JSON.parse(ctx || "{}"); } catch (x) { toast("JSON invalide : " + x.message, true); return; }
+        closeModal();
+        (S.dirty || !S.wf.id ? save() : Promise.resolve()).then(function () {
+          showRun({ pending: true });
+          return post("/dysizz-flow/editeur-api/run", { id: S.wf.id, contexte: ctx });
+        }).then(function (j) { if (j) showRun(j); }).catch(function () {});
+      });
+    });
+  }
+  function showRun(j) {
+    var el = $(".dzfe-run");
+    if (j.pending) { el.className = "dzfe-run open"; el.innerHTML = '<div class="dzfe-rh"><b><i class="fas fa-spinner fa-spin"></i> Essai en cours\u2026</b></div>'; return; }
+    var errStep = !j.ok && j.step ? [].concat(j.step)[0] : null;
+    S.run = { errStep: errStep, okSteps: {} };
+    if (j.context) S.steps.forEach(function (s) { var c = s.configuration || {}; if (c.sortie && j.context[c.sortie] !== undefined) S.run.okSteps[s.name] = true; });
+    drawNodes();
+    el.className = "dzfe-run open";
+    el.innerHTML = '<div class="dzfe-rh"><b class="' + (j.ok ? "ok" : "ko") + '">' + (j.ok ? '<i class="fas fa-check-circle"></i> Termin\xE9' : j.status === "Waiting" ? '<i class="fas fa-pause-circle"></i> En attente' : '<i class="fas fa-times-circle"></i> Erreur') + "</b><span>" + (j.ms || 0) + " ms" + (j.run_id ? ' \xB7 <a href="/actions/run/' + j.run_id + '" target="_blank">d\xE9tail Saltcorn</a>' : "") + '</span><button class="dzfe-x" data-rc><i class="fas fa-times"></i></button></div>' +
+      (j.error ? '<div class="dzfe-rerr">' + (errStep ? "\xC9tape <b>" + esc(errStep) + "</b> : " : "") + esc(j.error) + "</div>" : "") +
+      '<div class="dzfe-rctx">' + tree(j.context || {}, 0) + "</div>";
+    el.querySelector("[data-rc]").addEventListener("click", function () { el.className = "dzfe-run"; S.run = null; drawNodes(); });
+  }
+  function tree(v, d) {
+    if (v === null || v === undefined) return '<span class="n">vide</span>';
+    if (typeof v !== "object") return '<span class="' + typeof v + '">' + esc(typeof v === "string" && v.length > 300 ? v.slice(0, 300) + "\u2026" : v) + "</span>";
+    var keys = Object.keys(v), arr = Array.isArray(v);
+    if (!keys.length) return arr ? "[ ]" : "{ }";
+    return '<details' + (d < 1 ? " open" : "") + "><summary>" + (arr ? "liste \xB7 " + keys.length + " \xE9l\xE9ment(s)" : keys.length + " champ(s)") + "</summary><ul>" +
+      keys.slice(0, 100).map(function (k) { return "<li><b>" + esc(k) + "</b> " + tree(v[k], d + 1) + "</li>"; }).join("") + (keys.length > 100 ? "<li>\u2026</li>" : "") + "</ul></details>";
+  }
+
+  /* ---------------- code du workflow entier ---------------- */
+  function codeDialog() {
+    var txt = JSON.stringify({ name: S.wf.name, description: S.wf.description, when_trigger: S.wf.when_trigger, table: S.wf.table, steps: S.steps.map(function (s) { return { name: s.name, action_name: s.action_name, initial_step: s.initial_step, only_if: s.only_if, next_step: s.next_step, configuration: s.configuration }; }) }, null, 2);
+    modal('<h3>Le workflow en JSON</h3><p class="dzfe-mute">Copie-le pour le partager ou le versionner, ou colle un workflow pour le remplacer.</p><textarea class="mono dzfe-all" rows="22" spellcheck="false">' + esc(txt) + '</textarea><small class="dzfe-ferr"></small><div class="dzfe-mact"><button class="dzfe-btn" data-m="copy"><i class="far fa-copy"></i> Copier</button><button class="dzfe-btn" data-m="cancel">Fermer</button><button class="dzfe-btn primary" data-m="apply">Appliquer</button></div>', function (m) {
+      m.addEventListener("click", function (e) {
+        var b = e.target.closest("[data-m]"); if (!b) return;
+        var ta = m.querySelector(".dzfe-all");
+        if (b.dataset.m === "cancel") return closeModal();
+        if (b.dataset.m === "copy") { ta.select(); try { navigator.clipboard.writeText(ta.value); } catch (x) { document.execCommand("copy"); } toast("Copi\xE9"); return; }
+        try {
+          var o = JSON.parse(ta.value); if (!Array.isArray(o.steps)) throw new Error("\xAB steps \xBB doit \xEAtre une liste");
+          push();
+          var ids = {}; S.steps.forEach(function (s) { ids[s.name] = s.id; });
+          S.steps = o.steps.map(function (s) { return { id: ids[s.name] || null, name: s.name, action_name: s.action_name, configuration: s.configuration || {}, next_step: s.next_step || "", only_if: s.only_if || "", initial_step: !!s.initial_step }; });
+          ["name", "description", "when_trigger", "table"].forEach(function (k) { if (o[k] !== undefined) S.wf[k] = o[k]; });
+          $(".dzfe-name").value = S.wf.name; S.layout = {}; closeModal(); changed(true); fit();
+        } catch (x) { m.querySelector(".dzfe-ferr").textContent = "JSON invalide : " + x.message; }
+      });
+    });
+  }
+
+  /* ---------------- fen\xEAtre ---------------- */
+  function modal(html, init) { var m = $(".dzfe-modal"); m.innerHTML = '<div class="dzfe-mb">' + html + "</div>"; m.classList.add("open"); m.onclick = function (e) { if (e.target === m) closeModal(); }; init(m.firstChild); }
+  function closeModal() { var m = $(".dzfe-modal"); m.classList.remove("open"); m.innerHTML = ""; }
+
+  /* ---------------- d\xE9marrage ---------------- */
+  drawPalette();
+  autoLayout(false);
+  drawAll();
+  panel();
+  status();
+  setTimeout(fit, 30);
+  if (!S.wf.id) { S.sel = TRIG; panel(); }
+  var ok = new URLSearchParams(location.search).get("ok");
+  if (ok) { toast(ok); history.replaceState(null, "", location.pathname); }
+})();
+` }, "hook.js": { "src": `/* dysizz-flow : sur les pages natives des workflows Saltcorn, un raccourci vers l'\xE9diteur visuel */
+(function () {
+  var m = location.pathname.match(/^\\/actions\\/(configure|testrun|workflow)\\/(\\d+)/);
+  var onList = /^\\/actions\\/?$/.test(location.pathname);
+  if (!m && !onList) return;
+  function add() {
+    if (document.getElementById("dzf-hook")) return;
+    var a = document.createElement("a");
+    a.id = "dzf-hook";
+    a.href = m ? "/dysizz-flow/editeur/" + m[2] : "/dysizz-flow/workflows";
+    a.innerHTML = '<i class="fas fa-project-diagram"></i> ' + (m ? "Ouvrir dans l'\xE9diteur visuel" : "Workflows en sch\xE9ma (Dysizz)");
+    a.setAttribute("style", "position:fixed;right:18px;bottom:18px;z-index:3000;background:#5b5bf0;color:#fff;padding:.65rem 1rem;border-radius:99px;font-weight:600;text-decoration:none;box-shadow:0 8px 24px rgba(0,0,0,.2);font-size:.9rem");
+    document.body.appendChild(a);
+  }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", add); else add();
+})();
 ` } } };
   }
 });

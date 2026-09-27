@@ -11,7 +11,7 @@ const pkg = JSON.parse(fs.readFileSync(r("package.json"), "utf8"));
 /* fichiers du navigateur, embarqués dans le plugin */
 const assets = {};
 for (const f of ["dzf.css", "dzf.js", "editeur.css", "editeur.js", "hook.js"]) {
-  let src = fs.readFileSync(r("client", f), "utf8");
+  let src = fs.readFileSync(r("client", f), "utf8").replace(/\r\n/g, "\n");
   if (f.endsWith(".css")) src = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\s*\n\s*/g, "\n").replace(/\n+/g, "\n").trim();
   assets[f] = { src };
 }
