@@ -190,9 +190,77 @@ const traiter = async (mail, crm, conf = {}, opts = {}) => {
   if (rb.bien && rb.bien.proprietaire_id && rc.contact && String(rb.bien.proprietaire_id) === String(rc.contact.id)) d.motifs.push("à vérifier : le mail vient du propriétaire du bien (vendeur), pas d'un acquéreur");
 
   /* 7. Origine */
-  const origineCode = r.portail === "site_agence" ? r.site_origine : (conf.origines_portail || {})[r.portail] || r.portail;
-  const origine = (conf.origines || []).find((o) => o.code === origineCode) || null;
-  d.origine = origine ? { code: origine.code, libelle: origine.libelle, id: origine.id } : { code: origineCode, libelle: r.portail_nom, id: null };
+  const siteCfg = r.portail === "site_agence"
+    ? (conf.sites || []).find((s) => {
+        const memeOrigine =
+          r.site_origine &&
+          String(s.origine || "") === String(r.site_origine);
+
+        const domaineConfig = String(s.domaine || "")
+          .toLowerCase()
+          .replace(/^www\./, "");
+
+        const domaineMail = String(r.site || "")
+          .toLowerCase()
+          .replace(/^www\./, "");
+
+        return memeOrigine ||
+          (domaineMail && domaineConfig === domaineMail);
+      }) || null
+    : null;
+
+  const portailMetier = r.portail === "site_agence"
+    ? (
+        siteCfg
+          ? (
+              siteCfg.libelle ||
+              (siteCfg.noms && siteCfg.noms[0]) ||
+              siteCfg.domaine
+            )
+          : (
+              r.portail_nom ||
+              r.site ||
+              r.site_origine ||
+              "Site agence"
+            )
+      )
+    : (r.portail_nom || r.portail);
+
+  /*
+   * site_agence / AC3 reste seulement une information technique
+   * dans l'extraction.
+   *
+   * Dès le niveau métier :
+   * portail = agence
+   * source  = agence
+   * origine = agence
+   */
+  if (r.portail === "site_agence")
+    r.portail_nom = portailMetier;
+
+  d.portail = portailMetier;
+  d.source = portailMetier;
+
+  const origineCode = r.portail === "site_agence"
+    ? r.site_origine
+    : (conf.origines_portail || {})[r.portail] || r.portail;
+
+  const origine = (conf.origines || [])
+    .find((o) => o.code === origineCode) || null;
+
+  d.origine = origine
+    ? {
+        code: origine.code,
+        libelle: r.portail === "site_agence"
+          ? portailMetier
+          : (origine.libelle || portailMetier),
+        id: origine.id
+      }
+    : {
+        code: origineCode,
+        libelle: portailMetier,
+        id: null
+      };
   if (!origine && origineCode) d.alertes.push(`origine « ${origineCode} » non reliée à une origine du CRM`);
 
   /* 8. Plan CRM (rien n'est exécuté ici) */
@@ -200,6 +268,15 @@ const traiter = async (mail, crm, conf = {}, opts = {}) => {
   if (ok && rc.action === "creer") d.actions.push({ op: "creerContact", donnees: { email: c.email, prenom: c.prenom, nom: c.nom, telephone: c.telephone, origine: d.origine.id, agence: d.agence && d.agence.id, negociateur: negoFinal } });
   if (ok && rc.action === "mettre_a_jour") {
     const patch = completer(rc.contact, c);
+
+    if (
+      d.origine &&
+      d.origine.id &&
+      (!rc.contact ||
+       String(rc.contact.origine || "") !== String(d.origine.id))
+    ) {
+      patch.origine = d.origine.id;
+    }
     if (negoFinal && rc.contact && "negociateur" in rc.contact && !rc.contact.negociateur) { patch.negociateur = negoFinal; if (d.agence) patch.agence = d.agence.id; }
     if (Object.keys(patch).length) d.actions.push({ op: "majContact", id: rc.contact.id, donnees: patch });
   }
@@ -218,7 +295,7 @@ const traiter = async (mail, crm, conf = {}, opts = {}) => {
   const dejaConsenti = (dos && dos.consentement) || (rc.contact && rc.contact.consentement) || connus.some((x) => x.consentement && rc.contact && String(x.contact_id) === String(rc.contact.id));
   if (ok && actif.consentement && conf.consentement && conf.consentement.actif && !dejaConsenti) {
     const date = mail.date || mail.date_envoi || new Date();
-    const motif = gabarit(conf.consentement.libelle || "Demande de contact via {portail} du {date}", { portail: r.site || r.portail_nom || r.portail, date: dateFr(date) });
+    const motif = gabarit(conf.consentement.libelle || "Demande de contact via {portail} du {date}", { portail: d.portail || r.site_libelle || r.portail_nom || r.portail, date: dateFr(date) });
     d.actions.push({ op: "ajouterConsentement", date: new Date(date).toISOString(), motif, hors_horaires: r.hors_horaires, preuves: [preuveEml(mail)] });
   }
 

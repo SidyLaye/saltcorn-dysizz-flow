@@ -2,7 +2,7 @@
 "use strict";
 const CONF = {
   domaines_agence: ["agence-exemple.fr", "maison-exemple.com"],
-  sites: [{ domaine: "agence-exemple.fr", noms: ["AGENCE EXEMPLE"], origine: "site_agence_exemple" }, { domaine: "maison-exemple.com", noms: ["MAISON EXEMPLE"], origine: "site_maison_exemple" }],
+  sites: [{ domaine: "agence-exemple.fr", noms: ["AGENCE EXEMPLE"], origine: "site_agence_exemple", libelle: "Agence Exemple" }, { domaine: "maison-exemple.com", noms: ["MAISON EXEMPLE"], origine: "site_maison_exemple" }],
   id_crm_liens: ["immo-facile-(\\d{6,})"],
   objets_campagnes: ["Notre sélection de la semaine"],
 };

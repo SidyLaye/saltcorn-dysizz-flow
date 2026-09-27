@@ -220,7 +220,17 @@ const creer = (cfg = {}) => {
       const corps = {};
       if (p.prenom) corps.firstname = p.prenom; if (p.nom) corps.lastname = p.nom;
       if (p.mobile) corps.mobile_phone = p.mobile; if (p.telephone) corps.phone = p.telephone;
-      if (p.agence && isFinite(+p.agence)) corps.agency_id = Number(p.agence); if (p.negociateur && isFinite(+p.negociateur)) corps.user_id = Number(p.negociateur);
+      if (p.agence && isFinite(+p.agence))
+        corps.agency_id = Number(p.agence);
+
+      if (p.negociateur && isFinite(+p.negociateur))
+        corps.user_id = Number(p.negociateur);
+
+      if (p.origine && isFinite(+p.origine))
+        corps.origin = Number(p.origine);
+
+      if (cfg.groupe_demandeur && isFinite(+cfg.groupe_demandeur))
+        corps.group = Number(cfg.groupe_demandeur);
       if (!Object.keys(corps).length) return { id };
       await appel("PATCH", `/customers/${Number(id)}`, corps);
       const non_pris = await relire(id, corps);

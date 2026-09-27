@@ -51,9 +51,85 @@ const { CONF, MAILS } = require("./fixtures-leads.cjs");
   assert.ok(/Floorplan/.test(fp.message));
 
   const ac = extraire(MAILS.ac3, CONF);
-  assert.strictEqual(ac.portail, "site_agence"); assert.strictEqual(ac.site, "agence-exemple.fr"); assert.strictEqual(ac.site_origine, "site_agence_exemple");
+  assert.strictEqual(ac.portail, "site_agence");
+  assert.strictEqual(ac.site, "agence-exemple.fr");
+  assert.strictEqual(ac.site_origine, "site_agence_exemple");
   assert.deepStrictEqual([ac.contact.nom, ac.contact.prenom, ac.contact.email, ac.contact.telephone], ["Durand", "Célia", "celia.d@example.org", "+33652723071"]);
   assert.strictEqual(ac.bien.reference, "2289"); assert.strictEqual(ac.bien.ville, "sanilhac");
+
+  /*
+   * Le parseur conserve "site_agence" comme canal technique,
+   * mais le traitement métier expose le véritable site/agence.
+   */
+  const acMetier = await traiter(
+    MAILS.ac3,
+    M.creer({
+      biens: [
+        {
+          id: 2289,
+          reference: "2289",
+          type: "maison",
+          ville: "sanilhac"
+        }
+      ],
+      contacts: []
+    }),
+    {
+      ...CONF,
+
+      origines: [
+        {
+          id: 83748,
+          code: "site_agence_exemple",
+          libelle: "agence-exemple.fr"
+        }
+      ],
+
+      consentement: {
+        actif: false
+      },
+
+      routage: {
+        personnes: [],
+        regles: [],
+        absences: [],
+        siege: []
+      },
+
+      etapes: {
+        notification: false,
+        projet: false,
+        consentement: false,
+        action: false
+      }
+    }
+  );
+
+  assert.strictEqual(
+    acMetier.extraction.portail,
+    "site_agence"
+  );
+
+  assert.strictEqual(
+    acMetier.portail,
+    "Agence Exemple"
+  );
+
+  assert.strictEqual(
+    acMetier.source,
+    "Agence Exemple"
+  );
+
+  assert.strictEqual(
+    acMetier.origine.id,
+    83748
+  );
+
+  assert.strictEqual(
+    acMetier.origine.libelle,
+    "Agence Exemple"
+  );
+
 
   const ga = extraire(MAILS.green, CONF);
   assert.strictEqual(ga.contact.nom, "Manent"); assert.strictEqual(ga.contact.email_relais, "monique-ddfd@email.green-acres.com"); assert.ok(!ga.contact.email);

@@ -1,4 +1,4 @@
-/* dysizz-flow 2.6.2 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.6.4 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.6.2" : "dev";
+    var VERSION2 = true ? "2.6.4" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -94666,14 +94666,36 @@ var require_traiter = __commonJS({
       }
       d.contact = { id: rc.contact ? rc.contact.id : null, action: rc.action, par: rc.par, trace: rc.trace };
       if (rb.bien && rb.bien.proprietaire_id && rc.contact && String(rb.bien.proprietaire_id) === String(rc.contact.id)) d.motifs.push("\xE0 v\xE9rifier : le mail vient du propri\xE9taire du bien (vendeur), pas d'un acqu\xE9reur");
+      const siteCfg = r.portail === "site_agence" ? (conf.sites || []).find((s) => {
+        const memeOrigine = r.site_origine && String(s.origine || "") === String(r.site_origine);
+        const domaineConfig = String(s.domaine || "").toLowerCase().replace(/^www\./, "");
+        const domaineMail = String(r.site || "").toLowerCase().replace(/^www\./, "");
+        return memeOrigine || domaineMail && domaineConfig === domaineMail;
+      }) || null : null;
+      const portailMetier = r.portail === "site_agence" ? siteCfg ? siteCfg.libelle || siteCfg.noms && siteCfg.noms[0] || siteCfg.domaine : r.portail_nom || r.site || r.site_origine || "Site agence" : r.portail_nom || r.portail;
+      if (r.portail === "site_agence")
+        r.portail_nom = portailMetier;
+      d.portail = portailMetier;
+      d.source = portailMetier;
       const origineCode = r.portail === "site_agence" ? r.site_origine : (conf.origines_portail || {})[r.portail] || r.portail;
       const origine = (conf.origines || []).find((o) => o.code === origineCode) || null;
-      d.origine = origine ? { code: origine.code, libelle: origine.libelle, id: origine.id } : { code: origineCode, libelle: r.portail_nom, id: null };
+      d.origine = origine ? {
+        code: origine.code,
+        libelle: r.portail === "site_agence" ? portailMetier : origine.libelle || portailMetier,
+        id: origine.id
+      } : {
+        code: origineCode,
+        libelle: portailMetier,
+        id: null
+      };
       if (!origine && origineCode) d.alertes.push(`origine \xAB ${origineCode} \xBB non reli\xE9e \xE0 une origine du CRM`);
       const ok = actif.contact && rc.action !== "impossible";
       if (ok && rc.action === "creer") d.actions.push({ op: "creerContact", donnees: { email: c.email, prenom: c.prenom, nom: c.nom, telephone: c.telephone, origine: d.origine.id, agence: d.agence && d.agence.id, negociateur: negoFinal } });
       if (ok && rc.action === "mettre_a_jour") {
         const patch = completer(rc.contact, c);
+        if (d.origine && d.origine.id && (!rc.contact || String(rc.contact.origine || "") !== String(d.origine.id))) {
+          patch.origine = d.origine.id;
+        }
         if (negoFinal && rc.contact && "negociateur" in rc.contact && !rc.contact.negociateur) {
           patch.negociateur = negoFinal;
           if (d.agence) patch.agence = d.agence.id;
@@ -94695,7 +94717,7 @@ var require_traiter = __commonJS({
       const dejaConsenti = dos && dos.consentement || rc.contact && rc.contact.consentement || connus.some((x) => x.consentement && rc.contact && String(x.contact_id) === String(rc.contact.id));
       if (ok && actif.consentement && conf.consentement && conf.consentement.actif && !dejaConsenti) {
         const date = mail.date || mail.date_envoi || /* @__PURE__ */ new Date();
-        const motif = gabarit(conf.consentement.libelle || "Demande de contact via {portail} du {date}", { portail: r.site || r.portail_nom || r.portail, date: dateFr(date) });
+        const motif = gabarit(conf.consentement.libelle || "Demande de contact via {portail} du {date}", { portail: d.portail || r.site_libelle || r.portail_nom || r.portail, date: dateFr(date) });
         d.actions.push({ op: "ajouterConsentement", date: new Date(date).toISOString(), motif, hors_horaires: r.hors_horaires, preuves: [preuveEml(mail)] });
       }
       if (actif.notification) {
@@ -95035,8 +95057,14 @@ var require_immofacile = __commonJS({
           if (p.nom) corps.lastname = p.nom;
           if (p.mobile) corps.mobile_phone = p.mobile;
           if (p.telephone) corps.phone = p.telephone;
-          if (p.agence && isFinite(+p.agence)) corps.agency_id = Number(p.agence);
-          if (p.negociateur && isFinite(+p.negociateur)) corps.user_id = Number(p.negociateur);
+          if (p.agence && isFinite(+p.agence))
+            corps.agency_id = Number(p.agence);
+          if (p.negociateur && isFinite(+p.negociateur))
+            corps.user_id = Number(p.negociateur);
+          if (p.origine && isFinite(+p.origine))
+            corps.origin = Number(p.origine);
+          if (cfg.groupe_demandeur && isFinite(+cfg.groupe_demandeur))
+            corps.group = Number(cfg.groupe_demandeur);
           if (!Object.keys(corps).length) return { id };
           await appel("PATCH", `/customers/${Number(id)}`, corps);
           const non_pris = await relire(id, corps);
