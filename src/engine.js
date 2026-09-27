@@ -187,7 +187,12 @@ const toAction = (b) => ({
     await record(b.name, Date.now() - t0, false);
     await journal({ bloc: b.name, ok: false, duree_ms: Date.now() - t0, message: lastErr.message });
     if (configuration.si_erreur === "continuer") return { [out]: null, [`${out}_erreur`]: lastErr.message };
-    throw new Error(`[${b.label}] ${lastErr.message}`);
+    const error = new Error(`[${b.label}] ${lastErr.message}`, { cause: lastErr });
+    // Un bloc appelant doit lui aussi respecter l'interdiction de rejouer.
+    for (const key of ["permanent", "ambiguous", "status", "http", "code"]) {
+      if (lastErr[key] !== undefined) error[key] = lastErr[key];
+    }
+    throw error;
   },
 });
 

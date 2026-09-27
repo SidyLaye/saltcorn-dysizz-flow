@@ -60,13 +60,13 @@ module.exports = [
     name: "dzf_lead_destinataires", label: "Leads : qui reçoit ?", category: "Leads immobiliers", icon: "fas fa-user-check", output: "destinataires",
     description: "Donne les adresses exactes qui recevraient un lead de ce négociateur à cette date, avec l'explication (règle, congés, mi-temps, remplaçant, siège). C'est le bouton « tester ».",
     params: [{ name: "negociateur", label: "Négociateur (id)", required: true }, { name: "date", label: "Date", default: "", help: "Vide = maintenant" }, { name: "routage", label: "Règles d'envoi", type: "json", default: "{{leads_conf.routage}}" }],
-    run: async (p) => destinataires(p.negociateur, p.date ? new Date(p.date) : new Date(), obj(p.routage, "routage")),
+    run: async (p) => destinataires(p.negociateur, p.date || new Date(), obj(p.routage, "routage")),
   },
   {
     name: "dzf_lead_absents", label: "Leads : absents de la semaine", category: "Leads immobiliers", icon: "fas fa-umbrella-beach", output: "absents",
     description: "Qui est absent cette semaine (congés ou jours non travaillés à mi-temps), et qui prend le relais.",
     params: [{ name: "routage", label: "Règles d'envoi", type: "json", default: "{{leads_conf.routage}}" }, { name: "semaine", label: "Un jour de la semaine voulue", default: "" }],
-    run: async (p) => absentsSemaine(obj(p.routage, "routage"), p.semaine ? new Date(p.semaine) : new Date()),
+    run: async (p) => absentsSemaine(obj(p.routage, "routage"), p.semaine || new Date()),
   },
   {
     name: "dzf_crm", label: "CRM immobilier : consulter", category: "Leads immobiliers", icon: "fas fa-address-book", output: "crm", timeout: 90,

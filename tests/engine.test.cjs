@@ -41,6 +41,15 @@ const B = (n) => BLOCKS.find((b) => b.name === n);
   await assert.rejects(act.run({ configuration: { x: -1 }, row: {} }), /Test\] négatif/);
   assert.deepStrictEqual(await act.run({ configuration: { x: -1, si_erreur: "continuer" }, row: {} }), { o: null, o_erreur: "négatif" });
 
+  let appelsEcriture = 0;
+  const incertaine = toAction({ name: "incertaine", label: "Écriture", run: async () => {
+    appelsEcriture++;
+    throw Object.assign(new Error("réponse perdue"), { permanent: true, ambiguous: true, status: 502, http: 502 });
+  } });
+  const appelant = toAction({ name: "appelant", label: "Appelant", run: () => incertaine.run({ configuration: { essais: 3 } }) });
+  await assert.rejects(appelant.run({ configuration: { essais: 3 } }), e => e.permanent === true && e.ambiguous === true && e.status === 502 && e.http === 502);
+  assert.strictEqual(appelsEcriture, 1, "une action imbriquée ne rejoue pas une écriture ambiguë");
+
   /* tous les blocs : bien formés */
   const names = new Set();
   for (const b of BLOCKS) {

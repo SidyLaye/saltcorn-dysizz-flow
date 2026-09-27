@@ -1,4 +1,4 @@
-/* dysizz-flow 2.6.1 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.6.2 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.6.1" : "dev";
+    var VERSION2 = true ? "2.6.2" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -439,7 +439,11 @@ var require_engine = __commonJS({
         await record(b.name, Date.now() - t0, false);
         await journal({ bloc: b.name, ok: false, duree_ms: Date.now() - t0, message: lastErr.message });
         if (configuration.si_erreur === "continuer") return { [out]: null, [`${out}_erreur`]: lastErr.message };
-        throw new Error(`[${b.label}] ${lastErr.message}`);
+        const error = new Error(`[${b.label}] ${lastErr.message}`, { cause: lastErr });
+        for (const key of ["permanent", "ambiguous", "status", "http", "code"]) {
+          if (lastErr[key] !== void 0) error[key] = lastErr[key];
+        }
+        throw error;
       }
     });
     var summarize = (res) => {
@@ -94148,9 +94152,14 @@ var require_contact = __commonJS({
 var require_routage = __commonJS({
   "src/lib/leads/routage.js"(exports2, module2) {
     "use strict";
-    var jour = (d) => {
-      const x = new Date(d);
-      return x.toISOString().slice(0, 10);
+    var jour = (d, fuseau = "UTC") => {
+      if (typeof d === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d)) {
+        if (new Date(d).toISOString().slice(0, 10) !== d) throw new Error("Date de routage invalide");
+        return d;
+      }
+      const parts = new Intl.DateTimeFormat("en", { timeZone: fuseau, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date(d));
+      const p = Object.fromEntries(parts.map((x) => [x.type, x.value]));
+      return `${p.year}-${p.month}-${p.day}`;
     };
     var isoJour = (d) => {
       const n = new Date(d).getUTCDay();
@@ -94158,7 +94167,7 @@ var require_routage = __commonJS({
     };
     var NOMS_JOURS = ["", "lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"];
     var absenceDe = (conf, id, quand) => {
-      const j = jour(quand);
+      const j = jour(quand, conf.fuseau_horaire || "UTC");
       return (conf.absences || []).find((a) => String(a.personne_id) === String(id) && a.actif !== false && a.debut <= j && (!a.fin || a.fin >= j));
     };
     var disponibilite = (conf, p, quand) => {
@@ -94166,18 +94175,19 @@ var require_routage = __commonJS({
       if (p.actif === false) return { dispo: false, raison: `${p.nom} est inactif(ve)`, remplacant: p.remplacant_inactif || null };
       const a = absenceDe(conf, p.id, quand);
       if (a) return { dispo: false, raison: `${p.nom} est en ${a.motif || "cong\xE9s"} du ${a.debut} au ${a.fin || "\u2026"}`, remplacant: a.remplacant || null, type: "absence" };
-      if (p.temps === "mi_temps" && Array.isArray(p.jours) && p.jours.length && !p.jours.includes(isoJour(quand)))
-        return { dispo: false, raison: `${p.nom} ne travaille pas le ${NOMS_JOURS[isoJour(quand)]} (mi-temps)`, remplacant: p.remplacant_hors_jours || null, type: "hors_jours" };
+      const j = isoJour(jour(quand, conf.fuseau_horaire || "UTC"));
+      if (p.temps === "mi_temps" && !(p.jours || []).map(Number).includes(j))
+        return { dispo: false, raison: `${p.nom} ne travaille pas le ${NOMS_JOURS[j]} (mi-temps)`, remplacant: p.remplacant_hors_jours || null, type: "hors_jours" };
       return { dispo: true };
     };
     var regleDe = (conf, negoId) => {
       const rs = (conf.regles || []).filter((r) => r.actif !== false);
-      return rs.find((r) => r.cible && (r.cible.negociateurs || []).map(String).includes(String(negoId))) || rs.find((r) => r.cible && r.cible.tous) || {};
+      const cibles = rs.filter((r) => r.cible && (r.cible.negociateurs || []).map(String).includes(String(negoId)));
+      return cibles.find((r) => new Set(r.cible.negociateurs.map(String)).size === 1) || cibles[0] || rs.find((r) => r.cible && r.cible.tous) || {};
     };
     var destinataires = (negoId, quand = /* @__PURE__ */ new Date(), conf = {}) => {
       const P = new Map((conf.personnes || []).map((p) => [String(p.id), p]));
       const liste = [], trace = [];
-      const vu = /* @__PURE__ */ new Set();
       const ajouterAdresse = (email, role, pour, raison) => {
         const e = String(email || "").trim().toLowerCase();
         if (!e || !/@/.test(e)) return;
@@ -94188,7 +94198,7 @@ var require_routage = __commonJS({
         }
         liste.push({ email: e, role, roles: [role], pour, raison });
       };
-      const ajouterPersonne = (ref, role, pour, chemin = []) => {
+      const ajouterPersonne = (ref, role, pour, chemin = [], ids = /* @__PURE__ */ new Set()) => {
         if (!ref) return;
         if (ref.email) return ajouterAdresse(ref.email, role, pour, chemin.length ? "remplace " + chemin.join(" \u2192 ") : "adresse libre");
         const p = P.get(String(ref.personne));
@@ -94196,7 +94206,7 @@ var require_routage = __commonJS({
           trace.push(`${role} : personne ${ref.personne} introuvable`);
           return;
         }
-        if (chemin.includes(p.nom) || chemin.length > 5) {
+        if (ids.has(String(p.id))) {
           trace.push(`${role} : boucle de remplacement (${chemin.concat(p.nom).join(" \u2192 ")}) \u2014 arr\xEAt`);
           return;
         }
@@ -94207,7 +94217,7 @@ var require_routage = __commonJS({
           trace.push(`${role} : aucun rempla\xE7ant pr\xE9vu \u2014 ${p.nom} ne re\xE7oit rien`);
           return;
         }
-        ajouterPersonne(d.remplacant, role, pour, chemin.concat(p.nom));
+        ajouterPersonne(d.remplacant, role, pour, chemin.concat(p.nom), /* @__PURE__ */ new Set([...ids, String(p.id)]));
       };
       const nego = P.get(String(negoId));
       const r = regleDe(conf, negoId);
@@ -94218,6 +94228,7 @@ var require_routage = __commonJS({
         const modeA = r.assistante || "garder";
         if (modeA === "couper") trace.push("assistant(e) : coup\xE9(e) par une r\xE8gle d'envoi");
         else if (modeA === "remplacer") ajouterPersonne(r.assistante_remplacante, "assistante", nego.nom, []);
+        else if (nego.actif === false) trace.push("assistant(e) : pas de copie automatique pour un n\xE9gociateur inactif");
         else if (nego.assistante_id) ajouterPersonne({ personne: nego.assistante_id }, "assistante", nego.nom);
         else if (nego.email_assistante) ajouterAdresse(nego.email_assistante, "assistante", nego.nom, "assistante d\xE9clar\xE9e");
         for (const e of r.adresses_libres || []) ajouterAdresse(e, "adresse_libre", nego.nom, "adresse ajout\xE9e par une r\xE8gle");
@@ -94226,8 +94237,7 @@ var require_routage = __commonJS({
       return { liste, trace, regle: r.id || null };
     };
     var absentsSemaine = (conf, lundi = /* @__PURE__ */ new Date()) => {
-      const d0 = new Date(lundi);
-      d0.setUTCHours(12, 0, 0, 0);
+      const d0 = /* @__PURE__ */ new Date(jour(lundi, conf.fuseau_horaire || "UTC") + "T12:00:00Z");
       d0.setUTCDate(d0.getUTCDate() - (isoJour(d0) - 1));
       const P = new Map((conf.personnes || []).map((p) => [String(p.id), p]));
       const nom = (ref) => !ref ? "personne (rien n'est transf\xE9r\xE9)" : ref.email ? ref.email : (P.get(String(ref.personne)) || {}).nom || "?";
@@ -94237,7 +94247,7 @@ var require_routage = __commonJS({
         for (let i = 0; i < 7; i++) {
           const q = new Date(d0);
           q.setUTCDate(d0.getUTCDate() + i);
-          const d = disponibilite(conf, p, q);
+          const d = disponibilite(conf, p, jour(q));
           if (!d.dispo && p.actif !== false) jours.push({ jour: jour(q), type: d.type, relais: nom(d.remplacant) });
         }
         if (jours.length) out.push({ personne: p.nom, role: p.role, jours, resume: [...new Set(jours.map((j) => (j.type === "absence" ? "cong\xE9s" : "hors jours") + " \u2192 " + j.relais))].join(" ; ") });
@@ -95407,7 +95417,7 @@ var require_leads = __commonJS({
         output: "destinataires",
         description: "Donne les adresses exactes qui recevraient un lead de ce n\xE9gociateur \xE0 cette date, avec l'explication (r\xE8gle, cong\xE9s, mi-temps, rempla\xE7ant, si\xE8ge). C'est le bouton \xAB tester \xBB.",
         params: [{ name: "negociateur", label: "N\xE9gociateur (id)", required: true }, { name: "date", label: "Date", default: "", help: "Vide = maintenant" }, { name: "routage", label: "R\xE8gles d'envoi", type: "json", default: "{{leads_conf.routage}}" }],
-        run: async (p) => destinataires(p.negociateur, p.date ? new Date(p.date) : /* @__PURE__ */ new Date(), obj(p.routage, "routage"))
+        run: async (p) => destinataires(p.negociateur, p.date || /* @__PURE__ */ new Date(), obj(p.routage, "routage"))
       },
       {
         name: "dzf_lead_absents",
@@ -95417,7 +95427,7 @@ var require_leads = __commonJS({
         output: "absents",
         description: "Qui est absent cette semaine (cong\xE9s ou jours non travaill\xE9s \xE0 mi-temps), et qui prend le relais.",
         params: [{ name: "routage", label: "R\xE8gles d'envoi", type: "json", default: "{{leads_conf.routage}}" }, { name: "semaine", label: "Un jour de la semaine voulue", default: "" }],
-        run: async (p) => absentsSemaine(obj(p.routage, "routage"), p.semaine ? new Date(p.semaine) : /* @__PURE__ */ new Date())
+        run: async (p) => absentsSemaine(obj(p.routage, "routage"), p.semaine || /* @__PURE__ */ new Date())
       },
       {
         name: "dzf_crm",

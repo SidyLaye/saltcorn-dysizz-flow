@@ -1,5 +1,13 @@
 # Journal des versions
 
+## 2.6.2
+
+- Calcule les congés et jours travaillés dans le fuseau configuré du routage ; les dates de calendrier restent littérales (UTC reste le défaut).
+- Suit les remplacements par identifiant, sans confondre deux personnes de même nom avec une boucle.
+- Un mi-temps sans jour coché passe au remplaçant prévu. Une règle individuelle prime sur une règle de groupe, puis sur la règle générale.
+- Supprime la copie automatique à l'assistante d'un négociateur inactif ; un remplacement explicitement réglé reste appliqué.
+- Conserve les indicateurs d'erreur permanente et d'écriture ambiguë entre actions imbriquées pour éviter une nouvelle tentative externe.
+
 ## 2.6.1
 
 - Réunit les fonctions locales 2.5/2.6 avec le cloisonnement des tenants, le bloc parcours et les corrections de build publiés sur main.
