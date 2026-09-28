@@ -236,7 +236,7 @@ const extraire = (mail, conf = {}) => {
 
   if (p && p.id === "site_agence") {
     const s = identifierSite(liens, texte, objet, conf.sites || []);
-    if (s) { r.site = s.domaine; r.site_origine = s.origine || s.domaine; r.preuves.site = s.preuve; }
+    if (s) { r.site = s.domaine; r.site_origine = s.origine || s.domaine; r.site_libelle = s.libelle || (s.noms && s.noms[0]) || s.domaine; r.portail_nom = r.site_libelle; r.preuves.site = s.preuve; }
   }
 
   /* Démarchage déguisé en lead (photographe, référencement, rachat de mandat…) : signalé, jamais décidé ici. */

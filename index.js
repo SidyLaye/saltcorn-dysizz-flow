@@ -93304,6 +93304,8 @@ var require_extraire = __commonJS({
         if (s) {
           r.site = s.domaine;
           r.site_origine = s.origine || s.domaine;
+          r.site_libelle = s.libelle || s.noms && s.noms[0] || s.domaine;
+          r.portail_nom = r.site_libelle;
           r.preuves.site = s.preuve;
         }
       }
@@ -101577,7 +101579,7 @@ var require_dossiers = __commonJS({
         consentement: base.consentement || !!exec.consentement,
         negociateur: d.negociateur || base.negociateur || null,
         agence_id: d.agence && d.agence.id || base.agence_id || null,
-        portail: base.portail || x.portail || null,
+        portail: d.portail || base.portail || x.portail || null,
         nom: base.nom || x.contact && (x.contact.nom_complet || [x.contact.prenom, x.contact.nom].filter(Boolean).join(" ")) || null,
         statut: d.statut === "suivi" ? base.statut || "ouvert" : base.statut || "ouvert",
         messages: msgs,

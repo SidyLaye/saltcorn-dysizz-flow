@@ -1,7 +1,7 @@
 {
     "name":  "dysizz-flow",
     "version":  "2.6.4",
-    "description":  "Blocs workflow pour Saltcorn (comme les nÃ…â€œuds n8n) : tables, transformations, API, RSS, IMAP, mail, notifications, Telegram, WhatsApp, IA, Redis, verrousÃ¢â‚¬Â¦ RÃƒÂ©glables sans code ou en code, atelier pour crÃƒÂ©er ses blocs, modÃƒÂ¨les de workflows prÃƒÂªts ÃƒÂ  installer.",
+    "description":  "Blocs workflow pour Saltcorn (comme les nÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œuds n8n) : tables, transformations, API, RSS, IMAP, mail, notifications, Telegram, WhatsApp, IA, Redis, verrousÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ RÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©glables sans code ou en code, atelier pour crÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©er ses blocs, modÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¨les de workflows prÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Âªts ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â  installer.",
     "main":  "index.js",
     "author":  "Sidy Laye",
     "license":  "MIT",
