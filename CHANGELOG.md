@@ -1,5 +1,12 @@
 # Journal des versions
 
+## 2.7.0
+
+- Nouveau bloc **Table : tenir à jour une table de lecture** : une requête SELECT (jointures, dernières valeurs, regroupements) recalcule une table ; seules les lignes qui ont changé sont écrites, les lignes disparues sont retirées, et l'on peut ne recalculer que quelques clés. La requête tourne en lecture seule ; l'écriture est faite par le bloc, en paramètres, dans la seule table choisie. Les pages lisent ensuite cette table au lieu de tout recalculer dans le navigateur.
+- **Lancer un autre workflow** : option « regrouper » ; vingt événements en rafale (un mail qui écrit vingt lignes) ne lancent le workflow qu'une fois, jamais deux en parallèle.
+- Sécurité multi-tenant : les requêtes SQL écrites dans les blocs (lecture et table de lecture) ne lisent que les tables du tenant hors du tenant racine (règles dans `src/garde.js`).
+- Tests : `tests/lecture.test.cjs` contre un vrai PostgreSQL, ajouté à la CI.
+
 ## 2.6.2
 
 - Calcule les congés et jours travaillés dans le fuseau configuré du routage ; les dates de calendrier restent littérales (UTC reste le défaut).

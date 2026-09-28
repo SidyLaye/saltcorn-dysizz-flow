@@ -53,6 +53,8 @@ const donnees = [
       if (api.user && api.user.role_id !== 1) throw Object.assign(new Error("réservé aux administrateurs"), { permanent: true });
       const sql = String(p.requete).trim().replace(/;\s*$/, "");
       if (!/^(select|with)\b/i.test(sql) || /;/.test(sql) || /\b(insert|update|delete|drop|alter|create|truncate|grant|revoke|copy|vacuum|call|do)\b/i.test(sql.replace(/'[^']*'/g, ""))) throw Object.assign(new Error("seulement une requête SELECT (ou WITH … SELECT), sans point-virgule"), { permanent: true });
+      const refus = await require("../garde").refusSql(sql);
+      if (refus) throw Object.assign(new Error(refus), { permanent: true });
       const db = require("@saltcorn/data/db");
       const params = Array.isArray(p.parametres) ? p.parametres : [];
       if (db.isSQLite) return sanitize((await db.query(`${sql} limit ${+p.limite || 1000}`, params)).rows);
@@ -67,7 +69,78 @@ const donnees = [
       } catch (e) { await client.query("rollback").catch(() => {}); throw e; } finally { client.release(); }
     },
   },
+  {
+    name: "dzf_table_lecture", label: "Table : tenir à jour une table de lecture", category: "Données", icon: "fas fa-layer-group", output: "lecture", timeout: 120,
+    description: "Recalcule une table à partir d'une requête SELECT (jointures, dernières valeurs, regroupements) et n'écrit que les lignes qui ont changé. Les pages lisent ensuite cette table, vite et sans calcul dans le navigateur. Réservé aux admins.",
+    params: [{ name: "table", label: "Table à tenir à jour", type: "table", required: true },
+      { name: "cle", label: "Colonne clé (unique)", default: "id" },
+      { name: "requete", label: "Requête SELECT", type: "code", required: true, raw: true, help: "Ses colonnes portent les noms des champs de la table ; les autres sont ignorées." },
+      { name: "cles", label: "Seulement ces clés (facultatif)", help: "Liste ou texte séparé par des virgules. Vide = tout recalculer." },
+      { name: "supprimer", label: "Retirer les lignes absentes du résultat (calcul complet)", type: "bool", default: true },
+      { name: "delai_s", label: "Temps max (secondes)", type: "int", default: 30 }],
+    run: async (p, ctx, api) => {
+      if (api.user && api.user.role_id !== 1) throw Object.assign(new Error("réservé aux administrateurs"), { permanent: true });
+      const db = require("@saltcorn/data/db");
+      if (db.isSQLite) throw Object.assign(new Error("PostgreSQL requis"), { permanent: true });
+      const job = preparerLecture(p, api);
+      const refus = await require("../garde").refusSql(job.sql);
+      if (refus) throw Object.assign(new Error(refus), { permanent: true });
+      return tenirLecture(job);
+    },
+  },
 ];
+
+/* Table de lecture : on lit d'abord le résultat dans une transaction en lecture
+   seule (la requête ne peut rien écrire), puis on écrit ce résultat nous-mêmes,
+   en paramètres, dans la seule table choisie. */
+const IDENT = /^[a-z_][a-z0-9_]{0,62}$/i;
+const preparerLecture = (p, api) => {
+  const sql = String(p.requete || "").trim().replace(/;\s*$/, "");
+  if (!/^(select|with)\b/i.test(sql) || /;/.test(sql) || /\b(insert|update|delete|drop|alter|create|truncate|grant|revoke|copy|vacuum|call|do)\b/i.test(sql.replace(/'[^']*'/g, ""))) throw Object.assign(new Error("seulement une requête SELECT (ou WITH … SELECT), sans point-virgule"), { permanent: true });
+  const t = api.Table.findOne({ name: p.table });
+  if (!t || t.external || t.provider_name) throw Object.assign(new Error(`table « ${p.table} » introuvable`), { permanent: true });
+  const champs = t.getFields().map((f) => f.name).filter((c) => IDENT.test(c));
+  const cle = String(p.cle || "id");
+  if (!champs.includes(cle)) throw Object.assign(new Error(`colonne clé « ${cle} » absente de la table`), { permanent: true });
+  let cles = p.cles;
+  if (typeof cles === "string") cles = cles.split(",").map((s) => s.trim()).filter(Boolean);
+  if (cles != null && !Array.isArray(cles)) cles = [cles];
+  cles = cles && cles.length ? cles.slice(0, 5000).map(String) : null;
+  return { sql, table: t.name, champs, cle, cles, supprimer: p.supprimer !== false && !cles, delai: Math.max(1, Math.min(300, +p.delai_s || 30)) };
+};
+const tenirLecture = async (job) => {
+  const db = require("@saltcorn/data/db");
+  const schema = db.getTenantSchema();
+  const q = (s) => `"${s}"`;
+  const T = `${q(schema)}.${q(job.table)}`;
+  const t0 = Date.now();
+  const client = await db.getClient();
+  try {
+    await client.query("begin read only");
+    await client.query(`set local statement_timeout = ${job.delai * 1000}`);
+    await client.query(`set local search_path to ${q(schema)}`);
+    const r = await client.query(`select * from (${job.sql}) as q${job.cles ? ` where q.${q(job.cle)}::text = any($1)` : ""}`, job.cles ? [job.cles] : []);
+    await client.query("commit");
+    const cols = job.champs.filter((c) => r.fields.some((f) => f.name === c));
+    if (!cols.includes(job.cle)) throw Object.assign(new Error(`la requête doit renvoyer la colonne « ${job.cle} »`), { permanent: true });
+    const autres = cols.filter((c) => c !== job.cle && c !== "id");
+    const lignes = r.rows.map((x) => Object.fromEntries(cols.map((c) => [c, x[c] === undefined ? null : x[c]])));
+    await client.query("begin");
+    await client.query(`set local statement_timeout = ${job.delai * 1000}`);
+    const ins = cols.filter((c) => c !== "id" || job.cle === "id");
+    const up = await client.query(`insert into ${T} (${ins.map(q).join(",")}) select ${ins.map(q).join(",")} from json_populate_recordset(null::${T}, $1::json)
+      on conflict (${q(job.cle)}) do update set ${autres.map((c) => `${q(c)} = excluded.${q(c)}`).join(",") || `${q(job.cle)} = excluded.${q(job.cle)}`}
+      where (${autres.map((c) => `${T}.${q(c)}`).join(",") || "1"}) is distinct from (${autres.map((c) => `excluded.${q(c)}`).join(",") || "1"})`, [JSON.stringify(lignes)]);
+    let retirees = 0;
+    if (job.supprimer) retirees = (await client.query(`delete from ${T} where not (${q(job.cle)}::text = any($1))`, [lignes.map((x) => String(x[job.cle]))])).rowCount;
+    await client.query("commit");
+    return { lignes: lignes.length, ecrites: up.rowCount, retirees, ms: Date.now() - t0 };
+  } catch (e) {
+    await client.query("rollback").catch(() => {});
+    if (/no unique or exclusion constraint/i.test(e.message)) throw Object.assign(new Error(`la colonne « ${job.cle} » doit être unique (case « Unique » du champ dans Saltcorn)`), { permanent: true });
+    throw e;
+  } finally { client.release(); }
+};
 
 /* ---------------- Réseau / API ---------------- */
 const reseau = [

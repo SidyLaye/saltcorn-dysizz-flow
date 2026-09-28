@@ -12,6 +12,12 @@ jobs:
     strategy:
       matrix:
         node: [18, 20, 22]
+    services:
+      postgres:
+        image: postgres:16
+        env: { POSTGRES_USER: dz, POSTGRES_PASSWORD: dz, POSTGRES_DB: dz }
+        ports: ["5432:5432"]
+        options: --health-cmd "pg_isready -U dz" --health-interval 5s --health-timeout 5s --health-retries 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -26,7 +32,7 @@ jobs:
         run: git diff --exit-code index.js
       - name: tests (unitaires, mutations des mails, fil de conversation, chargement du plugin)
         run: node tests/run.cjs
-        env: { NODE_PATH: tools/node_modules }
+        env: { NODE_PATH: tools/node_modules, PGHOST: localhost, PGUSER: dz, PGPASSWORD: dz, PGDATABASE: dz }
       - name: aucune dépendance vulnérable connue (outils de construction)
         run: npm audit --omit=dev --audit-level=high || true
         working-directory: tools

@@ -6,7 +6,7 @@ const vm = require("vm");
 /* Saltcorn simulé : un tenant courant qu'on change, et un bac à sable pour eval_expression */
 let tenant = "public";
 const appels = [];
-const fakeDb = { getTenantSchema: () => tenant, connectObj: { default_schema: "public" } };
+const fakeDb = { getTenantSchema: () => tenant, connectObj: { default_schema: "public" }, query: async () => ({ rows: ["public", "client_a", "client_b", "pg_catalog"].map((nspname) => ({ nspname })) }) };
 const fakeExpr = {
   eval_expression: (code, row, user, where) => {
     appels.push({ code, where });
@@ -81,6 +81,18 @@ const B = (n) => BLOCKS.find((b) => b.name === n);
   /* l'expression du filtre n'est plus interpolée : une valeur reçue ne devient jamais du code */
   const p = B("dzf_liste_filtrer").params.find((x) => x.name === "expression");
   assert.strictEqual(p.raw, true);
+
+  /* SQL écrit dans un bloc : un tenant ne lit que ses propres tables */
+  tenant = "public";
+  assert.strictEqual(await garde.refusSql("select * from client_a.lead"), null, "racine : libre");
+  tenant = "client_a";
+  assert.strictEqual(await garde.refusSql("select l.id, count(*) from lead l join client_a.bien b on b.id = l.id group by 1"), null, "ses tables, même préfixées");
+  assert.strictEqual(await garde.refusSql("select 'public.users' as texte"), null, "un nom dans une chaîne ne lit rien");
+  for (const sql of ["select * from public.users", 'select * from "client_b"."lead"', "select * from pg_catalog.pg_tables", "select * from information_schema.tables",
+    "select query_to_xml('select 1', true, true, '')", "select table_to_xml('x', true, true, '')", "select pg_read_file('x')", "select current_setting('x')",
+    "select 'x'::regclass", "select E'\\'' || 1", "select $$x$$", "select dblink('x','y')"])
+    assert.ok(await garde.refusSql(sql), `refusée hors racine : ${sql}`);
+  tenant = "public";
 
   const plugin = require("../index.js");
   const exported = plugin.dysizz_flow_api;

@@ -15,6 +15,26 @@ const findWorkflow = (name) => {
   if (!t) throw Object.assign(new Error(`workflow « ${name} » introuvable`), { permanent: true });
   return t;
 };
+/* lancements regroupés : un seul minuteur par tenant et par workflow ; ce qui
+   arrive pendant l'exécution relance une fois de plus, jamais en parallèle */
+const REGROUPES = new Map();
+const regrouper = (t, n, row) => {
+  const db = require("@saltcorn/data/db");
+  const schema = db.getTenantSchema();
+  const k = `${schema}.${t.name}`;
+  const deja = REGROUPES.get(k);
+  if (deja) { deja.encore = true; return { planifie: true, regroupe: true }; }
+  const etat = { encore: false };
+  REGROUPES.set(k, etat);
+  const tour = () => setTimeout(() => {
+    etat.encore = false;
+    db.runWithTenant(schema, () => findWorkflow(t.name).runWithoutRow({ row, user: SYSTEME }))
+      .catch((e) => console.error(`dysizz-flow workflow ${t.name} (regroupé) :`, e.message))
+      .finally(() => { if (etat.encore) tour(); else REGROUPES.delete(k); });
+  }, n * 1000);
+  tour();
+  return { planifie: true, dans_s: n };
+};
 
 /* le planificateur : un workflow système qui tourne toutes les ~5 min et lance ce qui est dû */
 const ensureScheduler = async () => {
@@ -56,9 +76,12 @@ module.exports = [
   {
     name: "dzf_lancer_workflow", label: "Lancer un autre workflow", category: "Tâches & planification", icon: "fas fa-play-circle", output: "sous_workflow", timeout: 300,
     description: "Lance un workflow Saltcorn par son nom, avec un contexte, et récupère son contexte final. Pour découper un gros traitement en petits workflows réutilisables.",
-    params: [{ name: "workflow", label: "Nom du workflow", required: true }, { name: "contexte", label: "Contexte transmis (JSON)", type: "json", help: 'Ex. {"email":"{{email}}"}. Vide = tout le contexte actuel' }],
+    params: [{ name: "workflow", label: "Nom du workflow", required: true }, { name: "contexte", label: "Contexte transmis (JSON)", type: "json", help: 'Ex. {"email":"{{email}}"}. Vide = tout le contexte actuel' },
+      { name: "regrouper_s", label: "Regrouper les lancements rapprochés (secondes)", type: "int", default: 0, help: "Ex. 3 : vingt événements en rafale ne lancent le workflow qu'une fois, 3 s après le premier (puis une fois encore s'il en arrive pendant qu'il tourne). Sans attendre son résultat." }],
     run: async (p, ctx, api) => {
       const t = findWorkflow(p.workflow);
+      const n = Math.max(0, Math.min(300, +p.regrouper_s || 0));
+      if (n) return regrouper(t, n, p.contexte || ctx);
       const r = await t.runWithoutRow({ row: p.contexte || ctx, user: api.user || SYSTEME, req: api.req });
       return r && typeof r === "object" ? r : { resultat: r };
     },
