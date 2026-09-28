@@ -1,4 +1,4 @@
-/* dysizz-flow 2.6.4 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.7.0 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.6.4" : "dev";
+    var VERSION2 = true ? "2.7.0" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -226,7 +226,24 @@ var require_garde = __commonJS({
       if (typeof f !== "function") throw new Error("expression invalide");
       return f;
     };
-    module2.exports = { estRacine, refusEnv, lireEnv, lireSecret, compiler, compilerBacASable, INTERDITES };
+    var SQL_FONCTIONS = /\b(\w*_to_xml\w*|\w*_to_xmlschema|dblink\w*|pg_\w+|lo_\w+|current_setting|set_config|txid_\w+|inet_\w+|version)\s*\(/i;
+    var refusSql = async (sql) => {
+      if (estRacine()) return null;
+      if (/(^|[^\w])[eE]'|\$\w*\$|\bU&/.test(String(sql || ""))) return "cha\xEEnes E'\u2026', U&'\u2026' et $$\u2026$$ interdites hors du tenant racine";
+      const nu = String(sql || "").replace(/'(?:[^']|'')*'/g, "''").replace(/--[^\n]*|\/\*[\s\S]*?\*\//g, " ");
+      if (SQL_FONCTIONS.test(nu)) return "fonction syst\xE8me interdite hors du tenant racine";
+      if (/\b(pg_catalog|information_schema|pg_toast)\b|::\s*reg\w+/i.test(nu)) return "catalogue interne interdit hors du tenant racine";
+      const db = require("@saltcorn/data/db");
+      const moi = db.getTenantSchema();
+      const r = await db.query("select nspname from pg_namespace");
+      for (const { nspname: n } of r.rows) {
+        if (n === moi) continue;
+        const e = n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        if (new RegExp(`(^|[^\\w"])("${e}"|${e})\\s*\\.`, "i").test(nu)) return "une requ\xEAte ne lit que les tables de son tenant";
+      }
+      return null;
+    };
+    module2.exports = { estRacine, refusSql, refusEnv, lireEnv, lireSecret, compiler, compilerBacASable, INTERDITES };
   }
 });
 
@@ -94776,6 +94793,60 @@ var require_traiter = __commonJS({
   }
 });
 
+// src/lib/leads/routage-tables.js
+var require_routage_tables = __commonJS({
+  "src/lib/leads/routage-tables.js"(exports2, module2) {
+    "use strict";
+    var NOMS = { equipe: "equipe", absence: "absence", regle: "regle_envoi", copies: "destinataire_custom" };
+    var jourDe = (d, fuseau) => d ? new Intl.DateTimeFormat("en-CA", { timeZone: fuseau, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(d)) : null;
+    var ids = (v) => String(v ?? "").split(/[\s,;]+/).map((x) => x.trim()).filter((x) => /^\d+$/.test(x));
+    var ref = (id) => id ? { personne: id } : null;
+    var lireRoutage = async (noms = {}, fuseau = "Europe/Paris") => {
+      const Table = require("@saltcorn/data/models/table");
+      const n = { ...NOMS, ...noms || {} };
+      const lire = async (nom, where = {}) => {
+        const t = Table.findOne({ name: nom });
+        if (!t) return [];
+        const champs = new Set(t.getFields().map((f) => f.name));
+        const w = Object.fromEntries(Object.entries(where).filter(([k]) => champs.has(k)));
+        return t.getRows(w);
+      };
+      const [eq, abs, rg, cp] = await Promise.all([lire(n.equipe), lire(n.absence, { actif: true }), lire(n.regle, { actif: true }), lire(n.copies, { actif: true })]);
+      return {
+        fuseau_horaire: fuseau,
+        personnes: eq.map((p) => ({
+          id: p.id,
+          nom: p.nom,
+          email: p.email,
+          role: p.role,
+          actif: p.actif !== false,
+          assistante_id: p.assistante || null,
+          temps: p.temps || "plein",
+          jours: ids(p.jours).map(Number),
+          remplacant_hors_jours: ref(p.remplacant_hors_jours),
+          remplacant_inactif: ref(p.remplacant_inactif)
+        })),
+        regles: rg.map((r) => {
+          const groupe = [.../* @__PURE__ */ new Set([...ids(r.negociateurs), ...r.negociateur ? [String(r.negociateur)] : []])];
+          return {
+            id: r.id,
+            nom: r.nom,
+            cible: groupe.length ? { negociateurs: groupe } : { tous: true },
+            couper_negociateur: !!r.couper_negociateur,
+            assistante: r.assistante || "garder",
+            assistante_remplacante: ref(r.assistante_remplacante),
+            adresses_libres: String(r.adresses_libres || "").split(/[\s,;]+/).filter((x) => x.includes("@")),
+            actif: true
+          };
+        }),
+        absences: abs.map((a) => ({ personne_id: a.personne, debut: jourDe(a.debut, fuseau), fin: jourDe(a.fin, fuseau), remplacant: ref(a.remplacant), motif: a.motif })),
+        siege: cp.filter((d) => !d.portee || d.portee === "tous").map((d) => d.email).filter(Boolean)
+      };
+    };
+    module2.exports = { lireRoutage, jourDe, NOMS };
+  }
+});
+
 // src/lib/leads/crm/immofacile.js
 var require_immofacile = __commonJS({
   "src/lib/leads/crm/immofacile.js"(exports2, module2) {
@@ -95365,6 +95436,7 @@ var require_leads = __commonJS({
     var { rapprocher } = require_rapprochement();
     var { traiter, executer } = require_traiter();
     var { destinataires, absentsSemaine } = require_routage();
+    var { lireRoutage } = require_routage_tables();
     var { creerCrm, ADAPTATEURS } = require_crm();
     var { PORTAILS } = require_portails();
     var perm = (m) => Object.assign(new Error(m), { permanent: true });
@@ -95387,6 +95459,9 @@ var require_leads = __commonJS({
       { name: "crm_reglages", label: "R\xE9glages du CRM", type: "json", default: "{}", help: 'Immofacile : {"site_id":"\u2026"}. Salesforce : {"domaine":"https://\u2026.my.salesforce.com", "contact":{"objet":"Lead"}}' },
       { name: "prefixe_secrets", label: "Pr\xE9fixe des secrets", default: "LEADS_CRM", help: "Immofacile : LEADS_CRM_BASIC. Salesforce : LEADS_CRM_CLIENT_ID, LEADS_CRM_CLIENT_SECRET (+ LEADS_CRM_REFRESH_TOKEN)." }
     ];
+    var P_ROUTAGE = { name: "routage", label: "R\xE8gles d'envoi", type: "json", default: "{{leads_conf.routage}}", help: 'JSON, ou "tables" (avec les guillemets) pour les lire dans equipe, absence, regle_envoi et destinataire_custom' };
+    var P_TABLES = { name: "tables", label: "Noms des tables (si \xAB tables \xBB)", type: "json", default: "{}", help: '{"equipe":"equipe","absence":"absence","regle":"regle_envoi","copies":"destinataire_custom"}' };
+    var routageDe = async (p) => p.routage === "tables" || p.routage === '"tables"' ? lireRoutage(obj(p.tables, "tables")) : obj(p.routage, "routage");
     var crmDe = (p, api, mode = "ombre") => {
       const reg = obj(p.crm_reglages, "r\xE9glages du CRM");
       const pre = String(p.prefixe_secrets || "LEADS_CRM").replace(/[^\w]/g, "");
@@ -95444,8 +95519,8 @@ var require_leads = __commonJS({
         icon: "fas fa-user-check",
         output: "destinataires",
         description: "Donne les adresses exactes qui recevraient un lead de ce n\xE9gociateur \xE0 cette date, avec l'explication (r\xE8gle, cong\xE9s, mi-temps, rempla\xE7ant, si\xE8ge). C'est le bouton \xAB tester \xBB.",
-        params: [{ name: "negociateur", label: "N\xE9gociateur (id)", required: true }, { name: "date", label: "Date", default: "", help: "Vide = maintenant" }, { name: "routage", label: "R\xE8gles d'envoi", type: "json", default: "{{leads_conf.routage}}" }],
-        run: async (p) => destinataires(p.negociateur, p.date || /* @__PURE__ */ new Date(), obj(p.routage, "routage"))
+        params: [{ name: "negociateur", label: "N\xE9gociateur (id)", required: true }, { name: "date", label: "Date", default: "", help: "Vide = maintenant" }, P_ROUTAGE, P_TABLES],
+        run: async (p) => destinataires(p.negociateur, p.date || /* @__PURE__ */ new Date(), await routageDe(p))
       },
       {
         name: "dzf_lead_absents",
@@ -95454,8 +95529,48 @@ var require_leads = __commonJS({
         icon: "fas fa-umbrella-beach",
         output: "absents",
         description: "Qui est absent cette semaine (cong\xE9s ou jours non travaill\xE9s \xE0 mi-temps), et qui prend le relais.",
-        params: [{ name: "routage", label: "R\xE8gles d'envoi", type: "json", default: "{{leads_conf.routage}}" }, { name: "semaine", label: "Un jour de la semaine voulue", default: "" }],
-        run: async (p) => absentsSemaine(obj(p.routage, "routage"), p.semaine || /* @__PURE__ */ new Date())
+        params: [P_ROUTAGE, P_TABLES, { name: "semaine", label: "Un jour de la semaine voulue", default: "" }],
+        run: async (p) => absentsSemaine(await routageDe(p), p.semaine || /* @__PURE__ */ new Date())
+      },
+      {
+        name: "dzf_lead_qui_recoit",
+        label: "Leads : tenir \xE0 jour \xAB qui re\xE7oit aujourd'hui \xBB",
+        category: "Leads immobiliers",
+        icon: "fas fa-people-arrows",
+        output: "qui_recoit",
+        timeout: 60,
+        description: "Pour chaque n\xE9gociateur, \xE9crit dans une table qui recevrait un lead aujourd'hui, et pourquoi (cong\xE9s, mi-temps, d\xE9part, rempla\xE7ant, r\xE8gle). \xC0 lancer quand l'\xE9quipe change et chaque nuit : la fin d'un cong\xE9 se voit d'elle-m\xEAme.",
+        params: [
+          P_ROUTAGE,
+          P_TABLES,
+          { name: "table", label: "Table \xE9crite", type: "table", default: "vue_routage", help: "Colonnes : personne, nom, destinataires, detail, remplace, maj_le (les autres sont ignor\xE9es)" },
+          { name: "roles", label: "R\xF4les concern\xE9s", default: "negociateur" }
+        ],
+        run: async (p, ctx, api) => {
+          const conf = await routageDe(p);
+          const t = api.Table.findOne({ name: p.table || "vue_routage" });
+          if (!t) throw perm(`table \xAB ${p.table || "vue_routage"} \xBB introuvable`);
+          const champs = new Set(t.getFields().map((f) => f.name));
+          const roles = String(p.roles || "negociateur").split(",").map((x) => x.trim()).filter(Boolean);
+          const maintenant = /* @__PURE__ */ new Date();
+          const lignes = (conf.personnes || []).filter((x) => roles.includes(x.role)).map((x) => {
+            const r = destinataires(x.id, maintenant, conf);
+            const liste = r.liste || [];
+            const perso = liste.find((d) => d.email === String(x.email || "").toLowerCase());
+            return {
+              personne: x.id,
+              nom: x.nom,
+              destinataires: liste.map((d) => `${d.email} (${d.roles.join(", ")})`).join(" \xB7 "),
+              detail: (r.trace || []).join(" \xB7 "),
+              remplace: !perso || liste.some((d) => /^remplace/.test(d.raison || "")),
+              maj_le: maintenant
+            };
+          });
+          const garder = (o) => Object.fromEntries(Object.entries(o).filter(([k]) => champs.has(k)));
+          await t.deleteRows({});
+          for (const l of lignes) await t.insertRow(garder(l));
+          return { lignes: lignes.length, remplaces: lignes.filter((l) => l.remplace).length };
+        }
       },
       {
         name: "dzf_crm",
@@ -97901,6 +98016,28 @@ var require_taches = __commonJS({
       if (!t) throw Object.assign(new Error(`workflow \xAB ${name} \xBB introuvable`), { permanent: true });
       return t;
     };
+    var REGROUPES = /* @__PURE__ */ new Map();
+    var regrouper = (t, n, row) => {
+      const db = require("@saltcorn/data/db");
+      const schema = db.getTenantSchema();
+      const k = `${schema}.${t.name}`;
+      const deja = REGROUPES.get(k);
+      if (deja) {
+        deja.encore = true;
+        return { planifie: true, regroupe: true };
+      }
+      const etat = { encore: false };
+      REGROUPES.set(k, etat);
+      const tour = () => setTimeout(() => {
+        etat.encore = false;
+        db.runWithTenant(schema, () => findWorkflow(t.name).runWithoutRow({ row, user: SYSTEME })).catch((e) => console.error(`dysizz-flow workflow ${t.name} (regroup\xE9) :`, e.message)).finally(() => {
+          if (etat.encore) tour();
+          else REGROUPES.delete(k);
+        });
+      }, n * 1e3);
+      tour();
+      return { planifie: true, dans_s: n };
+    };
     var ensureScheduler = async () => {
       const Trigger = require("@saltcorn/data/models/trigger");
       if (Trigger.findOne({ name: "dzf_planificateur" })) return;
@@ -97943,9 +98080,15 @@ var require_taches = __commonJS({
         output: "sous_workflow",
         timeout: 300,
         description: "Lance un workflow Saltcorn par son nom, avec un contexte, et r\xE9cup\xE8re son contexte final. Pour d\xE9couper un gros traitement en petits workflows r\xE9utilisables.",
-        params: [{ name: "workflow", label: "Nom du workflow", required: true }, { name: "contexte", label: "Contexte transmis (JSON)", type: "json", help: 'Ex. {"email":"{{email}}"}. Vide = tout le contexte actuel' }],
+        params: [
+          { name: "workflow", label: "Nom du workflow", required: true },
+          { name: "contexte", label: "Contexte transmis (JSON)", type: "json", help: 'Ex. {"email":"{{email}}"}. Vide = tout le contexte actuel' },
+          { name: "regrouper_s", label: "Regrouper les lancements rapproch\xE9s (secondes)", type: "int", default: 0, help: "Ex. 3 : vingt \xE9v\xE9nements en rafale ne lancent le workflow qu'une fois, 3 s apr\xE8s le premier (puis une fois encore s'il en arrive pendant qu'il tourne). Sans attendre son r\xE9sultat." }
+        ],
         run: async (p, ctx, api) => {
           const t = findWorkflow(p.workflow);
+          const n = Math.max(0, Math.min(300, +p.regrouper_s || 0));
+          if (n) return regrouper(t, n, p.contexte || ctx);
           const r = await t.runWithoutRow({ row: p.contexte || ctx, user: api.user || SYSTEME, req: api.req });
           return r && typeof r === "object" ? r : { resultat: r };
         }
@@ -98256,6 +98399,8 @@ var require_extras = __commonJS({
           if (api.user && api.user.role_id !== 1) throw Object.assign(new Error("r\xE9serv\xE9 aux administrateurs"), { permanent: true });
           const sql = String(p.requete).trim().replace(/;\s*$/, "");
           if (!/^(select|with)\b/i.test(sql) || /;/.test(sql) || /\b(insert|update|delete|drop|alter|create|truncate|grant|revoke|copy|vacuum|call|do)\b/i.test(sql.replace(/'[^']*'/g, ""))) throw Object.assign(new Error("seulement une requ\xEAte SELECT (ou WITH \u2026 SELECT), sans point-virgule"), { permanent: true });
+          const refus = await require_garde().refusSql(sql);
+          if (refus) throw Object.assign(new Error(refus), { permanent: true });
           const db = require("@saltcorn/data/db");
           const params = Array.isArray(p.parametres) ? p.parametres : [];
           if (db.isSQLite) return sanitize((await db.query(`${sql} limit ${+p.limite || 1e3}`, params)).rows);
@@ -98275,8 +98420,118 @@ var require_extras = __commonJS({
             client.release();
           }
         }
+      },
+      {
+        name: "dzf_ecriture_controler",
+        label: "Table : contr\xF4ler une \xE9criture (\xE9v\xE9nement Validate)",
+        category: "Donn\xE9es",
+        icon: "fas fa-user-shield",
+        description: "\xC0 brancher sur l'\xE9v\xE9nement \xAB Validate \xBB d'une table : refuse l'\xE9criture si une condition est vraie (ex. \xE9crire sur le ticket d'un autre) et recopie des valeurs d'une ligne li\xE9e (ex. le demandeur du ticket sur le message). V\xE9rifi\xE9 par le serveur, quel que soit le formulaire ou l'API.",
+        params: [
+          { name: "lien", label: "Ligne li\xE9e (facultatif)", type: "json", default: "{}", raw: true, help: `{"champ":"ticket","table":"ticket"} : la ligne de \xAB ticket \xBB dont l'id est dans le champ ticket, lue sous le nom liee` },
+          { name: "refuser_si", label: "Refuser si (expression)", raw: true, help: "Ex. user.role_id > 1 && (!liee || liee.demandeur !== user.id). Variables : row (la ligne \xE9crite), liee, user." },
+          { name: "message", label: "Message de refus", default: "\xC9criture refus\xE9e" },
+          { name: "recopier", label: "Recopier (JSON)", type: "json", default: "{}", raw: true, help: '{"demandeur":"demandeur"} : champ de la ligne \u2190 champ de la ligne li\xE9e' }
+        ],
+        run: async (p, ctx, api) => {
+          const { compiler } = require_garde();
+          const row = { ...ctx };
+          delete row.user;
+          const user = ctx.user || api.user || { role_id: 100 };
+          let liee = null;
+          const lien = typeof p.lien === "string" ? JSON.parse(p.lien || "{}") : p.lien || {};
+          if (lien.table && lien.champ) {
+            const t = api.Table.findOne({ name: lien.table });
+            if (!t) throw Object.assign(new Error(`table \xAB ${lien.table} \xBB introuvable`), { permanent: true });
+            const id = row[lien.champ];
+            liee = id === void 0 || id === null || id === "" ? null : await t.getRow({ [lien.cle || "id"]: typeof id === "object" ? id.id : id }) || null;
+          }
+          if (p.refuser_si && compiler(p.refuser_si, ["row", "liee", "user"])(row, liee, { id: user.id, role_id: user.role_id, email: user.email }))
+            return { __saltcorn: true, error: String(p.message || "\xC9criture refus\xE9e") };
+          const rec = typeof p.recopier === "string" ? JSON.parse(p.recopier || "{}") : p.recopier || {};
+          const set_fields = {};
+          if (liee) for (const [a, b] of Object.entries(rec)) set_fields[a] = liee[b];
+          return Object.keys(set_fields).length ? { __saltcorn: true, set_fields } : { __saltcorn: true };
+        }
+      },
+      {
+        name: "dzf_table_lecture",
+        label: "Table : tenir \xE0 jour une table de lecture",
+        category: "Donn\xE9es",
+        icon: "fas fa-layer-group",
+        output: "lecture",
+        timeout: 120,
+        description: "Recalcule une table \xE0 partir d'une requ\xEAte SELECT (jointures, derni\xE8res valeurs, regroupements) et n'\xE9crit que les lignes qui ont chang\xE9. Les pages lisent ensuite cette table, vite et sans calcul dans le navigateur. R\xE9serv\xE9 aux admins.",
+        params: [
+          { name: "table", label: "Table \xE0 tenir \xE0 jour", type: "table", required: true },
+          { name: "cle", label: "Colonne cl\xE9 (unique)", default: "id" },
+          { name: "requete", label: "Requ\xEAte SELECT", type: "code", required: true, raw: true, help: "Ses colonnes portent les noms des champs de la table ; les autres sont ignor\xE9es." },
+          { name: "cles", label: "Seulement ces cl\xE9s (facultatif)", help: "Liste ou texte s\xE9par\xE9 par des virgules. Vide = tout recalculer." },
+          { name: "supprimer", label: "Retirer les lignes absentes du r\xE9sultat (calcul complet)", type: "bool", default: true },
+          { name: "delai_s", label: "Temps max (secondes)", type: "int", default: 30 }
+        ],
+        run: async (p, ctx, api) => {
+          if (api.user && api.user.role_id !== 1) throw Object.assign(new Error("r\xE9serv\xE9 aux administrateurs"), { permanent: true });
+          const db = require("@saltcorn/data/db");
+          if (db.isSQLite) throw Object.assign(new Error("PostgreSQL requis"), { permanent: true });
+          const job = preparerLecture(p, api);
+          const refus = await require_garde().refusSql(job.sql);
+          if (refus) throw Object.assign(new Error(refus), { permanent: true });
+          return tenirLecture(job);
+        }
       }
     ];
+    var IDENT = /^[a-z_][a-z0-9_]{0,62}$/i;
+    var preparerLecture = (p, api) => {
+      const sql = String(p.requete || "").trim().replace(/;\s*$/, "");
+      if (!/^(select|with)\b/i.test(sql) || /;/.test(sql) || /\b(insert|update|delete|drop|alter|create|truncate|grant|revoke|copy|vacuum|call|do)\b/i.test(sql.replace(/'[^']*'/g, ""))) throw Object.assign(new Error("seulement une requ\xEAte SELECT (ou WITH \u2026 SELECT), sans point-virgule"), { permanent: true });
+      const t = api.Table.findOne({ name: p.table });
+      if (!t || t.external || t.provider_name) throw Object.assign(new Error(`table \xAB ${p.table} \xBB introuvable`), { permanent: true });
+      const champs = t.getFields().map((f) => f.name).filter((c) => IDENT.test(c));
+      const cle = String(p.cle || "id");
+      if (!champs.includes(cle)) throw Object.assign(new Error(`colonne cl\xE9 \xAB ${cle} \xBB absente de la table`), { permanent: true });
+      let cles = p.cles;
+      if (typeof cles === "string") cles = cles.split(",").map((s) => s.trim()).filter(Boolean);
+      if (cles != null && !Array.isArray(cles)) cles = [cles];
+      cles = cles && cles.length ? cles.slice(0, 5e3).map(String) : null;
+      return { sql, table: t.name, champs, cle, cles, supprimer: p.supprimer !== false && !cles, delai: Math.max(1, Math.min(300, +p.delai_s || 30)) };
+    };
+    var tenirLecture = async (job) => {
+      const db = require("@saltcorn/data/db");
+      const schema = db.getTenantSchema();
+      const q = (s) => `"${s}"`;
+      const T = `${q(schema)}.${q(job.table)}`;
+      const t0 = Date.now();
+      const client = await db.getClient();
+      try {
+        await client.query("begin read only");
+        await client.query(`set local statement_timeout = ${job.delai * 1e3}`);
+        await client.query(`set local search_path to ${q(schema)}`);
+        const r = await client.query(`select * from (${job.sql}) as q${job.cles ? ` where q.${q(job.cle)}::text = any($1)` : ""}`, job.cles ? [job.cles] : []);
+        await client.query("commit");
+        const cols = job.champs.filter((c) => r.fields.some((f) => f.name === c));
+        if (!cols.includes(job.cle)) throw Object.assign(new Error(`la requ\xEAte doit renvoyer la colonne \xAB ${job.cle} \xBB`), { permanent: true });
+        const autres = cols.filter((c) => c !== job.cle && c !== "id");
+        const lignes = r.rows.map((x) => Object.fromEntries(cols.map((c) => [c, x[c] === void 0 ? null : x[c]])));
+        await client.query("begin");
+        await client.query(`set local statement_timeout = ${job.delai * 1e3}`);
+        const ins = cols.filter((c) => c !== "id" || job.cle === "id");
+        const up = await client.query(`insert into ${T} (${ins.map(q).join(",")}) select ${ins.map(q).join(",")} from json_populate_recordset(null::${T}, $1::json)
+      on conflict (${q(job.cle)}) do update set ${autres.map((c) => `${q(c)} = excluded.${q(c)}`).join(",") || `${q(job.cle)} = excluded.${q(job.cle)}`}
+      where (${autres.map((c) => `${T}.${q(c)}`).join(",") || "1"}) is distinct from (${autres.map((c) => `excluded.${q(c)}`).join(",") || "1"})`, [JSON.stringify(lignes)]);
+        let retirees = 0;
+        if (job.supprimer) retirees = (await client.query(`delete from ${T} where not (${q(job.cle)}::text = any($1))`, [lignes.map((x) => String(x[job.cle]))])).rowCount;
+        await client.query("commit");
+        return { lignes: lignes.length, ecrites: up.rowCount, retirees, ms: Date.now() - t0 };
+      } catch (e) {
+        await client.query("rollback").catch(() => {
+        });
+        if (/no unique or exclusion constraint/i.test(e.message)) throw Object.assign(new Error(`la colonne \xAB ${job.cle} \xBB doit \xEAtre unique (case \xAB Unique \xBB du champ dans Saltcorn)`), { permanent: true });
+        throw e;
+      } finally {
+        client.release();
+      }
+    };
     var reseau = [
       {
         name: "dzf_graphql",

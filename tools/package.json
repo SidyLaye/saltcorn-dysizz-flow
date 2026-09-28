@@ -11,7 +11,8 @@
     "esbuild": "^0.25.0",
     "fast-xml-parser": "^5.2.0",
     "imapflow": "^1.0.190",
-    "mailparser": "^3.7.4"
+    "mailparser": "^3.7.4",
+    "pg": "^8.23.0"
   },
   "dependencies": {
     "@noble/curves": "^1.9.7",
