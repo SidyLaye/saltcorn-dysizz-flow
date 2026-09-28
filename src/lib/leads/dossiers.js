@@ -25,7 +25,7 @@ const miseAJour = (ancien, d, exec = {}, quand = new Date()) => {
     consentement: base.consentement || !!exec.consentement,
     negociateur: d.negociateur || base.negociateur || null,
     agence_id: (d.agence && d.agence.id) || base.agence_id || null,
-    portail: base.portail || x.portail || null,
+    portail: d.portail || base.portail || x.portail || null,
     nom: base.nom || (x.contact && (x.contact.nom_complet || [x.contact.prenom, x.contact.nom].filter(Boolean).join(" "))) || null,
     statut: d.statut === "suivi" ? base.statut || "ouvert" : base.statut || "ouvert",
     messages: msgs,

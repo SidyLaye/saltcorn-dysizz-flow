@@ -1,4 +1,4 @@
-/* dysizz-flow 2.6.4 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.6.5 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.6.4" : "dev";
+    var VERSION2 = true ? "2.6.5" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -93079,9 +93079,17 @@ var require_extraire = __commonJS({
     var identifierSite = (liens, texte, objet, sites = []) => {
       const compte = /* @__PURE__ */ new Map();
       for (const u of liens) {
-        const h = (u.match(/^https?:\/\/([^/?#]+)/i) || [])[1];
+        let h;
+        try {
+          h = new URL(u).hostname.toLowerCase().replace(/^www\./, "");
+        } catch {
+          continue;
+        }
         if (!h) continue;
-        const s2 = sites.find((x) => h.toLowerCase().replace(/^www\./, "").endsWith(x.domaine));
+        const s2 = sites.find((x) => {
+          const domaine = String(x.domaine || "").trim().toLowerCase().replace(/^www\./, "");
+          return domaine && (h === domaine || h.endsWith("." + domaine));
+        });
         if (s2) compte.set(s2, (compte.get(s2) || 0) + 1);
       }
       if (compte.size) return { ...[...compte.entries()].sort((a, b) => b[1] - a[1])[0][0], preuve: "lien" };
@@ -94104,18 +94112,20 @@ var require_lecture = __commonJS({
 var require_contact = __commonJS({
   "src/lib/leads/contact.js"(exports2, module2) {
     "use strict";
-    var recent = (xs) => xs.slice().sort((a, b) => String(b.cree_le || "").localeCompare(String(a.cree_le || "")) || (+b.id || 0) - (+a.id || 0))[0];
+    var instant = (v) => {
+      const n = v ? Date.parse(v) : NaN;
+      return Number.isFinite(n) ? n : -Infinity;
+    };
+    var recent = (xs) => xs.slice().sort((a, b) => {
+      const da = instant(a.cree_le), db = instant(b.cree_le);
+      return (da === db ? 0 : da < db ? 1 : -1) || (+b.id || 0) - (+a.id || 0);
+    })[0];
     var resoudreContact = async (c = {}, crm) => {
       const trace = [];
       let parEmail = [], parTel = [];
-      if (c.email) parEmail = await crm.contactsParEmail(c.email).catch((e) => {
-        trace.push("recherche par e-mail impossible : " + e.message);
-        return [];
-      });
-      if (c.telephone) parTel = await crm.contactsParTelephone(c.telephone).catch((e) => {
-        trace.push("recherche par t\xE9l\xE9phone impossible : " + e.message);
-        return [];
-      });
+      if (c.email) parEmail = await crm.contactsParEmail(c.email);
+      if (c.telephone) parTel = await crm.contactsParTelephone(c.telephone);
+      if (!Array.isArray(parEmail) || !Array.isArray(parTel)) throw new Error("R\xE9ponse de recherche contact invalide");
       if (parEmail.length) {
         const x = recent(parEmail);
         if (parEmail.length > 1) trace.push(`${parEmail.length} contacts avec cet e-mail : le plus r\xE9cent est gard\xE9 (${x.id})`);

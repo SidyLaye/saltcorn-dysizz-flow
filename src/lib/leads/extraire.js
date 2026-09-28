@@ -64,9 +64,13 @@ const depuisFiche = (r, couples, L) => {
 const identifierSite = (liens, texte, objet, sites = []) => {
   const compte = new Map();
   for (const u of liens) {
-    const h = (u.match(/^https?:\/\/([^/?#]+)/i) || [])[1];
+    let h;
+    try { h = new URL(u).hostname.toLowerCase().replace(/^www\./, ""); } catch { continue; }
     if (!h) continue;
-    const s = sites.find((x) => h.toLowerCase().replace(/^www\./, "").endsWith(x.domaine));
+    const s = sites.find((x) => {
+      const domaine = String(x.domaine || "").trim().toLowerCase().replace(/^www\./, "");
+      return domaine && (h === domaine || h.endsWith("." + domaine));
+    });
     if (s) compte.set(s, (compte.get(s) || 0) + 1);
   }
   if (compte.size) return { ...[...compte.entries()].sort((a, b) => b[1] - a[1])[0][0], preuve: "lien" };

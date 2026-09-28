@@ -4,13 +4,20 @@
    Mise à jour : on complète les champs vides, on n'écrase jamais l'identité. */
 "use strict";
 
-const recent = (xs) => xs.slice().sort((a, b) => String(b.cree_le || "").localeCompare(String(a.cree_le || "")) || (+b.id || 0) - (+a.id || 0))[0];
+const instant = (v) => { const n = v ? Date.parse(v) : NaN; return Number.isFinite(n) ? n : -Infinity; };
+const recent = (xs) => xs.slice().sort((a, b) => {
+  const da = instant(a.cree_le), db = instant(b.cree_le);
+  return (da === db ? 0 : da < db ? 1 : -1) || (+b.id || 0) - (+a.id || 0);
+})[0];
 
 const resoudreContact = async (c = {}, crm) => {
   const trace = [];
   let parEmail = [], parTel = [];
-  if (c.email) parEmail = await crm.contactsParEmail(c.email).catch((e) => { trace.push("recherche par e-mail impossible : " + e.message); return []; });
-  if (c.telephone) parTel = await crm.contactsParTelephone(c.telephone).catch((e) => { trace.push("recherche par téléphone impossible : " + e.message); return []; });
+  // Une recherche en panne n'est pas une recherche sans résultat : laisser
+  // remonter l'erreur arrête le traitement avant toute création de doublon.
+  if (c.email) parEmail = await crm.contactsParEmail(c.email);
+  if (c.telephone) parTel = await crm.contactsParTelephone(c.telephone);
+  if (!Array.isArray(parEmail) || !Array.isArray(parTel)) throw new Error("Réponse de recherche contact invalide");
   if (parEmail.length) {
     const x = recent(parEmail);
     if (parEmail.length > 1) trace.push(`${parEmail.length} contacts avec cet e-mail : le plus récent est gardé (${x.id})`);
