@@ -9,6 +9,11 @@ const redis = require("../lib/redis");
    sinon les étapes ne tournent pas */
 const SYSTEME = { role_id: 1 };
 const inTransaction = () => { try { const c = require("@saltcorn/data/db").getRequestContext(); return !!(c && c.client); } catch (e) { return false; } };
+/* lancé par un déclencheur de table : chaque colonne existe dans le contexte (null si absente de la ligne),
+   pour qu'une condition « only if » sur un champ laissé vide ne plante pas le workflow */
+const colonnesVides = (table) => {
+  try { return table && typeof table.getFields === "function" ? Object.fromEntries(table.getFields().map((f) => [f.name, null])) : {}; } catch (e) { return {}; }
+};
 const findWorkflow = (name) => {
   const Trigger = require("@saltcorn/data/models/trigger");
   const t = Trigger.findOne({ name });
@@ -18,17 +23,35 @@ const findWorkflow = (name) => {
 /* lancements regroupés : un seul minuteur par tenant et par workflow ; ce qui
    arrive pendant l'exécution relance une fois de plus, jamais en parallèle */
 const REGROUPES = new Map();
-const regrouper = (t, n, row) => {
+const MAX_CUMUL = 2000;
+const regrouper = (t, n, row, cumuler = {}) => {
   const db = require("@saltcorn/data/db");
   const schema = db.getTenantSchema();
   const k = `${schema}.${t.name}`;
+  /* valeurs de cet événement à ajouter au prochain lancement (ex. l'id du lead touché) */
+  const ajouter = (acc) => {
+    for (const [nom, v] of Object.entries(cumuler)) {
+      if (acc[nom] === null) continue;
+      const set = acc[nom] || (acc[nom] = new Set());
+      for (const x of [].concat(v)) {
+        if (x === "*") { acc[nom] = null; break; } /* « * » : tout recalculer (ex. un bien modifié touche plusieurs demandes) */
+        if (x !== null && x !== undefined && x !== "") set.add(String(x));
+      }
+      if (acc[nom] === null) continue;
+      if (set.size > MAX_CUMUL) acc[nom] = null;
+    }
+  };
   const deja = REGROUPES.get(k);
-  if (deja) { deja.encore = true; return { planifie: true, regroupe: true }; }
-  const etat = { encore: false };
+  if (deja) { deja.encore = true; ajouter(deja.cumul); return { planifie: true, regroupe: true }; }
+  const etat = { encore: false, cumul: {} };
+  ajouter(etat.cumul);
   REGROUPES.set(k, etat);
   const tour = () => setTimeout(() => {
     etat.encore = false;
-    db.runWithTenant(schema, () => findWorkflow(t.name).runWithoutRow({ row, user: SYSTEME }))
+    const cumul = etat.cumul;
+    etat.cumul = {};
+    const valeurs = Object.fromEntries(Object.entries(cumul).map(([nom, set]) => [nom, set === null ? null : [...set]]));
+    db.runWithTenant(schema, () => findWorkflow(t.name).runWithoutRow({ row: { ...row, ...valeurs }, user: SYSTEME }))
       .catch((e) => console.error(`dysizz-flow workflow ${t.name} (regroupé) :`, e.message))
       .finally(() => { if (etat.encore) tour(); else REGROUPES.delete(k); });
   }, n * 1000);
@@ -77,12 +100,15 @@ module.exports = [
     name: "dzf_lancer_workflow", label: "Lancer un autre workflow", category: "Tâches & planification", icon: "fas fa-play-circle", output: "sous_workflow", timeout: 300,
     description: "Lance un workflow Saltcorn par son nom, avec un contexte, et récupère son contexte final. Pour découper un gros traitement en petits workflows réutilisables.",
     params: [{ name: "workflow", label: "Nom du workflow", required: true }, { name: "contexte", label: "Contexte transmis (JSON)", type: "json", help: 'Ex. {"email":"{{email}}"}. Vide = tout le contexte actuel' },
-      { name: "regrouper_s", label: "Regrouper les lancements rapprochés (secondes)", type: "int", default: 0, help: "Ex. 3 : vingt événements en rafale ne lancent le workflow qu'une fois, 3 s après le premier (puis une fois encore s'il en arrive pendant qu'il tourne). Sans attendre son résultat." }],
+      { name: "regrouper_s", label: "Regrouper les lancements rapprochés (secondes)", type: "int", default: 0, help: "Ex. 3 : vingt événements en rafale ne lancent le workflow qu'une fois, 3 s après le premier (puis une fois encore s'il en arrive pendant qu'il tourne). Sans attendre son résultat." },
+      { name: "cumuler", label: "Valeurs à cumuler entre lancements regroupés (JSON)", type: "json", default: "{}", help: '{"leads":"{{lead}}"} : le workflow reçoit leads = la liste des valeurs de toute la rafale ; "*" ou plus de 2000 valeurs donnent null (= tout recalculer) ; un nom jamais cumulé reste absent' }],
     run: async (p, ctx, api) => {
       const t = findWorkflow(p.workflow);
       const n = Math.max(0, Math.min(300, +p.regrouper_s || 0));
-      if (n) return regrouper(t, n, p.contexte || ctx);
-      const r = await t.runWithoutRow({ row: p.contexte || ctx, user: api.user || SYSTEME, req: api.req });
+      /* contexte vide ({} ou rien) = tout le contexte actuel (la ligne insérée, pour un déclencheur) */
+      const c = p.contexte && typeof p.contexte === "object" && Object.keys(p.contexte).length ? p.contexte : { ...colonnesVides(api.table), ...ctx };
+      if (n) return regrouper(t, n, c, p.cumuler && typeof p.cumuler === "object" ? p.cumuler : {});
+      const r = await t.runWithoutRow({ row: c, user: api.user || SYSTEME, req: api.req });
       return r && typeof r === "object" ? r : { resultat: r };
     },
   },

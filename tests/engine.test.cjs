@@ -58,5 +58,9 @@ const B = (n) => BLOCKS.find((b) => b.name === n);
     assert(!names.has(b.name), `${b.name} en double`); names.add(b.name);
     for (const p of b.params || []) assert(/^[a-z][a-z0-9_]*$/.test(p.name), `${b.name}.${p.name}`);
   }
+  /* réglage JSON enregistré comme objet : les {{ }} sont remplacés comme pour du texte */
+  const rp = require("../src/engine").resolveParams;
+  assert.deepStrictEqual(rp({ params: [{ name: "c", type: "json" }] }, { c: { leads: "{{id}}", m: ["{{x}}"] } }, { id: 5, x: "a" }).c, { leads: 5, m: ["a"] }, "JSON objet interpolé");
+  assert.deepStrictEqual(rp({ params: [{ name: "c", type: "json", raw: true }] }, { c: { leads: "{{id}}" } }, { id: 5 }).c, { leads: "{{id}}" }, "JSON brut laissé tel quel");
   console.log(`moteur OK, ${BLOCKS.length} blocs`);
 })().catch((e) => { console.error(e); process.exit(1); });

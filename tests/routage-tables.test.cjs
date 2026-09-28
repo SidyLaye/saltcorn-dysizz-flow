@@ -61,5 +61,21 @@ const B = (n) => BLOCKS.find((b) => b.name === n);
   assert.deepStrictEqual([r.lignes, r.remplaces], [5, 3], "5 négociateurs, 3 remplacés aujourd'hui (mi-temps, parti, congés)");
   const e = DONNEES.vue_routage.find((x) => x.personne === 5);
   assert.ok(/congés/.test(e.detail) && /alice@ex\.org/.test(e.destinataires) && e.remplace === true, "l'explication est écrite");
-  console.log("routage lu dans les tables OK : groupe, mi-temps, départ, congés, retour automatique, table « qui reçoit »");
+  /* règles par agence et par groupe, priorité individuelle, groupe vide, relais vers une adresse libre */
+  DONNEES.equipe.push({ id: 7, nom: "Gaël", email: "gael@ex.org", role: "negociateur", actif: true, temps: "plein", agence: 12, groupe: "Tarn" },
+    { id: 8, nom: "Hana", email: "hana@ex.org", role: "negociateur", actif: true, temps: "plein", agence: 12, groupe: "Tarn", assistante: 3 },
+    { id: 9, nom: "Ivan", email: "ivan@ex.org", role: "negociateur", actif: true, temps: "plein", groupe: "Lot" });
+  DONNEES.regle_envoi.push({ id: 2, nom: "agence 12", actif: true, agence: 12, adresses_libres: "agence12@ex.org" },
+    { id: 3, nom: "Hana seule", actif: true, negociateur: 8, assistante: "ne reçoit pas" },
+    { id: 4, nom: "groupe vide", actif: true, groupe: "Aveyron", couper_negociateur: true },
+    { id: 5, nom: "groupe Lot", actif: true, groupe: "Lot", adresses_libres: "lot@ex.org" });
+  DONNEES.absence.push({ id: 3, personne: 9, debut: plus(-1), fin: plus(1), remplacant_adresse: "renfort@ex.org", motif: "congés", actif: true });
+  const gael = await qui(7);
+  assert.ok(gael.includes("gael@ex.org") && gael.includes("agence12@ex.org"), "règle d'agence appliquée à ses membres");
+  const hana = await qui(8);
+  assert.ok(hana.includes("hana@ex.org") && !hana.includes("chloe@ex.org") && !hana.includes("agence12@ex.org"), "la règle individuelle passe avant celle de l'agence");
+  assert.ok((await qui(1)).includes("alice@ex.org"), "un groupe vide ne coupe pas tout le monde");
+  const ivan = await qui(9);
+  assert.ok(ivan.includes("renfort@ex.org") && !ivan.includes("ivan@ex.org") && ivan.includes("lot@ex.org"), "congés : relais vers une adresse libre, règle de groupe gardée");
+  console.log("routage lu dans les tables OK : groupe, agence, priorité individuelle, relais par adresse, mi-temps, départ, congés, retour automatique, table « qui reçoit »");
 })().catch((e) => { console.error(e); process.exit(1); });

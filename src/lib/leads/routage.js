@@ -53,7 +53,8 @@ const regleDe = (conf, negoId) => {
   const rs = (conf.regles || []).filter((r) => r.actif !== false);
   const cibles = rs.filter((r) => r.cible && (r.cible.negociateurs || []).map(String).includes(String(negoId)));
   // Une exception individuelle prime sur une règle de groupe, puis sur « tous ».
-  return cibles.find((r) => new Set(r.cible.negociateurs.map(String)).size === 1) || cibles[0]
+  // « individuelle » (réglée par la table) ; sinon une cible d'une seule personne compte comme individuelle.
+  return cibles.find((r) => r.individuelle) || cibles.find((r) => r.individuelle === undefined && new Set(r.cible.negociateurs.map(String)).size === 1) || cibles[0]
     || rs.find((r) => r.cible && r.cible.tous) || {};
 };
 

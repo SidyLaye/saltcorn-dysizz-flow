@@ -90,6 +90,9 @@ const resolveParams = (b, cfg, ctx) => {
          (ainsi {"projet":"{{projet}}"} donne null si projet est vide, pas "") */
       if (WHOLE.test(v)) { if (!d.raw) v = interpolate(v, ctx); }
       else { v = parseJSON(v, d.label || d.name); if (!d.raw) v = deep(v, ctx); }
+    } else if (d.type === "json" && v && typeof v === "object") {
+      /* JSON déjà lu (réglage enregistré comme objet) : on remplace aussi les {{ }} valeur par valeur */
+      if (!d.raw) v = deep(v, ctx);
     } else if (!d.raw) v = interpolate(v, ctx);
     if ((d.type === "int" || d.type === "number") && typeof v === "string" && v !== "") v = Number(v);
     if (d.type === "bool" && typeof v === "string") v = v === "true" || v === "on";
@@ -106,8 +109,10 @@ const withTimeout = (promise, s, label) => {
 };
 
 /* ---------- ce que chaque bloc reçoit en plus (api) ---------- */
-const makeApi = ({ user, req, out }) => ({
+const makeApi = ({ user, req, table, out }) => ({
   out,
+  /* table du déclencheur (événement Insert, Update…), sinon undefined */
+  table,
   Table: require("@saltcorn/data/models/table"),
   user, req,
   /* variables d'environnement et secrets : règles de src/garde.js (jamais les secrets du
