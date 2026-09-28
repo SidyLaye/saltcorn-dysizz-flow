@@ -5,6 +5,10 @@
 - Nouveau bloc **Table : tenir à jour une table de lecture** : une requête SELECT (jointures, dernières valeurs, regroupements) recalcule une table ; seules les lignes qui ont changé sont écrites, les lignes disparues sont retirées, et l'on peut ne recalculer que quelques clés. La requête tourne en lecture seule ; l'écriture est faite par le bloc, en paramètres, dans la seule table choisie. Les pages lisent ensuite cette table au lieu de tout recalculer dans le navigateur.
 - **Lancer un autre workflow** : option « regrouper » ; vingt événements en rafale (un mail qui écrit vingt lignes) ne lancent le workflow qu'une fois, jamais deux en parallèle.
 - Sécurité multi-tenant : les requêtes SQL écrites dans les blocs (lecture et table de lecture) ne lisent que les tables du tenant hors du tenant racine (règles dans `src/garde.js`).
+- **Leads : règles d'envoi lues dans les tables** de l'équipe (`"tables"` au lieu d'un JSON) : personnes, assistant(e)s, temps partiel et jours travaillés, absences (congés, longue durée, départ sans date de fin) avec leur relais, règles pour une personne ou un **groupe**, destinataires en copie.
+- Nouveau bloc **Leads : tenir à jour « qui reçoit aujourd'hui »** : pour chaque négociateur, les adresses qui recevraient un lead aujourd'hui et pourquoi. Lancé à chaque changement de l'équipe et toutes les heures, la fin d'un congé se voit seule.
+- Nouveau bloc **Table : contrôler une écriture** (événement Validate) : refuse une écriture selon une condition (ex. écrire sur le ticket d'un autre) et recopie des valeurs d'une ligne liée ; vérifié par le serveur pour les formulaires comme pour l'API.
+- Correction : les exemples de « Leads : qui reçoit ? » lisaient `destinataires` ; le résultat est `liste`.
 - Tests : `tests/lecture.test.cjs` contre un vrai PostgreSQL, ajouté à la CI.
 
 ## 2.6.2

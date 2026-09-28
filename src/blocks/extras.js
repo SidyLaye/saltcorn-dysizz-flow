@@ -70,6 +70,34 @@ const donnees = [
     },
   },
   {
+    name: "dzf_ecriture_controler", label: "Table : contrôler une écriture (événement Validate)", category: "Données", icon: "fas fa-user-shield",
+    description: "À brancher sur l'événement « Validate » d'une table : refuse l'écriture si une condition est vraie (ex. écrire sur le ticket d'un autre) et recopie des valeurs d'une ligne liée (ex. le demandeur du ticket sur le message). Vérifié par le serveur, quel que soit le formulaire ou l'API.",
+    params: [{ name: "lien", label: "Ligne liée (facultatif)", type: "json", default: "{}", raw: true, help: '{"champ":"ticket","table":"ticket"} : la ligne de « ticket » dont l\'id est dans le champ ticket, lue sous le nom liee' },
+      { name: "refuser_si", label: "Refuser si (expression)", raw: true, help: "Ex. user.role_id > 1 && (!liee || liee.demandeur !== user.id). Variables : row (la ligne écrite), liee, user." },
+      { name: "message", label: "Message de refus", default: "Écriture refusée" },
+      { name: "recopier", label: "Recopier (JSON)", type: "json", default: "{}", raw: true, help: '{"demandeur":"demandeur"} : champ de la ligne ← champ de la ligne liée' }],
+    run: async (p, ctx, api) => {
+      const { compiler } = require("../garde");
+      const row = { ...ctx };
+      delete row.user;
+      const user = ctx.user || api.user || { role_id: 100 };
+      let liee = null;
+      const lien = typeof p.lien === "string" ? JSON.parse(p.lien || "{}") : p.lien || {};
+      if (lien.table && lien.champ) {
+        const t = api.Table.findOne({ name: lien.table });
+        if (!t) throw Object.assign(new Error(`table « ${lien.table} » introuvable`), { permanent: true });
+        const id = row[lien.champ];
+        liee = id === undefined || id === null || id === "" ? null : (await t.getRow({ [lien.cle || "id"]: typeof id === "object" ? id.id : id })) || null;
+      }
+      if (p.refuser_si && compiler(p.refuser_si, ["row", "liee", "user"])(row, liee, { id: user.id, role_id: user.role_id, email: user.email }))
+        return { __saltcorn: true, error: String(p.message || "Écriture refusée") };
+      const rec = typeof p.recopier === "string" ? JSON.parse(p.recopier || "{}") : p.recopier || {};
+      const set_fields = {};
+      if (liee) for (const [a, b] of Object.entries(rec)) set_fields[a] = liee[b];
+      return Object.keys(set_fields).length ? { __saltcorn: true, set_fields } : { __saltcorn: true };
+    },
+  },
+  {
     name: "dzf_table_lecture", label: "Table : tenir à jour une table de lecture", category: "Données", icon: "fas fa-layer-group", output: "lecture", timeout: 120,
     description: "Recalcule une table à partir d'une requête SELECT (jointures, dernières valeurs, regroupements) et n'écrit que les lignes qui ont changé. Les pages lisent ensuite cette table, vite et sans calcul dans le navigateur. Réservé aux admins.",
     params: [{ name: "table", label: "Table à tenir à jour", type: "table", required: true },

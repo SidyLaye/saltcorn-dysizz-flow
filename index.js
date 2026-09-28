@@ -94793,6 +94793,60 @@ var require_traiter = __commonJS({
   }
 });
 
+// src/lib/leads/routage-tables.js
+var require_routage_tables = __commonJS({
+  "src/lib/leads/routage-tables.js"(exports2, module2) {
+    "use strict";
+    var NOMS = { equipe: "equipe", absence: "absence", regle: "regle_envoi", copies: "destinataire_custom" };
+    var jourDe = (d, fuseau) => d ? new Intl.DateTimeFormat("en-CA", { timeZone: fuseau, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(d)) : null;
+    var ids = (v) => String(v ?? "").split(/[\s,;]+/).map((x) => x.trim()).filter((x) => /^\d+$/.test(x));
+    var ref = (id) => id ? { personne: id } : null;
+    var lireRoutage = async (noms = {}, fuseau = "Europe/Paris") => {
+      const Table = require("@saltcorn/data/models/table");
+      const n = { ...NOMS, ...noms || {} };
+      const lire = async (nom, where = {}) => {
+        const t = Table.findOne({ name: nom });
+        if (!t) return [];
+        const champs = new Set(t.getFields().map((f) => f.name));
+        const w = Object.fromEntries(Object.entries(where).filter(([k]) => champs.has(k)));
+        return t.getRows(w);
+      };
+      const [eq, abs, rg, cp] = await Promise.all([lire(n.equipe), lire(n.absence, { actif: true }), lire(n.regle, { actif: true }), lire(n.copies, { actif: true })]);
+      return {
+        fuseau_horaire: fuseau,
+        personnes: eq.map((p) => ({
+          id: p.id,
+          nom: p.nom,
+          email: p.email,
+          role: p.role,
+          actif: p.actif !== false,
+          assistante_id: p.assistante || null,
+          temps: p.temps || "plein",
+          jours: ids(p.jours).map(Number),
+          remplacant_hors_jours: ref(p.remplacant_hors_jours),
+          remplacant_inactif: ref(p.remplacant_inactif)
+        })),
+        regles: rg.map((r) => {
+          const groupe = [.../* @__PURE__ */ new Set([...ids(r.negociateurs), ...r.negociateur ? [String(r.negociateur)] : []])];
+          return {
+            id: r.id,
+            nom: r.nom,
+            cible: groupe.length ? { negociateurs: groupe } : { tous: true },
+            couper_negociateur: !!r.couper_negociateur,
+            assistante: r.assistante || "garder",
+            assistante_remplacante: ref(r.assistante_remplacante),
+            adresses_libres: String(r.adresses_libres || "").split(/[\s,;]+/).filter((x) => x.includes("@")),
+            actif: true
+          };
+        }),
+        absences: abs.map((a) => ({ personne_id: a.personne, debut: jourDe(a.debut, fuseau), fin: jourDe(a.fin, fuseau), remplacant: ref(a.remplacant), motif: a.motif })),
+        siege: cp.filter((d) => !d.portee || d.portee === "tous").map((d) => d.email).filter(Boolean)
+      };
+    };
+    module2.exports = { lireRoutage, jourDe, NOMS };
+  }
+});
+
 // src/lib/leads/crm/immofacile.js
 var require_immofacile = __commonJS({
   "src/lib/leads/crm/immofacile.js"(exports2, module2) {
@@ -95382,6 +95436,7 @@ var require_leads = __commonJS({
     var { rapprocher } = require_rapprochement();
     var { traiter, executer } = require_traiter();
     var { destinataires, absentsSemaine } = require_routage();
+    var { lireRoutage } = require_routage_tables();
     var { creerCrm, ADAPTATEURS } = require_crm();
     var { PORTAILS } = require_portails();
     var perm = (m) => Object.assign(new Error(m), { permanent: true });
@@ -95404,6 +95459,9 @@ var require_leads = __commonJS({
       { name: "crm_reglages", label: "R\xE9glages du CRM", type: "json", default: "{}", help: 'Immofacile : {"site_id":"\u2026"}. Salesforce : {"domaine":"https://\u2026.my.salesforce.com", "contact":{"objet":"Lead"}}' },
       { name: "prefixe_secrets", label: "Pr\xE9fixe des secrets", default: "LEADS_CRM", help: "Immofacile : LEADS_CRM_BASIC. Salesforce : LEADS_CRM_CLIENT_ID, LEADS_CRM_CLIENT_SECRET (+ LEADS_CRM_REFRESH_TOKEN)." }
     ];
+    var P_ROUTAGE = { name: "routage", label: "R\xE8gles d'envoi", type: "json", default: "{{leads_conf.routage}}", help: 'JSON, ou "tables" (avec les guillemets) pour les lire dans equipe, absence, regle_envoi et destinataire_custom' };
+    var P_TABLES = { name: "tables", label: "Noms des tables (si \xAB tables \xBB)", type: "json", default: "{}", help: '{"equipe":"equipe","absence":"absence","regle":"regle_envoi","copies":"destinataire_custom"}' };
+    var routageDe = async (p) => p.routage === "tables" || p.routage === '"tables"' ? lireRoutage(obj(p.tables, "tables")) : obj(p.routage, "routage");
     var crmDe = (p, api, mode = "ombre") => {
       const reg = obj(p.crm_reglages, "r\xE9glages du CRM");
       const pre = String(p.prefixe_secrets || "LEADS_CRM").replace(/[^\w]/g, "");
@@ -95461,8 +95519,8 @@ var require_leads = __commonJS({
         icon: "fas fa-user-check",
         output: "destinataires",
         description: "Donne les adresses exactes qui recevraient un lead de ce n\xE9gociateur \xE0 cette date, avec l'explication (r\xE8gle, cong\xE9s, mi-temps, rempla\xE7ant, si\xE8ge). C'est le bouton \xAB tester \xBB.",
-        params: [{ name: "negociateur", label: "N\xE9gociateur (id)", required: true }, { name: "date", label: "Date", default: "", help: "Vide = maintenant" }, { name: "routage", label: "R\xE8gles d'envoi", type: "json", default: "{{leads_conf.routage}}" }],
-        run: async (p) => destinataires(p.negociateur, p.date || /* @__PURE__ */ new Date(), obj(p.routage, "routage"))
+        params: [{ name: "negociateur", label: "N\xE9gociateur (id)", required: true }, { name: "date", label: "Date", default: "", help: "Vide = maintenant" }, P_ROUTAGE, P_TABLES],
+        run: async (p) => destinataires(p.negociateur, p.date || /* @__PURE__ */ new Date(), await routageDe(p))
       },
       {
         name: "dzf_lead_absents",
@@ -95471,8 +95529,48 @@ var require_leads = __commonJS({
         icon: "fas fa-umbrella-beach",
         output: "absents",
         description: "Qui est absent cette semaine (cong\xE9s ou jours non travaill\xE9s \xE0 mi-temps), et qui prend le relais.",
-        params: [{ name: "routage", label: "R\xE8gles d'envoi", type: "json", default: "{{leads_conf.routage}}" }, { name: "semaine", label: "Un jour de la semaine voulue", default: "" }],
-        run: async (p) => absentsSemaine(obj(p.routage, "routage"), p.semaine || /* @__PURE__ */ new Date())
+        params: [P_ROUTAGE, P_TABLES, { name: "semaine", label: "Un jour de la semaine voulue", default: "" }],
+        run: async (p) => absentsSemaine(await routageDe(p), p.semaine || /* @__PURE__ */ new Date())
+      },
+      {
+        name: "dzf_lead_qui_recoit",
+        label: "Leads : tenir \xE0 jour \xAB qui re\xE7oit aujourd'hui \xBB",
+        category: "Leads immobiliers",
+        icon: "fas fa-people-arrows",
+        output: "qui_recoit",
+        timeout: 60,
+        description: "Pour chaque n\xE9gociateur, \xE9crit dans une table qui recevrait un lead aujourd'hui, et pourquoi (cong\xE9s, mi-temps, d\xE9part, rempla\xE7ant, r\xE8gle). \xC0 lancer quand l'\xE9quipe change et chaque nuit : la fin d'un cong\xE9 se voit d'elle-m\xEAme.",
+        params: [
+          P_ROUTAGE,
+          P_TABLES,
+          { name: "table", label: "Table \xE9crite", type: "table", default: "vue_routage", help: "Colonnes : personne, nom, destinataires, detail, remplace, maj_le (les autres sont ignor\xE9es)" },
+          { name: "roles", label: "R\xF4les concern\xE9s", default: "negociateur" }
+        ],
+        run: async (p, ctx, api) => {
+          const conf = await routageDe(p);
+          const t = api.Table.findOne({ name: p.table || "vue_routage" });
+          if (!t) throw perm(`table \xAB ${p.table || "vue_routage"} \xBB introuvable`);
+          const champs = new Set(t.getFields().map((f) => f.name));
+          const roles = String(p.roles || "negociateur").split(",").map((x) => x.trim()).filter(Boolean);
+          const maintenant = /* @__PURE__ */ new Date();
+          const lignes = (conf.personnes || []).filter((x) => roles.includes(x.role)).map((x) => {
+            const r = destinataires(x.id, maintenant, conf);
+            const liste = r.liste || [];
+            const perso = liste.find((d) => d.email === String(x.email || "").toLowerCase());
+            return {
+              personne: x.id,
+              nom: x.nom,
+              destinataires: liste.map((d) => `${d.email} (${d.roles.join(", ")})`).join(" \xB7 "),
+              detail: (r.trace || []).join(" \xB7 "),
+              remplace: !perso || liste.some((d) => /^remplace/.test(d.raison || "")),
+              maj_le: maintenant
+            };
+          });
+          const garder = (o) => Object.fromEntries(Object.entries(o).filter(([k]) => champs.has(k)));
+          await t.deleteRows({});
+          for (const l of lignes) await t.insertRow(garder(l));
+          return { lignes: lignes.length, remplaces: lignes.filter((l) => l.remplace).length };
+        }
       },
       {
         name: "dzf_crm",
@@ -98321,6 +98419,39 @@ var require_extras = __commonJS({
           } finally {
             client.release();
           }
+        }
+      },
+      {
+        name: "dzf_ecriture_controler",
+        label: "Table : contr\xF4ler une \xE9criture (\xE9v\xE9nement Validate)",
+        category: "Donn\xE9es",
+        icon: "fas fa-user-shield",
+        description: "\xC0 brancher sur l'\xE9v\xE9nement \xAB Validate \xBB d'une table : refuse l'\xE9criture si une condition est vraie (ex. \xE9crire sur le ticket d'un autre) et recopie des valeurs d'une ligne li\xE9e (ex. le demandeur du ticket sur le message). V\xE9rifi\xE9 par le serveur, quel que soit le formulaire ou l'API.",
+        params: [
+          { name: "lien", label: "Ligne li\xE9e (facultatif)", type: "json", default: "{}", raw: true, help: `{"champ":"ticket","table":"ticket"} : la ligne de \xAB ticket \xBB dont l'id est dans le champ ticket, lue sous le nom liee` },
+          { name: "refuser_si", label: "Refuser si (expression)", raw: true, help: "Ex. user.role_id > 1 && (!liee || liee.demandeur !== user.id). Variables : row (la ligne \xE9crite), liee, user." },
+          { name: "message", label: "Message de refus", default: "\xC9criture refus\xE9e" },
+          { name: "recopier", label: "Recopier (JSON)", type: "json", default: "{}", raw: true, help: '{"demandeur":"demandeur"} : champ de la ligne \u2190 champ de la ligne li\xE9e' }
+        ],
+        run: async (p, ctx, api) => {
+          const { compiler } = require_garde();
+          const row = { ...ctx };
+          delete row.user;
+          const user = ctx.user || api.user || { role_id: 100 };
+          let liee = null;
+          const lien = typeof p.lien === "string" ? JSON.parse(p.lien || "{}") : p.lien || {};
+          if (lien.table && lien.champ) {
+            const t = api.Table.findOne({ name: lien.table });
+            if (!t) throw Object.assign(new Error(`table \xAB ${lien.table} \xBB introuvable`), { permanent: true });
+            const id = row[lien.champ];
+            liee = id === void 0 || id === null || id === "" ? null : await t.getRow({ [lien.cle || "id"]: typeof id === "object" ? id.id : id }) || null;
+          }
+          if (p.refuser_si && compiler(p.refuser_si, ["row", "liee", "user"])(row, liee, { id: user.id, role_id: user.role_id, email: user.email }))
+            return { __saltcorn: true, error: String(p.message || "\xC9criture refus\xE9e") };
+          const rec = typeof p.recopier === "string" ? JSON.parse(p.recopier || "{}") : p.recopier || {};
+          const set_fields = {};
+          if (liee) for (const [a, b] of Object.entries(rec)) set_fields[a] = liee[b];
+          return Object.keys(set_fields).length ? { __saltcorn: true, set_fields } : { __saltcorn: true };
         }
       },
       {

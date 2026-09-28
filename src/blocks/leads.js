@@ -8,6 +8,7 @@ const { extraire } = require("../lib/leads/extraire");
 const { rapprocher } = require("../lib/leads/rapprochement");
 const { traiter, executer } = require("../lib/leads/traiter");
 const { destinataires, absentsSemaine } = require("../lib/leads/routage");
+const { lireRoutage } = require("../lib/leads/routage-tables");
 const { creerCrm, ADAPTATEURS } = require("../lib/leads/crm");
 const { PORTAILS } = require("../lib/leads/portails");
 
@@ -23,6 +24,10 @@ const P_CRM = [
   { name: "crm_reglages", label: "Réglages du CRM", type: "json", default: "{}", help: 'Immofacile : {"site_id":"…"}. Salesforce : {"domaine":"https://….my.salesforce.com", "contact":{"objet":"Lead"}}' },
   { name: "prefixe_secrets", label: "Préfixe des secrets", default: "LEADS_CRM", help: "Immofacile : LEADS_CRM_BASIC. Salesforce : LEADS_CRM_CLIENT_ID, LEADS_CRM_CLIENT_SECRET (+ LEADS_CRM_REFRESH_TOKEN)." },
 ];
+/* règles d'envoi : un JSON (configuration de la solution) ou lues dans les tables de l'équipe */
+const P_ROUTAGE = { name: "routage", label: "Règles d'envoi", type: "json", default: "{{leads_conf.routage}}", help: "JSON, ou \"tables\" (avec les guillemets) pour les lire dans equipe, absence, regle_envoi et destinataire_custom" };
+const P_TABLES = { name: "tables", label: "Noms des tables (si « tables »)", type: "json", default: "{}", help: '{"equipe":"equipe","absence":"absence","regle":"regle_envoi","copies":"destinataire_custom"}' };
+const routageDe = async (p) => (p.routage === "tables" || p.routage === '"tables"' ? lireRoutage(obj(p.tables, "tables")) : obj(p.routage, "routage"));
 const crmDe = (p, api, mode = "ombre") => {
   const reg = obj(p.crm_reglages, "réglages du CRM");
   const pre = String(p.prefixe_secrets || "LEADS_CRM").replace(/[^\w]/g, "");
@@ -59,14 +64,40 @@ module.exports = [
   {
     name: "dzf_lead_destinataires", label: "Leads : qui reçoit ?", category: "Leads immobiliers", icon: "fas fa-user-check", output: "destinataires",
     description: "Donne les adresses exactes qui recevraient un lead de ce négociateur à cette date, avec l'explication (règle, congés, mi-temps, remplaçant, siège). C'est le bouton « tester ».",
-    params: [{ name: "negociateur", label: "Négociateur (id)", required: true }, { name: "date", label: "Date", default: "", help: "Vide = maintenant" }, { name: "routage", label: "Règles d'envoi", type: "json", default: "{{leads_conf.routage}}" }],
-    run: async (p) => destinataires(p.negociateur, p.date || new Date(), obj(p.routage, "routage")),
+    params: [{ name: "negociateur", label: "Négociateur (id)", required: true }, { name: "date", label: "Date", default: "", help: "Vide = maintenant" }, P_ROUTAGE, P_TABLES],
+    run: async (p) => destinataires(p.negociateur, p.date || new Date(), await routageDe(p)),
   },
   {
     name: "dzf_lead_absents", label: "Leads : absents de la semaine", category: "Leads immobiliers", icon: "fas fa-umbrella-beach", output: "absents",
     description: "Qui est absent cette semaine (congés ou jours non travaillés à mi-temps), et qui prend le relais.",
-    params: [{ name: "routage", label: "Règles d'envoi", type: "json", default: "{{leads_conf.routage}}" }, { name: "semaine", label: "Un jour de la semaine voulue", default: "" }],
-    run: async (p) => absentsSemaine(obj(p.routage, "routage"), p.semaine || new Date()),
+    params: [P_ROUTAGE, P_TABLES, { name: "semaine", label: "Un jour de la semaine voulue", default: "" }],
+    run: async (p) => absentsSemaine(await routageDe(p), p.semaine || new Date()),
+  },
+  {
+    name: "dzf_lead_qui_recoit", label: "Leads : tenir à jour « qui reçoit aujourd'hui »", category: "Leads immobiliers", icon: "fas fa-people-arrows", output: "qui_recoit", timeout: 60,
+    description: "Pour chaque négociateur, écrit dans une table qui recevrait un lead aujourd'hui, et pourquoi (congés, mi-temps, départ, remplaçant, règle). À lancer quand l'équipe change et chaque nuit : la fin d'un congé se voit d'elle-même.",
+    params: [P_ROUTAGE, P_TABLES, { name: "table", label: "Table écrite", type: "table", default: "vue_routage", help: "Colonnes : personne, nom, destinataires, detail, remplace, maj_le (les autres sont ignorées)" },
+      { name: "roles", label: "Rôles concernés", default: "negociateur" }],
+    run: async (p, ctx, api) => {
+      const conf = await routageDe(p);
+      const t = api.Table.findOne({ name: p.table || "vue_routage" });
+      if (!t) throw perm(`table « ${p.table || "vue_routage"} » introuvable`);
+      const champs = new Set(t.getFields().map((f) => f.name));
+      const roles = String(p.roles || "negociateur").split(",").map((x) => x.trim()).filter(Boolean);
+      const maintenant = new Date();
+      const lignes = (conf.personnes || []).filter((x) => roles.includes(x.role)).map((x) => {
+        const r = destinataires(x.id, maintenant, conf);
+        const liste = r.liste || [];
+        const perso = liste.find((d) => d.email === String(x.email || "").toLowerCase());
+        return { personne: x.id, nom: x.nom, destinataires: liste.map((d) => `${d.email} (${d.roles.join(", ")})`).join(" · "),
+          detail: (r.trace || []).join(" · "), remplace: !perso || liste.some((d) => /^remplace/.test(d.raison || "")), maj_le: maintenant };
+      });
+      const garder = (o) => Object.fromEntries(Object.entries(o).filter(([k]) => champs.has(k)));
+      /* petite table (une ligne par personne) : on remplace tout, d'un coup */
+      await t.deleteRows({});
+      for (const l of lignes) await t.insertRow(garder(l));
+      return { lignes: lignes.length, remplaces: lignes.filter((l) => l.remplace).length };
+    },
   },
   {
     name: "dzf_crm", label: "CRM immobilier : consulter", category: "Leads immobiliers", icon: "fas fa-address-book", output: "crm", timeout: 90,
