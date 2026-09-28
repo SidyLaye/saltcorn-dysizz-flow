@@ -1,5 +1,17 @@
 # Journal des versions
 
+## 2.8.0
+
+- **Lancer un autre workflow** :
+  - un contexte vide (`{}`) transmet bien tout le contexte actuel, comme l'annonce l'aide (avant : le workflow recevait un contexte vide) ;
+  - lancé par un déclencheur de table, le workflow voit chaque colonne de la ligne, `null` si elle est vide : une condition « only if » sur un champ laissé vide ne bloque plus le workflow en « Running » ;
+  - option `cumuler` : pendant un regroupement, les valeurs d'une rafale sont réunies en liste (ex. les leads touchés) ; `"*"` ou plus de 2000 valeurs donnent `null` (= tout recalculer).
+- **Table : lire (SQL)** : `$1` dans la requête reçoit la liste des clés à recalculer (null = tout) ; les commentaires `--` et `/* */` sont acceptés ; une liste de clés vide ne lit rien.
+- **Table : modifier** : option `ignorer_vides` pour les modifications en lot (seuls les champs remplis s'appliquent, seuls les critères posés filtrent ; un filtre vide est refusé).
+- Blocs d'écriture de table (ajouter, modifier, tenir à jour) : une écriture refusée par Saltcorn (droits, champ protégé) devient une erreur ; avant, le bloc annonçait un succès.
+- Moteur : un réglage JSON enregistré comme objet voit ses `{{ }}` remplacés à chaque niveau.
+- **Leads : règles d'envoi lues dans les tables** : règle pour un **groupe** ou une **agence** (les personnes de l'équipe qui en font partie), une règle personnelle passe avant ; un groupe vide ne vise personne (et non plus tout le monde) ; relais d'absence par **adresse libre** (`remplacant_adresse`) ; assistant(e) avec les valeurs lisibles « reçoit », « ne reçoit pas », « remplacé(e) ».
+
 ## 2.7.0
 
 - Nouveau bloc **Table : tenir à jour une table de lecture** : une requête SELECT (jointures, dernières valeurs, regroupements) recalcule une table ; seules les lignes qui ont changé sont écrites, les lignes disparues sont retirées, et l'on peut ne recalculer que quelques clés. La requête tourne en lecture seule ; l'écriture est faite par le bloc, en paramètres, dans la seule table choisie. Les pages lisent ensuite cette table au lieu de tout recalculer dans le navigateur.

@@ -1,0 +1,51 @@
+/* « Lancer un autre workflow » regroupé : une rafale = un lancement, valeurs cumulées. Saltcorn simulé. */
+const assert = require("assert");
+const Module = require("module");
+const lances = [];
+const fakeDb = { getTenantSchema: () => "public", runWithTenant: (s, f) => f(), connectObj: { default_schema: "public" } };
+const Trigger = { findOne: ({ name }) => ({ name, runWithoutRow: async ({ row }) => { lances.push(row); await new Promise((r) => setTimeout(r, 150)); } }) };
+const orig = Module._load;
+Module._load = function (req, ...rest) {
+  if (req === "@saltcorn/data/db") return fakeDb;
+  if (req === "@saltcorn/data/models/trigger") return Trigger;
+  if (req.startsWith("@saltcorn/")) return class {};
+  return orig.call(this, req, ...rest);
+};
+const { BLOCKS } = require("../src/blocks");
+const bloc = BLOCKS.find((b) => b.name === "dzf_lancer_workflow");
+const lancer = (cumuler, nom = "wf") => bloc.run({ workflow: nom, contexte: { source: "test" }, regrouper_s: 1, cumuler }, {}, {});
+const attendre = (ms) => new Promise((r) => setTimeout(r, ms));
+(async () => {
+  const r1 = await lancer({ leads: 1 });
+  await lancer({ leads: 2 });
+  await lancer({ leads: [2, 3], messages: 40 });
+  assert.strictEqual(r1.planifie, true, "rien ne tourne tout de suite");
+  assert.strictEqual(lances.length, 0);
+  await attendre(1300);
+  assert.strictEqual(lances.length, 1, "une rafale = un seul lancement");
+  assert.deepStrictEqual(lances[0].leads.sort(), ["1", "2", "3"], "valeurs cumulées, sans doublon");
+  assert.deepStrictEqual(lances[0].messages, ["40"]);
+  assert.strictEqual(lances[0].source, "test", "le contexte est transmis");
+  await lancer({ leads: 5 });
+  await lancer({ leads: "*" });
+  await lancer({ leads: 6 });
+  await attendre(1300);
+  assert.strictEqual(lances.length, 2);
+  assert.strictEqual(lances[1].leads, null, "« * » : tout recalculer");
+  assert.ok(!("messages" in lances[1]), "un nom non cumulé reste absent (rien à faire pour lui)");
+  const beaucoup = Array.from({ length: 2100 }, (_, i) => i);
+  await lancer({ leads: beaucoup });
+  await attendre(1300);
+  assert.strictEqual(lances[2].leads, null, "au-delà de 2000 valeurs : tout recalculer");
+  /* contexte vide = la ligne du déclencheur (sans regroupement) */
+  const n0 = lances.length;
+  await bloc.run({ workflow: "wf", contexte: {} }, { id: 7, ticket: 3 }, {});
+  assert.deepStrictEqual(lances[n0], { id: 7, ticket: 3 }, "contexte {} : tout le contexte actuel");
+  const table = { getFields: () => [{ name: "id" }, { name: "presence" }, { name: "ticket" }] };
+  await bloc.run({ workflow: "wf", contexte: {} }, { id: 8 }, { table });
+  assert.deepStrictEqual(lances[lances.length - 1], { id: 8, presence: null, ticket: null }, "déclencheur de table : colonnes absentes = null");
+  await bloc.run({ workflow: "wf", contexte: { a: 1 } }, { id: 7 }, {});
+  assert.deepStrictEqual(lances[lances.length - 1], { a: 1 }, "contexte rempli : lui seul");
+  console.log("lancement regroupé OK : un lancement par rafale, valeurs cumulées, « * », limite");
+  process.exit(0);
+})().catch((e) => { console.error(e); process.exit(1); });

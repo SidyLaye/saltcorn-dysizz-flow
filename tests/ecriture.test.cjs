@@ -23,5 +23,20 @@ const run = (row, user) => bloc.run({ ...conf }, { ...row, user }, api);
   const action = toAction(bloc);
   const r = await action.run({ configuration: { lien: JSON.stringify(conf.lien), refuser_si: conf.refuser_si, message: conf.message, recopier: JSON.stringify(conf.recopier) }, row: { ticket: 2, message: "x", demandeur: 10 }, user: { id: 10, role_id: 80 } }).catch((e) => ({ exception: e.message }));
   assert.ok(r.error === "Ce ticket n'est pas le vôtre" || /Table/.test(r.exception || ""), "action Saltcorn : refus transmis");
-  console.log("contrôle d'écriture OK : propriétaire vérifié, valeur recopiée, admin autorisé");
+  /* modification en lot : seuls les champs remplis s'appliquent, seuls les critères posés filtrent */
+  const EQ = [{ id: 1, agence: 12, temps: "plein", actif: true }, { id: 2, agence: 12, temps: "plein", actif: true }, { id: 3, agence: 7, temps: "plein", actif: true }];
+  const eqT = { min_role_write: 40, min_role_read: 40, getRows: async (w) => EQ.filter((r) => Object.entries(w).every(([k, v]) => String(r[k]) === String(v))), updateRow: async (v, id) => Object.assign(EQ.find((r) => r.id === id), v) };
+  const apiLot = { user: { id: 5, role_id: 40 }, Table: { findOne: ({ name }) => (name === "equipe" ? eqT : null) } };
+  const mod = BLOCKS.find((b) => b.name === "dzf_table_modifier");
+  const n = await mod.run({ table: "equipe", filtre: { agence: 12, groupe: "" }, valeurs: { temps: "mi_temps", jours: "", assistante: null }, ignorer_vides: true }, {}, apiLot);
+  assert.strictEqual(n, 2, "deux personnes de l'agence 12");
+  assert.deepStrictEqual(EQ.map((r) => r.temps), ["mi_temps", "mi_temps", "plein"], "seul le champ rempli change, seulement pour l'agence choisie");
+  assert.ok(!("jours" in EQ[0]) && !("assistante" in EQ[0]), "les champs vides ne sont pas écrits");
+  await assert.rejects(() => mod.run({ table: "equipe", filtre: { agence: "", groupe: null }, valeurs: { temps: "plein" }, ignorer_vides: true }, {}, apiLot), /filtre vide/, "aucun critère : refus de tout modifier");
+  assert.strictEqual(await mod.run({ table: "equipe", filtre: { agence: 12 }, valeurs: { temps: "" }, ignorer_vides: true }, {}, apiLot), 0, "rien à changer : rien n'est écrit");
+  /* écriture refusée par Saltcorn (champ protégé…) : il renvoie un message, le bloc doit échouer */
+  const refuse = { ...eqT, updateRow: async () => "Not authorized" };
+  const apiRefus = { ...apiLot, Table: { findOne: () => refuse } };
+  await assert.rejects(() => mod.run({ table: "equipe", id: 1, valeurs: { temps: "plein" } }, {}, apiRefus), /modification refusée : Not authorized/, "refus transmis, pas de faux succès");
+  console.log("contrôle d'écriture OK : propriétaire vérifié, valeur recopiée, admin autorisé, modification en lot, refus signalé");
 })().catch((e) => { console.error(e); process.exit(1); });

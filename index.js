@@ -1,4 +1,4 @@
-/* dysizz-flow 2.7.0 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.8.0 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.7.0" : "dev";
+    var VERSION2 = true ? "2.8.0" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -334,6 +334,8 @@ var require_engine = __commonJS({
             v = parseJSON(v, d.label || d.name);
             if (!d.raw) v = deep(v, ctx);
           }
+        } else if (d.type === "json" && v && typeof v === "object") {
+          if (!d.raw) v = deep(v, ctx);
         } else if (!d.raw) v = interpolate(v, ctx);
         if ((d.type === "int" || d.type === "number") && typeof v === "string" && v !== "") v = Number(v);
         if (d.type === "bool" && typeof v === "string") v = v === "true" || v === "on";
@@ -349,8 +351,10 @@ var require_engine = __commonJS({
         t = setTimeout(() => rej(new Error(`${label} : d\xE9lai de ${s} s d\xE9pass\xE9`)), s * 1e3);
       })]).finally(() => clearTimeout(t));
     };
-    var makeApi = ({ user, req, out }) => ({
+    var makeApi = ({ user, req, table, out }) => ({
       out,
+      /* table du déclencheur (événement Insert, Update…), sinon undefined */
+      table,
       Table: require("@saltcorn/data/models/table"),
       user,
       req,
@@ -507,6 +511,11 @@ var require_donnees = __commonJS({
     };
     var FILTRE = { name: "filtre", label: "Filtre (JSON)", type: "json", help: 'Ex. {"statut":"\xE0 faire"}, {"not":{"statut":"fait"}}, {"date":{"gt":"{{depuis}}"}}. Vide = toutes les lignes' };
     var CHUNK = 500;
+    var verifie = (r, quoi) => {
+      if (typeof r === "string" && !/^\d+$/.test(r)) throw Object.assign(new Error(`${quoi} refus\xE9e : ${r}`), { permanent: true });
+      if (r && typeof r === "object" && r.error) throw Object.assign(new Error(`${quoi} refus\xE9e : ${r.error}`), { permanent: true });
+      return r;
+    };
     module2.exports = [
       {
         name: "dzf_table_chercher",
@@ -562,7 +571,7 @@ var require_donnees = __commonJS({
           const t = needWrite(T(api, p.table), api);
           const rows = p.liste ? asList(p.liste) : [p.valeurs || {}];
           const ids = [];
-          for (const r of rows) ids.push(await t.insertRow(r, api.user, void 0, !!p.sans_declencheurs));
+          for (const r of rows) ids.push(verifie(await t.insertRow(r, api.user, void 0, !!p.sans_declencheurs), "ajout"));
           return rows.length === 1 && !p.liste ? ids[0] : { nombre: ids.length, ids };
         }
       },
@@ -592,12 +601,12 @@ var require_donnees = __commonJS({
             for (const x of part) {
               const ex = byKey.get(String(x[p.cle]));
               if (!ex) {
-                const id = await t.insertRow(x, api.user, void 0, !!p.sans_declencheurs);
+                const id = verifie(await t.insertRow(x, api.user, void 0, !!p.sans_declencheurs), "ajout");
                 out.ids.push(id);
                 out.ajoutes++;
                 byKey.set(String(x[p.cle]), { id });
               } else if (upd.length) {
-                await t.updateRow(Object.fromEntries(upd.filter((f) => f in x).map((f) => [f, x[f]])), ex.id, api.user, !!p.sans_declencheurs);
+                verifie(await t.updateRow(Object.fromEntries(upd.filter((f) => f in x).map((f) => [f, x[f]])), ex.id, api.user, !!p.sans_declencheurs), "modification");
                 out.mis_a_jour++;
               } else out.ignores++;
             }
@@ -618,22 +627,28 @@ var require_donnees = __commonJS({
           { name: "ids", label: "\u2026ou une liste d'ids (ou de lignes)", help: "Ex. {{a_prevenir}} : chaque \xE9l\xE9ment ou son champ id" },
           FILTRE,
           { name: "valeurs", label: "Nouvelles valeurs (JSON)", type: "json", required: true },
-          { name: "sans_declencheurs", label: "Ne pas lancer les d\xE9clencheurs", type: "bool" }
+          { name: "sans_declencheurs", label: "Ne pas lancer les d\xE9clencheurs", type: "bool" },
+          { name: "ignorer_vides", label: "Ignorer les champs vides (filtre et valeurs)", type: "bool", help: "Pour une modification en lot : seuls les champs remplis du formulaire s'appliquent, seuls les crit\xE8res pos\xE9s filtrent. Un filtre qui devient vide est refus\xE9." }
         ],
         run: async (p, ctx, api) => {
           const t = needWrite(T(api, p.table), api);
+          if (p.ignorer_vides) {
+            const plein = (o) => Object.fromEntries(Object.entries(o || {}).filter(([, v]) => v !== null && v !== void 0 && v !== ""));
+            p = { ...p, valeurs: plein(p.valeurs), filtre: p.filtre ? plein(p.filtre) : p.filtre };
+            if (!Object.keys(p.valeurs).length) return 0;
+          }
           if (p.id) {
-            await t.updateRow(p.valeurs, +p.id, api.user, !!p.sans_declencheurs);
+            verifie(await t.updateRow(p.valeurs, +p.id, api.user, !!p.sans_declencheurs), "modification");
             return 1;
           }
           if (p.ids) {
             const ids = asList(p.ids).map((x) => x && typeof x === "object" ? x.id : x).map(Number).filter(Boolean);
-            for (const id of ids) await t.updateRow(p.valeurs, id, api.user, !!p.sans_declencheurs);
+            for (const id of ids) verifie(await t.updateRow(p.valeurs, id, api.user, !!p.sans_declencheurs), "modification");
             return ids.length;
           }
           if (!p.filtre || !Object.keys(p.filtre).length) throw new Error("filtre vide : je refuse de modifier toute la table");
           const rows = await t.getRows(p.filtre, { fields: ["id"] });
-          for (const r of rows) await t.updateRow(p.valeurs, r.id, api.user, !!p.sans_declencheurs);
+          for (const r of rows) verifie(await t.updateRow(p.valeurs, r.id, api.user, !!p.sans_declencheurs), "modification");
           return rows.length;
         }
       },
@@ -94200,7 +94215,7 @@ var require_routage = __commonJS({
     var regleDe = (conf, negoId) => {
       const rs = (conf.regles || []).filter((r) => r.actif !== false);
       const cibles = rs.filter((r) => r.cible && (r.cible.negociateurs || []).map(String).includes(String(negoId)));
-      return cibles.find((r) => new Set(r.cible.negociateurs.map(String)).size === 1) || cibles[0] || rs.find((r) => r.cible && r.cible.tous) || {};
+      return cibles.find((r) => r.individuelle) || cibles.find((r) => r.individuelle === void 0 && new Set(r.cible.negociateurs.map(String)).size === 1) || cibles[0] || rs.find((r) => r.cible && r.cible.tous) || {};
     };
     var destinataires = (negoId, quand = /* @__PURE__ */ new Date(), conf = {}) => {
       const P = new Map((conf.personnes || []).map((p) => [String(p.id), p]));
@@ -94799,6 +94814,12 @@ var require_routage_tables = __commonJS({
     "use strict";
     var NOMS = { equipe: "equipe", absence: "absence", regle: "regle_envoi", copies: "destinataire_custom" };
     var jourDe = (d, fuseau) => d ? new Intl.DateTimeFormat("en-CA", { timeZone: fuseau, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(d)) : null;
+    var modeAssistante = (v) => {
+      const x = String(v || "").toLowerCase();
+      if (/^(couper|ne re[cç]oit pas|non)/.test(x)) return "couper";
+      if (/^(remplac)/.test(x)) return "remplacer";
+      return "garder";
+    };
     var ids = (v) => String(v ?? "").split(/[\s,;]+/).map((x) => x.trim()).filter((x) => /^\d+$/.test(x));
     var ref = (id) => id ? { personne: id } : null;
     var lireRoutage = async (noms = {}, fuseau = "Europe/Paris") => {
@@ -94827,23 +94848,33 @@ var require_routage_tables = __commonJS({
           remplacant_inactif: ref(p.remplacant_inactif)
         })),
         regles: rg.map((r) => {
-          const groupe = [.../* @__PURE__ */ new Set([...ids(r.negociateurs), ...r.negociateur ? [String(r.negociateur)] : []])];
+          const membres = (champ) => r[champ] === null || r[champ] === void 0 || r[champ] === "" ? [] : eq.filter((p) => String(p[champ] ?? "") === String(r[champ])).map((p) => String(p.id));
+          const groupe = [.../* @__PURE__ */ new Set([...ids(r.negociateurs), ...r.negociateur ? [String(r.negociateur)] : [], ...membres("groupe"), ...membres("agence")])];
+          const cibleVide = !groupe.length && [r.groupe, r.agence].some((x) => x !== null && x !== void 0 && x !== "");
           return {
+            /* un groupe ou une agence vide ne devient pas « tous » : la règle ne vise personne */
+            individuelle: !!r.negociateur && !ids(r.negociateurs).length && !membres("groupe").length && !membres("agence").length,
             id: r.id,
             nom: r.nom,
-            cible: groupe.length ? { negociateurs: groupe } : { tous: true },
+            cible: groupe.length ? { negociateurs: groupe } : cibleVide ? { negociateurs: [] } : { tous: true },
             couper_negociateur: !!r.couper_negociateur,
-            assistante: r.assistante || "garder",
+            assistante: modeAssistante(r.assistante),
             assistante_remplacante: ref(r.assistante_remplacante),
             adresses_libres: String(r.adresses_libres || "").split(/[\s,;]+/).filter((x) => x.includes("@")),
             actif: true
           };
         }),
-        absences: abs.map((a) => ({ personne_id: a.personne, debut: jourDe(a.debut, fuseau), fin: jourDe(a.fin, fuseau), remplacant: ref(a.remplacant), motif: a.motif })),
+        absences: abs.map((a) => ({
+          personne_id: a.personne,
+          debut: jourDe(a.debut, fuseau),
+          fin: jourDe(a.fin, fuseau),
+          remplacant: a.remplacant ? ref(a.remplacant) : /@/.test(String(a.remplacant_adresse || "")) ? { email: String(a.remplacant_adresse).trim() } : null,
+          motif: a.motif
+        })),
         siege: cp.filter((d) => !d.portee || d.portee === "tous").map((d) => d.email).filter(Boolean)
       };
     };
-    module2.exports = { lireRoutage, jourDe, NOMS };
+    module2.exports = { lireRoutage, jourDe, modeAssistante, NOMS };
   }
 });
 
@@ -98010,6 +98041,13 @@ var require_taches = __commonJS({
         return false;
       }
     };
+    var colonnesVides = (table) => {
+      try {
+        return table && typeof table.getFields === "function" ? Object.fromEntries(table.getFields().map((f) => [f.name, null])) : {};
+      } catch (e) {
+        return {};
+      }
+    };
     var findWorkflow = (name) => {
       const Trigger = require("@saltcorn/data/models/trigger");
       const t = Trigger.findOne({ name });
@@ -98017,20 +98055,41 @@ var require_taches = __commonJS({
       return t;
     };
     var REGROUPES = /* @__PURE__ */ new Map();
-    var regrouper = (t, n, row) => {
+    var MAX_CUMUL = 2e3;
+    var regrouper = (t, n, row, cumuler = {}) => {
       const db = require("@saltcorn/data/db");
       const schema = db.getTenantSchema();
       const k = `${schema}.${t.name}`;
+      const ajouter = (acc) => {
+        for (const [nom, v] of Object.entries(cumuler)) {
+          if (acc[nom] === null) continue;
+          const set = acc[nom] || (acc[nom] = /* @__PURE__ */ new Set());
+          for (const x of [].concat(v)) {
+            if (x === "*") {
+              acc[nom] = null;
+              break;
+            }
+            if (x !== null && x !== void 0 && x !== "") set.add(String(x));
+          }
+          if (acc[nom] === null) continue;
+          if (set.size > MAX_CUMUL) acc[nom] = null;
+        }
+      };
       const deja = REGROUPES.get(k);
       if (deja) {
         deja.encore = true;
+        ajouter(deja.cumul);
         return { planifie: true, regroupe: true };
       }
-      const etat = { encore: false };
+      const etat = { encore: false, cumul: {} };
+      ajouter(etat.cumul);
       REGROUPES.set(k, etat);
       const tour = () => setTimeout(() => {
         etat.encore = false;
-        db.runWithTenant(schema, () => findWorkflow(t.name).runWithoutRow({ row, user: SYSTEME })).catch((e) => console.error(`dysizz-flow workflow ${t.name} (regroup\xE9) :`, e.message)).finally(() => {
+        const cumul = etat.cumul;
+        etat.cumul = {};
+        const valeurs = Object.fromEntries(Object.entries(cumul).map(([nom, set]) => [nom, set === null ? null : [...set]]));
+        db.runWithTenant(schema, () => findWorkflow(t.name).runWithoutRow({ row: { ...row, ...valeurs }, user: SYSTEME })).catch((e) => console.error(`dysizz-flow workflow ${t.name} (regroup\xE9) :`, e.message)).finally(() => {
           if (etat.encore) tour();
           else REGROUPES.delete(k);
         });
@@ -98083,13 +98142,15 @@ var require_taches = __commonJS({
         params: [
           { name: "workflow", label: "Nom du workflow", required: true },
           { name: "contexte", label: "Contexte transmis (JSON)", type: "json", help: 'Ex. {"email":"{{email}}"}. Vide = tout le contexte actuel' },
-          { name: "regrouper_s", label: "Regrouper les lancements rapproch\xE9s (secondes)", type: "int", default: 0, help: "Ex. 3 : vingt \xE9v\xE9nements en rafale ne lancent le workflow qu'une fois, 3 s apr\xE8s le premier (puis une fois encore s'il en arrive pendant qu'il tourne). Sans attendre son r\xE9sultat." }
+          { name: "regrouper_s", label: "Regrouper les lancements rapproch\xE9s (secondes)", type: "int", default: 0, help: "Ex. 3 : vingt \xE9v\xE9nements en rafale ne lancent le workflow qu'une fois, 3 s apr\xE8s le premier (puis une fois encore s'il en arrive pendant qu'il tourne). Sans attendre son r\xE9sultat." },
+          { name: "cumuler", label: "Valeurs \xE0 cumuler entre lancements regroup\xE9s (JSON)", type: "json", default: "{}", help: '{"leads":"{{lead}}"} : le workflow re\xE7oit leads = la liste des valeurs de toute la rafale ; "*" ou plus de 2000 valeurs donnent null (= tout recalculer) ; un nom jamais cumul\xE9 reste absent' }
         ],
         run: async (p, ctx, api) => {
           const t = findWorkflow(p.workflow);
           const n = Math.max(0, Math.min(300, +p.regrouper_s || 0));
-          if (n) return regrouper(t, n, p.contexte || ctx);
-          const r = await t.runWithoutRow({ row: p.contexte || ctx, user: api.user || SYSTEME, req: api.req });
+          const c = p.contexte && typeof p.contexte === "object" && Object.keys(p.contexte).length ? p.contexte : { ...colonnesVides(api.table), ...ctx };
+          if (n) return regrouper(t, n, c, p.cumuler && typeof p.cumuler === "object" ? p.cumuler : {});
+          const r = await t.runWithoutRow({ row: c, user: api.user || SYSTEME, req: api.req });
           return r && typeof r === "object" ? r : { resultat: r };
         }
       },
@@ -98466,7 +98527,7 @@ var require_extras = __commonJS({
           { name: "table", label: "Table \xE0 tenir \xE0 jour", type: "table", required: true },
           { name: "cle", label: "Colonne cl\xE9 (unique)", default: "id" },
           { name: "requete", label: "Requ\xEAte SELECT", type: "code", required: true, raw: true, help: "Ses colonnes portent les noms des champs de la table ; les autres sont ignor\xE9es." },
-          { name: "cles", label: "Seulement ces cl\xE9s (facultatif)", help: "Liste ou texte s\xE9par\xE9 par des virgules. Vide = tout recalculer." },
+          { name: "cles", label: "Seulement ces cl\xE9s (facultatif)", help: "Liste ou texte s\xE9par\xE9 par des virgules. Vide = tout recalculer. Si la requ\xEAte contient $1, elle re\xE7oit cette liste (ou null = tout) pour ne lire que ce qui est utile : gros volumes." },
           { name: "supprimer", label: "Retirer les lignes absentes du r\xE9sultat (calcul complet)", type: "bool", default: true },
           { name: "delai_s", label: "Temps max (secondes)", type: "int", default: 30 }
         ],
@@ -98474,6 +98535,7 @@ var require_extras = __commonJS({
           if (api.user && api.user.role_id !== 1) throw Object.assign(new Error("r\xE9serv\xE9 aux administrateurs"), { permanent: true });
           const db = require("@saltcorn/data/db");
           if (db.isSQLite) throw Object.assign(new Error("PostgreSQL requis"), { permanent: true });
+          if (Array.isArray(p.cles) && !p.cles.length) return { lignes: 0, ecrites: 0, retirees: 0, rien: true };
           const job = preparerLecture(p, api);
           const refus = await require_garde().refusSql(job.sql);
           if (refus) throw Object.assign(new Error(refus), { permanent: true });
@@ -98484,7 +98546,8 @@ var require_extras = __commonJS({
     var IDENT = /^[a-z_][a-z0-9_]{0,62}$/i;
     var preparerLecture = (p, api) => {
       const sql = String(p.requete || "").trim().replace(/;\s*$/, "");
-      if (!/^(select|with)\b/i.test(sql) || /;/.test(sql) || /\b(insert|update|delete|drop|alter|create|truncate|grant|revoke|copy|vacuum|call|do)\b/i.test(sql.replace(/'[^']*'/g, ""))) throw Object.assign(new Error("seulement une requ\xEAte SELECT (ou WITH \u2026 SELECT), sans point-virgule"), { permanent: true });
+      const nu = sql.replace(/--[^\n]*/g, " ").replace(/\/\*[\s\S]*?\*\//g, " ").trim();
+      if (!/^(select|with)\b/i.test(nu) || /;/.test(nu.replace(/'[^']*'/g, "")) || /\b(insert|update|delete|drop|alter|create|truncate|grant|revoke|copy|vacuum|call|do)\b/i.test(nu.replace(/'[^']*'/g, ""))) throw Object.assign(new Error("seulement une requ\xEAte SELECT (ou WITH \u2026 SELECT), sans point-virgule"), { permanent: true });
       const t = api.Table.findOne({ name: p.table });
       if (!t || t.external || t.provider_name) throw Object.assign(new Error(`table \xAB ${p.table} \xBB introuvable`), { permanent: true });
       const champs = t.getFields().map((f) => f.name).filter((c) => IDENT.test(c));
@@ -98494,7 +98557,7 @@ var require_extras = __commonJS({
       if (typeof cles === "string") cles = cles.split(",").map((s) => s.trim()).filter(Boolean);
       if (cles != null && !Array.isArray(cles)) cles = [cles];
       cles = cles && cles.length ? cles.slice(0, 5e3).map(String) : null;
-      return { sql, table: t.name, champs, cle, cles, supprimer: p.supprimer !== false && !cles, delai: Math.max(1, Math.min(300, +p.delai_s || 30)) };
+      return { sql, table: t.name, champs, cle, cles, parametre: /\$1\b/.test(sql), supprimer: p.supprimer !== false && !cles, delai: Math.max(1, Math.min(300, +p.delai_s || 30)) };
     };
     var tenirLecture = async (job) => {
       const db = require("@saltcorn/data/db");
@@ -98507,7 +98570,7 @@ var require_extras = __commonJS({
         await client.query("begin read only");
         await client.query(`set local statement_timeout = ${job.delai * 1e3}`);
         await client.query(`set local search_path to ${q(schema)}`);
-        const r = await client.query(`select * from (${job.sql}) as q${job.cles ? ` where q.${q(job.cle)}::text = any($1)` : ""}`, job.cles ? [job.cles] : []);
+        const r = job.parametre ? await client.query(`select * from (${job.sql}) as q`, [job.cles]) : await client.query(`select * from (${job.sql}) as q${job.cles ? ` where q.${q(job.cle)}::text = any($1)` : ""}`, job.cles ? [job.cles] : []);
         await client.query("commit");
         const cols = job.champs.filter((c) => r.fields.some((f) => f.name === c));
         if (!cols.includes(job.cle)) throw Object.assign(new Error(`la requ\xEAte doit renvoyer la colonne \xAB ${job.cle} \xBB`), { permanent: true });

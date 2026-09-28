@@ -103,13 +103,15 @@ const donnees = [
     params: [{ name: "table", label: "Table à tenir à jour", type: "table", required: true },
       { name: "cle", label: "Colonne clé (unique)", default: "id" },
       { name: "requete", label: "Requête SELECT", type: "code", required: true, raw: true, help: "Ses colonnes portent les noms des champs de la table ; les autres sont ignorées." },
-      { name: "cles", label: "Seulement ces clés (facultatif)", help: "Liste ou texte séparé par des virgules. Vide = tout recalculer." },
+      { name: "cles", label: "Seulement ces clés (facultatif)", help: "Liste ou texte séparé par des virgules. Vide = tout recalculer. Si la requête contient $1, elle reçoit cette liste (ou null = tout) pour ne lire que ce qui est utile : gros volumes." },
       { name: "supprimer", label: "Retirer les lignes absentes du résultat (calcul complet)", type: "bool", default: true },
       { name: "delai_s", label: "Temps max (secondes)", type: "int", default: 30 }],
     run: async (p, ctx, api) => {
       if (api.user && api.user.role_id !== 1) throw Object.assign(new Error("réservé aux administrateurs"), { permanent: true });
       const db = require("@saltcorn/data/db");
       if (db.isSQLite) throw Object.assign(new Error("PostgreSQL requis"), { permanent: true });
+      /* une liste vide (rien n'a changé pour cette table) : rien à faire */
+      if (Array.isArray(p.cles) && !p.cles.length) return { lignes: 0, ecrites: 0, retirees: 0, rien: true };
       const job = preparerLecture(p, api);
       const refus = await require("../garde").refusSql(job.sql);
       if (refus) throw Object.assign(new Error(refus), { permanent: true });
@@ -124,7 +126,9 @@ const donnees = [
 const IDENT = /^[a-z_][a-z0-9_]{0,62}$/i;
 const preparerLecture = (p, api) => {
   const sql = String(p.requete || "").trim().replace(/;\s*$/, "");
-  if (!/^(select|with)\b/i.test(sql) || /;/.test(sql) || /\b(insert|update|delete|drop|alter|create|truncate|grant|revoke|copy|vacuum|call|do)\b/i.test(sql.replace(/'[^']*'/g, ""))) throw Object.assign(new Error("seulement une requête SELECT (ou WITH … SELECT), sans point-virgule"), { permanent: true });
+  /* les commentaires SQL sont permis : on vérifie la requête sans eux */
+  const nu = sql.replace(/--[^\n]*/g, " ").replace(/\/\*[\s\S]*?\*\//g, " ").trim();
+  if (!/^(select|with)\b/i.test(nu) || /;/.test(nu.replace(/'[^']*'/g, "")) || /\b(insert|update|delete|drop|alter|create|truncate|grant|revoke|copy|vacuum|call|do)\b/i.test(nu.replace(/'[^']*'/g, ""))) throw Object.assign(new Error("seulement une requête SELECT (ou WITH … SELECT), sans point-virgule"), { permanent: true });
   const t = api.Table.findOne({ name: p.table });
   if (!t || t.external || t.provider_name) throw Object.assign(new Error(`table « ${p.table} » introuvable`), { permanent: true });
   const champs = t.getFields().map((f) => f.name).filter((c) => IDENT.test(c));
@@ -134,7 +138,7 @@ const preparerLecture = (p, api) => {
   if (typeof cles === "string") cles = cles.split(",").map((s) => s.trim()).filter(Boolean);
   if (cles != null && !Array.isArray(cles)) cles = [cles];
   cles = cles && cles.length ? cles.slice(0, 5000).map(String) : null;
-  return { sql, table: t.name, champs, cle, cles, supprimer: p.supprimer !== false && !cles, delai: Math.max(1, Math.min(300, +p.delai_s || 30)) };
+  return { sql, table: t.name, champs, cle, cles, parametre: /\$1\b/.test(sql), supprimer: p.supprimer !== false && !cles, delai: Math.max(1, Math.min(300, +p.delai_s || 30)) };
 };
 const tenirLecture = async (job) => {
   const db = require("@saltcorn/data/db");
@@ -147,7 +151,11 @@ const tenirLecture = async (job) => {
     await client.query("begin read only");
     await client.query(`set local statement_timeout = ${job.delai * 1000}`);
     await client.query(`set local search_path to ${q(schema)}`);
-    const r = await client.query(`select * from (${job.sql}) as q${job.cles ? ` where q.${q(job.cle)}::text = any($1)` : ""}`, job.cles ? [job.cles] : []);
+    /* requête qui sait se limiter ($1 = clés à recalculer, ou null) : elle choisit elle-même ce qu'elle relit
+       (ex. les demandes touchées et celles du même bien) ; sinon, on filtre son résultat */
+    const r = job.parametre
+      ? await client.query(`select * from (${job.sql}) as q`, [job.cles])
+      : await client.query(`select * from (${job.sql}) as q${job.cles ? ` where q.${q(job.cle)}::text = any($1)` : ""}`, job.cles ? [job.cles] : []);
     await client.query("commit");
     const cols = job.champs.filter((c) => r.fields.some((f) => f.name === c));
     if (!cols.includes(job.cle)) throw Object.assign(new Error(`la requête doit renvoyer la colonne « ${job.cle} »`), { permanent: true });

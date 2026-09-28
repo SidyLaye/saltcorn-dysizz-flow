@@ -64,6 +64,22 @@ const REQ = "select c.id as cle, sum(v.n)::int as total, max(v.le) as dernier, '
     v = (await q(`select cle, total from "${SCHEMA}".vue order by cle`)).rows;
     assert.deepStrictEqual(v.map((x) => [x.cle, x.total]), [[1, 13], [3, 20]], "les autres clés ne bougent pas");
 
+    /* requête qui se limite elle-même avec $1 (gros volumes) */
+    const REQ1 = "select c.id as cle, sum(v.n)::int as total, max(v.le) as dernier from client c join vente v on v.client = c.id where ($1::text[] is null or c.id::text = any($1)) group by c.id";
+    await q(`update "${SCHEMA}".vente set n = 7 where client = 1`);
+    await q(`update "${SCHEMA}".vente set n = 30 where client = 3`);
+    r = await run({ requete: REQ1, cles: ["3"] });
+    assert.deepStrictEqual([r.lignes, r.ecrites, r.retirees], [1, 1, 0], "$1 : seules les clés demandées sont relues");
+    v = (await q(`select cle, total from "${SCHEMA}".vue order by cle`)).rows;
+    assert.deepStrictEqual(v.map((x) => [x.cle, x.total]), [[1, 13], [3, 30]], "$1 : les autres lignes ne bougent pas");
+    r = await run({ requete: REQ1 });
+    assert.deepStrictEqual([r.lignes, r.ecrites], [2, 1], "$1 à null : tout est recalculé");
+    r = await run({ requete: "-- commentaire : total par client\n/* bloc */ " + REQ1 });
+    assert.strictEqual(r.lignes, 2, "commentaires SQL acceptés");
+    await assert.rejects(() => run({ requete: "-- x\n delete from vue" }), /SELECT/, "un commentaire ne cache pas une écriture");
+    r = await bloc.run({ table: "vue", cle: "cle", requete: REQ1, cles: [] }, {}, api);
+    assert.strictEqual(r.rien, true, "liste vide : rien à faire");
+
     await assert.rejects(() => run({ requete: "delete from vue" }), /SELECT/, "une requête qui écrit est refusée");
     await assert.rejects(() => run({ requete: "select 1 as cle; drop table vue" }), /SELECT/);
     await assert.rejects(() => run({ requete: "select nextval('vente_id_seq')::int as cle" }), /read-only|lecture seule/i, "la requête tourne en lecture seule");
@@ -76,7 +92,7 @@ const REQ = "select c.id as cle, sum(v.n)::int as total, max(v.le) as dernier, '
     tenant = "client_b";
     await assert.rejects(() => run({ requete: `select id as cle from "${SCHEMA}".client` }), /son tenant|tenant racine/);
     tenant = SCHEMA;
-    console.log("table de lecture OK : calcul, écritures minimales, retraits, clés ciblées, lecture seule, refus");
+    console.log("table de lecture OK : calcul, écritures minimales, retraits, clés ciblées, requête limitée par $1, lecture seule, refus");
   } finally {
     await q(`drop schema if exists "${SCHEMA}" cascade`).catch(() => {});
     await pool.end();

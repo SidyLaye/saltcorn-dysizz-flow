@@ -4,9 +4,12 @@
    - equipe      : nom, email, role (negociateur | assistante | siege | autre), actif, assistante (→ equipe),
                    temps (plein | mi_temps), jours ("1,2,4" ; 1 = lundi), remplacant_hors_jours (→ equipe),
                    remplacant_inactif (→ equipe : qui reprend quand la personne est partie)
-   - absence     : personne (→ equipe), debut, fin (vide = sans fin : départ, longue durée), remplacant (→ equipe), motif, actif
-   - regle_envoi : nom, actif, negociateur (→ equipe) ou negociateurs ("3,7,9" : un groupe) ou aucun (= tous),
-                   couper_negociateur, assistante (garder | couper | remplacer), assistante_remplacante (→ equipe),
+   - absence     : personne (→ equipe), debut, fin (vide = sans fin : départ, longue durée), remplacant (→ equipe)
+                   ou remplacant_adresse (une adresse e-mail libre), motif, actif
+   - regle_envoi : nom, actif, negociateur (→ equipe), ou negociateurs ("3,7,9"), ou groupe (même valeur que
+                   equipe.groupe), ou agence (même valeur que equipe.agence), ou rien de tout ça (= tous),
+                   couper_negociateur, assistante (garder | couper | remplacer, ou « reçoit », « ne reçoit pas »,
+                   « remplacé(e) »), assistante_remplacante (→ equipe),
                    adresses_libres ("a@x, b@y")
    - copies      : email, portee ("tous" = en copie de chaque lead), actif
 
@@ -17,6 +20,13 @@ const NOMS = { equipe: "equipe", absence: "absence", regle: "regle_envoi", copie
 
 /* date → « AAAA-MM-JJ » dans le fuseau voulu */
 const jourDe = (d, fuseau) => (d ? new Intl.DateTimeFormat("en-CA", { timeZone: fuseau, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(d)) : null);
+/* assistant(e) dans une règle : valeurs lisibles du formulaire ou valeurs du moteur */
+const modeAssistante = (v) => {
+  const x = String(v || "").toLowerCase();
+  if (/^(couper|ne re[cç]oit pas|non)/.test(x)) return "couper";
+  if (/^(remplac)/.test(x)) return "remplacer";
+  return "garder";
+};
 const ids = (v) => String(v ?? "").split(/[\s,;]+/).map((x) => x.trim()).filter((x) => /^\d+$/.test(x));
 const ref = (id) => (id ? { personne: id } : null);
 
@@ -39,16 +49,22 @@ const lireRoutage = async (noms = {}, fuseau = "Europe/Paris") => {
       remplacant_hors_jours: ref(p.remplacant_hors_jours), remplacant_inactif: ref(p.remplacant_inactif),
     })),
     regles: rg.map((r) => {
-      const groupe = [...new Set([...ids(r.negociateurs), ...(r.negociateur ? [String(r.negociateur)] : [])])];
+      /* un groupe ou une agence : les personnes de l'équipe qui en font partie aujourd'hui */
+      const membres = (champ) => (r[champ] === null || r[champ] === undefined || r[champ] === "" ? [] : eq.filter((p) => String(p[champ] ?? "") === String(r[champ])).map((p) => String(p.id)));
+      const groupe = [...new Set([...ids(r.negociateurs), ...(r.negociateur ? [String(r.negociateur)] : []), ...membres("groupe"), ...membres("agence")])];
+      const cibleVide = !groupe.length && [r.groupe, r.agence].some((x) => x !== null && x !== undefined && x !== "");
       return {
-        id: r.id, nom: r.nom, cible: groupe.length ? { negociateurs: groupe } : { tous: true }, couper_negociateur: !!r.couper_negociateur,
-        assistante: r.assistante || "garder", assistante_remplacante: ref(r.assistante_remplacante),
+        /* un groupe ou une agence vide ne devient pas « tous » : la règle ne vise personne */
+        individuelle: !!r.negociateur && !ids(r.negociateurs).length && !membres("groupe").length && !membres("agence").length,
+        id: r.id, nom: r.nom, cible: groupe.length ? { negociateurs: groupe } : cibleVide ? { negociateurs: [] } : { tous: true }, couper_negociateur: !!r.couper_negociateur,
+        assistante: modeAssistante(r.assistante), assistante_remplacante: ref(r.assistante_remplacante),
         adresses_libres: String(r.adresses_libres || "").split(/[\s,;]+/).filter((x) => x.includes("@")), actif: true,
       };
     }),
-    absences: abs.map((a) => ({ personne_id: a.personne, debut: jourDe(a.debut, fuseau), fin: jourDe(a.fin, fuseau), remplacant: ref(a.remplacant), motif: a.motif })),
+    absences: abs.map((a) => ({ personne_id: a.personne, debut: jourDe(a.debut, fuseau), fin: jourDe(a.fin, fuseau),
+      remplacant: a.remplacant ? ref(a.remplacant) : /@/.test(String(a.remplacant_adresse || "")) ? { email: String(a.remplacant_adresse).trim() } : null, motif: a.motif })),
     siege: cp.filter((d) => !d.portee || d.portee === "tous").map((d) => d.email).filter(Boolean),
   };
 };
 
-module.exports = { lireRoutage, jourDe, NOMS };
+module.exports = { lireRoutage, jourDe, modeAssistante, NOMS };

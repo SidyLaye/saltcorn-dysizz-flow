@@ -15,6 +15,14 @@ const needWrite = (x, api) => { if (api.user && !x.canWrite) throw new Error("é
 const FILTRE = { name: "filtre", label: "Filtre (JSON)", type: "json", help: 'Ex. {"statut":"à faire"}, {"not":{"statut":"fait"}}, {"date":{"gt":"{{depuis}}"}}. Vide = toutes les lignes' };
 const CHUNK = 500;
 
+/* Saltcorn ne lève pas d'erreur quand une écriture est refusée (droits, champ protégé, contrainte) :
+   il renvoie un message. Ici un refus devient une vraie erreur, sinon le bloc annoncerait un succès. */
+const verifie = (r, quoi) => {
+  if (typeof r === "string" && !/^\d+$/.test(r)) throw Object.assign(new Error(`${quoi} refusée : ${r}`), { permanent: true });
+  if (r && typeof r === "object" && r.error) throw Object.assign(new Error(`${quoi} refusée : ${r.error}`), { permanent: true });
+  return r;
+};
+
 module.exports = [
   {
     name: "dzf_table_chercher", label: "Table : chercher des lignes", category: "Données", icon: "fas fa-search", output: "lignes",
@@ -49,7 +57,7 @@ module.exports = [
       const t = needWrite(T(api, p.table), api);
       const rows = p.liste ? asList(p.liste) : [p.valeurs || {}];
       const ids = [];
-      for (const r of rows) ids.push(await t.insertRow(r, api.user, undefined, !!p.sans_declencheurs));
+      for (const r of rows) ids.push(verifie(await t.insertRow(r, api.user, undefined, !!p.sans_declencheurs), "ajout"));
       return rows.length === 1 && !p.liste ? ids[0] : { nombre: ids.length, ids };
     },
   },
@@ -72,8 +80,8 @@ module.exports = [
         const byKey = new Map(existing.map((r) => [String(r[p.cle]), r]));
         for (const x of part) {
           const ex = byKey.get(String(x[p.cle]));
-          if (!ex) { const id = await t.insertRow(x, api.user, undefined, !!p.sans_declencheurs); out.ids.push(id); out.ajoutes++; byKey.set(String(x[p.cle]), { id }); }
-          else if (upd.length) { await t.updateRow(Object.fromEntries(upd.filter((f) => f in x).map((f) => [f, x[f]])), ex.id, api.user, !!p.sans_declencheurs); out.mis_a_jour++; }
+          if (!ex) { const id = verifie(await t.insertRow(x, api.user, undefined, !!p.sans_declencheurs), "ajout"); out.ids.push(id); out.ajoutes++; byKey.set(String(x[p.cle]), { id }); }
+          else if (upd.length) { verifie(await t.updateRow(Object.fromEntries(upd.filter((f) => f in x).map((f) => [f, x[f]])), ex.id, api.user, !!p.sans_declencheurs), "modification"); out.mis_a_jour++; }
           else out.ignores++;
         }
       }
@@ -85,18 +93,24 @@ module.exports = [
     description: "Modifie toutes les lignes qui correspondent au filtre (ou la ligne dont l'id est donné).",
     params: [{ name: "table", label: "Table", type: "table", required: true }, { name: "id", label: "Id de la ligne (sinon filtre)", help: "Ex. {{id}}" },
       { name: "ids", label: "…ou une liste d'ids (ou de lignes)", help: "Ex. {{a_prevenir}} : chaque élément ou son champ id" }, FILTRE,
-      { name: "valeurs", label: "Nouvelles valeurs (JSON)", type: "json", required: true }, { name: "sans_declencheurs", label: "Ne pas lancer les déclencheurs", type: "bool" }],
+      { name: "valeurs", label: "Nouvelles valeurs (JSON)", type: "json", required: true }, { name: "sans_declencheurs", label: "Ne pas lancer les déclencheurs", type: "bool" },
+      { name: "ignorer_vides", label: "Ignorer les champs vides (filtre et valeurs)", type: "bool", help: "Pour une modification en lot : seuls les champs remplis du formulaire s'appliquent, seuls les critères posés filtrent. Un filtre qui devient vide est refusé." }],
     run: async (p, ctx, api) => {
       const t = needWrite(T(api, p.table), api);
-      if (p.id) { await t.updateRow(p.valeurs, +p.id, api.user, !!p.sans_declencheurs); return 1; }
+      if (p.ignorer_vides) {
+        const plein = (o) => Object.fromEntries(Object.entries(o || {}).filter(([, v]) => v !== null && v !== undefined && v !== ""));
+        p = { ...p, valeurs: plein(p.valeurs), filtre: p.filtre ? plein(p.filtre) : p.filtre };
+        if (!Object.keys(p.valeurs).length) return 0;
+      }
+      if (p.id) { verifie(await t.updateRow(p.valeurs, +p.id, api.user, !!p.sans_declencheurs), "modification"); return 1; }
       if (p.ids) {
         const ids = asList(p.ids).map((x) => (x && typeof x === "object" ? x.id : x)).map(Number).filter(Boolean);
-        for (const id of ids) await t.updateRow(p.valeurs, id, api.user, !!p.sans_declencheurs);
+        for (const id of ids) verifie(await t.updateRow(p.valeurs, id, api.user, !!p.sans_declencheurs), "modification");
         return ids.length;
       }
       if (!p.filtre || !Object.keys(p.filtre).length) throw new Error("filtre vide : je refuse de modifier toute la table");
       const rows = await t.getRows(p.filtre, { fields: ["id"] });
-      for (const r of rows) await t.updateRow(p.valeurs, r.id, api.user, !!p.sans_declencheurs);
+      for (const r of rows) verifie(await t.updateRow(p.valeurs, r.id, api.user, !!p.sans_declencheurs), "modification");
       return rows.length;
     },
   },
