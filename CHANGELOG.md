@@ -2,6 +2,7 @@
 
 ## 2.12.0
 
+- Leads, site d'agence (AC3) : la source est l'agence nommée dans la demande (« Demande auprès de SELECTION HABITAT » → Selection Habitat), jamais « AC3 » ; dans le CRM, l'origine est celle du site de cette agence (réglage `sites`, sinon l'origine qui porte son nom).
 - Nouveau bloc « Leads : banc d'essai sur les mails d'un ancien système » : rejoue le traitement sur les mails déjà reçus et compare, mail par mail, avec ce que l'ancien système avait trouvé (source, e-mail, téléphone, nom, prénom, référence, bien, agence, négociateur, décision). Lecture seule. Rapport sans donnée personnelle dans Fichiers : accords par portail et par champ, type de chaque écart, squelette anonymisé des mails en écart.
 - Leads : un lead qui ne peut pas être automatisé (bien, agence, négociateur ou contact introuvable, expéditeur inconnu) est **transféré tel quel**, avec son objet d'origine, à l'adresse réglée dans `adresse_non_automatise` (ex. une boîte « non automatisé »). Plusieurs adresses possibles. Sans adresse : rien ne part, comme avant.
 - Leads : format des mails envoyés au choix (`format_envoi`) : `resume` (fiche du lead, défaut) ou `origine` (le mail reçu tel quel, son objet d'origine, l'en-tête d'origine et la liste des destinataires).

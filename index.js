@@ -92784,7 +92784,7 @@ var require_portails = __commonJS({
         nom: "Site d'agence (AC3)",
         test: (d) => /ac3-groupe\.com$/.test(d),
         nature: (o) => /résolution de votre demande|demande d.assistance|ticket/i.test(o) ? "non_lead" : /demande|request|création compte|account/i.test(o) ? "lead" : "non_lead",
-        regles: ({ L, texte, r }) => {
+        regles: ({ L, o, texte, r }) => {
           const cl = texte.match(/(?:client|customer)\s*:\s*([^\n]+)/i);
           if (cl) {
             const parts = cl[1].replace(/\s+(e-?mail|t[ée]l[ée]phone|phone)\s*:.*$/i, "").split(/\s+-\s+/).map((x) => x.trim());
@@ -92821,6 +92821,11 @@ var require_portails = __commonJS({
           }
           const d = texte.match(/délai du projet\s*:\s*(.+)/i);
           if (d) r.delai = d[1].trim();
+          const ag = String(o || "").match(/(?:demande auprès de|request to|création (?:de )?compte sur|account creation on)\s+(.+?)\s*$/i);
+          if (ag && ag[1].trim()) {
+            const n = V.nomPropre(ag[1].trim());
+            r.site_nom = n === n.toUpperCase() ? n.toLowerCase().replace(new RegExp("(^|[\\s'\u2019-])(\\p{L})", "gu"), (m, a, b2) => a + b2.toUpperCase()) : n;
+          }
           const oc = texte.match(/origine du contact\s*:\s*(.+)/i);
           if (oc) r.origine_declaree = oc[1].trim();
           if (/n'a pas accepté d'?[eê]tre recontacté par e-?mail/i.test(texte)) r.consentement_email = false;
@@ -94847,11 +94852,13 @@ var require_traiter = __commonJS({
         const domaineMail = String(r.site || "").toLowerCase().replace(/^www\./, "");
         return memeOrigine || domaineMail && domaineConfig === domaineMail;
       }) || null : null;
-      const portailMetier = r.portail === "site_agence" ? siteCfg ? siteCfg.libelle || siteCfg.noms && siteCfg.noms[0] || siteCfg.domaine : r.portail_nom || r.site || r.site_origine || "Site agence" : r.portail_nom || r.portail;
+      const portailMetier = r.portail === "site_agence" ? siteCfg ? siteCfg.libelle || siteCfg.noms && siteCfg.noms[0] || siteCfg.domaine : r.site_nom || r.site || "Site de l'agence" : r.portail_nom || r.portail;
       if (r.portail === "site_agence") r.portail_nom = portailMetier;
       d.portail = portailMetier;
       d.source = portailMetier;
-      const origineCode = r.portail === "site_agence" ? r.site_origine : (conf.origines_portail || {})[r.portail] || r.portail;
+      const sansTld = (x) => String(x || "").toLowerCase().replace(/\.(com|fr|net|org|eu)\b/g, "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, "");
+      const origineSite = r.portail === "site_agence" && !siteCfg && r.site_nom ? ((conf.origines || []).find((o) => sansTld(o.libelle) === sansTld(r.site_nom) || sansTld(o.code) === sansTld(r.site_nom)) || {}).code : null;
+      const origineCode = r.portail === "site_agence" ? siteCfg && siteCfg.origine || r.site_origine || origineSite : (conf.origines_portail || {})[r.portail] || r.portail;
       const origine = (conf.origines || []).find((o) => o.code === origineCode) || conf.origine_defaut && (conf.origines || []).find((o) => o.code === conf.origine_defaut) || null;
       d.origine = origine ? { code: origine.code, libelle: r.portail === "site_agence" ? portailMetier : origine.libelle || portailMetier, id: origine.id } : { code: origineCode, libelle: portailMetier, id: null };
       if (origine && origine.code !== origineCode) d.origine.par_defaut = true;

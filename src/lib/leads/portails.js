@@ -199,7 +199,7 @@ const PORTAILS = [
   {
     id: "site_agence", nom: "Site d'agence (AC3)", test: (d) => /ac3-groupe\.com$/.test(d),
     nature: (o) => (/résolution de votre demande|demande d.assistance|ticket/i.test(o) ? "non_lead" : /demande|request|création compte|account/i.test(o) ? "lead" : "non_lead"),
-    regles: ({ L, texte, r }) => {
+    regles: ({ L, o, texte, r }) => {
       const cl = texte.match(/(?:client|customer)\s*:\s*([^\n]+)/i);
       if (cl) {
         const parts = cl[1].replace(/\s+(e-?mail|t[ée]l[ée]phone|phone)\s*:.*$/i, "").split(/\s+-\s+/).map((x) => x.trim());
@@ -223,6 +223,9 @@ const PORTAILS = [
         r.message = (fl ? fl[1] : msg).trim();
       }
       const d = texte.match(/délai du projet\s*:\s*(.+)/i); if (d) r.delai = d[1].trim();
+      /* l'agence dont le site a reçu la demande (« Demande auprès de SELECTION HABITAT », « Request to … ») : c'est elle la source, pas AC3 */
+      const ag = String(o || "").match(/(?:demande auprès de|request to|création (?:de )?compte sur|account creation on)\s+(.+?)\s*$/i);
+      if (ag && ag[1].trim()) { const n = V.nomPropre(ag[1].trim()); r.site_nom = n === n.toUpperCase() ? n.toLowerCase().replace(/(^|[\s'’-])(\p{L})/gu, (m, a, b) => a + b.toUpperCase()) : n; }
       const oc = texte.match(/origine du contact\s*:\s*(.+)/i); if (oc) r.origine_declaree = oc[1].trim();
       if (/n'a pas accepté d'?[eê]tre recontacté par e-?mail/i.test(texte)) r.consentement_email = false;
     },
