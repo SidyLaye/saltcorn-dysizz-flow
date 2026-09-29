@@ -333,17 +333,20 @@ const detecterParTexte = (texte) => {
 };
 
 /* Portail déclaré par le client (table ld_portails), sans code :
-   { id, nom, domaines: ["exemple-immo.fr"], objets_lead: ["nouveau contact", "demande"],
+   { id, nom, domaines: ["exemple-immo.fr", "formulaire@agence.fr"], objets_lead: ["nouveau contact", "demande"],
      objets_non_lead: ["facture"], libelles: { "tél. perso": "telephone" }, reference: "Réf\\s*:\\s*(\\S+)" }
    Les expressions sont testées sans tenir compte des majuscules ; une expression invalide est ignorée. */
 const re = (x) => { try { return new RegExp(x, "i"); } catch (e) { return null; } };
 const declare = (p) => {
-  const dom_ = (p.domaines || []).map((x) => String(x).trim().toLowerCase()).filter(Boolean);
+  /* « domaines » : un domaine (tous ses expéditeurs) ou une adresse complète (ce seul expéditeur, ex. le formulaire d'un site
+     qui écrit depuis le domaine de l'agence : les autres adresses de ce domaine restent des mails de l'équipe) */
+  const tout = (p.domaines || []).map((x) => String(x).trim().toLowerCase()).filter(Boolean);
+  const adr = tout.filter((x) => x.includes("@")), dom_ = tout.filter((x) => !x.includes("@"));
   const oui = (p.objets_lead || []).map(re).filter(Boolean), non = (p.objets_non_lead || []).map(re).filter(Boolean);
   const ref = p.reference ? re(p.reference) : null;
   return {
-    id: p.id || "declare_" + (dom_[0] || "x").replace(/\W+/g, "_"), nom: p.nom || dom_[0], declare: true, libelles: p.libelles || null,
-    test: (d) => dom_.some((x) => d === x || d.endsWith("." + x)),
+    id: p.id || "declare_" + (tout[0] || "x").replace(/\W+/g, "_"), nom: p.nom || tout[0], declare: true, libelles: p.libelles || null,
+    test: (d, o, a) => dom_.some((x) => d === x || d.endsWith("." + x)) || (!!a && adr.includes(a)),
     nature: (o) => (non.some((r) => r.test(o)) ? "non_lead" : !oui.length || oui.some((r) => r.test(o)) ? p.nature || "lead" : "non_lead"),
     regles: ref ? ({ o, texte, r }) => { const m = (o + "\n" + texte).match(ref); if (m && !r.bien.reference) r.bien.reference = (m[1] || m[0]).trim(); } : undefined,
   };
@@ -352,7 +355,8 @@ const declare = (p) => {
 /* Portails du code d'abord (testés), puis ceux déclarés par le client. */
 const detecter = (mail, declares = []) => {
   const d = dom(mail.expediteur), o = String(mail.objet || "");
-  return PORTAILS.find((p) => p.test(d, o)) || declares.map(declare).find((p) => p.test(d, o)) || null;
+  const a = (String(mail.expediteur || "").match(/[\w.+-]+@[\w.-]+/) || [""])[0].toLowerCase();
+  return PORTAILS.find((p) => p.test(d, o)) || declares.map(declare).find((p) => p.test(d, o, a)) || null;
 };
 
 module.exports = { PORTAILS, detecter, detecterParTexte, declare, dom };

@@ -129,6 +129,14 @@ const extraire = (mail, conf = {}) => {
 
   const corps = ["direct", "reponse_campagne"].includes(r.nature) ? sansCitation(texte) : texte;
   const { couples, lignes: L } = lireFiche(corps, p && p.libelles);
+  /* Portail connu, objet non reconnu comme un lead, mais le mail porte les coordonnées d'un prospect ET un bien :
+     c'est un lead (le portail a changé son objet). Jamais écarté en silence. */
+  if (r.nature === "non_lead" && p) {
+    const exp = V.email(mail.expediteur);
+    const coord = couples.some((x) => (x.champ === "email" && V.email(x.valeur) && V.email(x.valeur) !== exp) || (x.champ === "telephone" && V.telephone(x.valeur)));
+    const bien = couples.some((x) => ["reference", "id_crm", "prix", "ville", "code_postal", "surface"].includes(x.champ) && x.valeur);
+    if (coord && bien) { r.nature = "lead"; r.nature_corrigee = "objet inconnu du portail, mais coordonnées du prospect et bien présents"; }
+  }
   if (!["non_lead", "interne", "auto_reponse"].includes(r.nature)) depuisFiche(r, couples, L);
   if (p && p.regles && r.nature !== "non_lead") {
     try { p.regles({ L, o: objet, r, texte: corps, liens, conf, mail }); } catch (e) { r.erreur_regle = e.message; }

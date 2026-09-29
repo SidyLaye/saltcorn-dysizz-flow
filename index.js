@@ -1,4 +1,4 @@
-/* dysizz-flow 2.11.1 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.12.0 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.11.1" : "dev";
+    var VERSION2 = true ? "2.12.0" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -93069,15 +93069,16 @@ var require_portails = __commonJS({
       }
     };
     var declare = (p) => {
-      const dom_ = (p.domaines || []).map((x) => String(x).trim().toLowerCase()).filter(Boolean);
+      const tout = (p.domaines || []).map((x) => String(x).trim().toLowerCase()).filter(Boolean);
+      const adr = tout.filter((x) => x.includes("@")), dom_ = tout.filter((x) => !x.includes("@"));
       const oui = (p.objets_lead || []).map(re).filter(Boolean), non = (p.objets_non_lead || []).map(re).filter(Boolean);
       const ref = p.reference ? re(p.reference) : null;
       return {
-        id: p.id || "declare_" + (dom_[0] || "x").replace(/\W+/g, "_"),
-        nom: p.nom || dom_[0],
+        id: p.id || "declare_" + (tout[0] || "x").replace(/\W+/g, "_"),
+        nom: p.nom || tout[0],
         declare: true,
         libelles: p.libelles || null,
-        test: (d) => dom_.some((x) => d === x || d.endsWith("." + x)),
+        test: (d, o, a) => dom_.some((x) => d === x || d.endsWith("." + x)) || !!a && adr.includes(a),
         nature: (o) => non.some((r) => r.test(o)) ? "non_lead" : !oui.length || oui.some((r) => r.test(o)) ? p.nature || "lead" : "non_lead",
         regles: ref ? ({ o, texte, r }) => {
           const m = (o + "\n" + texte).match(ref);
@@ -93087,7 +93088,8 @@ var require_portails = __commonJS({
     };
     var detecter = (mail, declares = []) => {
       const d = dom(mail.expediteur), o = String(mail.objet || "");
-      return PORTAILS.find((p) => p.test(d, o)) || declares.map(declare).find((p) => p.test(d, o)) || null;
+      const a = (String(mail.expediteur || "").match(/[\w.+-]+@[\w.-]+/) || [""])[0].toLowerCase();
+      return PORTAILS.find((p) => p.test(d, o)) || declares.map(declare).find((p) => p.test(d, o, a)) || null;
     };
     module2.exports = { PORTAILS, detecter, detecterParTexte, declare, dom };
   }
@@ -93289,6 +93291,15 @@ var require_extraire = __commonJS({
       } else r.nature = mail.__agence ? "interne" : campagne ? "reponse_campagne" : "direct";
       const corps = ["direct", "reponse_campagne"].includes(r.nature) ? sansCitation(texte) : texte;
       const { couples, lignes: L } = lireFiche(corps, p && p.libelles);
+      if (r.nature === "non_lead" && p) {
+        const exp = V.email(mail.expediteur);
+        const coord = couples.some((x) => x.champ === "email" && V.email(x.valeur) && V.email(x.valeur) !== exp || x.champ === "telephone" && V.telephone(x.valeur));
+        const bien = couples.some((x) => ["reference", "id_crm", "prix", "ville", "code_postal", "surface"].includes(x.champ) && x.valeur);
+        if (coord && bien) {
+          r.nature = "lead";
+          r.nature_corrigee = "objet inconnu du portail, mais coordonn\xE9es du prospect et bien pr\xE9sents";
+        }
+      }
       if (!["non_lead", "interne", "auto_reponse"].includes(r.nature)) depuisFiche(r, couples, L);
       if (p && p.regles && r.nature !== "non_lead") {
         try {
@@ -94757,6 +94768,7 @@ var require_traiter = __commonJS({
         return fin();
       }
       if (r.suspect) d.motifs.push("\xE0 v\xE9rifier : " + r.suspect);
+      if (r.nature_corrigee) d.alertes.push(`${r.portail_nom || r.portail} : ${r.nature_corrigee}`);
       if (r.a_un_bien_a_vendre) d.alertes.push("le prospect dit avoir aussi un bien \xE0 vendre : vendeur potentiel");
       if (r.portail === "inconnu" || r.lu_par.length > 1) {
         const a = r.lecture && r.lecture.apprentissage, g = r.lecture && r.lecture.gabarit;
@@ -94840,8 +94852,9 @@ var require_traiter = __commonJS({
       d.portail = portailMetier;
       d.source = portailMetier;
       const origineCode = r.portail === "site_agence" ? r.site_origine : (conf.origines_portail || {})[r.portail] || r.portail;
-      const origine = (conf.origines || []).find((o) => o.code === origineCode) || null;
+      const origine = (conf.origines || []).find((o) => o.code === origineCode) || conf.origine_defaut && (conf.origines || []).find((o) => o.code === conf.origine_defaut) || null;
       d.origine = origine ? { code: origine.code, libelle: r.portail === "site_agence" ? portailMetier : origine.libelle || portailMetier, id: origine.id } : { code: origineCode, libelle: portailMetier, id: null };
+      if (origine && origine.code !== origineCode) d.origine.par_defaut = true;
       if (!origine && origineCode) d.alertes.push(`origine \xAB ${origineCode} \xBB non reli\xE9e \xE0 une origine du CRM`);
       const ok = actif.contact && rc.action !== "impossible";
       if (ok && rc.action === "creer") d.actions.push({ op: "creerContact", donnees: { email: c.email, prenom: c.prenom, nom: c.nom, telephone: c.telephone, origine: d.origine.id, agence: d.agence && d.agence.id, negociateur: negoFinal } });
@@ -96238,7 +96251,10 @@ var require_schema = __commonJS({
         ["gabarits_partages", "Bool"],
         ["lien_fiche", "String"],
         ["envoi_a_verifier", "Bool"],
-        ["routage_tables", "String"]
+        ["routage_tables", "String"],
+        ["adresse_non_automatise", "String"],
+        ["format_envoi", "String"],
+        ["origine_defaut", "String"]
       ] },
       agences: { name: "ld_agences", desc: "Agences", fields: [["nom", "String", { required: true }], ["crm_id", "String"], ["boites", "String"], ["negociateur_defaut", "String"], ["actif", "Bool"], ["enseigne", "String"]] },
       personnes: { name: "ld_personnes", desc: "N\xE9gociateurs et assistant(e)s", fields: [
@@ -96391,7 +96407,8 @@ var require_schema = __commonJS({
         ["libelles", "String"],
         ["reference", "String"],
         ["nature", "String"],
-        ["actif", "Bool"]
+        ["actif", "Bool"],
+        ["origine", "String"]
       ] },
       gabarits: { name: "ld_gabarits", desc: "Gabarits de mails appris automatiquement (forme d'un type de mail, sans donn\xE9e personnelle)", index: ["statut"], fields: [
         ["source", "String"],
@@ -96554,7 +96571,8 @@ var require_conf = __commonJS({
         sites: json(R.sites, []),
         objets_campagnes: String(R.objets_campagnes || "").split("\n").map((x) => x.trim()).filter(Boolean),
         id_crm_liens: String(R.id_crm_liens || "").split("\n").map((x) => x.trim()).filter(Boolean),
-        origines_portail: json(R.origines_portail, {}),
+        origines_portail: { ...Object.fromEntries(portails.filter((p) => p.origine).map((p) => ["declare_" + p.id, p.origine])), ...json(R.origines_portail, {}) },
+        origine_defaut: R.origine_defaut || null,
         utiliser_relais: R.utiliser_relais !== false,
         /* étapes coupées par le client (tout est actif par défaut) */
         etapes: json(R.etapes, {}),
@@ -97421,6 +97439,22 @@ ${lien ? `<p><a href="${esc(lien)}">Voir la fiche du lead</a></p>` : ""}
 <p style="color:#6b7280;font-size:12px">Vous recevez ce lead : ${esc(dest.raison || (dest.roles || []).join(", ") || "destinataire")}.</p></div>`;
       return { objet, html };
     };
+    var dateFrHeure = (v) => {
+      const d = v ? new Date(v) : null;
+      return d && !isNaN(d) ? d.toLocaleString("fr-FR", { timeZone: "Europe/Paris" }) : "";
+    };
+    var transfert = (mail, envoyeA) => {
+      const m = mail || {};
+      const objet = String(m.objet || "").trim() || "Sans objet";
+      const ligne = (l, v) => `<tr><td style="padding:6px 20px 6px 0;color:#6b7280;width:110px;vertical-align:top">${esc(l)}</td><td style="padding:6px 0;font-weight:600;vertical-align:top">${esc(v || "")}</td></tr>`;
+      const corps = m.corps_html ? String(m.corps_html) : m.corps_texte ? `<pre style="margin:0;white-space:pre-wrap;font-family:Arial,sans-serif;font-size:14px;line-height:1.5">${esc(m.corps_texte)}</pre>` : `<div style="color:#6b7280">Mail d'origine vide</div>`;
+      const a = (envoyeA || []).length ? `<div style="padding:18px 24px;border-bottom:1px solid #e5e7eb"><div style="font-size:13px;color:#6b7280;margin-bottom:6px">Envoy\xE9 \xE0</div>${envoyeA.map((x) => `<div style="font-weight:600">${esc(x)}</div>`).join("")}</div>` : "";
+      const html = `<div style="font-family:Arial,Helvetica,sans-serif;color:#111827;background:#f5f5f7"><div style="max-width:760px;margin:0 auto;background:#fff;border:1px solid #e5e7eb">
+<div style="background:#263d63;color:#fff;padding:22px 24px;font-size:20px;font-weight:700">${esc(objet)}</div>
+<div style="padding:18px 24px;border-bottom:1px solid #e5e7eb"><div style="font-size:13px;color:#6b7280;margin-bottom:6px">En-t\xEAte d'origine</div><table role="presentation" style="border-collapse:collapse;font-size:14px">${ligne("De", m.expediteur)}${ligne("\xC0", m.destinataire)}${ligne("Date", dateFrHeure(m.date_envoi || m.recu_le))}${ligne("Objet", objet)}</table></div>
+${a}<div style="padding:18px 24px"><div style="font-size:13px;color:#6b7280;margin-bottom:6px">Mail d'origine</div><div style="border-left:3px solid #263d63;background:#f7f7fa;padding:14px;overflow:auto">${corps}</div></div></div></div>`;
+      return { objet, html };
+    };
     var lienFiche = (R, leadId) => {
       if (!R.lien_fiche) return "";
       let base = "";
@@ -97431,6 +97465,7 @@ ${lien ? `<p><a href="${esc(lien)}">Voir la fiche du lead</a></p>` : ""}
       const chemin = String(R.lien_fiche).replace("{lead}", encodeURIComponent(leadId));
       return /^https?:/.test(chemin) ? chemin : base + chemin;
     };
+    var adresses = (s) => [...new Set(String(s || "").split(/[\s,;]+/).map((x) => x.trim().toLowerCase()).filter((x) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(x)))];
     var messages = async (dossier, resultat) => {
       const d = obj(dossier), res = resultat ? obj(resultat) : {};
       const R = await reglages();
@@ -97438,20 +97473,41 @@ ${lien ? `<p><a href="${esc(lien)}">Voir la fiche du lead</a></p>` : ""}
       const liste = d.destinataires && d.destinataires.liste || [];
       const vide = (raison) => ({ liste: [], simuler: !R.envoi_mails, raison });
       if (!leadId) return vide("lead non enregistr\xE9");
+      const cle = (a2, quoi = "") => `${require_schema().prefixe()}lead-${leadId}:${quoi}${a2}`;
+      const envoiNormal = d.statut === "pret" || d.statut === "a_verifier" && R.envoi_a_verifier;
+      const nonAuto = adresses(R.adresse_non_automatise);
+      const mailRecu = async () => {
+        const id = d.mail_id || res.mail_id;
+        if (!id) return {};
+        const t = require("@saltcorn/data/models/table").findOne({ name: require_schema().nom("mails") });
+        return t && await t.getRow({ id: +id }) || {};
+      };
+      if (!envoiNormal) {
+        if (["a_verifier", "a_trier"].includes(d.statut) && nonAuto.length) {
+          const { objet, html } = transfert(await mailRecu());
+          return {
+            simuler: !R.envoi_mails,
+            raison: `non automatis\xE9 (${(d.motifs || []).slice(0, 2).join(" ; ") || d.statut}) : transf\xE9r\xE9 tel quel`,
+            liste: nonAuto.map((a2) => ({ cle: cle(a2, "non-automatise:"), a: a2, sujet: objet, html, reference: `lead ${leadId}` }))
+          };
+        }
+        return vide(`statut \xAB ${d.statut} \xBB : pas d'envoi`);
+      }
       if (!liste.length) return vide("aucun destinataire");
-      if (d.statut !== "pret" && !(d.statut === "a_verifier" && R.envoi_a_verifier)) return vide(`statut \xAB ${d.statut} \xBB : pas d'envoi`);
       const lien = lienFiche(R, leadId);
+      const a = liste.filter((x) => x && x.email).map((x) => String(x.email).toLowerCase().trim());
+      const origine = R.format_envoi === "origine" ? transfert(await mailRecu(), a) : null;
       return {
         simuler: !R.envoi_mails,
         raison: `${liste.length} destinataire(s)`,
         liste: liste.filter((x) => x && x.email).map((x) => {
-          const a = String(x.email).toLowerCase().trim();
-          const { objet, html } = contenu(d, x, lien);
-          return { cle: `${require_schema().prefixe()}lead-${leadId}:${a}`, a, sujet: objet, html, reference: `lead ${leadId}` };
+          const adr = String(x.email).toLowerCase().trim();
+          const { objet, html } = origine || contenu(d, x, lien);
+          return { cle: cle(adr), a: adr, sujet: objet, html, reference: `lead ${leadId}` };
         })
       };
     };
-    module2.exports = { messages, contenu };
+    module2.exports = { messages, contenu, transfert, adresses };
   }
 });
 
@@ -97576,7 +97632,7 @@ var require_leads_solution = __commonJS({
         category: CAT,
         icon: "fas fa-envelope",
         output: "messages",
-        description: "Un mail par destinataire (prospect, bien, agence, message, lien vers la fiche, pourquoi il le re\xE7oit), pr\xEAt pour \xAB Mail : envoyer une seule fois \xBB. Rien pour un lead \xAB \xE0 v\xE9rifier \xBB (r\xE9glable). Envois coup\xE9s dans les r\xE9glages : simul\xE9s.",
+        description: "Un mail par destinataire, pr\xEAt pour \xAB Mail : envoyer une seule fois \xBB : la fiche du lead, ou le mail re\xE7u tel quel avec son objet d'origine (r\xE9glage \xAB format_envoi \xBB). Un lead qui ne peut pas \xEAtre automatis\xE9 (bien, agence ou n\xE9gociateur introuvable\u2026) est transf\xE9r\xE9 tel quel \xE0 l'adresse \xAB non automatis\xE9 \xBB des r\xE9glages. Envois coup\xE9s dans les r\xE9glages : simul\xE9s.",
         params: [P_DOSSIER, { name: "resultat", label: "Lead enregistr\xE9", type: "json", default: "{{resultat}}" }],
         run: async (p) => dans(p, () => require_envoi().messages(p.dossier, p.resultat))
       },
