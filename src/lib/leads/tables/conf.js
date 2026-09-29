@@ -44,7 +44,8 @@ const charger = async () => {
   };
   const conf = {
     domaines_agence: liste(R.domaines_agence), sites: json(R.sites, []), objets_campagnes: String(R.objets_campagnes || "").split("\n").map((x) => x.trim()).filter(Boolean),
-    id_crm_liens: String(R.id_crm_liens || "").split("\n").map((x) => x.trim()).filter(Boolean), origines_portail: json(R.origines_portail, {}),
+    id_crm_liens: String(R.id_crm_liens || "").split("\n").map((x) => x.trim()).filter(Boolean), origines_portail: { ...Object.fromEntries(portails.filter((p) => p.origine).map((p) => ["declare_" + p.id, p.origine])), ...json(R.origines_portail, {}) },
+    origine_defaut: R.origine_defaut || null,
     utiliser_relais: R.utiliser_relais !== false,
     /* étapes coupées par le client (tout est actif par défaut) */
     etapes: json(R.etapes, {}),

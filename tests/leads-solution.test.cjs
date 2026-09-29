@@ -9,16 +9,19 @@ const orig = Module._load;
 const LIGNES = []; let echouer = null; const partis = [];
 const table = { getRow: async (w) => LIGNES.find((l) => Object.entries(w).every(([k, v]) => l[k] === v)) || null, getRows: async (w) => LIGNES.filter((l) => Object.entries(w).every(([k, v]) => l[k] === v)),
   insertRow: async (r) => { const id = LIGNES.length + 1; LIGNES.push({ ...r, id }); return id; }, updateRow: async (r, id) => Object.assign(LIGNES.find((l) => l.id === id), r) };
-Module._load = function (req, ...rest) {
+let REGLAGES = {}; const MAIL = { id: 5, objet: "Nouveau contact Logic-Immo RDZ123", expediteur: "Logic-Immo <contact@portail-exemple.fr>", destinataire: "rodez@agence-exemple.fr", date_envoi: "2026-09-29T08:00:00Z", corps_texte: "Nom : Paul <b>\nSon message : bonjour" };
+Module._load = function (req, parent, ...rest) {
+  if (req === "./conf" && parent && /envoi\.js$/.test(parent.filename)) return { reglages: async () => REGLAGES };
+  if (req === "@saltcorn/data/models/table") return { findOne: () => ({ getRow: async (w) => (w.id === MAIL.id ? MAIL : null) }) };
   if (req === "@saltcorn/data/models/email") return { getMailTransport: async () => ({ sendMail: async (m) => { if (echouer) throw echouer; partis.push(m.to); return {}; } }) };
   if (req === "@saltcorn/data/db/state") return { getState: () => ({ getConfig: (k) => (k === "email_from" ? "leads@exemple.fr" : "") }) };
   if (req.startsWith("@saltcorn/")) return class {};
   if (req === "../store" || /[\\/]store$/.test(req)) return { ensureTables: async () => ({ envois: table }) };
-  return orig.call(this, req, ...rest);
+  return orig.call(this, req, parent, ...rest);
 };
 const { BLOCKS } = require("../src/blocks");
 const TEMPLATES = require("../src/templates");
-const { contenu } = require("../src/lib/leads/tables/envoi");
+const { contenu, messages } = require("../src/lib/leads/tables/envoi");
 const { envoyer, reprendre } = require("../src/lib/envois");
 
 (async () => {
@@ -45,6 +48,24 @@ const { envoyer, reprendre } = require("../src/lib/envois");
   assert(!/<script>/.test(m.html) && /&lt;script&gt;/.test(m.html), "le message du prospect est échappé");
   for (const x of ["paul@example.org", "+33600000000", "réf. 30123", "Cahors", "Agence Exemple", "négociateur du bien", "page/lead?id=7"]) assert(m.html.includes(x), "contenu : " + x);
 
+  /* format « origine » : le mail reçu tel quel, avec son objet d'origine, et la liste des destinataires */
+  const dp = { ...d, mail_id: 5, destinataires: { liste: [{ email: "Rodez@agence-exemple.fr" }, { email: "assistante@agence-exemple.fr" }] } };
+  REGLAGES = { format_envoi: "origine" };
+  let r = await messages(dp, { id: 7 });
+  assert.strictEqual(r.liste.length, 2); assert(r.simuler, "envois coupés par défaut : simulé");
+  assert.strictEqual(r.liste[0].sujet, MAIL.objet, "objet d'origine");
+  assert(r.liste[0].html.includes("Son message : bonjour") && r.liste[0].html.includes("rodez@agence-exemple.fr") && !/<b>\\n/.test(r.liste[0].html) && r.liste[0].html.includes("Paul &lt;b&gt;"), "mail d'origine, échappé, avec les destinataires");
+  /* non automatisable : transféré tel quel à l'adresse réglée, jamais aux négociateurs */
+  REGLAGES = { adresse_non_automatise: "nonauto@agence-exemple.fr, pas-une-adresse", envoi_mails: true };
+  r = await messages({ ...dp, statut: "a_verifier", motifs: ["bien non trouvé : référence inconnue"] }, { id: 8 });
+  assert.deepStrictEqual(r.liste.map((x) => x.a), ["nonauto@agence-exemple.fr"]); assert.strictEqual(r.simuler, false);
+  assert.strictEqual(r.liste[0].sujet, MAIL.objet); assert(/non-automatise:/.test(r.liste[0].cle) && /bien non trouvé/.test(r.raison));
+  r = await messages({ ...dp, statut: "a_trier", destinataires: { liste: [] } }, { id: 9 }); assert.strictEqual(r.liste.length, 1, "à trier aussi, même sans destinataire");
+  r = await messages({ ...dp, statut: "ignore" }, { id: 10 }); assert.strictEqual(r.liste.length, 0, "un non-lead ne part pas");
+  REGLAGES = {};
+  r = await messages({ ...dp, statut: "a_verifier" }, { id: 11 }); assert.strictEqual(r.liste.length, 0, "sans adresse réglée : rien ne part");
+  r = await messages(dp, { id: 12 }); assert(/Nouveau lead/.test(r.liste[0].sujet), "format par défaut : fiche du lead");
+
   /* une seule fois */
   const msg = { cle: "lead-1:martin@agence-exemple.fr", a: "martin@agence-exemple.fr", sujet: "s", html: "h" };
   let b = await envoyer([msg]); assert.strictEqual(b.envoyes, 1);
@@ -62,5 +83,5 @@ const { envoyer, reprendre } = require("../src/lib/envois");
   b = await envoyer([{ ...msg, cle: "lead-4:w@y.fr", a: "w@y.fr" }]); assert.strictEqual(b.abandonnes, 1, "erreur définitive");
   echouer = null;
   b = await envoyer([{ ...msg, cle: "lead-4:w@y.fr", a: "w@y.fr" }]); assert.strictEqual(b.deja, 1, "un envoi abandonné ne repart pas tout seul");
-  console.log("leads (Catalogue) OK : modèles valides, mail complet et échappé, envoi une seule fois avec reprise et abandon");
+  console.log("leads (Catalogue) OK : modèles valides, mail complet et échappé, mail d'origine, transfert non automatisé, envoi une seule fois avec reprise et abandon");
 })().catch((e) => { console.error(e); process.exit(1); });

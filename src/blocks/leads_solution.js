@@ -45,7 +45,7 @@ module.exports = [
   },
   {
     name: "dzf_leads_messages", label: "Leads : préparer les mails du lead", category: CAT, icon: "fas fa-envelope", output: "messages",
-    description: "Un mail par destinataire (prospect, bien, agence, message, lien vers la fiche, pourquoi il le reçoit), prêt pour « Mail : envoyer une seule fois ». Rien pour un lead « à vérifier » (réglable). Envois coupés dans les réglages : simulés.",
+    description: "Un mail par destinataire, prêt pour « Mail : envoyer une seule fois » : la fiche du lead, ou le mail reçu tel quel avec son objet d'origine (réglage « format_envoi »). Un lead qui ne peut pas être automatisé (bien, agence ou négociateur introuvable…) est transféré tel quel à l'adresse « non automatisé » des réglages. Envois coupés dans les réglages : simulés.",
     params: [P_DOSSIER, { name: "resultat", label: "Lead enregistré", type: "json", default: "{{resultat}}" }],
     run: async (p) => dans(p, () => require("../lib/leads/tables/envoi").messages(p.dossier, p.resultat)),
   },

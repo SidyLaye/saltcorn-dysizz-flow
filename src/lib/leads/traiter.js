@@ -231,10 +231,12 @@ const etapeContact = async (d, crm, conf = {}) => {
   d.portail = portailMetier;
   d.source = portailMetier;
   const origineCode = r.portail === "site_agence" ? r.site_origine : (conf.origines_portail || {})[r.portail] || r.portail;
-  const origine = (conf.origines || []).find((o) => o.code === origineCode) || null;
+  /* origine du CRM : celle du portail, sinon l'origine par défaut réglée (ex. l'agence elle-même) */
+  const origine = (conf.origines || []).find((o) => o.code === origineCode) || (conf.origine_defaut && (conf.origines || []).find((o) => o.code === conf.origine_defaut)) || null;
   d.origine = origine
     ? { code: origine.code, libelle: r.portail === "site_agence" ? portailMetier : (origine.libelle || portailMetier), id: origine.id }
     : { code: origineCode, libelle: portailMetier, id: null };
+  if (origine && origine.code !== origineCode) d.origine.par_defaut = true;
   if (!origine && origineCode) d.alertes.push(`origine « ${origineCode} » non reliée à une origine du CRM`);
 
   /* Plan CRM (rien n'est exécuté ici) */

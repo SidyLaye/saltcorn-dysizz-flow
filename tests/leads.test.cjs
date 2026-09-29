@@ -307,5 +307,21 @@ const { CONF, MAILS } = require("./fixtures-leads.cjs");
     assert.strictEqual(r8.bien && r8.bien.id, 61000001, "identifiant Immofacile caché dans la référence");
   }
 
+  /* Portail déclaré par le client : par domaine, ou par adresse complète (le formulaire du site écrit depuis le domaine de l'agence ;
+     les autres adresses de ce domaine restent des mails de l'équipe). */
+  {
+    const dom = (CONF.domaines_agence || ["agence-exemple.fr"])[0];
+    const cf = { ...CONF, domaines_agence: [dom], portails: [
+      { id: "declare_1", nom: "Portail Exemple", domaines: ["portail-exemple.fr"], objets_lead: ["nouveau contact"] },
+      { id: "declare_2", nom: "Agence Exemple", domaines: ["formulaire@" + dom], objets_lead: ["contact depuis le site"] }] };
+    const corps = "Nom : Paul Martin\nEmail : paul.martin@example.org\nTéléphone : 06 11 22 33 44\nSon message : Bonjour, je souhaite visiter.\nRéférence : 30123";
+    const p1 = extraire({ expediteur: "Portail <contact@portail-exemple.fr>", destinataire: "rodez@" + dom, objet: "Nouveau contact RDZ30123", texte: corps }, cf);
+    assert.strictEqual(p1.portail, "declare_1"); assert.strictEqual(p1.nature, "lead"); assert.strictEqual(p1.contact.email, "paul.martin@example.org");
+    const p2 = extraire({ expediteur: `Site <formulaire@${dom}>`, destinataire: "rodez@" + dom, objet: "Contact depuis le site - RDZ30123", texte: corps }, cf);
+    assert.strictEqual(p2.portail, "declare_2", "le formulaire du site est une source, pas un mail de l'équipe"); assert.strictEqual(p2.portail_nom, "Agence Exemple"); assert.strictEqual(p2.nature, "lead");
+    const p3 = extraire({ expediteur: `Martin <martin@${dom}>`, destinataire: "rodez@" + dom, objet: "Point sur le dossier", texte: "Bonjour, je te rappelle demain." }, cf);
+    assert.notStrictEqual(p3.portail, "declare_2"); assert.strictEqual(p3.nature, "interne", "une autre adresse de l'agence reste un mail de l'équipe");
+  }
+
   console.log("leads + ovh : ok");
 })().catch((e) => { console.error(e); process.exit(1); });
