@@ -1,4 +1,4 @@
-/* dysizz-flow 2.11.0 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.11.1 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.11.0" : "dev";
+    var VERSION2 = true ? "2.11.1" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -94975,7 +94975,25 @@ var require_routage_tables = __commonJS({
     };
     var ids = (v) => String(v ?? "").split(/[\s,;]+/).map((x) => x.trim()).filter((x) => /^\d+$/.test(x));
     var ref = (id) => id ? { personne: id } : null;
-    var lireRoutage = async (noms = {}, fuseau = "Europe/Paris") => {
+    var lireRoutage = async (noms = {}, fuseau = "Europe/Paris", opts = {}) => {
+      const conf = await lireRoutageLignes(noms, fuseau);
+      return opts.id ? versIdentifiant(conf, conf.__equipe, opts.id) : (delete conf.__equipe, conf);
+    };
+    var versIdentifiant = (conf, eq, champ) => {
+      const m = new Map(eq.map((p) => [String(p.id), p[champ] !== null && p[champ] !== void 0 && p[champ] !== "" ? String(p[champ]) : "e" + p.id]));
+      const id = (x) => x === null || x === void 0 ? x : m.get(String(x)) || String(x);
+      const ref2 = (r) => r && r.personne !== void 0 ? { ...r, personne: id(r.personne) } : r;
+      const out = {
+        ...conf,
+        personnes: conf.personnes.map((p) => ({ ...p, ligne: p.id, id: id(p.id), assistante_id: id(p.assistante_id), remplacant_hors_jours: ref2(p.remplacant_hors_jours), remplacant_inactif: ref2(p.remplacant_inactif) })),
+        regles: conf.regles.map((r) => ({ ...r, cible: r.cible && r.cible.negociateurs ? { negociateurs: r.cible.negociateurs.map(id) } : r.cible, assistante_remplacante: ref2(r.assistante_remplacante) })),
+        absences: conf.absences.map((a) => ({ ...a, personne_id: id(a.personne_id), remplacant: ref2(a.remplacant) })),
+        copies: conf.copies.map((c) => ({ ...c, cible: { negociateurs: c.cible.negociateurs.map(id) } }))
+      };
+      delete out.__equipe;
+      return out;
+    };
+    var lireRoutageLignes = async (noms = {}, fuseau = "Europe/Paris") => {
       const Table = require("@saltcorn/data/models/table");
       const n = { ...NOMS, ...noms || {} };
       const lire = async (nom, where = {}) => {
@@ -94988,6 +95006,7 @@ var require_routage_tables = __commonJS({
       const [eq, abs, rg, cp] = await Promise.all([lire(n.equipe), lire(n.absence, { actif: true }), lire(n.regle, { actif: true }), lire(n.copies, { actif: true })]);
       return {
         fuseau_horaire: fuseau,
+        __equipe: eq,
         personnes: eq.map((p) => ({
           id: p.id,
           nom: p.nom,
@@ -96218,7 +96237,8 @@ var require_schema = __commonJS({
         ["ia_url", "String"],
         ["gabarits_partages", "Bool"],
         ["lien_fiche", "String"],
-        ["envoi_a_verifier", "Bool"]
+        ["envoi_a_verifier", "Bool"],
+        ["routage_tables", "String"]
       ] },
       agences: { name: "ld_agences", desc: "Agences", fields: [["nom", "String", { required: true }], ["crm_id", "String"], ["boites", "String"], ["negociateur_defaut", "String"], ["actif", "Bool"], ["enseigne", "String"]] },
       personnes: { name: "ld_personnes", desc: "N\xE9gociateurs et assistant(e)s", fields: [
@@ -96581,6 +96601,12 @@ var require_conf = __commonJS({
           copies: siege.filter((s) => s.actif !== false && s.portee && s.portee !== "tous" && s.email).map((s) => ({ email: s.email, nom: s.libelle || s.email, cible: { negociateurs: membres(s) } }))
         }
       };
+      const rt = json(R.routage_tables, null);
+      if (rt && typeof rt === "object") {
+        const { id, fuseau, ...noms } = rt;
+        const lu = await require_routage_tables().lireRoutage(noms, fuseau || "Europe/Paris", { id });
+        conf.routage = { ...lu, personnes: lu.personnes.map((p) => ({ ...p, alias: p.alias || [] })) };
+      }
       const crm = { type: R.crm, reglages: json(R.crm_reglages, {}), prefixe: R.prefixe_secrets || "LEADS_CRM", mode: R.mode === "reel" ? "reel" : "ombre" };
       return { conf, crm, reglages: R, idMoteur };
     };
@@ -97578,6 +97604,22 @@ var require_leads_solution = __commonJS({
         description: "Recopie les biens du CRM dans la table des biens (complet la premi\xE8re fois, puis seulement les biens modifi\xE9s). Le rapprochement lit ce catalogue local, sans appeler le CRM \xE0 chaque mail.",
         params: [P_PREFIXE, { name: "complet", label: "Tout recopier", type: "bool" }],
         run: async (p) => dans(p, () => require_catalogue().synchroniser({ complet: !!p.complet }))
+      },
+      {
+        name: "dzf_leads_importer_gabarits",
+        label: "Leads : reprendre les gabarits d'un ancien syst\xE8me",
+        category: CAT,
+        icon: "fas fa-file-import",
+        output: "gabarits",
+        timeout: 120,
+        description: "Recopie les gabarits de lecture actifs d'une table existante (ex. gabarit_version d'une ancienne automatisation) : les mails de ces formes sont lus tout de suite, sans IA. Une seule fois par gabarit ; rien n'est supprim\xE9.",
+        params: [P_PREFIXE, { name: "table", label: "Table des anciens gabarits", type: "table", default: "gabarit_version" }],
+        run: async (p) => dans(p, async () => {
+          const t = require("@saltcorn/data/models/table").findOne({ name: p.table || "gabarit_version" });
+          if (!t) throw Object.assign(new Error(`table \xAB ${p.table} \xBB introuvable`), { permanent: true });
+          const n = await require_gabarits().importerAmbs(require_api(), await t.getRows({}));
+          return { importes: n };
+        })
       },
       {
         name: "dzf_leads_entretien",

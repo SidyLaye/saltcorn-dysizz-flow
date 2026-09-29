@@ -1,5 +1,11 @@
 # Journal des versions
 
+## 2.11.1
+
+- Leads : l'équipe et les règles d'envoi peuvent être lues dans les tables d'une application (ex. écrans Gestion : `equipe`, `absence`, `regle_envoi`, `destinataire_custom`), avec l'identifiant du CRM de chaque personne (réglage `routage_tables` de `ld_reglages`, ex. `{"equipe":"equipe","absence":"absence","regle":"regle_envoi","copies":"destinataire_custom","id":"user_id"}`). Une seule source pour l'équipe.
+- Routage « tables » : option `id` (colonne de l'équipe qui porte l'identifiant utilisé sur les biens). Testé.
+- Bloc « Leads : reprendre les gabarits d'un ancien système » : les gabarits de lecture appris (ex. table `gabarit_version`) sont repris ; plus besoin de l'IA pour ces formes de mails.
+
 ## 2.11.0
 
 Tout le backend des leads immobiliers est maintenant dans dysizz-flow, avec des blocs réutilisables : le plugin dysizz-leads n'est plus nécessaire (le désinstaller).
