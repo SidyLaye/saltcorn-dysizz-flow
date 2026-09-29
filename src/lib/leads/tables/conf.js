@@ -68,6 +68,14 @@ const charger = async () => {
       copies: siege.filter((s) => s.actif !== false && s.portee && s.portee !== "tous" && s.email).map((s) => ({ email: s.email, nom: s.libelle || s.email, cible: { negociateurs: membres(s) } })),
     },
   };
+  /* équipe et règles d'envoi lues dans d'autres tables (ex. les écrans Gestion d'une application) :
+     {"equipe":"equipe","absence":"absence","regle":"regle_envoi","copies":"destinataire_custom","id":"user_id"} */
+  const rt = json(R.routage_tables, null);
+  if (rt && typeof rt === "object") {
+    const { id, fuseau, ...noms } = rt;
+    const lu = await require("../routage-tables").lireRoutage(noms, fuseau || "Europe/Paris", { id });
+    conf.routage = { ...lu, personnes: lu.personnes.map((p) => ({ ...p, alias: p.alias || [] })) };
+  }
   const crm = { type: R.crm, reglages: json(R.crm_reglages, {}), prefixe: R.prefixe_secrets || "LEADS_CRM", mode: R.mode === "reel" ? "reel" : "ombre" };
   return { conf, crm, reglages: R, idMoteur };
 };

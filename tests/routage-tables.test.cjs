@@ -8,11 +8,11 @@ const autreJour = (jourIso % 7) + 1;
 const plus = (j) => new Date(Date.parse(auj + "T12:00:00Z") + j * 864e5);
 const DONNEES = {
   equipe: [
-    { id: 1, nom: "Alice", email: "alice@ex.org", role: "negociateur", actif: true, assistante: 3, temps: "plein", groupe: 7 },
+    { id: 1, nom: "Alice", email: "alice@ex.org", role: "negociateur", actif: true, assistante: 3, temps: "plein", groupe: 7, crm: "500" },
     { id: 2, nom: "Bruno", email: "bruno@ex.org", role: "negociateur", actif: true, temps: "mi_temps", jours: String(autreJour), remplacant_hors_jours: 1 },
     { id: 3, nom: "Chloé", email: "chloe@ex.org", role: "assistante", actif: true },
     { id: 4, nom: "Denis", email: "denis@ex.org", role: "negociateur", actif: false, remplacant_inactif: 1 },
-    { id: 5, nom: "Emma", email: "emma@ex.org", role: "negociateur", actif: true, temps: "plein" },
+    { id: 5, nom: "Emma", email: "emma@ex.org", role: "negociateur", actif: true, temps: "plein", crm: "600" },
     { id: 6, nom: "Farid", email: "farid@ex.org", role: "negociateur", actif: true, temps: "plein" },
   ],
   absence: [
@@ -86,5 +86,14 @@ const B = (n) => BLOCKS.find((b) => b.name === n);
   assert.ok((await qui(1)).includes("alice@ex.org"), "un groupe vide ne coupe pas tout le monde");
   const ivan = await qui(9);
   assert.ok(ivan.includes("renfort@ex.org") && !ivan.includes("ivan@ex.org") && ivan.includes("lot@ex.org"), "congés : relais vers une adresse libre, règle de groupe gardée");
-  console.log("routage lu dans les tables OK : groupe, agence, priorité individuelle, relais par adresse, mi-temps, départ, congés, retour automatique, table « qui reçoit »");
+  /* identifiants du CRM au lieu des numéros de ligne (le négociateur d'un bien est un id du CRM) */
+  const c2 = await lireRoutage({}, "Europe/Paris", { id: "crm" });
+  const alice = c2.personnes.find((p) => p.nom === "Alice");
+  assert.strictEqual(alice.id, "500"); assert.strictEqual(alice.assistante_id, "e3", "sans id CRM : e<ligne>");
+  assert.deepStrictEqual(c2.regles[0].cible, { negociateurs: ["600", "e6"] });
+  assert.strictEqual(c2.absences[0].personne_id, "600"); assert.strictEqual(c2.absences[0].remplacant.personne, "500");
+  assert.ok(!("__equipe" in c2) && !("__equipe" in conf), "rien d'interne dans la configuration");
+  const R = require("../src/lib/leads/routage");
+  assert.deepStrictEqual(R.destinataires("500", new Date(), c2).liste.map((d) => d.email).sort().slice(0, 2), ["alice@ex.org", "chloe@ex.org"], "routage avec les ids du CRM");
+  console.log("routage lu dans les tables OK : ids du CRM, groupe, agence, priorité individuelle, relais par adresse, mi-temps, départ, congés, retour automatique, table « qui reçoit »");
 })().catch((e) => { console.error(e); process.exit(1); });

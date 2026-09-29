@@ -12,7 +12,7 @@ const T = {
     ["etapes", "String"], ["notifier_relances", "String"], ["marges_projet", "String"], ["commentaire_max", "Integer"], ["retention_jours", "Integer"],
     ["action_lead", "String"], ["catalogue_synchro_le", "Date"], ["catalogue_etat", "String"],
     ["ia_actif", "Bool"], ["ia_fournisseur", "String"], ["ia_modele", "String"], ["ia_plafond_jour", "Integer"], ["ia_url", "String"], ["gabarits_partages", "Bool"],
-    ["lien_fiche", "String"], ["envoi_a_verifier", "Bool"]] },
+    ["lien_fiche", "String"], ["envoi_a_verifier", "Bool"], ["routage_tables", "String"]] },
   agences: { name: "ld_agences", desc: "Agences", fields: [["nom", "String", { required: true }], ["crm_id", "String"], ["boites", "String"], ["negociateur_defaut", "String"], ["actif", "Bool"], ["enseigne", "String"]] },
   personnes: { name: "ld_personnes", desc: "Négociateurs et assistant(e)s", fields: [
     ["nom", "String", { required: true }], ["email", "String"], ["role", "String"], ["crm_id", "String"], ["agence_crm_id", "String"],

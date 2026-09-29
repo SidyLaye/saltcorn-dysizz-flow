@@ -62,6 +62,17 @@ module.exports = [
     run: async (p) => dans(p, () => require("../lib/leads/tables/catalogue").synchroniser({ complet: !!p.complet })),
   },
   {
+    name: "dzf_leads_importer_gabarits", label: "Leads : reprendre les gabarits d'un ancien système", category: CAT, icon: "fas fa-file-import", output: "gabarits", timeout: 120,
+    description: "Recopie les gabarits de lecture actifs d'une table existante (ex. gabarit_version d'une ancienne automatisation) : les mails de ces formes sont lus tout de suite, sans IA. Une seule fois par gabarit ; rien n'est supprimé.",
+    params: [P_PREFIXE, { name: "table", label: "Table des anciens gabarits", type: "table", default: "gabarit_version" }],
+    run: async (p) => dans(p, async () => {
+      const t = require("@saltcorn/data/models/table").findOne({ name: p.table || "gabarit_version" });
+      if (!t) throw Object.assign(new Error(`table « ${p.table} » introuvable`), { permanent: true });
+      const n = await require("../lib/leads/tables/gabarits").importerAmbs(require("../api"), await t.getRows({}));
+      return { importes: n };
+    }),
+  },
+  {
     name: "dzf_leads_entretien", label: "Leads : reprises et entretien", category: CAT, icon: "fas fa-broom", output: "entretien", timeout: 600,
     description: "Retraite les mails restés sans lead (panne, redémarrage), relit ceux laissés de côté faute de budget d'IA, efface le texte des vieux mails (durée de conservation réglée). À mettre dans un workflow horaire.",
     params: [P_PREFIXE],
