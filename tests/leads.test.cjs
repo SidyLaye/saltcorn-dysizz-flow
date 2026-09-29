@@ -344,5 +344,16 @@ const { CONF, MAILS } = require("./fixtures-leads.cjs");
     assert(!/ac3/i.test(JSON.stringify(d1.origine)));
   }
 
+  /* AC3, création de compte : lead avec client ET bien, sinon non */
+  {
+    const avec = extraire({ ...MAILS.ac3, objet: "Création compte sur AGENCE EXEMPLE" }, CONF);
+    assert.strictEqual(avec.nature, "lead", "client + bien : lead");
+    const sansBien = extraire({ ...MAILS.ac3, objet: "Création compte sur AGENCE EXEMPLE", texte: MAILS.ac3.texte.replace(/Biens maison.*\n/, ""), html: "" }, CONF);
+    assert.strictEqual(sansBien.nature, "non_lead", "sans bien : pas un lead");
+    const sansClient = extraire({ ...MAILS.ac3, objet: "Création compte sur AGENCE EXEMPLE", texte: MAILS.ac3.texte.replace(/Client :.*?\n/, "\n") }, CONF);
+    assert.strictEqual(sansClient.nature, "non_lead", "sans client : pas un lead");
+    assert.strictEqual(extraire(MAILS.ac3, CONF).nature, "lead", "une demande reste un lead");
+  }
+
   console.log("leads + ovh : ok");
 })().catch((e) => { console.error(e); process.exit(1); });

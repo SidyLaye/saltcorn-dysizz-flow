@@ -60,7 +60,7 @@ const squelette = (texte, df, seuil) => String(texte || "")
    anciens : Map(mail_id → { source, statut, reference, bien, agence, negociateur, champs: { email, tel, nom, prenom, reference } })
    biens : catalogue de l'ancien système au format du moteur ({ id, reference, prix, surface, pieces, type, ville, code_postal, negociateur_id, agence_id })
    conf : configuration du moteur (agences, domaines_agence, portails déclarés…) */
-const banc = async ({ mails, anciens, biens = [], conf = {}, opts = {}, maxCas = 400, parCategorie = 4, alias = {} }) => {
+const banc = async ({ mails, anciens, biens = [], conf = {}, opts = {}, maxCas = 400, parCategorie = 4, alias = {}, exemples = 3 }) => {
   const crm = M.creer({ biens });
   const confB = { ...conf, etapes: { ...(conf.etapes || {}), consentement: false, notification: false } };
   const R = { mails: mails.length, erreurs: 0, portails: {}, sources: {}, decisions: {}, champs_ancien_inconnus: {}, cas: [] };
@@ -128,6 +128,15 @@ const banc = async ({ mails, anciens, biens = [], conf = {}, opts = {}, maxCas =
     }
   }
   R.categories = Object.fromEntries([...cat].sort((a, b) => b[1] - a[1]));
+  /* quelques mails de chaque portail, même sans écart : pour voir leur forme (anonymisée) */
+  R.exemples = [];
+  const vus = new Map();
+  for (const { m, d } of res) {
+    const x = (d && d.extraction) || {}, p = x.portail || "inconnu";
+    const n = (vus.get(p) || 0) + 1; if (n > exemples) continue; vus.set(p, n);
+    const seuil = Math.max(3, Math.ceil((nb.get(p) || 1) * 0.05));
+    R.exemples.push({ mail: m.id, portail: p, nature: x.nature || null, lu_par: x.lu_par || null, statut: d && d.statut, objet: squelette(m.objet, df.get(p) || new Map(), seuil), squelette: squelette(m.t, df.get(p) || new Map(), seuil) });
+  }
   return R;
 };
 

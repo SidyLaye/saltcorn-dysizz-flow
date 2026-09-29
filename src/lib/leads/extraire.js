@@ -143,6 +143,8 @@ const extraire = (mail, conf = {}) => {
     for (const k of ["contact", "bien"]) for (const [c, v] of Object.entries(r[k])) if (v !== null && v !== undefined && v !== "" && !r.preuves[k + "." + c]) r.preuves[k + "." + c] = "portail:" + p.id;
     if (r.message && !r.preuves.message) r.preuves.message = "portail:" + p.id;
   }
+  /* règle propre au portail, appliquée une fois le mail lu (ex. création de compte : lead seulement avec client ET bien) */
+  if (p && p.valider && r.nature !== "non_lead") { try { const n = p.valider({ o: objet, r }); if (n) r.nature = n; } catch (e) { r.erreur_regle = e.message; } }
 
   /* Mail direct d'un particulier : la référence est souvent dans l'objet (« Réf. 12018360189 », « Monesties #32682 »). */
   if (r.nature === "reponse_campagne") { poser(r, "contact.email", V.email(mail.expediteur), "expediteur"); if (!r.message) { r.message = corps.split("\n").slice(0, 40).join("\n"); r.preuves.message = "corps"; } }

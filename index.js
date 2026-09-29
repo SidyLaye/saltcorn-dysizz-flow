@@ -92783,6 +92783,8 @@ var require_portails = __commonJS({
         id: "site_agence",
         nom: "Site d'agence (AC3)",
         test: (d) => /ac3-groupe\.com$/.test(d),
+        /* création de compte sur le site : un lead seulement si le mail porte le client (e-mail ou téléphone) ET un bien */
+        valider: ({ o, r }) => /cr[ée]ation (de )?compte|account creation|account created/i.test(o) ? (r.contact.email || r.contact.telephone) && (r.bien.reference || r.bien.titre || r.bien.id_crm) ? "lead" : "non_lead" : null,
         nature: (o) => /résolution de votre demande|demande d.assistance|ticket/i.test(o) ? "non_lead" : /demande|request|création compte|account/i.test(o) ? "lead" : "non_lead",
         regles: ({ L, o, texte, r }) => {
           const cl = texte.match(/(?:client|customer)\s*:\s*([^\n]+)/i);
@@ -93314,6 +93316,14 @@ var require_extraire = __commonJS({
         }
         for (const k of ["contact", "bien"]) for (const [c2, v] of Object.entries(r[k])) if (v !== null && v !== void 0 && v !== "" && !r.preuves[k + "." + c2]) r.preuves[k + "." + c2] = "portail:" + p.id;
         if (r.message && !r.preuves.message) r.preuves.message = "portail:" + p.id;
+      }
+      if (p && p.valider && r.nature !== "non_lead") {
+        try {
+          const n = p.valider({ o: objet, r });
+          if (n) r.nature = n;
+        } catch (e) {
+          r.erreur_regle = e.message;
+        }
       }
       if (r.nature === "reponse_campagne") {
         poser(r, "contact.email", V.email(mail.expediteur), "expediteur");
@@ -97749,7 +97759,7 @@ var require_banc = __commonJS({
       const k = cle(w).replace(/[^a-z0-9']/g, "");
       return !k || (df.get(k) || 0) >= seuil ? w : "\u2026";
     }).join("").replace(/(…[\s…]*)+/g, "\u2026 ").trimEnd()).filter((l) => l.trim()).join("\n").slice(0, 2500);
-    var banc = async ({ mails, anciens, biens = [], conf = {}, opts = {}, maxCas = 400, parCategorie = 4, alias = {} }) => {
+    var banc = async ({ mails, anciens, biens = [], conf = {}, opts = {}, maxCas = 400, parCategorie = 4, alias = {}, exemples = 3 }) => {
       const crm = M.creer({ biens });
       const confB = { ...conf, etapes: { ...conf.etapes || {}, consentement: false, notification: false } };
       const R = { mails: mails.length, erreurs: 0, portails: {}, sources: {}, decisions: {}, champs_ancien_inconnus: {}, cas: [] };
@@ -97854,6 +97864,16 @@ var require_banc = __commonJS({
         }
       }
       R.categories = Object.fromEntries([...cat].sort((a, b) => b[1] - a[1]));
+      R.exemples = [];
+      const vus = /* @__PURE__ */ new Map();
+      for (const { m, d } of res) {
+        const x = d && d.extraction || {}, p = x.portail || "inconnu";
+        const n = (vus.get(p) || 0) + 1;
+        if (n > exemples) continue;
+        vus.set(p, n);
+        const seuil = Math.max(3, Math.ceil((nb.get(p) || 1) * 0.05));
+        R.exemples.push({ mail: m.id, portail: p, nature: x.nature || null, lu_par: x.lu_par || null, statut: d && d.statut, objet: squelette(m.objet, df.get(p) || /* @__PURE__ */ new Map(), seuil), squelette: squelette(m.t, df.get(p) || /* @__PURE__ */ new Map(), seuil) });
+      }
       return R;
     };
     module2.exports = { banc, squelette, ecart, champDeLAncien, norm };
@@ -97893,6 +97913,7 @@ var require_leads_banc = __commonJS({
         { name: "domaines_agence", label: "Domaines de l'agence", help: "Ex. selectionhabitat.com (mails de l'\xE9quipe)" },
         { name: "limite", label: "Nombre de mails (0 = tous)", type: "int", default: 0 },
         { name: "gabarits", label: "Utiliser les gabarits appris (table des gabarits leads)", type: "bool", default: true },
+        { name: "exemples", label: "Exemples anonymis\xE9s par portail", type: "int", default: 3 },
         { name: "fichier", label: "Nom du rapport", default: "banc-leads.json" }
       ],
       run: async (p, ctx = {}) => {
@@ -97972,7 +97993,7 @@ var require_leads_banc = __commonJS({
           } catch (e) {
           }
         }
-        const R = await banc({ mails, anciens, biens, conf, opts });
+        const R = await banc({ mails, anciens, biens, conf, opts, exemples: p.exemples === void 0 || p.exemples === null || p.exemples === "" ? 3 : +p.exemples });
         R.le = (/* @__PURE__ */ new Date()).toISOString();
         R.biens_catalogue = biens.length;
         R.agences = agences.length;

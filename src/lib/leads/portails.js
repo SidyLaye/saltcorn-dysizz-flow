@@ -198,6 +198,9 @@ const PORTAILS = [
   },
   {
     id: "site_agence", nom: "Site d'agence (AC3)", test: (d) => /ac3-groupe\.com$/.test(d),
+    /* création de compte sur le site : un lead seulement si le mail porte le client (e-mail ou téléphone) ET un bien */
+    valider: ({ o, r }) => (/cr[ée]ation (de )?compte|account creation|account created/i.test(o)
+      ? ((r.contact.email || r.contact.telephone) && (r.bien.reference || r.bien.titre || r.bien.id_crm) ? "lead" : "non_lead") : null),
     nature: (o) => (/résolution de votre demande|demande d.assistance|ticket/i.test(o) ? "non_lead" : /demande|request|création compte|account/i.test(o) ? "lead" : "non_lead"),
     regles: ({ L, o, texte, r }) => {
       const cl = texte.match(/(?:client|customer)\s*:\s*([^\n]+)/i);

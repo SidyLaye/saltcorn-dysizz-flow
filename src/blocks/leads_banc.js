@@ -21,6 +21,7 @@ module.exports = [{
     { name: "domaines_agence", label: "Domaines de l'agence", help: "Ex. selectionhabitat.com (mails de l'équipe)" },
     { name: "limite", label: "Nombre de mails (0 = tous)", type: "int", default: 0 },
     { name: "gabarits", label: "Utiliser les gabarits appris (table des gabarits leads)", type: "bool", default: true },
+    { name: "exemples", label: "Exemples anonymisés par portail", type: "int", default: 3 },
     { name: "fichier", label: "Nom du rapport", default: "banc-leads.json" },
   ],
   run: async (p, ctx = {}) => {
@@ -61,7 +62,7 @@ module.exports = [{
     const opts = {};
     if (p.gabarits !== false) { try { Object.assign(opts, await require("../lib/leads/tables/gabarits").optionsLecture(api)); delete opts.ia; delete opts.noter; } catch (e) { /* pas de gabarits appris */ } }
 
-    const R = await banc({ mails, anciens, biens, conf, opts });
+    const R = await banc({ mails, anciens, biens, conf, opts, exemples: p.exemples === undefined || p.exemples === null || p.exemples === "" ? 3 : +p.exemples });
     R.le = new Date().toISOString(); R.biens_catalogue = biens.length; R.agences = agences.length; R.champs_ancien_inconnus = inconnus; R.gabarits = !!opts.gabarits;
     const File = require("@saltcorn/data/models/file");
     const nom = String(p.fichier || "banc-leads.json").replace(/[^\w.-]/g, "_");

@@ -27,6 +27,7 @@ const { MAILS } = require("./fixtures-leads.cjs");
   assert(R.portails.leboncoin && R.portails.leboncoin.champs.email.accord === 1, "e-mail Leboncoin identique à l'ancien");
   assert(Object.keys(R.decisions).length, "décisions comptées");
   assert(R.cas.some((c) => c.mail === 2 && c.champ === "email" && /adresse différente/.test(c.ecart)), "écart typé sans valeur");
+  assert(R.exemples.length && R.exemples.every((e) => e.squelette !== undefined), "exemples par portail");
   const json = JSON.stringify(R);
   for (const x of ["paul.test@example.org", "autre@example.org", "Lefèvre"]) assert(!json.includes(x), "rapport sans donnée personnelle : " + x);
   console.log(`banc OK : ${liste.length} mails, décisions ${JSON.stringify(R.decisions)}, ${R.cas.length} cas anonymisés`);
