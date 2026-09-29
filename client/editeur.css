@@ -1,6 +1,8 @@
 /* dysizz-flow — éditeur visuel de workflows (plein écran) */
 .dzfe{--bg:var(--dz-bg,#f4f5f8);--sf:var(--dz-surface,#fff);--s2:var(--dz-surface-2,#eef0f4);--bd:var(--dz-border,rgba(15,20,40,.12));--tx:var(--dz-text,#161a26);--mu:var(--dz-text-mute,#6b7285);--pr:var(--dz-primary,#5b5bf0);--pk:var(--dz-primary-ink,#4545d8);--ok:#12a150;--ko:#e5484d;--wa:#f5a524;--mono:var(--dz-font-mono,ui-monospace,SFMono-Regular,Menlo,monospace);
 position:fixed;inset:0;z-index:4000;display:flex;flex-direction:column;background:var(--bg);color:var(--tx);font-size:14px;line-height:1.4}
+/* police du kit dysizz-ui (sinon certains paragraphes prenaient la police serif du navigateur) */
+.dzfe,.dzfe p,.dzfe li,.dzfe label,.dzfe small,.dzfe input,.dzfe select,.dzfe textarea,.dzfe button{font-family:var(--dz-font-body,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif)}
 @media (prefers-color-scheme:dark){.dzfe:not(.light){--bg:#0f1117;--sf:#171a23;--s2:#1f2330;--bd:rgba(255,255,255,.1);--tx:#eceef5;--mu:#9aa1b5}}
 [data-dz-theme="dark"] .dzfe,html.dark .dzfe{--bg:#0f1117;--sf:#171a23;--s2:#1f2330;--bd:rgba(255,255,255,.1);--tx:#eceef5;--mu:#9aa1b5}
 .dzfe *{box-sizing:border-box}
@@ -154,3 +156,10 @@ position:fixed;inset:0;z-index:4000;display:flex;flex-direction:column;backgroun
 @media (prefers-reduced-motion:reduce){.dzfe *{transition:none!important}}
 
 .dzfe code{color:var(--pk)!important;background:var(--s2)!important;padding:.05rem .3rem;border-radius:5px;font-family:var(--mono)!important;font-size:.85em!important}
+
+/* condition d'une étape écrite en clair, et déclencheurs qui lancent le workflow */
+.dzfe-si{display:block;font-size:.7rem;font-family:var(--mono);color:#b45309;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.dzfe-lz{margin:0;padding:0;list-style:none;display:grid;gap:.35rem}
+.dzfe-lz li{background:var(--s2);border:1px solid var(--bd);border-radius:10px;padding:.45rem .6rem;font-size:.84rem}
+.dzfe-lz a{font-size:.78rem;margin-left:.3rem}
+.dzfe-kbd{display:inline-block;font-family:var(--mono);font-size:.78rem;font-weight:700;padding:0 .35rem;border:1px solid var(--bd);border-radius:6px;background:var(--s2);color:var(--pk)}

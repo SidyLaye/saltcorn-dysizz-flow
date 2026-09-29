@@ -12,7 +12,7 @@ const T = (api, name) => {
 const needRead = (x, api) => { if (api.user && !x.canRead) throw new Error("lecture refusée pour ton rôle"); return x.t; };
 const needWrite = (x, api) => { if (api.user && !x.canWrite) throw new Error("écriture refusée pour ton rôle"); return x.t; };
 
-const FILTRE = { name: "filtre", label: "Filtre (JSON)", type: "json", help: 'Ex. {"statut":"à faire"}, {"not":{"statut":"fait"}}, {"date":{"gt":"{{depuis}}"}}. Vide = toutes les lignes' };
+const FILTRE = { name: "filtre", label: "Filtre (JSON)", type: "json", help: 'Ex. {"statut":"à faire"}, {"not":{"statut":"fait"}}, {"date":{"gt":"{{depuis}}"}}. Vide = toutes les lignes pour une lecture ; « modifier » et « supprimer » refusent un filtre vide' };
 const CHUNK = 500;
 
 /* Saltcorn ne lève pas d'erreur quand une écriture est refusée (droits, champ protégé, contrainte) :

@@ -1,5 +1,7 @@
 /* dysizz-flow — pages d'administration (jetons du kit dysizz-ui, avec secours) */
 .dzf{--f-surface:var(--dz-surface,#fff);--f-s2:var(--dz-surface-2,#f2f2f5);--f-border:var(--dz-border,rgba(0,0,0,.1));--f-text:var(--dz-text,#16161a);--f-mute:var(--dz-text-mute,#777);--f-ink:var(--dz-primary-ink,#4b4bd8);--f-soft:var(--dz-primary-soft,rgba(91,91,240,.12));--f-r:var(--dz-radius,14px);--f-mono:var(--dz-font-mono,ui-monospace,Menlo,monospace);max-width:1280px;margin:0 auto}
+/* police du kit dysizz-ui (sinon certains paragraphes prenaient la police serif du navigateur) */
+.dzf,.dzf p,.dzf li,.dzf label,.dzf small,.dzf input,.dzf select,.dzf textarea,.dzf button{font-family:var(--dz-font-body,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif)}
 .dzf h1{font-weight:750;letter-spacing:-.02em;display:flex;gap:.6rem;align-items:center}
 .dzf h2{font-size:1.02rem;font-weight:700;margin:1.8rem 0 .8rem}
 .dzf h2 small{color:var(--f-mute);font-weight:500}

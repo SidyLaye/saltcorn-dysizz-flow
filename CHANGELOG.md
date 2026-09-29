@@ -1,5 +1,15 @@
 # Journal des versions
 
+## 2.9.0
+
+- Éditeur de workflows :
+  - Le déclencheur montre qui lance réellement le workflow (« Lancé à chaque ajout dans action_lot »). Ce sont les déclencheurs de table (bloc « Lancer un autre workflow ») et les étapes d'autres workflows. Avant, il affichait « À la main ».
+  - La liste des lanceurs, avec un lien vers chacun, est dans le panneau du déclencheur. La liste des workflows les résume (« lancé par 34 déclencheurs sur lead, lead_bien… »).
+  - La condition « seulement si » est écrite en clair dans chaque étape, et plus seulement sous forme d'icône.
+  - Police du kit partout : certains textes passaient en police serif du navigateur.
+  - Astuces : le bouton `{ }` ne passe plus à la ligne.
+- Aide du filtre des blocs de table : « modifier » et « supprimer » refusent un filtre vide.
+
 ## 2.8.0
 
 - **Lancer un autre workflow** :
