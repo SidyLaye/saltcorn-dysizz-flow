@@ -73,6 +73,31 @@ module.exports = [
     }),
   },
   {
+    name: "dzf_leads_recevoir", label: "Leads : recevoir un mail rangé par un autre système", category: CAT, icon: "fas fa-inbox", output: "recu", timeout: 60,
+    description: "Recopie un mail déjà rangé dans une autre table (ex. celle d'un ancien système qui lit la même boîte) dans la table des mails reçus, puis lance le traitement (comme l'écouteur : événement DzfMailRecu). Sert à faire tourner la solution à côté d'un ancien système, sans se connecter une deuxième fois à la boîte. À mettre dans un déclencheur « Insert » sur la table source. Un mail n'est jamais recopié deux fois.",
+    params: [P_PREFIXE, { name: "table", label: "Table source", type: "table", required: true }, { name: "id", label: "Id du mail dans la table source", default: "{{id}}", required: true },
+      { name: "champs", label: "Champs de la table source (JSON)", type: "json", help: "Vide = mêmes noms (expediteur, destinataire, objet, corps_texte, corps_html, date_envoi, message_id, uid). Ex. {\"objet\":\"sujet\"}" },
+      { name: "ecouteur", label: "Nom de l'écouteur (canal du workflow)", default: "leads" }],
+    run: async (p) => dans(p, async () => {
+      const Table = require("@saltcorn/data/models/table");
+      const src = Table.findOne({ name: p.table });
+      if (!src) throw Object.assign(new Error(`table « ${p.table} » introuvable`), { permanent: true });
+      const r = await src.getRow({ id: +p.id });
+      if (!r) throw Object.assign(new Error(`mail ${p.id} introuvable dans ${p.table}`), { permanent: true });
+      const c = { expediteur: "expediteur", destinataire: "destinataire", objet: "objet", corps_texte: "corps_texte", corps_html: "corps_html", date_envoi: "date_envoi", message_id: "message_id", uid: "uid", ...lu(p.champs) };
+      const v = (k) => (c[k] && r[c[k]] !== undefined ? r[c[k]] : null);
+      const message_id = String(v("message_id") || `${p.table}:${r.id}`);
+      const t = await require("../ecouteurs").tableDest(S.nom("mails"));
+      const deja = (await t.getRows({ message_id }, { limit: 1 }))[0];
+      if (deja) return { id: deja.id, nouveau: false };
+      const id = await t.insertRow({ uid: Number.isFinite(+v("uid")) && v("uid") !== null ? +v("uid") : null, dossier: "INBOX", message_id, expediteur: v("expediteur"), destinataire: v("destinataire"), objet: v("objet"),
+        date_envoi: v("date_envoi"), corps_texte: v("corps_texte"), corps_html: v("corps_html"), recu_le: new Date(), ecouteur: p.ecouteur || "leads" });
+      const Trigger = require("@saltcorn/data/models/trigger");
+      await Trigger.emitEvent("DzfMailRecu", p.ecouteur || "leads", null, { id, table: S.nom("mails") });
+      return { id, nouveau: true };
+    }),
+  },
+  {
     name: "dzf_leads_entretien", label: "Leads : reprises et entretien", category: CAT, icon: "fas fa-broom", output: "entretien", timeout: 600,
     description: "Retraite les mails restés sans lead (panne, redémarrage), relit ceux laissés de côté faute de budget d'IA, efface le texte des vieux mails (durée de conservation réglée). À mettre dans un workflow horaire.",
     params: [P_PREFIXE],

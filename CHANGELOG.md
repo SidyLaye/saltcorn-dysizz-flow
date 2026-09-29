@@ -11,6 +11,7 @@ Banc d'essai complet (règles, gabarits, IA) et références lues d'après les v
 - Arkadia : l'identifiant Arkadia (« ABCD-T… ») et la référence de l'agence sont lus dans l'objet.
 - Kyero : la référence est lue (« [F3FB…] »).
 - Moulin.nl : titre, référence de l'objet (« (…) ») et identifiant du portail lus.
+- Nouveau bloc « Leads : recevoir un mail rangé par un autre système » : recopie un mail déjà rangé par un ancien système dans la table des mails reçus, une seule fois, puis lance le traitement. La solution tourne ainsi en mode ombre à côté de l'ancien, sans deuxième connexion à la boîte.
 
 ## 2.12.2
 
