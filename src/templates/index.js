@@ -268,4 +268,43 @@ module.exports = [
       st("secours", "dzf_definir", { valeurs: '{"agent":{"reponse":"Désolé, je n\'arrive pas à répondre pour l\'instant ({{agent_erreur}})."}}', fusionner: true }, { only_if: "!agent" }),
     ),
   },
+  {
+    key: "leads_traitement", label: "Leads immobiliers : traiter chaque mail reçu", category: "Leads immobiliers", when: "DzfMailRecu", channel: "%%ecouteur%%",
+    description: "Chaque mail reçu par l'écouteur de la boîte des leads : lecture, bien, agence et contact, consentement anti-démarchage, qui reçoit, CRM (ombre ou réel), enregistrement, puis envoi du lead aux destinataires (une seule fois, repris en cas d'échec). Crée les tables à l'installation. Mode ombre et envois simulés par défaut.",
+    vars: [{ name: "prefixe", label: "Préfixe des tables", default: "ld_" }, { name: "ecouteur", label: "Nom de l'écouteur de la boîte (Écouteurs)", default: "leads" }],
+    installer: [{ action_name: "dzf_leads_tables", configuration: { prefixe: "%%prefixe%%" } }],
+    steps: [
+      st("une_fois", "dzf_idempotence", { cle: "%%prefixe%%{{id}}", duree_h: 720 }, { next_step: 'deja_traite ? "" : "preparer"' }),
+      st("preparer", "dzf_leads_preparer", { id: "{{id}}", prefixe: "%%prefixe%%" }, { next_step: "si_erreur" }),
+      st("si_erreur", "SetErrorHandler", { error_handling_step: "rendre_le_verrou_erreur" }, { next_step: "attendre_son_tour" }),
+      st("attendre_son_tour", "dzf_verrou", { action: "prendre", nom: "%%prefixe%%{{lead.cle}}", duree: 180, attente: 60 }, { next_step: "lire" }),
+      st("lire", "dzf_leads_lire", { lead: "{{lead}}" }, { next_step: 'dossier.fin ? "ecrire_crm" : "bien"' }),
+      st("bien", "dzf_leads_bien", {}, { next_step: "contact" }),
+      st("contact", "dzf_leads_contact", {}, { next_step: "consentement" }),
+      st("consentement", "dzf_leads_consentement", {}, { next_step: "destinataires" }),
+      st("destinataires", "dzf_leads_destinataires", {}, { next_step: "ecrire_crm" }),
+      st("ecrire_crm", "dzf_leads_crm", {}, { next_step: "enregistrer" }),
+      st("enregistrer", "dzf_leads_enregistrer", {}, { next_step: "rendre_le_verrou" }),
+      /* le verrou est rendu avant l'envoi : un envoi lent ne bloque pas le mail suivant du même prospect */
+      st("rendre_le_verrou", "dzf_verrou", { action: "libérer", nom: "%%prefixe%%{{lead.cle}}" }, { next_step: "mails" }),
+      st("mails", "dzf_leads_messages", {}, { next_step: "envoyer" }),
+      st("envoyer", "dzf_mail_une_fois", { messages: "{{messages.liste}}", simuler: "{{messages.simuler}}" }, { next_step: "" }),
+      /* en cas d'erreur : verrou rendu, exécution marquée en échec ; « Leads : reprises et entretien » reprend le mail */
+      st("rendre_le_verrou_erreur", "dzf_verrou", { action: "libérer", nom: "%%prefixe%%{{lead.cle}}" }, { next_step: "plus_de_filet" }),
+      st("plus_de_filet", "SetErrorHandler", { error_handling_step: "" }, { next_step: "signaler" }),
+      st("signaler", "dzf_verifier", { condition: "false", si_faux: "arrêter en erreur", message: "traitement interrompu : {{__error.message}}" }, { next_step: "" }),
+    ],
+  },
+  {
+    key: "leads_heure", label: "Leads immobiliers : chaque heure", category: "Leads immobiliers", when: "Hourly",
+    description: "Chaque heure : biens du CRM modifiés recopiés dans le catalogue local, mails restés sans lead retraités, mails en échec d'envoi réessayés, texte des vieux mails effacé si une durée de conservation est réglée. Un seul serveur à la fois.",
+    vars: [{ name: "prefixe", label: "Préfixe des tables", default: "ld_" }],
+    steps: chain(
+      st("verrou", "dzf_verrou", { action: "prendre", nom: "%%prefixe%%heure", duree: 3000 }, { next_step: 'verrou ? "catalogue" : ""' }),
+      st("catalogue", "dzf_leads_catalogue", { prefixe: "%%prefixe%%", sortie: "catalogue", si_erreur: "continuer" }),
+      st("entretien", "dzf_leads_entretien", { prefixe: "%%prefixe%%", sortie: "entretien", si_erreur: "continuer" }),
+      st("envois", "dzf_mail_reprendre", { limite: 100, sortie: "reprise", si_erreur: "continuer" }),
+      st("liberer", "dzf_verrou", { action: "libérer", nom: "%%prefixe%%heure" }),
+    ),
+  },
 ];

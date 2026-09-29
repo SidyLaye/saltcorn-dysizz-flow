@@ -50,11 +50,18 @@ const installTemplate = async (key, input = {}) => {
     if (schema && input.creer_tables !== "non") { await createTable(vars[v.name], schema); created.push(vars[v.name]); }
     else throw new Error(`la table « ${vars[v.name]} » n'existe pas${schema ? "" : " : crée-la d'abord dans Saltcorn (Tables → Créer)"}`);
   }
+  /* blocs lancés une fois à l'installation (ex. créer les tables dont le modèle a besoin) */
+  for (const a of fill(t.installer || [], vars)) {
+    const act = require("@saltcorn/data/db/state").getState().actions[a.action_name];
+    if (!act) throw new Error(`bloc manquant pour ce modèle : ${a.action_name}`);
+    await act.run({ configuration: a.configuration || {}, row: {}, mode: "workflow" });
+  }
   const when = input.when || t.when;
   const table = t.tableVar ? Table.findOne({ name: vars[t.tableVar] }) : null;
   if (["Insert", "Update", "Delete"].includes(when) && !table) throw new Error("ce déclencheur a besoin d'une table");
   const name = uniqueName(input.nom || `dzf_${t.key}`);
-  const trig = await Trigger.create({ name, action: "Workflow", when_trigger: when, table_id: table ? table.id : null, configuration: {}, min_role: 1, description: `${t.label} (modèle dysizz-flow)` });
+  const channel = t.channel ? fill(t.channel, vars) : undefined;
+  const trig = await Trigger.create({ name, action: "Workflow", when_trigger: when, table_id: table ? table.id : null, ...(channel ? { channel } : {}), configuration: {}, min_role: 1, description: `${t.label} (modèle dysizz-flow)` });
   const trigger_id = trig.id || (Trigger.findOne({ name }) || {}).id;
   const steps = fill(t.steps, vars);
   for (let i = 0; i < steps.length; i++) {

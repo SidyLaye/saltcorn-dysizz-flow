@@ -1,5 +1,20 @@
 # Journal des versions
 
+## 2.11.0
+
+Tout le backend des leads immobiliers est maintenant dans dysizz-flow, avec des blocs réutilisables : le plugin dysizz-leads n'est plus nécessaire (le désinstaller).
+
+- **Catalogue** : deux modèles.
+  - « Leads immobiliers : traiter chaque mail reçu » : lecture, bien, agence et contact, consentement anti-démarchage, qui reçoit, CRM (ombre ou réel), enregistrement, puis **envoi du lead aux destinataires**. Crée les tables à l'installation.
+  - « Leads immobiliers : chaque heure » : catalogue des biens, reprises des mails restés sans lead, envois en échec réessayés, conservation.
+- **Blocs Leads** (catégorie « Leads immobiliers ») : préparer les tables, préparer le mail reçu, lire, retrouver le bien, contact, consentement, qui reçoit, écrire dans le CRM, enregistrer, préparer les mails du lead, traiter en un bloc, synchroniser le catalogue, reprises et entretien. Les tables portent un **préfixe réglable** (`ld_` par défaut) : plusieurs jeux de tables possibles.
+- Tables complétées d'après les tables de l'ancien système : groupes, valeurs lues et leur provenance, messages des demandes, copies ciblées (agence, groupe, personnes), règles par agence ou par groupe, remplaçant en cas de départ, nouvelles colonnes des biens et de l'équipe.
+- **Nouveaux blocs génériques** :
+  - « Table : créer ou compléter » : crée une table ou ajoute les champs qui manquent (liens, listes de choix, droits, index), sans jamais rien supprimer ;
+  - « Mail : envoyer une seule fois (avec reprise) » : une clé par envoi, jamais deux fois, échec noté ; « Mail : reprendre les envois en échec », abandon après 5 essais ou une erreur définitive ; mode « simuler ».
+- Modèles du Catalogue : canal du déclencheur (écouteur de boîte mail) et blocs lancés une fois à l'installation.
+- Plus aucune minuterie cachée : les tâches horaires sont un workflow visible.
+
 ## 2.10.0
 
 - Leads, routage « tables » : **copies ciblées**. Une adresse de `destinataire_custom` peut recevoir en copie :

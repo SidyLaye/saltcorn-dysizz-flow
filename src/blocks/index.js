@@ -18,6 +18,7 @@ const BLOCKS = [
   ...require("./devops"),
   ...require("./ovh"),
   ...require("./leads"),
+  ...require("./leads_solution"),
   ...require("./donnees_ext"),
   ...require("./connecte"),
   ...require("./utilitaires"),

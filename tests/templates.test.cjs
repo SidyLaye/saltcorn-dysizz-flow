@@ -5,7 +5,7 @@ const orig = Module._load;
 Module._load = function (req, ...rest) { if (req.startsWith("@saltcorn/")) return class {}; return orig.call(this, req, ...rest); };
 const { TEMPLATES, fill } = require("../src/templates/install");
 const { BLOCKS } = require("../src/blocks");
-const known = new Set([...BLOCKS.map((b) => b.name), "ForLoop", "SetContext", "TableQuery", "UserForm", "Output", "WaitUntil", "run_js_code"]);
+const known = new Set([...BLOCKS.map((b) => b.name), "ForLoop", "SetContext", "TableQuery", "UserForm", "Output", "WaitUntil", "run_js_code", "SetErrorHandler"]);
 const keys = new Set();
 for (const t of TEMPLATES) {
   assert(!keys.has(t.key), t.key); keys.add(t.key);
