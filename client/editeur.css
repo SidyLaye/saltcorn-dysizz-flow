@@ -42,7 +42,7 @@ position:fixed;inset:0;z-index:4000;display:flex;flex-direction:column;backgroun
 .dzfe-edge.dashed{stroke-dasharray:6 5}.dzfe-edge.yes{stroke:var(--ok)}.dzfe-edge.no{stroke:var(--ko)}
 .dzfe-edge.live{stroke:var(--pr);stroke-dasharray:5 4}
 .dzfe-arrow{fill:color-mix(in srgb,var(--tx) 55%,transparent)}
-.dzfe-el{font-size:11px;fill:var(--mu);paint-order:stroke;stroke:var(--bg);stroke-width:4px;text-anchor:middle}
+.dzfe-el{font-size:11px;fill:var(--mu);paint-order:stroke;stroke:var(--bg);stroke-width:4px;text-anchor:middle}.dzfe-el.yes{fill:#15803d}.dzfe-el.no{fill:#b91c1c}
 .dzfe-node{position:absolute;width:232px;min-height:66px;display:flex;gap:.6rem;align-items:center;padding:.55rem .7rem;background:var(--sf);border:1.5px solid var(--bd);border-radius:14px;box-shadow:0 1px 2px rgba(0,0,0,.06),0 6px 18px rgba(20,20,60,.06);cursor:pointer;user-select:none;transition:border-color .12s,box-shadow .12s}
 .dzfe-node:hover{border-color:color-mix(in srgb,var(--pr) 50%,var(--bd))}
 .dzfe-node.sel{border-color:var(--pr);box-shadow:0 0 0 4px color-mix(in srgb,var(--pr) 20%,transparent)}

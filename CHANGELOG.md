@@ -6,6 +6,10 @@
   - tous les leads (`portee` = « tous », comme avant) ;
   - ou seulement ceux d'une agence (`agence`), d'un groupe (`groupe`, membres au moment de l'envoi) ou de personnes choisies (`personnes` = "3,7,9").
 - Moteur : `conf.copies` = `[{ email, nom, cible }]` à côté de `conf.siege`.
+- Éditeur de workflows : les workflows faits à la main (comme `automatisation`) s'affichent enfin reliés.
+  - « Étape suivante » écrite en JavaScript : noms d'étapes avec ou sans guillemets, conditions imbriquées (`a ? x : (b ? y : z)`). Chaque lien porte sa condition en clair (« si gabarit », « sinon »), en vert ou en rouge.
+  - Rangement en couches : chaque étape sous celles qui y mènent, moins de croisements, retours en arrière ignorés.
+  - Un grand workflow s'ouvre en haut, à une taille lisible ; « Tout voir » montre l'ensemble.
 
 ## 2.9.0
 
