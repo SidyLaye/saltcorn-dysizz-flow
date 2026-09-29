@@ -43,6 +43,17 @@ const LBC = (n, date, corps) => ({ expediteur: '"Paul via leboncoin" <abc123xyz@
   assert.ok(!d3.destinataires, "une réponse de l'équipe n'est jamais notifiée");
   assert.deepStrictEqual(d3.actions.map((a) => a.op), ["majRecherche"]);
 
+  /* réponse de l'équipe sans dossier connu : avec un prospect cité → à vérifier ; sans → rien à faire */
+  const vierge = memoire();
+  const d3b = await traiter({ expediteur: '"Martin Durand" <martin@agence-exemple.fr>', destinataire: "info@agence-exemple.fr", objet: "Re: Nouveau message sur leboncoin", date: "2026-09-25T10:00:00Z",
+    texte: "Bonjour, le bien est toujours disponible.\nMartin\n\nLe 24 sept. 2026 à 18:00, info@agence-exemple.fr a écrit :\n> E-mail : jeanne.test@example.org\n> Téléphone : 06 12 34 56 78\n> Référence : 30999" }, crm, CONF, { dossiers: vierge });
+  assert.strictEqual(d3b.statut, "a_trier", "seule trace d'un lead jamais reçu : pas perdue");
+  assert.ok(d3b.motifs.some((m) => /prospect inconnu du système/.test(m)), d3b.motifs.join(" | "));
+  assert.deepStrictEqual(d3b.actions, [], "rien n'est écrit dans le CRM");
+  const d3c = await traiter({ expediteur: '"Martin Durand" <martin@agence-exemple.fr>', destinataire: "cahors@agence-exemple.fr", objet: "Planning de la semaine", date: "2026-09-25T10:00:00Z",
+    texte: "Bonjour à tous, réunion lundi 9h.\nMartin" }, crm, CONF, { dossiers: vierge });
+  assert.notStrictEqual(d3c.statut, "a_trier", "message interne sans prospect : rien à transférer");
+
   const d4 = await passe({ expediteur: '"Paul Lefevre" <paul.test@example.org>', destinataire: "martin@agence-exemple.fr", objet: "Re: visite samedi", date: "2026-09-25T12:00:00Z", texte: "Merci, pouvez-vous m'envoyer le diagnostic avant samedi ?\nPaul" });
   assert.strictEqual(d4.extraction.nature, "relance", "réponse d'un prospect connu, sans référence : relance du dossier");
   assert.strictEqual(d4.bien && d4.bien.id, 99, "le bien vient du dossier");

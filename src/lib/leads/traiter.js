@@ -114,7 +114,17 @@ const etapeLire = async (mail, conf = {}, opts = {}) => {
   /* Message de l'équipe : jamais un lead. On l'ajoute au dossier s'il existe (réponse au prospect). */
   if (conv.role === "equipe" && r.nature === "interne") {
     const dos = choisirDossier(connus, { references: cles.references, relais: cles.relais });
-    if (!dos) { d.motifs.push("message de l'équipe sans dossier connu : rien à faire"); return fin(); }
+    if (!dos) {
+      /* Réponse à un prospect que le système ne connaît pas (le mail d'origine n'est jamais arrivé ici) :
+         si la citation contient un prospect (e-mail, relais, téléphone ou message), c'est la seule trace
+         du lead → transférée à « non automatisé » pour être vérifiée. Sinon, rien à faire. */
+      const trace = cles.email || cles.relais || cles.telephone || conv.messages.some((m) => m.role === "prospect");
+      if (!trace) { d.motifs.push("message de l'équipe sans dossier connu : rien à faire"); return fin(); }
+      r.nature = "reponse_equipe";
+      d.statut = "a_trier";
+      d.motifs.push("réponse de l'équipe à un prospect inconnu du système (lead d'origine jamais reçu ?) : à vérifier");
+      return fin();
+    }
     r.nature = "reponse_equipe";
     d.statut = "suivi";
     d.dossier = { id: dos.id, existant: true, bien_id: dos.bien_id, contact_id: dos.contact_id, recherche_id: dos.recherche_id };
