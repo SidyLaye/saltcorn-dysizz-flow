@@ -1,5 +1,18 @@
 # Journal des versions
 
+## 2.13.0
+
+Banc d'essai complet (règles, gabarits, IA) et références lues d'après les vrais mails.
+
+- Banc d'essai : les gabarits de l'ancien système (table `gabarit_version`) ou ceux de la solution Leads (`ld_gabarits`) sont copiés en mémoire et utilisés pendant le rejeu. Le banc n'écrit plus rien, même dans les gabarits.
+- Banc d'essai : option « IA : nombre de mails lus par l'IA ». L'IA réglée dans les réglages Leads lit un échantillon des mails que ni les règles ni les gabarits ne savent lire, réparti entre les portails. Ce qu'elle apprend sert ensuite aux autres mails de la même forme, comme en production.
+- Banc d'essai : chaque étage de lecture est mesuré à part (règles, gabarit, IA), et un mail qui aurait eu besoin de l'IA sans l'avoir eue est compté « IA non appelée » au lieu de fausser la décision.
+- French-Property : la référence retenue est celle du bien (« Détails du bien - Réf. », « votre bien N »), celle de la demande devient la référence du portail. L'identifiant du bien placé sous « Détails du bien » est lu et n'est plus pris pour le prix. La commune est lue après le département.
+- Arkadia : l'identifiant Arkadia (« ABCD-T… ») et la référence de l'agence sont lus dans l'objet.
+- Kyero : la référence est lue (« [F3FB…] »).
+- Moulin.nl : titre, référence de l'objet (« (…) ») et identifiant du portail lus.
+- Nouveau bloc « Leads : recevoir un mail rangé par un autre système » : recopie un mail déjà rangé par un ancien système dans la table des mails reçus, une seule fois, puis lance le traitement. La solution tourne ainsi en mode ombre à côté de l'ancien, sans deuxième connexion à la boîte.
+
 ## 2.12.2
 
 Corrections tirées du banc d'essai sur les 8 612 vrais mails d'AMBS.

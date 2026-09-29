@@ -155,9 +155,26 @@ const PORTAILS = [
     id: "french_property", nom: "FRENCH PROPERTY", test: (d) => /french-property\.com$/.test(d),
     nature: (o) => (/enquiry|demande/i.test(o) && !/confirmation/i.test(o) ? "lead" : "non_lead"),
     regles: ({ L, texte, r }) => {
-      const ref = texte.match(/(?:enquiry - ref|demande de renseignements - réf\.?)\s*:\s*([\w-]+)/i); if (ref) r.bien.reference = ref[1];
+      /* la référence du BIEN (« Détails du bien - Réf. », « votre bien N ») d'abord ; celle de la demande ensuite */
+      const rb = texte.match(/(?:property details - ref|détails du bien - réf\.?)\s*:\s*([\w-]+)/i) || texte.match(/(?:enquiry on your property|demande concernant votre bien)\s+([\w-]+)/i);
+      const rd = texte.match(/(?:enquiry - ref|demande de renseignements - réf\.?)\s*:\s*([\w-]+)/i);
+      if (rb) r.bien.reference = rb[1]; else if (rd) r.bien.reference = rd[1];
+      if (rd && rb && rd[1] !== rb[1]) r.bien.reference_portail = rd[1];
       const i = L.findIndex((l) => /^(property details|détails du bien)/i.test(l));
-      if (i >= 0) { r.bien.titre = L[i + 1]; const s = L.slice(i + 1, i + 5).join(" "); r.bien.prix = V.prix(s); const lo = texte.match(/(?:location|lieu)\s*:\s*(.+)/i); if (lo) { const parts = lo[1].split(","); r.bien.ville = parts[parts.length - 1].trim(); const dep = lo[1].match(/\((\d{2})\)/); if (dep) r.bien.departement = dep[1]; } }
+      if (i >= 0) {
+        /* sous « Détails du bien » : parfois une ligne avec l'identifiant du bien, puis le titre, le prix, « Lieu : Région, Département (NN), Commune » */
+        const sous = L.slice(i + 1, i + 6);
+        const idl = sous.find((l) => /\b6\d{7}\b/.test(l) && !/[€$£]/.test(l)); if (idl) r.bien.id_crm = idl.match(/\b(6\d{7})\b/)[1];
+        r.bien.titre = sous.find((l) => l !== idl && /[a-zà-ÿ]{3}/i.test(l) && !/^(location|lieu)\s*:/i.test(l)) || L[i + 1];
+        r.bien.prix = V.prix(sous.filter((l) => l !== idl).join(" "));
+        const lo = texte.match(/(?:location|lieu)\s*:\s*(.+)/i);
+        if (lo) {
+          const parts = lo[1].split(",").map((x) => x.trim()), k = parts.findIndex((x) => /\(\d{2,3}\)/.test(x));
+          const ville = k >= 0 ? parts[k + 1] || null : parts[parts.length - 1];
+          if (ville && !/^(france|frankrijk|frankreich|francia)$/i.test(ville)) r.bien.ville = ville;
+          const dep = lo[1].match(/\((\d{2,3})\)/); if (dep) r.bien.departement = dep[1];
+        }
+      }
       const m = L.findIndex((l) => /^message\s*:/i.test(l));
       if (m >= 0) {
         const msg = bloc(L, m + 1, L[m].replace(/^message\s*:\s*/i, ""));
@@ -290,12 +307,19 @@ const PORTAILS = [
       const lc = texte.match(/🗺️?\s*([^\n(]+?)\s*\((\d{5})\)/u); if (lc) { r.bien.ville = lc[1].trim(); r.bien.code_postal = lc[2]; }
     } },
   { id: "huisenaanbod", nom: "HUISenAANBOD.nl", test: (d) => /huisenaanbod\.nl$/.test(d), nature: (o, t) => (/#naamaanvrager|#vraag|#adv_details/i.test(t) ? "non_lead" : "lead") },
-  { id: "kyero", nom: "KYERO", test: (d) => /kyero\.com$/.test(d), nature: () => "lead" },
+  { id: "kyero", nom: "KYERO", test: (d) => /kyero\.com$/.test(d), nature: () => "lead",
+    regles: ({ o, texte, r }) => { const m = texte.match(/\*\*\[([A-Z0-9-]{5,})\]\s*\*\*/) || o.match(/:\s*([A-Z0-9-]{5,})\/?\s*$/); if (m && /\d/.test(m[1])) r.bien.reference = m[1]; } },
   { id: "jamesedition", nom: "JAMES EDITION", test: (d) => /jamesedition\.com$/.test(d), nature: (o) => (/enquiry|inquiry|demande|request|message|lead|contact/i.test(o) && !/app is here|newsletter|webinar|report|rapport/i.test(o) ? "lead" : "non_lead") },
   { id: "chateauxpourtous", nom: "Châteaux pour tous", test: (d, o) => /chateauxpourtous/.test(d) || /^chateauxpourtous[\w-]* a un contact/i.test(o), nature: () => "lead",
     regles: ({ L, o, r }) => { const m = o.match(/ref\.\s*([\w-]+)/i); if (m) r.bien.reference = m[1]; r.bien.prix = V.prix(o); const i = L.findIndex((l) => /^il s.agit de/i.test(l)); if (i >= 0) { r.contact.nom_complet = V.nomPropre(L[i + 1].replace(/^monsieur ou madame\s+/i, "").replace(/^(miss|mister|mr|mrs|ms)\s+/i, "")); delete r.contact.nom; delete r.contact.prenom; } } },
   { id: "meretdemeures", nom: "MERS ET DEMEURES", test: (d) => /meretdemeures|mersetdemeures/.test(d), nature: () => "lead" },
-  { id: "moulin", nom: "Moulin.nl", test: (d) => /moulin\.nl$/.test(d), nature: () => "lead" },
+  { id: "moulin", nom: "Moulin.nl", test: (d) => /moulin\.nl$/.test(d), nature: () => "lead",
+    regles: ({ L, o, r }) => {
+      /* « Object: <titre de l'annonce> » ; objet « Property request: '<titre> (<réf>)' » ; « ID: » est l'identifiant du portail */
+      const t = cherche(L, /^object\s*:\s*(.+)$/i); if (t) r.bien.titre = t[1].trim();
+      const ref = o.match(/\(\s*([\w-]*\d[\w-]*)\s*\)\s*'?\s*(?:by\b|$)/i); if (ref) r.bien.reference = ref[1];
+      const id = cherche(L, /^id\s*:\s*(\d+)\s*$/i); if (id && !r.bien.reference_portail) r.bien.reference_portail = id[1];
+    } },
   { id: "idealista", nom: "Idealista", test: (d) => /idealista\.(fr|com)$/.test(d), nature: (o) => (/contact|message|demande|intéress/i.test(o) && !/compte|mot de passe|bienvenue/i.test(o) ? "lead" : "non_lead"),
     regles: ({ L, o, r }) => {
       const n = o.match(/message de (.+?) concernant/i); if (n) { r.contact.nom_complet = n[1]; delete r.contact.nom; delete r.contact.prenom; }
@@ -304,7 +328,13 @@ const PORTAILS = [
       const pr = L.find((l) => /^[\d.  ]+\s*€$/.test(l)); if (pr) r.bien.prix = V.prix(pr);
       const a = o.match(/réf\.\s*:\s*(\w+),\s*([^,]+?)\s*-\s*.*,\s*([^,]+)$/i); if (a) { r.bien.reference = a[1]; r.bien.type = V.typeBien(a[2]); r.bien.ville = a[3].trim(); }
     } },
-  { id: "arkadia", nom: "Arkadia", test: (d, o) => /arkadia/.test(d) || /sur arkadia/i.test(o), nature: () => "lead", regles: ({ o, r }) => { const m = o.match(/annonce n°\s*([\w-]+)/i); if (m) r.bien.reference_portail = m[1]; } },
+  { id: "arkadia", nom: "Arkadia", test: (d, o) => /arkadia/.test(d) || /sur arkadia/i.test(o), nature: () => "lead",
+    regles: ({ o, texte, r }) => {
+      const m = o.match(/annonce n°\s*([\w-]+)/i); if (m) r.bien.reference_portail = m[1];
+      /* « Au sujet de … ABCD-T123 / B7ACE… sur Arkadia » : l'identifiant Arkadia, puis la référence de l'agence */
+      const d = (o + "\n" + texte).match(/\b([A-Z]{2,}-[A-Z]?\d+)\s*\/\s*([A-Z0-9][\w-]{3,})/i);
+      if (d) { r.bien.reference_portail = r.bien.reference_portail || d[1]; if (!/^sur$/i.test(d[2])) r.bien.reference = d[2]; }
+    } },
   { id: "snpi", nom: "Sites partenaires SNPI (Apimo)", test: (d, o) => /apimo\.(com|net|fr)$/.test(d) && /demande|contact/i.test(o), nature: () => "lead" },
   { id: "adapt", nom: "Adapt immobilier", test: (d) => /adaptinformatique\.fr$|adaptimmobilier/.test(d), nature: (o) => (/recherche/i.test(o) ? "recherche" : "lead"),
     regles: ({ L, o, r }) => {

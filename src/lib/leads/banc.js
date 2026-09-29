@@ -9,6 +9,7 @@
 const V = require("./valeurs");
 const { texteMail, cle } = require("./texte");
 const { traiter } = require("./traiter");
+const { aCompleter } = require("./lecture");
 const M = require("./crm/memoire");
 
 const norm = {
@@ -83,26 +84,55 @@ const seuilDe = (n) => Math.max(5, Math.ceil((n || 1) * 0.1));
    anciens : Map(mail_id → { source, statut, reference, bien, agence, negociateur, champs: { email, tel, nom, prenom, reference } })
    biens : catalogue de l'ancien système au format du moteur ({ id, reference, prix, surface, pieces, type, ville, code_postal, negociateur_id, agence_id })
    conf : configuration du moteur (agences, domaines_agence, portails déclarés…) */
-const banc = async ({ mails, anciens, biens = [], conf = {}, opts = {}, maxCas = 400, parCategorie = 4, alias = {}, exemples = 3 }) => {
+const banc = async ({ mails, anciens, biens = [], conf = {}, opts = {}, maxCas = 400, parCategorie = 4, alias = {}, exemples = 3, iaEchantillon = 0 }) => {
   const crm = M.creer({ biens });
   const confB = { ...conf, etapes: { ...(conf.etapes || {}), consentement: false, notification: false } };
-  const R = { mails: mails.length, erreurs: 0, portails: {}, sources: {}, decisions: {}, champs_ancien_inconnus: {}, cas: [] };
+  const R = { mails: mails.length, erreurs: 0, portails: {}, par_lecture: {}, sources: {}, decisions: {}, champs_ancien_inconnus: {}, cas: [] };
   const res = [];
-  /* 1. le moteur sur chaque mail */
-  for (const m0 of mails) {
+  /* IA : appels comptés ; jamais plus que l'échantillon demandé */
+  const IA = { appels: 0, erreurs: 0, cache: 0, echantillon: 0, par_portail: {} };
+  const avecIA = opts.ia ? { ...opts, ia: { lire: async (m, t) => { IA.appels++; try { const x = await opts.ia.lire(m, t); if (x && x.cache) IA.cache++; return x; } catch (e) { IA.erreurs++; throw e; } } } } : null;
+  const sansIA = { ...opts }; delete sansIA.ia; delete sansIA.budget; delete sansIA.noter;
+  const gab0 = opts.gabarits && opts.gabarits.tous ? opts.gabarits.tous().length : null;
+  /* 1. le moteur sur chaque mail (règles et gabarits ; l'IA vient ensuite, sur un échantillon) */
+  const rejouer = async (m0, o) => {
     let d = null, err = null;
     try {
-      const x = await traiter({ ...m0, date: m0.date }, crm, confB, opts);
+      const x = await traiter({ ...m0, date: m0.date }, crm, confB, o);
       const e = x.extraction || {};
       const rb = x.rapprochement || null;
       d = { statut: x.statut, motifs: x.motifs, bien: x.bien ? { id: x.bien.id } : null,
         rapprochement: rb ? { methode: rb.methode || null, confiance: rb.confiance || null, motif: rb.motif || null,
           etapes: (rb.etapes || []).map((e) => ({ etape: e.etape, trouves: e.trouves, ambigu: !!e.ambigu, raisons: (e.candidats || []).map((c) => c.raison).filter(Boolean).slice(0, 3) })) } : null, agence: x.agence ? { id: x.agence.id } : null,
         negociateur: x.negociateur && typeof x.negociateur === "object" ? { id: x.negociateur.id } : x.negociateur || null,
-        extraction: { portail: e.portail, portail_nom: e.portail_nom, nature: e.nature, lu_par: e.lu_par, contact: e.contact, bien: { reference: e.bien && e.bien.reference, reference_portail: e.bien && e.bien.reference_portail } } };
-    } catch (e) { err = e.message; R.erreurs++; }
-    res.push({ m: { id: m0.id, objet: String(m0.objet || ""), t: texteMail({ texte: m0.texte, html: m0.html }).slice(0, 6000) }, d, err });
+        extraction: { portail: e.portail, portail_nom: e.portail_nom, nature: e.nature, lu_par: e.lu_par, contact: e.contact, bien: { reference: e.bien && e.bien.reference, reference_portail: e.bien && e.bien.reference_portail } },
+        /* le mail aurait eu besoin de l'IA, qui n'a pas été appelée (hors échantillon, ou IA coupée) */
+        ia_manquante: !(e.lu_par || []).includes("ia") && aCompleter(e), ia: e.lecture && e.lecture.ia ? { statut: e.lecture.ia.statut } : null };
+    } catch (e) { err = e.message; }
+    return { m: { id: m0.id, objet: String(m0.objet || ""), t: texteMail({ texte: m0.texte, html: m0.html }).slice(0, 6000) }, d, err };
+  };
+  for (const m0 of mails) res.push(await rejouer(m0, sansIA));
+  /* 1 bis. IA sur un échantillon des mails qu'elle seule peut lire, réparti entre les portails */
+  if (avecIA && iaEchantillon > 0) {
+    const files = new Map();
+    res.forEach((x, i) => { if (x.d && x.d.ia_manquante) { const p = x.d.extraction.portail || "inconnu"; if (!files.has(p)) files.set(p, []); files.get(p).push(i); } });
+    const choisis = [];
+    for (let tour = 0; choisis.length < iaEchantillon && [...files.values()].some((f) => f.length > tour); tour++)
+      for (const f of files.values()) if (f[tour] !== undefined && choisis.length < iaEchantillon) choisis.push(f[tour]);
+    choisis.sort((a, b) => a - b);
+    IA.echantillon = choisis.length;
+    for (const i of choisis) { res[i] = await rejouer(mails[i], avecIA); const p = (res[i].d && res[i].d.extraction.portail) || "inconnu"; IA.par_portail[p] = (IA.par_portail[p] || 0) + 1; }
   }
+  /* 1 ter. ce que l'IA a appris sert aux autres mails de la même forme (comme en production) */
+  if (gab0 !== null && opts.gabarits.tous().length > gab0) {
+    IA.relus_avec_gabarits_appris = 0;
+    for (let i = 0; i < res.length; i++) if (res[i].d && res[i].d.ia_manquante) { res[i] = await rejouer(mails[i], sansIA); if (res[i].d && !res[i].d.ia_manquante) IA.relus_avec_gabarits_appris++; }
+  }
+  R.erreurs = res.filter((x) => x.err).length;
+  R.ia = IA;
+  if (gab0 !== null) { const n = opts.gabarits.tous().slice(gab0); R.gabarits_appris_pendant_le_banc = { crees: n.length, actifs: n.filter((g) => g.statut === "actif").length }; }
+  R.lecture = {};
+  for (const { d } of res) if (d) { const k = d.ia_manquante ? "IA nécessaire, non appelée" : (d.extraction.lu_par || ["regles"]).join("+"); R.lecture[k] = (R.lecture[k] || 0) + 1; }
   /* 2. vocabulaire commun par portail (pour les squelettes) */
   const catalogue = new Set(biens.map((b) => String(b.id)));
   const df = new Map(), nb = new Map();
@@ -121,7 +151,7 @@ const banc = async ({ mails, anciens, biens = [], conf = {}, opts = {}, maxCas =
     const p = x.portail || (err ? "erreur" : "inconnu");
     const P = R.portails[p] || (R.portails[p] = { mails: 0, natures: {}, decisions: {}, champs: {} });
     P.mails++; inc(P.natures, x.nature || "?");
-    const decA = decisionAncienne(a && a.statut, !!a), decN = err ? "erreur" : decisionNouvelle(d && d.statut, x.nature);
+    const decA = decisionAncienne(a && a.statut, !!a), decN = err ? "erreur" : d && d.ia_manquante && d.statut !== "pret" ? "IA non appelée" : decisionNouvelle(d && d.statut, x.nature);
     inc(P.decisions, `${decA} → ${decN}`); inc(R.decisions, `${decA} → ${decN}`);
     if (a) {
       const srcA = norm.texte(a.source), srcN = norm.texte(x.portail), nomN = norm.texte(x.portail_nom);
@@ -129,7 +159,13 @@ const banc = async ({ mails, anciens, biens = [], conf = {}, opts = {}, maxCas =
       inc(R.sources, `${a.source || "?"} → ${x.portail || "?"}${memeSource ? "" : " (?)"}`);
     }
     const diffs = [];
-    if (a && decA !== "pas de lead") {
+    /* par étage de lecture (règles, gabarit, IA) : mesure de chaque étage sur les mêmes champs */
+    const lec = d && !d.ia_manquante ? (x.lu_par || ["regles"]).slice(-1)[0] : null;
+    const L = lec ? (R.par_lecture[lec] || (R.par_lecture[lec] = { mails: 0, decisions: {}, champs: {} })) : null;
+    if (L) { L.mails++; inc(L.decisions, `${decA} → ${decN}`); }
+    const noterChamp = (k, e) => { inc(P.champs[k] || (P.champs[k] = { accord: 0 }), e); if (L) inc(L.champs[k] || (L.champs[k] = { accord: 0 }), e); };
+    if (d && d.ia_manquante) P.ia_manquante = (P.ia_manquante || 0) + 1;
+    if (a && decA !== "pas de lead" && !(d && d.ia_manquante)) {
       const nous = { email: norm.email(c.email || c.email_relais), tel: norm.tel(c.telephone), nom: norm.texte(c.nom || (V.decouperNom(c.nom_complet || "") || {}).nom), prenom: norm.texte(c.prenom || (V.decouperNom(c.nom_complet || "") || {}).prenom),
         reference: norm.ref(bm.reference), bien: norm.id(d && d.bien && d.bien.id), agence: norm.id(d && d.agence && d.agence.id), negociateur: norm.id(d && d.negociateur && (d.negociateur.id || d.negociateur)) };
       const eux = { email: norm.email(a.champs.email), tel: norm.tel(a.champs.tel), nom: norm.texte(a.champs.nom), prenom: norm.texte(a.champs.prenom),
@@ -137,16 +173,15 @@ const banc = async ({ mails, anciens, biens = [], conf = {}, opts = {}, maxCas =
       const dn = V.decouperNom(c.nom_complet || "") || {};
       const idN = mots2(c.prenom || dn.prenom, c.nom || dn.nom), idA = mots2(a.champs.prenom, a.champs.nom, a.champs.nom_complet);
       for (const k of Object.keys(nous)) {
-        const C = P.champs[k] || (P.champs[k] = { accord: 0 });
         let e = nous[k] === eux[k] ? (nous[k] ? "accord" : null) : ecart(k, eux[k], nous[k]);
         if (k === "bien" && e && e !== "accord" && eux.bien && !catalogue.has(eux.bien)) e = "bien de l'ancien absent du catalogue";
         if (!e) continue;
-        inc(C, e);
+        noterChamp(k, e);
         /* nom et prénom séparés : comptés, mais un écart ne compte que sur l'identité entière (ci-dessous) */
         if (e !== "accord" && k !== "nom" && k !== "prenom") diffs.push({ champ: k, ecart: e, ...(k === "reference" ? { forme_ancien: forme(eux.reference), forme_nous: forme(nous.reference), forme_portail: forme(norm.ref(bm.reference_portail)) } : {}) });
       }
       const ei = identite(idA, idN);
-      if (ei) { const C = P.champs.identite || (P.champs.identite = { accord: 0 }); inc(C, ei); if (ei !== "accord") diffs.push({ champ: "identite", ecart: ei, mots_ancien: idA.length, mots_nous: idN.length }); }
+      if (ei) { noterChamp("identite", ei); if (ei !== "accord") diffs.push({ champ: "identite", ecart: ei, mots_ancien: idA.length, mots_nous: idN.length }); }
     }
     if (decA !== decN && !(decA === "pas de lead" && decN === "pas de lead")) diffs.push({ champ: "decision", ecart: `${decA} → ${decN}` });
     if (err) diffs.push({ champ: "erreur", ecart: err.slice(0, 120) });
