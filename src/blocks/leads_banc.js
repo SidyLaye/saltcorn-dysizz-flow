@@ -11,16 +11,20 @@ const DEFAUT = {
   champs: { table: "lead_champ", lead: "lead", nom: "nom_champ", valeur: "valeur" },
   biens: { table: "bien", id: "product_id", reference: "model", prix: "prix", surface: "surface", pieces: "nb_pieces", type: "type_bien", ville: "ville", code_postal: "code_postal", negociateur: "user_id", agence: "agency_id", proprietaire: "customers_id" },
   agences: { table: "agence", id: "agency_id", nom: "nom", boites: ["boite", "emails"] },
+  gabarits: { table: "gabarit_version" },
 };
 
 module.exports = [{
   name: "dzf_leads_banc", label: "Leads : banc d'essai sur les mails d'un ancien système", category: CAT, icon: "fas fa-balance-scale", output: "banc", timeout: 3600,
-  description: "Rejoue le traitement des leads sur les mails déjà reçus par un ancien système et compare, mail par mail, avec ce qu'il avait trouvé : source, e-mail, téléphone, nom, prénom, référence, bien, agence, négociateur, décision. Rien n'est écrit (CRM en mémoire). Rapport sans donnée personnelle dans Fichiers : accords par portail et par champ, type de chaque écart, squelette anonymisé des mails en écart.",
+  description: "Rejoue le traitement des leads sur les mails déjà reçus par un ancien système et compare, mail par mail, avec ce qu'il avait trouvé : source, e-mail, téléphone, nom, prénom, référence, bien, agence, négociateur, décision. Mesure chaque étage de lecture (règles, gabarits, IA sur un échantillon). Rien n'est écrit (CRM et gabarits en mémoire). Rapport sans donnée personnelle dans Fichiers : accords par portail et par champ, type de chaque écart, squelette anonymisé des mails en écart.",
   params: [
     { name: "correspondances", label: "Tables et champs de l'ancien système (JSON)", type: "json", help: "Vide = tables AMBS (email_brut_selection_habitat, lead, lead_champ, bien, agence). Ex. {\"mails\":{\"table\":\"mails\"}}" },
     { name: "domaines_agence", label: "Domaines de l'agence", help: "Ex. selectionhabitat.com (mails de l'équipe)" },
     { name: "limite", label: "Nombre de mails (0 = tous)", type: "int", default: 0 },
-    { name: "gabarits", label: "Utiliser les gabarits appris (table des gabarits leads)", type: "bool", default: true },
+    { name: "gabarits", label: "Gabarits", type: "select", options: ["ancien", "appris", "aucun"], default: "ancien",
+      help: "ancien = ceux de l'ancien système (table gabarit_version) ; appris = ceux de la solution Leads (ld_gabarits) ; copiés en mémoire, jamais modifiés" },
+    { name: "ia_echantillon", label: "IA : nombre de mails lus par l'IA (0 = pas d'IA)", type: "int", default: 0,
+      help: "Parmi les mails que ni les règles ni les gabarits ne savent lire, répartis entre les portails. Coûte des appels à l'IA réglée dans les réglages Leads (plafond du jour non compté)." },
     { name: "exemples", label: "Exemples anonymisés par portail", type: "int", default: 3 },
     { name: "fichier", label: "Nom du rapport", default: "banc-leads.json" },
   ],
@@ -59,15 +63,31 @@ module.exports = [{
       boites: [].concat(c.agences.boites).flatMap((f) => String(r[f] || "").toLowerCase().match(/[\w.+-]+@[\w.-]+/g) || []) }));
     const conf = { domaines_agence: String(p.domaines_agence || "").split(/[\s,;]+/).filter(Boolean), agences };
     try { const cd = await require("../lib/leads/tables/conf").charger(); conf.portails = cd.conf.portails; conf.sites = cd.conf.sites; } catch (e) { /* pas de tables leads : portails du code seulement */ }
-    const opts = {};
-    if (p.gabarits !== false) { try { Object.assign(opts, await require("../lib/leads/tables/gabarits").optionsLecture(api)); delete opts.ia; delete opts.noter; } catch (e) { /* pas de gabarits appris */ } }
+    /* gabarits : copiés en mémoire (le banc n'écrit rien) ; ce que l'IA apprend pendant le banc y reste */
+    const A = api.leads.apprentissage, opts = {};
+    const choix = p.gabarits === false || p.gabarits === "aucun" ? "aucun" : p.gabarits === "appris" ? "appris" : p.gabarits === true ? "appris ou ancien" : "ancien";
+    let depart = [], gabaritsDe = null;
+    if (choix !== "aucun") {
+      if (choix !== "ancien") { try { const G = require("../lib/leads/tables/gabarits"); const t = await require("../lib/leads/tables/schema").tables(); depart = (await t.gabarits.getRows({})).map(G.versGabarit).filter((g) => g.statut === "actif"); gabaritsDe = "appris"; } catch (e) { depart = []; } }
+      if (!depart.length && choix !== "appris" && Table.findOne({ name: c.gabarits.table })) { const l = []; await lotParLot(T(c.gabarits.table), (r) => l.push(r)); depart = A.depuisAmbs(l); gabaritsDe = "ancien"; }
+      opts.gabarits = A.memoire(depart);
+    }
+    /* IA : celle des réglages Leads (clé lue dans le coffre, jamais affichée) */
+    const nIA = Math.max(0, +p.ia_echantillon || 0);
+    if (nIA) {
+      let R0 = {}; try { R0 = await require("../lib/leads/tables/conf").reglages(); } catch (e) { /* pas de réglages Leads : IA de Saltcorn */ }
+      opts.ia = api.iaDepuisCoffre(R0.ia_fournisseur || "saltcorn", R0.ia_modele || "", "LEADS_IA_CLE", R0.ia_url || undefined);
+    }
 
-    const R = await banc({ mails, anciens, biens, conf, opts, exemples: p.exemples === undefined || p.exemples === null || p.exemples === "" ? 3 : +p.exemples });
-    R.le = new Date().toISOString(); R.biens_catalogue = biens.length; R.agences = agences.length; R.champs_ancien_inconnus = inconnus; R.gabarits = !!opts.gabarits;
+    const R = await banc({ mails, anciens, biens, conf, opts, iaEchantillon: nIA, exemples: p.exemples === undefined || p.exemples === null || p.exemples === "" ? 3 : +p.exemples });
+    R.le = new Date().toISOString(); R.biens_catalogue = biens.length; R.agences = agences.length; R.champs_ancien_inconnus = inconnus;
+    R.gabarits = { source: gabaritsDe || "aucun", au_depart: depart.length };
     const File = require("@saltcorn/data/models/file");
     const nom = String(p.fichier || "banc-leads.json").replace(/[^\w.-]/g, "_");
     await File.from_contents(nom, "application/json", JSON.stringify(R, null, 1), ctx.user && ctx.user.id, 1);
     const acc = Object.values(R.portails).reduce((s, P) => { for (const C of Object.values(P.champs)) for (const [k, v] of Object.entries(C)) if (k === "accord") s.a += v; else s.e += v; return s; }, { a: 0, e: 0 });
-    return { fichier: nom, mails: R.mails, erreurs: R.erreurs, accords: acc.a, ecarts: acc.e, cas: R.cas.length, resume: `${R.mails} mails, ${acc.a} accords, ${acc.e} écarts, ${R.erreurs} erreurs — Fichiers → ${nom}` };
+    const ia = nIA ? `, IA : ${R.ia.echantillon} mails (${R.ia.erreurs} erreurs)` : "";
+    return { fichier: nom, mails: R.mails, erreurs: R.erreurs, accords: acc.a, ecarts: acc.e, cas: R.cas.length, gabarits: R.gabarits, ia: R.ia,
+      resume: `${R.mails} mails, ${acc.a} accords, ${acc.e} écarts, ${R.erreurs} erreurs, gabarits ${R.gabarits.source} (${R.gabarits.au_depart})${ia} — Fichiers → ${nom}` };
   },
 }];

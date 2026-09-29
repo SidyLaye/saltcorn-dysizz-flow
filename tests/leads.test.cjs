@@ -363,6 +363,22 @@ const { CONF, MAILS } = require("./fixtures-leads.cjs");
     assert.strictEqual(z.contact.email, "paul.martin@example.org"); assert(/0611223344$|611223344$/.test(String(V.telephone(z.contact.telephone)).replace(/\D/g, "")));
     assert.strictEqual(z.bien.code_postal, "12000"); assert.strictEqual(z.bien.prix, 245000);
   }
+  /* Références lues d'après les vrais mails (banc) : French-Property (référence du bien, identifiant, prix), Arkadia, Kyero, Moulin */
+  {
+    const fp = extraire({ expediteur: "French-Property <enquiries@french-property.com>", destinataire: "rodez@agence-exemple.fr", objet: "Demande de renseignements : Maison (12345)",
+      texte: "Bonjour,\nVous avez reçu une demande concernant votre bien 12345\n----- Demande de renseignements - Réf. : 987654 -----\nNom : Jean Test\nAdresse e-mail : j@example.org\nNuméro de téléphone : 0611223344\nMessage :\nBonjour\nDétails du bien - Réf. : 12345\nRéf. agence 61234567\nPropriété avec piscine\n250 000 €\nLieu : Occitanie, Aude (11), Limoux\n" }, CONF);
+    assert.strictEqual(fp.bien.reference, "12345", "référence du bien, pas celle de la demande"); assert.strictEqual(fp.bien.reference_portail, "987654");
+    assert.strictEqual(fp.bien.id_crm, "61234567"); assert.strictEqual(fp.bien.prix, 250000, "l'identifiant n'est pas lu comme un prix");
+    assert.strictEqual(fp.bien.ville, "Limoux"); assert.strictEqual(fp.bien.titre, "Propriété avec piscine");
+    const ar = extraire({ expediteur: "Arkadia <noreply@arkadia.com>", destinataire: "rodez@agence-exemple.fr", objet: "Au sujet de l'annonce ABCD-T4521 / B7ACE2A9C1C sur Arkadia [key:3b9da1-b2d]",
+      texte: "La personne vous envoie une demande\nconcernant votre annonce sur Arkadia ABCD-T4521 / B7ACE2A9C1C\nNom: Jan Test\nPrénom:\nE-mail: jan@example.org\nTel: 0612345678\nMessage:\n" }, CONF);
+    assert.strictEqual(ar.bien.reference, "B7ACE2A9C1C"); assert.strictEqual(ar.bien.reference_portail, "ABCD-T4521");
+    const ky = extraire({ expediteur: "Kyero <leads@kyero.com>", destinataire: "rodez@agence-exemple.fr", objet: "Nouvelle demande : F3FB2CD4ED5/", texte: "**Vous avez une demande sur : **[F3FB2CD4ED5] **\njan@example.org\n" }, CONF);
+    assert.strictEqual(ky.bien.reference, "F3FB2CD4ED5");
+    const mo = extraire({ expediteur: "Moulin <info@moulin.nl>", destinataire: "rodez@agence-exemple.fr", objet: "(staff copy) Property request: '12 Moulin à eau à vendre. Aveyron. (SEHA4567)' by Jan",
+      texte: "Hello Habitat,\nFrom:\nNom: Jan Test\nEmail: jan@example.org\nTéléphone: 0611223344\nRequest for Property:\nID: 8812\nObject: 12 Moulin à eau à vendre. Aveyron.\nURL:\n" }, CONF);
+    assert.strictEqual(mo.bien.reference, "SEHA4567"); assert.strictEqual(mo.bien.reference_portail, "8812"); assert(/Moulin/.test(mo.bien.titre));
+  }
   /* Réponse d'absence reconnue au texte (deux signes), jamais un prospect qui dit juste être absent */
   {
     const abs = extraire({ expediteur: "Claire <claire@example.org>", destinataire: "rodez@agence-exemple.fr", objet: "Re : Demande auprès de AGENCE EXEMPLE",
