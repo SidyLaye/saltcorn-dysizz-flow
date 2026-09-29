@@ -81,6 +81,25 @@ module.exports = [
     },
   },
   {
+    name: "dzf_mail_une_fois", label: "Mail : envoyer une seule fois (avec reprise)", category: "Messagerie", icon: "fas fa-envelope", output: "envoi", timeout: 120,
+    description: "Envoie un ou plusieurs mails, chacun avec une clé : une clé déjà envoyée ne repart jamais (relance du workflow, doublon). Échec noté et repris par « Mail : reprendre les envois en échec », abandon après 5 essais. « Simuler » : rien ne part, tout est noté. Pour prévenir des personnes d'un lead, d'une commande, d'un ticket…",
+    params: [
+      { name: "messages", label: "Messages (liste)", type: "json", default: "{{messages}}", help: '[{"cle":"lead-12:martin@agence.fr","a":"martin@agence.fr","sujet":"…","html":"…","reference":"lead 12"}] ; ou un seul objet' },
+      { name: "simuler", label: "Simuler (ne rien envoyer)", type: "bool", help: "Ou une valeur du contexte : {{messages_simuler}}" },
+    ],
+    run: async (p) => {
+      const liste = Array.isArray(p.messages) ? p.messages : p.messages && typeof p.messages === "object" ? (Array.isArray(p.messages.liste) ? p.messages.liste : [p.messages]) : [];
+      const simuler = p.simuler === true || p.simuler === "true" || (p.messages && p.messages.simuler === true);
+      return require("../lib/envois").envoyer(liste, { simuler });
+    },
+  },
+  {
+    name: "dzf_mail_reprendre", label: "Mail : reprendre les envois en échec", category: "Messagerie", icon: "fas fa-redo", output: "reprise", timeout: 300,
+    description: "Réessaie les mails « une seule fois » restés en échec (serveur de mail indisponible…). À mettre dans un workflow horaire. Abandon après 5 essais ou une erreur définitive.",
+    params: [{ name: "limite", label: "Au plus", type: "int", default: 100 }],
+    run: async (p) => require("../lib/envois").reprendre(p.limite),
+  },
+  {
     name: "dzf_notifier", label: "Notifier dans Saltcorn", category: "Messagerie", icon: "fas fa-bell", output: "notifies",
     description: "Envoie une notification Saltcorn (cloche, et e-mail ou push selon les réglages de chaque utilisateur).",
     params: [{ name: "qui", label: "Destinataires", type: "select", options: ["administrateurs", "un rôle", "des utilisateurs (ids)", "l'utilisateur courant"], default: "administrateurs" },

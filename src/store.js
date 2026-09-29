@@ -27,6 +27,9 @@ const DEFS = {
   file: { name: "dzf_file", fields: [["file", "String", { required: true }], ["charge", "String"], ["etat", "String"], ["cree_le", "Date"], ["pris_le", "Date"], ["essais", "Integer"]] },
   versions: { name: "dzf_versions", fields: [["nom", "String", { required: true }], ["version", "Integer"], ["contenu", "String"], ["quand", "Date"], ["par", "String"]] },
   ecouteurs: { name: "dzf_ecouteurs", fields: [["nom", "String", { required: true, is_unique: true }], ["serveur", "String"], ["port", "Integer"], ["utilisateur", "String"], ["secret", "String"], ["dossier", "String"], ["table_dest", "String"], ["actif", "Bool"], ["marquer_lu", "Bool"], ["dernier_uid", "Integer"], ["uidvalidity", "String"], ["etat", "String"], ["vu_le", "Date"], ["erreur", "String"], ["recus", "Integer"], ["garder_source", "Bool"]] },
+  /* mails envoyés « une seule fois » (clé unique), avec reprise des échecs */
+  envois: { name: "dzf_envois", fields: [["cle", "String", { required: true, is_unique: true }], ["reference", "String"], ["a", "String"], ["sujet", "String"], ["html", "String"], ["statut", "String"],
+    ["erreur", "String"], ["tentatives", "Integer"], ["cree_le", "Date"], ["envoye_le", "Date"]] },
   verrous: { name: "dzf_verrous", fields: [["nom", "String", { required: true, is_unique: true }], ["jusqu_a", "Date"], ["par", "String"]] },
 };
 

@@ -98,6 +98,24 @@ const donnees = [
     },
   },
   {
+    name: "dzf_table_structure", label: "Table : créer ou compléter", category: "Données", icon: "fas fa-table", output: "structure", timeout: 60,
+    description: "Crée une table si elle n'existe pas, et ajoute les champs qui manquent (texte, nombre, date, oui/non, JSON, lien vers une autre table, liste de choix), avec les droits et des index. Ne supprime ni ne modifie jamais rien : on peut le relancer sans risque. Pour qu'une solution installe ses propres tables.",
+    params: [
+      { name: "table", label: "Nom de la table", required: true, help: "minuscules, chiffres et _ (ex. demandes_clients)" },
+      { name: "description", label: "Description" },
+      { name: "lecture", label: "Lisible à partir du rôle", type: "select", options: ["1", "40", "80", "100"], default: "40", help: "1 admin, 40 staff, 80 utilisateur, 100 public" },
+      { name: "ecriture", label: "Modifiable à partir du rôle", type: "select", options: ["1", "40", "80", "100"], default: "40" },
+      { name: "champs", label: "Champs (JSON)", type: "json", required: true, help: '[{"nom":"titre","type":"String","obligatoire":true},{"nom":"montant","type":"Float"},{"nom":"client","lien":"clients"},{"nom":"etat","type":"String","options":"ouvert,fermé"}]' },
+      { name: "index", label: "Champs à indexer", help: "ex. client, cree_le" },
+    ],
+    run: async (p) => {
+      const champs = typeof p.champs === "string" ? JSON.parse(p.champs) : p.champs;
+      if (!Array.isArray(champs)) throw Object.assign(new Error("Champs : il faut une liste JSON"), { permanent: true });
+      const r = await require("../lib/structure").assurer({ nom: p.table, description: p.description, lecture: +p.lecture || 40, ecriture: +p.ecriture || 40, champs, index: String(p.index || "").split(/[\s,;]+/).filter(Boolean) });
+      return { table: r.table, creee: r.creee, champs_ajoutes: r.champs_ajoutes };
+    },
+  },
+  {
     name: "dzf_table_lecture", label: "Table : tenir à jour une table de lecture", category: "Données", icon: "fas fa-layer-group", output: "lecture", timeout: 120,
     description: "Recalcule une table à partir d'une requête SELECT (jointures, dernières valeurs, regroupements) et n'écrit que les lignes qui ont changé. Les pages lisent ensuite cette table, vite et sans calcul dans le navigateur. Réservé aux admins.",
     params: [{ name: "table", label: "Table à tenir à jour", type: "table", required: true },
