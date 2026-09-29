@@ -93291,6 +93291,15 @@ var require_extraire = __commonJS({
       } else r.nature = mail.__agence ? "interne" : campagne ? "reponse_campagne" : "direct";
       const corps = ["direct", "reponse_campagne"].includes(r.nature) ? sansCitation(texte) : texte;
       const { couples, lignes: L } = lireFiche(corps, p && p.libelles);
+      if (r.nature === "non_lead" && p) {
+        const exp = V.email(mail.expediteur);
+        const coord = couples.some((x) => x.champ === "email" && V.email(x.valeur) && V.email(x.valeur) !== exp || x.champ === "telephone" && V.telephone(x.valeur));
+        const bien = couples.some((x) => ["reference", "id_crm", "prix", "ville", "code_postal", "surface"].includes(x.champ) && x.valeur);
+        if (coord && bien) {
+          r.nature = "lead";
+          r.nature_corrigee = "objet inconnu du portail, mais coordonn\xE9es du prospect et bien pr\xE9sents";
+        }
+      }
       if (!["non_lead", "interne", "auto_reponse"].includes(r.nature)) depuisFiche(r, couples, L);
       if (p && p.regles && r.nature !== "non_lead") {
         try {
@@ -94759,6 +94768,7 @@ var require_traiter = __commonJS({
         return fin();
       }
       if (r.suspect) d.motifs.push("\xE0 v\xE9rifier : " + r.suspect);
+      if (r.nature_corrigee) d.alertes.push(`${r.portail_nom || r.portail} : ${r.nature_corrigee}`);
       if (r.a_un_bien_a_vendre) d.alertes.push("le prospect dit avoir aussi un bien \xE0 vendre : vendeur potentiel");
       if (r.portail === "inconnu" || r.lu_par.length > 1) {
         const a = r.lecture && r.lecture.apprentissage, g = r.lecture && r.lecture.gabarit;

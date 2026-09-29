@@ -142,6 +142,7 @@ const etapeLire = async (mail, conf = {}, opts = {}) => {
     return fin();
   }
   if (r.suspect) d.motifs.push("à vérifier : " + r.suspect);
+  if (r.nature_corrigee) d.alertes.push(`${r.portail_nom || r.portail} : ${r.nature_corrigee}`);
   if (r.a_un_bien_a_vendre) d.alertes.push("le prospect dit avoir aussi un bien à vendre : vendeur potentiel");
   if (r.portail === "inconnu" || r.lu_par.length > 1) {
     const a = r.lecture && r.lecture.apprentissage, g = r.lecture && r.lecture.gabarit;

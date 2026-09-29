@@ -323,5 +323,14 @@ const { CONF, MAILS } = require("./fixtures-leads.cjs");
     assert.notStrictEqual(p3.portail, "declare_2"); assert.strictEqual(p3.nature, "interne", "une autre adresse de l'agence reste un mail de l'équipe");
   }
 
+  /* Portail connu dont l'objet a changé : coordonnées du prospect + bien = lead, jamais écarté ; une notification sans prospect reste écartée. */
+  {
+    const corps = "Un prospect est intéressé par votre annonce\nNom : Paul Martin\nEmail : paul.martin@example.org\nTéléphone : 06 11 22 33 44\nRéférence : 30123\nPrix : 245 000 €";
+    const n1 = extraire({ expediteur: "Bien'ici <contact@bienici.com>", destinataire: "rodez@agence-exemple.fr", objet: "Un objet jamais vu 30123", texte: corps }, CONF);
+    assert.strictEqual(n1.nature, "lead", "coordonnées + bien : lead"); assert(n1.nature_corrigee); assert.strictEqual(n1.contact.email, "paul.martin@example.org");
+    const n2 = extraire({ expediteur: "Bien'ici <no-reply@bienici.com>", destinataire: "rodez@agence-exemple.fr", objet: "Votre annonce a été publiée", texte: "Votre annonce réf. 30123 est en ligne.\nRéférence : 30123" }, CONF);
+    assert.strictEqual(n2.nature, "non_lead", "sans prospect : reste écarté");
+  }
+
   console.log("leads + ovh : ok");
 })().catch((e) => { console.error(e); process.exit(1); });
