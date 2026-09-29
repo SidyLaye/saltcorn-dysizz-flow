@@ -8,6 +8,8 @@
   - Un travail resté bloqué n'empêche plus d'en relancer un (verrou libéré après 2 h).
   - Le travail tourne dans un contexte propre (même tenant, connexions communes), plus dans celui de la requête du bouton.
 - Contrôle du CRM : 50 leads par défaut.
+- Rapprochement : une référence très courte (moins de 4 caractères, ex. « 12 ») n'est plus une preuve suffisante à elle seule. Le bien doit être confirmé par les faits du mail (ville, code postal, prix, surface).
+- Giraffe : une référence accolée à des lettres dans le nom du projet (ex. « AGX12345 ») est lue.
 
 ## 2.13.2
 

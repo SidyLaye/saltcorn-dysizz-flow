@@ -92553,6 +92553,11 @@ var require_portails = __commonJS({
             r.bien.titre = titre;
             const ref = titre.match(/\bREF\.?\s*(\d{3,})/i) || titre.match(/\b(\d{4,6})\b(?!\s*,)/);
             if (ref) r.bien.reference = ref[1];
+            const colle = titre.match(/\b([A-Z]{2,6}-?\d{3,6})\b/);
+            if (colle) {
+              if (!r.bien.reference) r.bien.reference = colle[1];
+              else if (colle[1] !== r.bien.reference) r.bien.reference_portail = colle[1];
+            }
             const lc = titre.match(/([A-ZÀ-Ÿ' -]{3,})\s*\((\d{5})/);
             if (lc) {
               r.bien.ville = lc[1].trim();
@@ -93681,8 +93686,9 @@ var require_rapprochement = __commonJS({
         for (const v of variantes(ref)) {
           const biens = await crm.biensParReference(v.valeur).catch(() => []);
           const exacts = biens.filter((x) => String(x.reference).trim().toLowerCase() === v.valeur.toLowerCase());
-          const hit = await essayer(v.etape, v.valeur, exacts, v.min, v.etape === "reference_complete");
-          if (hit) return { bien: hit, methode: v.etape, etapes, alertes, confiance: v.min ? "moyenne" : "haute" };
+          const forte = v.etape === "reference_complete" && v.valeur.replace(/[^A-Za-z0-9]/g, "").length >= 4;
+          const hit = await essayer(v.etape, v.valeur, exacts, forte ? v.min : Math.max(v.min, 1), forte);
+          if (hit) return { bien: hit, methode: v.etape, etapes, alertes, confiance: forte || v.min ? forte ? "haute" : "moyenne" : "moyenne" };
         }
       }
       if (crm.biensParCriteres && !opts.sansCriteres) {

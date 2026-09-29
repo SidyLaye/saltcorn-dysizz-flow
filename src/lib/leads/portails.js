@@ -78,6 +78,9 @@ const PORTAILS = [
         r.bien.titre = titre;
         const ref = titre.match(/\bREF\.?\s*(\d{3,})/i) || titre.match(/\b(\d{4,6})\b(?!\s*,)/);
         if (ref) r.bien.reference = ref[1];
+        /* référence accolée à des lettres (« SEL12345 ») : essayée telle quelle, puis comme référence du portail */
+        const colle = titre.match(/\b([A-Z]{2,6}-?\d{3,6})\b/);
+        if (colle) { if (!r.bien.reference) r.bien.reference = colle[1]; else if (colle[1] !== r.bien.reference) r.bien.reference_portail = colle[1]; }
         const lc = titre.match(/([A-ZÀ-Ÿ' -]{3,})\s*\((\d{5})/);
         if (lc) { r.bien.ville = lc[1].trim(); r.bien.code_postal = lc[2]; }
       }

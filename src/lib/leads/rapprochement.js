@@ -111,8 +111,10 @@ const rapprocher = async (lead, crm, opts = {}) => {
     for (const v of variantes(ref)) {
       const biens = await crm.biensParReference(v.valeur).catch(() => []);
       const exacts = biens.filter((x) => String(x.reference).trim().toLowerCase() === v.valeur.toLowerCase());
-      const hit = await essayer(v.etape, v.valeur, exacts, v.min, v.etape === "reference_complete");
-      if (hit) return { bien: hit, methode: v.etape, etapes, alertes, confiance: v.min ? "moyenne" : "haute" };
+      /* une référence très courte (« 12 ») peut désigner un autre bien : preuve faible, à confirmer par les faits du mail */
+      const forte = v.etape === "reference_complete" && v.valeur.replace(/[^A-Za-z0-9]/g, "").length >= 4;
+      const hit = await essayer(v.etape, v.valeur, exacts, forte ? v.min : Math.max(v.min, 1), forte);
+      if (hit) return { bien: hit, methode: v.etape, etapes, alertes, confiance: forte || v.min ? (forte ? "haute" : "moyenne") : "moyenne" };
     }
   }
   /* 5. recherche séquentielle par critères */
