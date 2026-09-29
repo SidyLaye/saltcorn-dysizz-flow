@@ -74,7 +74,9 @@ const messages = async (dossier, resultat) => {
     return (t && (await t.getRow({ id: +id }))) || {};
   };
   if (!envoiNormal) {
-    if (["a_verifier", "a_trier"].includes(d.statut) && nonAuto.length) {
+    /* ni client ni bien (expéditeur inconnu, réponse à une campagne) : ce n'est pas un lead, rien ne part */
+    const pasUnLead = ["inconnu", "reponse_campagne"].includes(d.extraction && d.extraction.nature);
+    if (["a_verifier", "a_trier"].includes(d.statut) && !pasUnLead && nonAuto.length) {
       const { objet, html } = transfert(await mailRecu());
       return {
         simuler: !R.envoi_mails,

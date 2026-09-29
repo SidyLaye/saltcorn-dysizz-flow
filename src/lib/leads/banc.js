@@ -33,6 +33,7 @@ const ecart = (champ, a, n) => {
 
 /* Champs de l'ancien système (nom_champ libre) → champs comparés */
 const CHAMP_ANCIEN = [
+  [/^(nom_complet|nomcomplet|full_name|fullname)$/, "nom_complet"],
   [/^(email|e_?mail|mail|courriel|email_acquereur|email_prospect)$/, "email"],
   [/^(tel|telephone|phone|mobile|portable|tel_acquereur|telephone_acquereur)$/, "tel"],
   [/^(nom|lastname|last_name|nom_famille)$/, "nom"],
@@ -43,18 +44,40 @@ const champDeLAncien = (n) => { const k = cle(String(n || "")).replace(/[^a-z_]/
 
 /* Décision : ce qui arrive au mail */
 const decisionAncienne = (statut, aUnLead) => (!aUnLead ? "pas de lead" : /rejet|quarant/i.test(String(statut)) ? "non automatisé" : "envoyé");
-const decisionNouvelle = (st) => (st === "pret" ? "envoyé" : ["a_verifier", "a_trier"].includes(st) ? "non automatisé" : "pas de lead");
+const decisionNouvelle = (st, nature) => (st === "pret" ? "envoyé" : ["a_verifier", "a_trier"].includes(st) && !["inconnu", "reponse_campagne"].includes(nature) ? "non automatisé" : "pas de lead");
+
+/* forme d'une référence, sans sa valeur : lettres → A, chiffres → 9 (« SEHA1234 » → « AAAA9999 ») */
+const forme = (x) => String(x || "").toUpperCase().replace(/[A-Z]/g, "A").replace(/[0-9]/g, "9").slice(0, 30);
+/* identité : les mots du prénom et du nom, dans n'importe quel ordre */
+const mots2 = (...v) => [...new Set(v.flatMap((x) => cle(String(x || "")).split(/[^a-z]+/).filter((w) => w.length > 1)))].sort();
+const identite = (a, n) => {
+  if (!a.length && !n.length) return null;
+  if (!n.length) return "absent chez nous";
+  if (!a.length) return "absent chez l'ancien";
+  if (a.join(" ") === n.join(" ")) return "accord";
+  const communs = a.filter((w) => n.includes(w)).length;
+  return communs === Math.min(a.length, n.length) ? "l'un contient l'autre" : communs ? "en partie" : "différent";
+};
 
 const mots = (t) => new Set(cle(t).split(/[^a-z0-9']+/).filter((w) => w.length > 1 && !/\d/.test(w)));
+const motMasque = (df, seuil) => (w) => {
+  if (!w || /^\s+$/.test(w) || /^\[(email|tel)\]$/.test(w)) return w;
+  if (/\d/.test(w)) return w.replace(/\d+/g, "#");
+  const k = cle(w).replace(/[^a-z0-9']/g, "");
+  return !k || (df.get(k) || 0) >= seuil ? w : "…";
+};
+/* valeur après « Libellé : » : toujours masquée (un nom qui revient souvent ne doit jamais passer) ; une référence garde sa forme */
+const valeurMasquee = (v) => v.split(/(\s+)/).map((w) => (!w || /^\s+$/.test(w) || /^\[(email|tel)\]$/.test(w) ? w : /\d/.test(w) && w.length <= 24 ? forme(w) : "…")).join("").replace(/(…[\s…]*)+/g, "… ").trim();
 const squelette = (texte, df, seuil) => String(texte || "")
   .replace(/[\w.+-]+@[\w-]+(\.[\w-]+)+/g, " [email] ")
   .replace(/(\+?\d[\d .-]{7,}\d)/g, " [tel] ")
-  .split("\n").map((l) => l.split(/(\s+)/).map((w) => {
-    if (/^\s+$/.test(w) || /^\[(email|tel)\]$/.test(w)) return w;
-    if (/\d/.test(w)) return w.replace(/\d+/g, "#");
-    const k = cle(w).replace(/[^a-z0-9']/g, "");
-    return !k || (df.get(k) || 0) >= seuil ? w : "…";
-  }).join("").replace(/(…[\s…]*)+/g, "… ").trimEnd()).filter((l) => l.trim()).join("\n").slice(0, 2500);
+  .split("\n").map((l) => {
+    const lv = l.match(/^(\s*[^:\n]*[A-Za-zÀ-ÿ][^:\n]{0,40}?)\s*:\s*(\S.*)$/);
+    const m = motMasque(df, seuil);
+    if (lv && !/^https?$/i.test(lv[1].trim())) return lv[1].split(/(\s+)/).map(m).join("") + " : " + valeurMasquee(lv[2]);
+    return l.split(/(\s+)/).map(m).join("").replace(/(…[\s…]*)+/g, "… ").trimEnd();
+  }).filter((l) => l.trim()).join("\n").slice(0, 2500);
+const seuilDe = (n) => Math.max(5, Math.ceil((n || 1) * 0.1));
 
 /* mails : [{ id, expediteur, destinataire, objet, texte, html, date }]
    anciens : Map(mail_id → { source, statut, reference, bien, agence, negociateur, champs: { email, tel, nom, prenom, reference } })
@@ -71,13 +94,17 @@ const banc = async ({ mails, anciens, biens = [], conf = {}, opts = {}, maxCas =
     try {
       const x = await traiter({ ...m0, date: m0.date }, crm, confB, opts);
       const e = x.extraction || {};
-      d = { statut: x.statut, motifs: x.motifs, bien: x.bien ? { id: x.bien.id } : null, agence: x.agence ? { id: x.agence.id } : null,
+      const rb = x.rapprochement || null;
+      d = { statut: x.statut, motifs: x.motifs, bien: x.bien ? { id: x.bien.id } : null,
+        rapprochement: rb ? { methode: rb.methode || null, confiance: rb.confiance || null, motif: rb.motif || null,
+          etapes: (rb.etapes || []).map((e) => ({ etape: e.etape, trouves: e.trouves, ambigu: !!e.ambigu, raisons: (e.candidats || []).map((c) => c.raison).filter(Boolean).slice(0, 3) })) } : null, agence: x.agence ? { id: x.agence.id } : null,
         negociateur: x.negociateur && typeof x.negociateur === "object" ? { id: x.negociateur.id } : x.negociateur || null,
-        extraction: { portail: e.portail, portail_nom: e.portail_nom, nature: e.nature, lu_par: e.lu_par, contact: e.contact, bien: { reference: e.bien && e.bien.reference } } };
+        extraction: { portail: e.portail, portail_nom: e.portail_nom, nature: e.nature, lu_par: e.lu_par, contact: e.contact, bien: { reference: e.bien && e.bien.reference, reference_portail: e.bien && e.bien.reference_portail } } };
     } catch (e) { err = e.message; R.erreurs++; }
     res.push({ m: { id: m0.id, objet: String(m0.objet || ""), t: texteMail({ texte: m0.texte, html: m0.html }).slice(0, 6000) }, d, err });
   }
   /* 2. vocabulaire commun par portail (pour les squelettes) */
+  const catalogue = new Set(biens.map((b) => String(b.id)));
   const df = new Map(), nb = new Map();
   for (const { m, d } of res) {
     const p = (d && d.extraction && d.extraction.portail) || "inconnu";
@@ -94,7 +121,7 @@ const banc = async ({ mails, anciens, biens = [], conf = {}, opts = {}, maxCas =
     const p = x.portail || (err ? "erreur" : "inconnu");
     const P = R.portails[p] || (R.portails[p] = { mails: 0, natures: {}, decisions: {}, champs: {} });
     P.mails++; inc(P.natures, x.nature || "?");
-    const decA = decisionAncienne(a && a.statut, !!a), decN = err ? "erreur" : decisionNouvelle(d && d.statut);
+    const decA = decisionAncienne(a && a.statut, !!a), decN = err ? "erreur" : decisionNouvelle(d && d.statut, x.nature);
     inc(P.decisions, `${decA} → ${decN}`); inc(R.decisions, `${decA} → ${decN}`);
     if (a) {
       const srcA = norm.texte(a.source), srcN = norm.texte(x.portail), nomN = norm.texte(x.portail_nom);
@@ -103,27 +130,33 @@ const banc = async ({ mails, anciens, biens = [], conf = {}, opts = {}, maxCas =
     }
     const diffs = [];
     if (a && decA !== "pas de lead") {
-      const nous = { email: norm.email(c.email), tel: norm.tel(c.telephone), nom: norm.texte(c.nom || (V.decouperNom(c.nom_complet || "") || {}).nom), prenom: norm.texte(c.prenom || (V.decouperNom(c.nom_complet || "") || {}).prenom),
+      const nous = { email: norm.email(c.email || c.email_relais), tel: norm.tel(c.telephone), nom: norm.texte(c.nom || (V.decouperNom(c.nom_complet || "") || {}).nom), prenom: norm.texte(c.prenom || (V.decouperNom(c.nom_complet || "") || {}).prenom),
         reference: norm.ref(bm.reference), bien: norm.id(d && d.bien && d.bien.id), agence: norm.id(d && d.agence && d.agence.id), negociateur: norm.id(d && d.negociateur && (d.negociateur.id || d.negociateur)) };
       const eux = { email: norm.email(a.champs.email), tel: norm.tel(a.champs.tel), nom: norm.texte(a.champs.nom), prenom: norm.texte(a.champs.prenom),
         reference: norm.ref(a.champs.reference || a.reference), bien: norm.id(a.bien), agence: norm.id(a.agence), negociateur: norm.id(a.negociateur) };
+      const dn = V.decouperNom(c.nom_complet || "") || {};
+      const idN = mots2(c.prenom || dn.prenom, c.nom || dn.nom), idA = mots2(a.champs.prenom, a.champs.nom, a.champs.nom_complet);
       for (const k of Object.keys(nous)) {
         const C = P.champs[k] || (P.champs[k] = { accord: 0 });
-        const e = nous[k] === eux[k] ? (nous[k] ? "accord" : null) : ecart(k, eux[k], nous[k]);
+        let e = nous[k] === eux[k] ? (nous[k] ? "accord" : null) : ecart(k, eux[k], nous[k]);
+        if (k === "bien" && e && e !== "accord" && eux.bien && !catalogue.has(eux.bien)) e = "bien de l'ancien absent du catalogue";
         if (!e) continue;
         inc(C, e);
-        if (e !== "accord") diffs.push({ champ: k, ecart: e });
+        /* nom et prénom séparés : comptés, mais un écart ne compte que sur l'identité entière (ci-dessous) */
+        if (e !== "accord" && k !== "nom" && k !== "prenom") diffs.push({ champ: k, ecart: e, ...(k === "reference" ? { forme_ancien: forme(eux.reference), forme_nous: forme(nous.reference), forme_portail: forme(norm.ref(bm.reference_portail)) } : {}) });
       }
+      const ei = identite(idA, idN);
+      if (ei) { const C = P.champs.identite || (P.champs.identite = { accord: 0 }); inc(C, ei); if (ei !== "accord") diffs.push({ champ: "identite", ecart: ei, mots_ancien: idA.length, mots_nous: idN.length }); }
     }
     if (decA !== decN && !(decA === "pas de lead" && decN === "pas de lead")) diffs.push({ champ: "decision", ecart: `${decA} → ${decN}` });
     if (err) diffs.push({ champ: "erreur", ecart: err.slice(0, 120) });
     /* un cas par catégorie (portail × champ × écart), quelques exemples chacun */
     for (const f of diffs) {
-      const k = `${p}|${f.champ}|${f.ecart}`;
+      const k = `${p}|${f.champ}|${f.ecart}${f.forme_ancien !== undefined ? ` (${f.forme_ancien} / ${f.forme_nous})` : ""}`;
       const n = (cat.get(k) || 0) + 1; cat.set(k, n);
       if (n > parCategorie || R.cas.length >= maxCas) continue;
-      const seuil = Math.max(3, Math.ceil((nb.get(p) || 1) * 0.05));
-      R.cas.push({ mail: m.id, portail: p, nature: x.nature || null, lu_par: x.lu_par || null, champ: f.champ, ecart: f.ecart, motifs: ((d && d.motifs) || []).map((t) => t.replace(/[\w.+-]+@[\w.-]+/g, "[email]").replace(/\d{3,}/g, "#")).slice(0, 4),
+      const seuil = seuilDe(nb.get(p));
+      R.cas.push({ mail: m.id, portail: p, nature: x.nature || null, lu_par: x.lu_par || null, ...f, rapprochement: d && d.rapprochement, motifs: ((d && d.motifs) || []).map((t) => t.replace(/[\w.+-]+@[\w.-]+/g, "[email]").replace(/\d{3,}/g, "#")).slice(0, 4),
         objet: squelette(m.objet, df.get(p) || new Map(), seuil), squelette: squelette(m.t, df.get(p) || new Map(), seuil) });
     }
   }
@@ -134,10 +167,10 @@ const banc = async ({ mails, anciens, biens = [], conf = {}, opts = {}, maxCas =
   for (const { m, d } of res) {
     const x = (d && d.extraction) || {}, p = x.portail || "inconnu";
     const n = (vus.get(p) || 0) + 1; if (n > exemples) continue; vus.set(p, n);
-    const seuil = Math.max(3, Math.ceil((nb.get(p) || 1) * 0.05));
+    const seuil = seuilDe(nb.get(p));
     R.exemples.push({ mail: m.id, portail: p, nature: x.nature || null, lu_par: x.lu_par || null, statut: d && d.statut, objet: squelette(m.objet, df.get(p) || new Map(), seuil), squelette: squelette(m.t, df.get(p) || new Map(), seuil) });
   }
   return R;
 };
 
-module.exports = { banc, squelette, ecart, champDeLAncien, norm };
+module.exports = { banc, squelette, ecart, champDeLAncien, norm, forme, identite };

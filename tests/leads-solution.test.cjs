@@ -62,6 +62,7 @@ const { envoyer, reprendre } = require("../src/lib/envois");
   assert.strictEqual(r.liste[0].sujet, MAIL.objet); assert(/non-automatise:/.test(r.liste[0].cle) && /bien non trouvé/.test(r.raison));
   r = await messages({ ...dp, statut: "a_trier", destinataires: { liste: [] } }, { id: 9 }); assert.strictEqual(r.liste.length, 1, "à trier aussi, même sans destinataire");
   r = await messages({ ...dp, statut: "ignore" }, { id: 10 }); assert.strictEqual(r.liste.length, 0, "un non-lead ne part pas");
+  r = await messages({ ...dp, statut: "a_trier", extraction: { ...dp.extraction, nature: "inconnu" } }, { id: 13 }); assert.strictEqual(r.liste.length, 0, "ni client ni bien : pas un lead, rien ne part");
   REGLAGES = {};
   r = await messages({ ...dp, statut: "a_verifier" }, { id: 11 }); assert.strictEqual(r.liste.length, 0, "sans adresse réglée : rien ne part");
   r = await messages(dp, { id: 12 }); assert(/Nouveau lead/.test(r.liste[0].sujet), "format par défaut : fiche du lead");

@@ -13,7 +13,13 @@ const { MAILS } = require("./fixtures-leads.cjs");
   const df = new Map([["bonjour", 9], ["email", 9], ["telephone", 9], ["message", 9]]);
   const s = squelette("Bonjour Jean Dupont\nEmail : jean.dupont@example.org\nTéléphone : 06 12 34 56 78\nMessage : je souhaite visiter la maison réf 30123", df, 3);
   assert(!/jean|dupont|example|12 34|visiter/i.test(s), "rien de personnel : " + s);
-  assert(/Bonjour/.test(s) && /\[email\]/.test(s) && /\[tel\]/.test(s) && /#/.test(s), "gabarit gardé : " + s);
+  assert(/Bonjour/.test(s) && /Email : \[email\]$/m.test(s) && /\[tel\]/.test(s) && /9/.test(s), "gabarit gardé : " + s);
+  /* un nom qui revient dans beaucoup de mails (même prospect) reste masqué : toute valeur après « Libellé : » l'est */
+  const dfN = new Map([["nom", 50], ["theo", 50], ["gloudemans", 50], ["email", 50]]);
+  const s2 = squelette("Nom: Theo Gloudemans\nEmail : theo@example.org\nRéf : TXNV-T123", dfN, 5);
+  assert(!/theo|gloudemans/i.test(s2) && /Nom : …/.test(s2) && /AAAA-A999/.test(s2), "valeur après libellé masquée, forme de référence gardée : " + s2);
+  assert.strictEqual(require("../src/lib/leads/banc").identite(["martin", "paul"], ["martin", "paul"]), "accord");
+  assert.strictEqual(require("../src/lib/leads/banc").identite(["martin", "paul"], ["martin"]), "l'un contient l'autre");
   assert.strictEqual(ecart("reference", "SEHA123", "SEHA12"), "l'une contient l'autre");
   assert.strictEqual(ecart("email", "a@x.fr", ""), "absent chez nous");
 

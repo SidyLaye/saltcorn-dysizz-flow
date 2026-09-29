@@ -277,7 +277,18 @@ const PORTAILS = [
     },
   },
   { id: "ekonsilio", nom: "eKonsilio (chat)", test: (d) => /ekonsilio\.(fr|com)$/.test(d), nature: (o, t) => (/nouvelle demande de contact|lead acqu[ée]reur|lead vendeur|voici les informations concernant ce contact/i.test(o + "\n" + t) ? "lead" : "non_lead"), regles: ({ texte, r }) => { const m = texte.match(/# commentaire\s*\n([\s\S]*?)\n#/i); if (m) r.message = m[1].trim(); } },
-  { id: "zefir", nom: "Zefir (Zefir)", test: (d) => /zefir\.fr$/.test(d), nature: () => "estimation" },
+  /* Zefir : « Un acheteur Zefir souhaite visiter l'un de vos biens », « Cet acheteur attend votre retour » : un ACHETEUR */
+  { id: "zefir", nom: "Zefir (Zefir)", test: (d) => /zefir\.fr$/.test(d),
+    nature: (o, t) => (/acheteur|visiter|visite/i.test(o + "\n" + String(t).slice(0, 800)) ? "lead" : /vendeur|estimation|estimer/i.test(o) ? "estimation" : "non_lead"),
+    regles: ({ L, texte, r }) => {
+      const i = L.findIndex((l) => /^coordonn[ée]es de/i.test(l));
+      if (i >= 0) { const n = L[i].replace(/^coordonn[ée]es de\s*/i, "").replace(/\s*:\s*$/, "").trim() || L[i + 1]; if (n && !/[📞📧@]/u.test(n) && !/\d{4}/.test(n)) r.contact.nom_complet = V.nomPropre(n); }
+      const t = texte.match(/📞\s*([+\d][\d .]{8,})/u); if (t) r.contact.telephone = t[1].trim();
+      const e = texte.match(/📧\s*(\S+@\S+)/u); if (e) r.contact.email = V.email(e[1]);
+      const b = L.find((l) => /(vendre|vente)\s*-\s*\w+/i.test(l)); if (b) { r.bien.titre = b; Object.assign(r.bien, { ...V.faitsTitre(b), ...r.bien }); const ty = b.match(/-\s*(maison|appartement|terrain|propri[ée]t[ée]|immeuble|local|grange|moulin|villa)/i); if (ty) r.bien.type = V.typeBien(ty[1]); }
+      const pr = L.find((l) => /\d[\d  .]*\s*€/.test(l)); if (pr) r.bien.prix = V.prix(pr);
+      const lc = texte.match(/🗺️?\s*([^\n(]+?)\s*\((\d{5})\)/u); if (lc) { r.bien.ville = lc[1].trim(); r.bien.code_postal = lc[2]; }
+    } },
   { id: "huisenaanbod", nom: "HUISenAANBOD.nl", test: (d) => /huisenaanbod\.nl$/.test(d), nature: (o, t) => (/#naamaanvrager|#vraag|#adv_details/i.test(t) ? "non_lead" : "lead") },
   { id: "kyero", nom: "KYERO", test: (d) => /kyero\.com$/.test(d), nature: () => "lead" },
   { id: "jamesedition", nom: "JAMES EDITION", test: (d) => /jamesedition\.com$/.test(d), nature: (o) => (/enquiry|inquiry|demande|request|message|lead|contact/i.test(o) && !/app is here|newsletter|webinar|report|rapport/i.test(o) ? "lead" : "non_lead") },
