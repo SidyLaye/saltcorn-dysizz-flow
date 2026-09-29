@@ -10,6 +10,9 @@
   - « Étape suivante » écrite en JavaScript : noms d'étapes avec ou sans guillemets, conditions imbriquées (`a ? x : (b ? y : z)`). Chaque lien porte sa condition en clair (« si gabarit », « sinon »), en vert ou en rouge.
   - Rangement en couches : chaque étape sous celles qui y mènent, moins de croisements, retours en arrière ignorés.
   - Un grand workflow s'ouvre en haut, à une taille lisible ; « Tout voir » montre l'ensemble.
+- Moteur leads **en étapes** (`etapeLire`, `etapeBien`, `etapeContact`, `etapeConsentement`, `etapeDestinataires`) : chacune peut être un bloc de workflow (dysizz-leads 1.4). `traiter` les enchaîne ; résultat identique, vérifié mail par mail, y compris quand le dossier passe par le contexte JSON d'un workflow (`tests/etapes.test.cjs`).
+- Bloc « Verrou » : peut attendre que le verrou se libère (réglage « attendre jusqu'à », en secondes), puis s'arrêter en erreur si le temps est dépassé.
+- Immofacile : le jeton est gardé d'un adaptateur à l'autre (clé = empreinte de l'adresse, du site et des identifiants) : un workflow en étapes ne redemande pas un jeton à chaque étape.
 
 ## 2.9.0
 

@@ -94594,40 +94594,42 @@ var require_traiter = __commonJS({
       return ok.length === 1 ? ok[0] : null;
     };
     var vide = () => ({ statut: "ignore", motifs: [], actions: [], alertes: [] });
-    var traiter = async (mail, crm, conf = {}, opts = {}) => {
+    var actifs = (conf) => Object.fromEntries(ETAPES.map((k) => [k, !(conf.etapes && conf.etapes[k] === false)]));
+    var dateDuMail = (mail) => mail.date || mail.date_envoi || null;
+    var etapeLire = async (mail, conf = {}, opts = {}) => {
       const t0 = Date.now();
-      const actif = Object.fromEntries(ETAPES.map((k) => [k, !(conf.etapes && conf.etapes[k] === false)]));
       const r = await lire(mail, conf, { ia: opts.ia, gabarits: opts.gabarits, budget: opts.budget, noter: opts.noter });
       const conv = C.messages(r.mail_deballe ? { ...mail, ...r.mail_deballe, html: "" } : mail, r, conf);
       const cles = C.cles(r, conv.texte, conf);
       const connus = opts.dossiers ? await opts.dossiers.trouver(cles).catch(() => []) : [];
-      const d = { extraction: r, ...vide(), role: conv.role, fil: { cles, messages: conv.messages, dossiers_connus: connus.length } };
+      const d = { extraction: r, ...vide(), role: conv.role, fil: { cles, messages: conv.messages, dossiers_connus: connus.length }, date_mail: dateDuMail(mail), interne: { connus } };
       const fin = () => {
+        d.fin = true;
         d.duree_ms = Date.now() - t0;
         return d;
       };
       if (conv.role === "equipe" && r.nature === "interne") {
-        const dos2 = choisirDossier(connus, { references: cles.references, relais: cles.relais });
-        if (!dos2) {
+        const dos = choisirDossier(connus, { references: cles.references, relais: cles.relais });
+        if (!dos) {
           d.motifs.push("message de l'\xE9quipe sans dossier connu : rien \xE0 faire");
           return fin();
         }
         r.nature = "reponse_equipe";
         d.statut = "suivi";
-        d.dossier = { id: dos2.id, existant: true, bien_id: dos2.bien_id, contact_id: dos2.contact_id, recherche_id: dos2.recherche_id };
-        const tous2 = C.fusionner(dos2.messages || [], conv.messages);
-        d.fil.messages_dossier = tous2;
-        d.fil.reponse_equipe = { date: mail.date || mail.date_envoi || null, auteur: (conv.messages[0] || {}).auteur || null };
-        if (actif.commentaire && dos2.contact_id && dos2.recherche_id) d.actions.push({ op: "majRecherche", contact: dos2.contact_id, id: dos2.recherche_id, donnees: { comment: C.commentaire(tous2, conf.commentaire || {}) } });
+        d.dossier = { id: dos.id, existant: true, bien_id: dos.bien_id, contact_id: dos.contact_id, recherche_id: dos.recherche_id };
+        const tous = C.fusionner(dos.messages || [], conv.messages);
+        d.fil.messages_dossier = tous;
+        d.fil.reponse_equipe = { date: dateDuMail(mail), auteur: (conv.messages[0] || {}).auteur || null };
+        if (actifs(conf).commentaire && dos.contact_id && dos.recherche_id) d.actions.push({ op: "majRecherche", contact: dos.contact_id, id: dos.recherche_id, donnees: { comment: C.commentaire(tous, conf.commentaire || {}) } });
         return fin();
       }
       if (["inconnu", "reponse_campagne", "direct"].includes(r.nature) && connus.length && conv.role === "prospect") {
-        const dos2 = choisirDossier(connus, { references: cles.references, relais: cles.relais });
-        if (dos2) {
+        const dos = choisirDossier(connus, { references: cles.references, relais: cles.relais });
+        if (dos) {
           r.nature = "relance";
           r.reponse_client = true;
-          if (dos2.bien_id && !r.bien.id_crm && !r.bien.reference) {
-            r.bien.id_crm = String(dos2.bien_id);
+          if (dos.bien_id && !r.bien.id_crm && !r.bien.reference) {
+            r.bien.id_crm = String(dos.bien_id);
             r.preuves["bien.id_crm"] = "dossier";
           }
         }
@@ -94653,29 +94655,44 @@ var require_traiter = __commonJS({
         d.motifs.push(qui + (r.lu_par.includes("ia") ? ` : compl\xE9t\xE9 par l'IA${a && a.fait !== "rien" ? `, gabarit ${a.fait} (${a.observations} observation(s))` : ""}` : g ? ` : lu avec un gabarit appris (${g.source})` : " : lu par les r\xE8gles g\xE9n\xE9rales"));
       }
       if (r.lecture && r.lecture.ia && r.lecture.ia.statut !== "ok") d.alertes.push(r.lecture.etapes.slice(-1)[0] || "IA non disponible");
+      d.duree_ms = Date.now() - t0;
+      return d;
+    };
+    var etapeBien = async (d, crm, conf = {}) => {
+      if (d.fin) return d;
+      const t0 = Date.now();
+      const r = d.extraction, cles = d.fil.cles, connus = d.interne && d.interne.connus || [];
       let rb = { bien: null, methode: null, etapes: [], alertes: [] };
-      if (actif.bien) {
+      if (actifs(conf).bien) {
         rb = await rapprocher(r, crm, conf.rapprochement || {});
         for (const a of rb.alertes || []) d.alertes.push(a);
       }
       d.bien = rb.bien;
       d.rapprochement = { methode: rb.methode, confiance: rb.confiance, motif: rb.motif, etapes: rb.etapes };
-      if (actif.bien && !rb.bien && ["lead", "relance"].includes(r.nature)) d.motifs.push("bien non trouv\xE9 : " + rb.motif);
+      if (actifs(conf).bien && !rb.bien && ["lead", "relance"].includes(r.nature)) d.motifs.push("bien non trouv\xE9 : " + rb.motif);
       if (rb.bien && rb.confiance === "basse") d.motifs.push("bien \xE0 confirmer : trouv\xE9 sur deux crit\xE8res seulement");
       const dos = choisirDossier(connus, { bienId: rb.bien && rb.bien.id, references: cles.references, relais: cles.relais });
       d.dossier = dos ? { id: dos.id, existant: true, bien_id: rb.bien && rb.bien.id || dos.bien_id, contact_id: dos.contact_id, recherche_id: dos.recherche_id } : { id: null, existant: false, bien_id: rb.bien ? rb.bien.id : null, contact_id: null, recherche_id: null };
       d.dossier.cle = { relais: cles.relais, email: cles.email, telephone: cles.telephone, reference: r.bien && (r.bien.reference || r.bien.id_crm) || null };
       if (dos) {
-        for (const m of conv.messages) if (m.role === "prospect" && m.source === "mail") {
+        for (const m of d.fil.messages) if (m.role === "prospect" && m.source === "mail") {
           if (m.type === "demande") m.type = "relance";
           if ((!m.auteur || m.auteur === "Prospect") && dos.nom) m.auteur = dos.nom;
         }
       }
-      const tous = C.fusionner(dos && dos.messages || [], conv.messages);
-      d.fil.messages_dossier = tous;
-      const ag = trouverAgence(r, rb.bien, conf);
+      d.fil.messages_dossier = C.fusionner(dos && dos.messages || [], d.fil.messages);
+      d.interne = { ...d.interne || {}, dos: dos || null };
+      d.duree_ms = (d.duree_ms || 0) + Date.now() - t0;
+      return d;
+    };
+    var etapeContact = async (d, crm, conf = {}) => {
+      if (d.fin) return d;
+      const t0 = Date.now();
+      const actif = actifs(conf), r = d.extraction, dos = d.interne && d.interne.dos || null, tous = d.fil.messages_dossier || [];
+      const rbBien = d.bien;
+      const ag = trouverAgence(r, rbBien, conf);
       d.agence = ag.agence ? { id: ag.agence.id, nom: ag.agence.nom, par: ag.par } : null;
-      const negoId = rb.bien && rb.bien.negociateur_id ? rb.bien.negociateur_id : dos && dos.negociateur ? dos.negociateur : ag.agence && ag.agence.negociateur_defaut ? ag.agence.negociateur_defaut : null;
+      const negoId = rbBien && rbBien.negociateur_id ? rbBien.negociateur_id : dos && dos.negociateur ? dos.negociateur : ag.agence && ag.agence.negociateur_defaut ? ag.agence.negociateur_defaut : null;
       let negoFinal = negoId;
       if (!negoFinal && r.bien && r.bien.titre) {
         const p = negociateurCite(r.bien.titre, conf.routage && conf.routage.personnes || []);
@@ -94701,7 +94718,8 @@ var require_traiter = __commonJS({
         if (rc.action === "impossible") d.motifs.push("contact impossible : ni e-mail ni t\xE9l\xE9phone");
       }
       d.contact = { id: rc.contact ? rc.contact.id : null, action: rc.action, par: rc.par, trace: rc.trace };
-      if (rb.bien && rb.bien.proprietaire_id && rc.contact && String(rb.bien.proprietaire_id) === String(rc.contact.id)) d.motifs.push("\xE0 v\xE9rifier : le mail vient du propri\xE9taire du bien (vendeur), pas d'un acqu\xE9reur");
+      d.interne = { ...d.interne || {}, contact_crm: rc.contact || null };
+      if (rbBien && rbBien.proprietaire_id && rc.contact && String(rbBien.proprietaire_id) === String(rc.contact.id)) d.motifs.push("\xE0 v\xE9rifier : le mail vient du propri\xE9taire du bien (vendeur), pas d'un acqu\xE9reur");
       const siteCfg = r.portail === "site_agence" ? (conf.sites || []).find((s) => {
         const memeOrigine = r.site_origine && String(s.origine || "") === String(r.site_origine);
         const domaineConfig = String(s.domaine || "").toLowerCase().replace(/^www\./, "");
@@ -94709,55 +94727,56 @@ var require_traiter = __commonJS({
         return memeOrigine || domaineMail && domaineConfig === domaineMail;
       }) || null : null;
       const portailMetier = r.portail === "site_agence" ? siteCfg ? siteCfg.libelle || siteCfg.noms && siteCfg.noms[0] || siteCfg.domaine : r.portail_nom || r.site || r.site_origine || "Site agence" : r.portail_nom || r.portail;
-      if (r.portail === "site_agence")
-        r.portail_nom = portailMetier;
+      if (r.portail === "site_agence") r.portail_nom = portailMetier;
       d.portail = portailMetier;
       d.source = portailMetier;
       const origineCode = r.portail === "site_agence" ? r.site_origine : (conf.origines_portail || {})[r.portail] || r.portail;
       const origine = (conf.origines || []).find((o) => o.code === origineCode) || null;
-      d.origine = origine ? {
-        code: origine.code,
-        libelle: r.portail === "site_agence" ? portailMetier : origine.libelle || portailMetier,
-        id: origine.id
-      } : {
-        code: origineCode,
-        libelle: portailMetier,
-        id: null
-      };
+      d.origine = origine ? { code: origine.code, libelle: r.portail === "site_agence" ? portailMetier : origine.libelle || portailMetier, id: origine.id } : { code: origineCode, libelle: portailMetier, id: null };
       if (!origine && origineCode) d.alertes.push(`origine \xAB ${origineCode} \xBB non reli\xE9e \xE0 une origine du CRM`);
       const ok = actif.contact && rc.action !== "impossible";
       if (ok && rc.action === "creer") d.actions.push({ op: "creerContact", donnees: { email: c.email, prenom: c.prenom, nom: c.nom, telephone: c.telephone, origine: d.origine.id, agence: d.agence && d.agence.id, negociateur: negoFinal } });
       if (ok && rc.action === "mettre_a_jour") {
         const patch = completer(rc.contact, c);
-        if (d.origine && d.origine.id && (!rc.contact || String(rc.contact.origine || "") !== String(d.origine.id))) {
-          patch.origine = d.origine.id;
-        }
+        if (d.origine && d.origine.id && (!rc.contact || String(rc.contact.origine || "") !== String(d.origine.id))) patch.origine = d.origine.id;
         if (negoFinal && rc.contact && "negociateur" in rc.contact && !rc.contact.negociateur) {
           patch.negociateur = negoFinal;
           if (d.agence) patch.agence = d.agence.id;
         }
         if (Object.keys(patch).length) d.actions.push({ op: "majContact", id: rc.contact.id, donnees: patch });
       }
-      const nouveauBien = rb.bien && !(dos && String(dos.bien_id) === String(rb.bien.id));
-      if (ok && actif.suivi && nouveauBien) d.actions.push({ op: "lierBien", bien: rb.bien.id });
+      const nouveauBien = rbBien && !(dos && String(dos.bien_id) === String(rbBien.id));
+      if (ok && actif.suivi && nouveauBien) d.actions.push({ op: "lierBien", bien: rbBien.id });
       const comment = actif.commentaire ? C.commentaire(tous, conf.commentaire || {}) : null;
       if (ok && actif.projet) {
         if (dos && dos.recherche_id) {
           if (comment) d.actions.push({ op: "majRecherche", id: dos.recherche_id, donnees: { comment } });
         } else {
-          const cr = criteresProjet(r, rb.bien, conf.marges_projet);
-          if (cr) d.actions.push({ op: "creerRecherche", donnees: { ...cr, libelle: `${r.portail_nom || r.portail || "Demande"}${rb.bien && rb.bien.reference ? " \u2014 r\xE9f. " + rb.bien.reference : ""}`, comment } });
+          const cr = criteresProjet(r, rbBien, conf.marges_projet);
+          if (cr) d.actions.push({ op: "creerRecherche", donnees: { ...cr, libelle: `${r.portail_nom || r.portail || "Demande"}${rbBien && rbBien.reference ? " \u2014 r\xE9f. " + rbBien.reference : ""}`, comment } });
         }
       }
-      if (ok && actif.action && conf.action_lead && r.message) d.actions.push({ op: "ajouterAction", donnees: { action_id: conf.action_lead, negociateur: negoFinal, texte: [r.portail_nom, r.message].filter(Boolean).join(" \u2014 ").slice(0, 4e3), date: mail.date || mail.date_envoi || null } });
-      const dejaConsenti = dos && dos.consentement || rc.contact && rc.contact.consentement || connus.some((x) => x.consentement && rc.contact && String(x.contact_id) === String(rc.contact.id));
-      if (ok && actif.consentement && conf.consentement && conf.consentement.actif && !dejaConsenti) {
-        const date = mail.date || mail.date_envoi || /* @__PURE__ */ new Date();
+      if (ok && actif.action && conf.action_lead && r.message) d.actions.push({ op: "ajouterAction", donnees: { action_id: conf.action_lead, negociateur: negoFinal, texte: [r.portail_nom, r.message].filter(Boolean).join(" \u2014 ").slice(0, 4e3), date: d.date_mail || null } });
+      d.duree_ms = (d.duree_ms || 0) + Date.now() - t0;
+      return d;
+    };
+    var etapeConsentement = (d, mail, conf = {}) => {
+      if (d.fin) return d;
+      const r = d.extraction, dos = d.interne && d.interne.dos || null, rcc = d.interne && d.interne.contact_crm || null, connus = d.interne && d.interne.connus || [];
+      const ok = actifs(conf).contact && d.contact && d.contact.action !== "impossible";
+      const dejaConsenti = dos && dos.consentement || rcc && rcc.consentement || connus.some((x) => x.consentement && rcc && String(x.contact_id) === String(rcc.id));
+      if (ok && actifs(conf).consentement && conf.consentement && conf.consentement.actif && !dejaConsenti) {
+        const date = dateDuMail(mail) || d.date_mail || /* @__PURE__ */ new Date();
         const motif = gabarit(conf.consentement.libelle || "Demande de contact via {portail} du {date}", { portail: d.portail || r.site_libelle || r.portail_nom || r.portail, date: dateFr(date) });
         d.actions.push({ op: "ajouterConsentement", date: new Date(date).toISOString(), motif, hors_horaires: r.hors_horaires, preuves: [preuveEml(mail)] });
       }
-      if (actif.notification) {
-        const dest = destinataires(negoFinal, mail.date || mail.date_envoi || /* @__PURE__ */ new Date(), conf.routage || {});
+      return d;
+    };
+    var etapeDestinataires = (d, conf = {}) => {
+      if (d.fin) return d;
+      const dos = d.interne && d.interne.dos || null;
+      if (actifs(conf).notification) {
+        const dest = destinataires(d.negociateur, d.date_mail || /* @__PURE__ */ new Date(), conf.routage || {});
         if (dos && (conf.notifier_relances || "negociateur") === "negociateur") {
           const avant = dest.liste.length;
           dest.liste = dest.liste.filter((x) => (x.roles || [x.role]).some((ro) => ["negociateur", "assistante"].includes(ro)));
@@ -94766,13 +94785,34 @@ var require_traiter = __commonJS({
         if ((conf.notifier_relances || "negociateur") === "non" && dos) dest.liste = [];
         d.destinataires = dest;
       }
+      return conclure(d);
+    };
+    var conclure = (d) => {
+      if (d.fin) return d;
+      const r = d.extraction, dos = d.interne && d.interne.dos || null;
       d.statut = d.motifs.length ? "a_verifier" : "pret";
-      if (r.nature === "direct" && !rb.bien && !dos) {
+      if (r.nature === "direct" && !d.bien && !dos) {
         d.statut = "a_trier";
         d.motifs.push("mail direct sans bien reconnu");
       }
       if (r.suspect === "message de test") d.statut = "a_trier";
-      return fin();
+      return d;
+    };
+    var nettoyer = (d) => {
+      delete d.interne;
+      delete d.fin;
+      delete d.date_mail;
+      return d;
+    };
+    var traiter = async (mail, crm, conf = {}, opts = {}) => {
+      const t0 = Date.now();
+      let d = await etapeLire(mail, conf, opts);
+      d = await etapeBien(d, crm, conf);
+      d = await etapeContact(d, crm, conf);
+      d = etapeConsentement(d, mail, conf);
+      d = etapeDestinataires(d, conf);
+      d.duree_ms = Date.now() - t0;
+      return nettoyer(d);
     };
     var executer = async (dossier, crm, { mode = "ombre" } = {}) => {
       const res = [];
@@ -94808,7 +94848,7 @@ var require_traiter = __commonJS({
       }
       return { contactId, rechercheId, consentement, resultats: res };
     };
-    module2.exports = { traiter, executer, preuveEml, trouverAgence, choisirDossier, criteresProjet, NATURES_LEAD, ETAPES };
+    module2.exports = { traiter, executer, preuveEml, trouverAgence, choisirDossier, criteresProjet, NATURES_LEAD, ETAPES, etapeLire, etapeBien, etapeContact, etapeConsentement, etapeDestinataires, conclure, nettoyer };
   }
 });
 
@@ -94894,6 +94934,8 @@ var require_immofacile = __commonJS({
     "use strict";
     var { typeBien } = require_valeurs();
     var { cle } = require_texte();
+    var JETONS = /* @__PURE__ */ new Map();
+    var empreinte = (...x) => require("crypto").createHash("sha256").update(x.map(String).join("\n")).digest("hex");
     var creer = (cfg = {}) => {
       const base = String(cfg.base || "https://v2.immo-facile.com/api").replace(/\/+$/, "");
       const racine = new URL(base).origin + "/api/v2/site";
@@ -94924,6 +94966,13 @@ var require_immofacile = __commonJS({
         if (jeton && Date.now() < expire - 6e4) return jeton;
         const basic = await cfg.secret("basic");
         if (!basic) throw Object.assign(new Error("identifiants Immofacile absents (coffre : basic)"), { permanent: true });
+        const cleJeton = empreinte(base, cfg.site_id, basic);
+        const garde = JETONS.get(cleJeton);
+        if (garde && Date.now() < garde.expire - 6e4) {
+          jeton = garde.jeton;
+          expire = garde.expire;
+          return jeton;
+        }
         let r, tx;
         for (let essai = 1; essai <= 4; essai++) {
           try {
@@ -94944,6 +94993,8 @@ var require_immofacile = __commonJS({
         if (!j.access_token) throw new Error("jeton Immofacile re\xE7u sans access_token");
         jeton = j.access_token;
         expire = Date.now() + (+j.expires_in || 3e3) * 1e3;
+        if (JETONS.size > 200) JETONS.clear();
+        JETONS.set(cleJeton, { jeton, expire });
         return jeton;
       };
       const appel = async (methode, chemin, corps, { multipart } = {}) => {
@@ -94964,6 +95015,7 @@ var require_immofacile = __commonJS({
           }
           journal({ methode, chemin, statut: r.status, ms: Date.now() - t0 });
           if (r.status === 401 && essai === 1) {
+            for (const [k, v] of JETONS) if (v.jeton === jeton) JETONS.delete(k);
             jeton = null;
             continue;
           }
@@ -97457,9 +97509,19 @@ var require_controle = __commonJS({
         params: [
           { name: "action", label: "Action", type: "select", options: ["prendre", "lib\xE9rer"], default: "prendre" },
           { name: "nom", label: "Nom du verrou", required: true, help: "Ex. releve-mails" },
-          { name: "duree", label: "Expire apr\xE8s (secondes)", type: "int", default: 600 }
+          { name: "duree", label: "Expire apr\xE8s (secondes)", type: "int", default: 600 },
+          { name: "attente", label: "Si le verrou est pris : attendre jusqu'\xE0 (secondes)", type: "int", default: 0, showIf: { action: "prendre" }, help: "0 = r\xE9pondre tout de suite (vrai / faux). Plus de 0 : attendre qu'il se lib\xE8re, puis s'arr\xEAter en erreur si le temps est d\xE9pass\xE9 (le travail pourra \xEAtre repris)." }
         ],
         run: async (p) => {
+          if (p.action !== "lib\xE9rer" && +p.attente > 0) {
+            const fin = Date.now() + Math.min(+p.attente, 300) * 1e3;
+            const un = { ...p, attente: 0 };
+            for (; ; ) {
+              if (await module2.exports.find((b) => b.name === "dzf_verrou").run(un)) return true;
+              if (Date.now() > fin) throw Object.assign(new Error(`verrou \xAB ${p.nom} \xBB toujours pris apr\xE8s ${p.attente} s`), { temporaire: true });
+              await new Promise((r) => setTimeout(r, 150 + Math.random() * 250));
+            }
+          }
           const key = `dzf:verrou:${p.nom}`;
           if (redis.available()) {
             if (p.action === "lib\xE9rer") {
