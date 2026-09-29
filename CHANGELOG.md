@@ -2,7 +2,8 @@
 
 ## 2.13.1
 
-- Leads : un mail lu par un gabarit actif (une forme déjà vue et confirmée) n'est plus envoyé d'office au « non automatisé ». C'est seulement mentionné, comme le faisait l'ancien système. Un mail complété par l'IA ou lu par les règles générales reste à vérifier.
+- Leads, gabarits : un gabarit ne lit seul un mail qui part sans vérification que s'il a été confirmé par l'IA au moins 3 fois, sans échec. Sinon le mail est à vérifier, comme un mail lu par l'IA ou par les règles générales.
+- Leads, gabarits d'un ancien système : ils sont repris comme **candidats**, à confirmer par l'IA avant de servir. Sur les vrais mails d'AMBS, 84 gabarits « actifs » de l'ancien avaient presque tous 0 observation, et ceux qui ont servi au banc donnaient un mauvais e-mail 4 fois sur 11.
 - Banc d'essai, diagnostic des écarts :
   - pour chaque écart, le motif et la règle de l'ancien système (anonymisés) ;
   - quand les deux systèmes ne trouvent pas le même bien, la ligne du mail (anonymisée) où l'ancien avait lu sa référence ou l'identifiant du bien ;

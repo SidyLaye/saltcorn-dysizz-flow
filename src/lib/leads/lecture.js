@@ -74,7 +74,7 @@ const lire = async (mail, conf = {}, opts = {}) => {
       Object.assign(r, meilleur.r);
       if (r.portail === "inconnu" || !r.portail) r.portail_nom = g.source;
       r.lu_par.push("gabarit");
-      r.lecture.gabarit = { id: g.id, source: g.source, essayes: essais.length };
+      r.lecture.gabarit = { id: g.id, source: g.source, essayes: essais.length, observations: +g.nb_observations || 0, echecs: +g.nb_echecs || 0, origine: g.origine || null };
       if (!aCompleter(r)) { await A.reussite(opts.gabarits, g).catch(() => {}); r.lecture.etapes.push("gabarit suffisant"); return r; }
       r.lecture.etapes.push("gabarit incomplet : " + manquantsImportants(r).join(", "));
     }

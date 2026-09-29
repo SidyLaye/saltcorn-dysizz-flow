@@ -99,14 +99,14 @@ const optionsLecture = async (api) => {
   return o;
 };
 
-/* Import de l'ancienne table gabarit_version (sauvegarde AMBS) : seuls les gabarits actifs. */
+/* Import de l'ancienne table gabarit_version (sauvegarde AMBS) : les gabarits actifs, repris comme candidats (à confirmer par l'IA). */
 const importerAmbs = async (api, lignes) => {
   const t = await tables();
   const deja = new Set((await t.gabarits.getRows({})).map((g) => g.origine));
   let n = 0;
   for (const g of api.leads.apprentissage.depuisAmbs(lignes)) {
     if (deja.has(g.origine)) continue;
-    await t.gabarits.insertRow(versLigne({ ...g, cree_le: new Date(), active_le: new Date() }));
+    await t.gabarits.insertRow(versLigne({ ...g, cree_le: new Date() }));
     n++;
   }
   oublier();

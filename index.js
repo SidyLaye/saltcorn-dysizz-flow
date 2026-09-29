@@ -94220,8 +94220,9 @@ var require_apprentissage = __commonJS({
         nature: g.nature === "reclamation" ? "lead" : g.nature,
         signature: { expediteur: s.expediteur || null, ancres: s.ancres || [], ...s.objet ? { objet: s.objet } : {} },
         champs: (p(g.champs) || []).filter((c) => c && c.nom && c.motif && !motifSur(c.motif)).map((c) => ({ nom: c.nom, motif: c.motif, flags: c.flags || "im" })),
-        statut: "actif",
-        nb_observations: +g.nb_observations || 0,
+        /* jamais cru sur parole : repris comme candidat, il ne lit seul qu'une fois confirmé par l'IA (voir apprendre) */
+        statut: "candidat",
+        nb_observations: 0,
         nb_echecs: 0,
         origine: "ambs:" + g.id + (g.version ? ":" + g.version : "")
       };
@@ -94287,7 +94288,7 @@ var require_lecture = __commonJS({
           Object.assign(r, meilleur.r);
           if (r.portail === "inconnu" || !r.portail) r.portail_nom = g.source;
           r.lu_par.push("gabarit");
-          r.lecture.gabarit = { id: g.id, source: g.source, essayes: essais.length };
+          r.lecture.gabarit = { id: g.id, source: g.source, essayes: essais.length, observations: +g.nb_observations || 0, echecs: +g.nb_echecs || 0, origine: g.origine || null };
           if (!aCompleter(r)) {
             await A.reussite(opts.gabarits, g).catch(() => {
             });
@@ -94703,6 +94704,7 @@ var require_traiter = __commonJS({
   "src/lib/leads/traiter.js"(exports2, module2) {
     "use strict";
     var { lire } = require_lecture();
+    var GABARIT_FIABLE = 3;
     var { rapprocher } = require_rapprochement();
     var { resoudreContact, completer } = require_contact();
     var { destinataires } = require_routage();
@@ -94860,8 +94862,9 @@ var require_traiter = __commonJS({
       if (r.portail === "inconnu" || r.lu_par.length > 1) {
         const a = r.lecture && r.lecture.apprentissage, g = r.lecture && r.lecture.gabarit;
         const qui = r.portail === "inconnu" ? `nouvel exp\xE9diteur \xAB ${r.portail_inconnu} \xBB` : `mail de ${r.portail_nom || r.portail || "source non reconnue"}`;
-        if (g && !r.lu_par.includes("ia")) d.alertes.push(qui + ` : lu avec un gabarit appris (${g.source})`);
-        else d.motifs.push(qui + (r.lu_par.includes("ia") ? ` : compl\xE9t\xE9 par l'IA${a && a.fait !== "rien" ? `, gabarit ${a.fait} (${a.observations} observation(s))` : ""}` : " : lu par les r\xE8gles g\xE9n\xE9rales"));
+        const fiable = g && !r.lu_par.includes("ia") && g.observations >= GABARIT_FIABLE && !g.echecs;
+        if (fiable) d.alertes.push(qui + ` : lu avec un gabarit confirm\xE9 ${g.observations} fois (${g.source})`);
+        else d.motifs.push(qui + (r.lu_par.includes("ia") ? ` : compl\xE9t\xE9 par l'IA${a && a.fait !== "rien" ? `, gabarit ${a.fait} (${a.observations} observation(s))` : ""}` : g ? ` : lu avec un gabarit pas encore assez confirm\xE9 (${g.observations} fois, ${g.source})` : " : lu par les r\xE8gles g\xE9n\xE9rales"));
       }
       if (r.lecture && r.lecture.ia && r.lecture.ia.statut !== "ok") d.alertes.push(r.lecture.etapes.slice(-1)[0] || "IA non disponible");
       d.duree_ms = Date.now() - t0;
@@ -97279,7 +97282,7 @@ var require_gabarits = __commonJS({
       let n = 0;
       for (const g of api.leads.apprentissage.depuisAmbs(lignes)) {
         if (deja.has(g.origine)) continue;
-        await t.gabarits.insertRow(versLigne({ ...g, cree_le: /* @__PURE__ */ new Date(), active_le: /* @__PURE__ */ new Date() }));
+        await t.gabarits.insertRow(versLigne({ ...g, cree_le: /* @__PURE__ */ new Date() }));
         n++;
       }
       oublier();
@@ -98309,7 +98312,7 @@ var require_leads_banc = __commonJS({
         R.biens_catalogue = biens.length;
         R.agences = agences.length;
         R.champs_ancien_inconnus = inconnus;
-        R.gabarits = { source: gabaritsDe || "aucun", au_depart: depart.length };
+        R.gabarits = { source: gabaritsDe || "aucun", au_depart: depart.length, actifs_au_depart: depart.filter((g) => g.statut === "actif").length };
         R.domaines_agence = conf.domaines_agence;
         const File = require("@saltcorn/data/models/file");
         const nom = String(p.fichier || "banc-leads.json").replace(/[^\w.-]/g, "_");

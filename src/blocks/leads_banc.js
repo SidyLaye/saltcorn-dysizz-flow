@@ -81,7 +81,7 @@ module.exports = [{
 
     const R = await banc({ mails, anciens, biens, conf, opts, iaEchantillon: nIA, exemples: p.exemples === undefined || p.exemples === null || p.exemples === "" ? 3 : +p.exemples });
     R.le = new Date().toISOString(); R.biens_catalogue = biens.length; R.agences = agences.length; R.champs_ancien_inconnus = inconnus;
-    R.gabarits = { source: gabaritsDe || "aucun", au_depart: depart.length }; R.domaines_agence = conf.domaines_agence;
+    R.gabarits = { source: gabaritsDe || "aucun", au_depart: depart.length, actifs_au_depart: depart.filter((g) => g.statut === "actif").length }; R.domaines_agence = conf.domaines_agence;
     const File = require("@saltcorn/data/models/file");
     const nom = String(p.fichier || "banc-leads.json").replace(/[^\w.-]/g, "_");
     await File.from_contents(nom, "application/json", JSON.stringify(R, null, 1), ctx.user && ctx.user.id, 1);
