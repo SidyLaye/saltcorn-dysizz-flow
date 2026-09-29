@@ -247,7 +247,8 @@ const depuisAmbs = (lignes) => lignes.filter((g) => g.statut === "actif").map((g
     source: String(g.source || "inconnue"), nature: g.nature === "reclamation" ? "lead" : g.nature,
     signature: { expediteur: s.expediteur || null, ancres: s.ancres || [], ...(s.objet ? { objet: s.objet } : {}) },
     champs: (p(g.champs) || []).filter((c) => c && c.nom && c.motif && !motifSur(c.motif)).map((c) => ({ nom: c.nom, motif: c.motif, flags: c.flags || "im" })),
-    statut: "actif", nb_observations: +g.nb_observations || 0, nb_echecs: 0, origine: "ambs:" + g.id + (g.version ? ":" + g.version : ""),
+    /* jamais cru sur parole : repris comme candidat, il ne lit seul qu'une fois confirmé par l'IA (voir apprendre) */
+    statut: "candidat", nb_observations: 0, nb_echecs: 0, origine: "ambs:" + g.id + (g.version ? ":" + g.version : ""),
   };
 });
 

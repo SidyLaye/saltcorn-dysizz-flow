@@ -1,5 +1,22 @@
 # Journal des versions
 
+## 2.13.1
+
+- Nouveau bloc « Leads : contrôle du CRM (fiches ↔ mails) », en lecture seule. Pour des leads déjà écrits dans le CRM (par l'ancien système, ou par celui-ci une fois en service), il relit chaque fiche et la compare avec le mail d'origine et avec ce que le moteur ferait. Rien n'est écrit, et le rapport ne contient aucune donnée personnelle.
+  - **Recherche** : le moteur cherche le contact et le bien dans le vrai CRM, en lecture seule. On voit s'il retrouve la même fiche que l'ancien, ou s'il en créerait une.
+  - **Lecture** : e-mail, téléphone, prénom et nom de la fiche comparés au mail.
+  - **Fiche** : origine, groupe « Demandeur », négociateur et agence du bien, bien suivi, consentement (présence, motif de 64 caractères au plus, date, preuve).
+  - **Écriture** : chaque valeur que le moteur écrirait, contrôlée au bon format et comparée à la fiche réelle. Cela couvre e-mail, téléphone ou mobile, prénom, nom, origine, négociateur, agence, bien suivi et consentement.
+- Immofacile : lecture des biens suivis d'un contact et du détail de son consentement, permise en lecture seule.
+- Leads, gabarits : un gabarit ne lit seul un mail qui part sans vérification que s'il a été confirmé par l'IA au moins 3 fois, sans échec. Sinon le mail est à vérifier, comme un mail lu par l'IA ou par les règles générales.
+- Leads, gabarits d'un ancien système : ils sont repris comme **candidats**, à confirmer par l'IA avant de servir. Sur les vrais mails d'AMBS, 84 gabarits « actifs » de l'ancien avaient presque tous 0 observation, et ceux qui ont servi au banc donnaient un mauvais e-mail 4 fois sur 11.
+- Banc d'essai, diagnostic des écarts :
+  - pour chaque écart, le motif et la règle de l'ancien système (anonymisés) ;
+  - quand les deux systèmes ne trouvent pas le même bien, la ligne du mail (anonymisée) où l'ancien avait lu sa référence ou l'identifiant du bien ;
+  - un bien entré dans le catalogue après le mail est signalé à part.
+- Banc d'essai, présentation : les exemples montrent d'abord les écarts graves (autre bien, autre e-mail ou téléphone, autre identité, lead perdu), et le rapport indique les domaines de l'agence utilisés.
+- Banc d'essai : l'IA lit 100 mails par défaut (0 pour la couper), y compris depuis un déclencheur réglé avant cette version.
+
 ## 2.13.0
 
 Banc d'essai complet (règles, gabarits, IA) et références lues d'après les vrais mails.

@@ -7,6 +7,8 @@
    dossier connu = { id, bien_id, reference, contact_id, recherche_id, negociateur, agence_id, messages: [...], maj_le } */
 "use strict";
 const { lire } = require("./lecture");
+/* confirmations par l'IA qu'il faut à un gabarit pour lire seul un mail qui part sans vérification */
+const GABARIT_FIABLE = 3;
 const { rapprocher } = require("./rapprochement");
 const { resoudreContact, completer } = require("./contact");
 const { destinataires } = require("./routage");
@@ -147,7 +149,11 @@ const etapeLire = async (mail, conf = {}, opts = {}) => {
   if (r.portail === "inconnu" || r.lu_par.length > 1) {
     const a = r.lecture && r.lecture.apprentissage, g = r.lecture && r.lecture.gabarit;
     const qui = r.portail === "inconnu" ? `nouvel expéditeur « ${r.portail_inconnu} »` : `mail de ${r.portail_nom || r.portail || "source non reconnue"}`;
-    d.motifs.push(qui + (r.lu_par.includes("ia") ? ` : complété par l'IA${a && a.fait !== "rien" ? `, gabarit ${a.fait} (${a.observations} observation(s))` : ""}` : g ? ` : lu avec un gabarit appris (${g.source})` : " : lu par les règles générales"));
+    /* Un gabarit ne lit seul (simple mention) que s'il a été confirmé par l'IA au moins GABARIT_FIABLE fois sans échec.
+       Sinon, comme une lecture par l'IA ou par les règles générales : à vérifier. */
+    const fiable = g && !r.lu_par.includes("ia") && g.observations >= GABARIT_FIABLE && !g.echecs;
+    if (fiable) d.alertes.push(qui + ` : lu avec un gabarit confirmé ${g.observations} fois (${g.source})`);
+    else d.motifs.push(qui + (r.lu_par.includes("ia") ? ` : complété par l'IA${a && a.fait !== "rien" ? `, gabarit ${a.fait} (${a.observations} observation(s))` : ""}` : g ? ` : lu avec un gabarit pas encore assez confirmé (${g.observations} fois, ${g.source})` : " : lu par les règles générales"));
   }
   if (r.lecture && r.lecture.ia && r.lecture.ia.statut !== "ok") d.alertes.push(r.lecture.etapes.slice(-1)[0] || "IA non disponible");
   d.duree_ms = Date.now() - t0;

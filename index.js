@@ -1,4 +1,4 @@
-/* dysizz-flow 2.13.0 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.13.1 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.13.0" : "dev";
+    var VERSION2 = true ? "2.13.1" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -94220,8 +94220,9 @@ var require_apprentissage = __commonJS({
         nature: g.nature === "reclamation" ? "lead" : g.nature,
         signature: { expediteur: s.expediteur || null, ancres: s.ancres || [], ...s.objet ? { objet: s.objet } : {} },
         champs: (p(g.champs) || []).filter((c) => c && c.nom && c.motif && !motifSur(c.motif)).map((c) => ({ nom: c.nom, motif: c.motif, flags: c.flags || "im" })),
-        statut: "actif",
-        nb_observations: +g.nb_observations || 0,
+        /* jamais cru sur parole : repris comme candidat, il ne lit seul qu'une fois confirmé par l'IA (voir apprendre) */
+        statut: "candidat",
+        nb_observations: 0,
         nb_echecs: 0,
         origine: "ambs:" + g.id + (g.version ? ":" + g.version : "")
       };
@@ -94287,7 +94288,7 @@ var require_lecture = __commonJS({
           Object.assign(r, meilleur.r);
           if (r.portail === "inconnu" || !r.portail) r.portail_nom = g.source;
           r.lu_par.push("gabarit");
-          r.lecture.gabarit = { id: g.id, source: g.source, essayes: essais.length };
+          r.lecture.gabarit = { id: g.id, source: g.source, essayes: essais.length, observations: +g.nb_observations || 0, echecs: +g.nb_echecs || 0, origine: g.origine || null };
           if (!aCompleter(r)) {
             await A.reussite(opts.gabarits, g).catch(() => {
             });
@@ -94703,6 +94704,7 @@ var require_traiter = __commonJS({
   "src/lib/leads/traiter.js"(exports2, module2) {
     "use strict";
     var { lire } = require_lecture();
+    var GABARIT_FIABLE = 3;
     var { rapprocher } = require_rapprochement();
     var { resoudreContact, completer } = require_contact();
     var { destinataires } = require_routage();
@@ -94860,7 +94862,9 @@ var require_traiter = __commonJS({
       if (r.portail === "inconnu" || r.lu_par.length > 1) {
         const a = r.lecture && r.lecture.apprentissage, g = r.lecture && r.lecture.gabarit;
         const qui = r.portail === "inconnu" ? `nouvel exp\xE9diteur \xAB ${r.portail_inconnu} \xBB` : `mail de ${r.portail_nom || r.portail || "source non reconnue"}`;
-        d.motifs.push(qui + (r.lu_par.includes("ia") ? ` : compl\xE9t\xE9 par l'IA${a && a.fait !== "rien" ? `, gabarit ${a.fait} (${a.observations} observation(s))` : ""}` : g ? ` : lu avec un gabarit appris (${g.source})` : " : lu par les r\xE8gles g\xE9n\xE9rales"));
+        const fiable = g && !r.lu_par.includes("ia") && g.observations >= GABARIT_FIABLE && !g.echecs;
+        if (fiable) d.alertes.push(qui + ` : lu avec un gabarit confirm\xE9 ${g.observations} fois (${g.source})`);
+        else d.motifs.push(qui + (r.lu_par.includes("ia") ? ` : compl\xE9t\xE9 par l'IA${a && a.fait !== "rien" ? `, gabarit ${a.fait} (${a.observations} observation(s))` : ""}` : g ? ` : lu avec un gabarit pas encore assez confirm\xE9 (${g.observations} fois, ${g.source})` : " : lu par les r\xE8gles g\xE9n\xE9rales"));
       }
       if (r.lecture && r.lecture.ia && r.lecture.ia.statut !== "ok") d.alertes.push(r.lecture.etapes.slice(-1)[0] || "IA non disponible");
       d.duree_ms = Date.now() - t0;
@@ -95174,7 +95178,7 @@ var require_immofacile = __commonJS({
       let jeton = null, expire = 0, defs = null, typesBien = null;
       const journal = cfg.journal || (() => {
       });
-      const LECTURE = (m, p) => m === "GET" ? /^\/(discovery|customers\/\d+|customers\/(origins|groups)|criterias\/|products\/\d+|agencies|users)/.test(p) && !/\/(consent|follow-ups|actions|search-requests)/.test(p) : m === "POST" && ["/products/search", "/products/search/count", "/customers/search"].includes(p.split("?")[0]);
+      const LECTURE = (m, p) => m === "GET" ? /^\/(discovery|customers\/\d+|customers\/(origins|groups)|criterias\/|products\/\d+|agencies|users)/.test(p) && (!/\/(consent|follow-ups|actions|search-requests)/.test(p) || /^\/customers\/\d+\/(follow-ups|actions)(\?|$)/.test(p)) : m === "POST" && ["/products/search", "/products/search/count", "/customers/search"].includes(p.split("?")[0]);
       const lectureHttp = async (url, options) => {
         const ctrl = new AbortController();
         const to = setTimeout(() => ctrl.abort(), cfg.delai_ms || 15e3);
@@ -95397,7 +95401,32 @@ var require_immofacile = __commonJS({
       };
       const lireContact = async (id) => {
         const c = data(await appel("GET", `/customers/${Number(id)}?include=origin,groups,user,agency,searchRequests,consent`));
-        return c && c.id ? { ...versContact(c), recherches: (c.searchRequests || []).map((x) => ({ id: x.id, comment: x.comment || "" })) } : null;
+        if (!c || !c.id) return null;
+        const k = c.consent && !(c.consent.revokedAt || c.consent.revoked_at) ? c.consent : null;
+        return {
+          ...versContact(c),
+          recherches: (c.searchRequests || []).map((x) => ({ id: x.id, comment: x.comment || "" })),
+          consentement_detail: k ? {
+            raison: k.reason ?? null,
+            date: k.consentDate ?? k.consent_date ?? null,
+            hors_horaires: k.acceptOutsideHours ?? k.accept_outside_hours ?? null,
+            preuves: Array.isArray(k.proofs) ? k.proofs.length : k.proofs ? 1 : 0
+          } : null
+        };
+      };
+      const suivis = async (id) => {
+        const out = [];
+        for (let page = 1; page <= 10; page++) {
+          const j = await appel("GET", `/customers/${Number(id)}/follow-ups?page=${page}&per_page=100`);
+          const l = Array.isArray(j && j.data) ? j.data : [];
+          for (const x of l) {
+            const pid = x.product_id ?? x.productId ?? (x.product && x.product.id) ?? x.id;
+            if (pid != null) out.push({ bien: String(pid), cree_le: x.created_at ?? x.createdAt ?? null });
+          }
+          const m = j && j.meta;
+          if (!l.length || !m || m.last_page && page >= m.last_page || !m.last_page && !m.next_cursor && l.length < 100) break;
+        }
+        return out;
       };
       const tolere409 = async (fn) => {
         try {
@@ -95429,6 +95458,7 @@ var require_immofacile = __commonJS({
         contactsParEmail: (e) => chercherContacts({ email: e }).then((l) => l.filter((c) => c.emails.map((x) => String(x).toLowerCase()).includes(String(e).toLowerCase()))),
         contactsParTelephone: (t) => chercherContacts({ phone: String(t).replace(/^\+33/, "0") }).then((l) => l.filter((c) => c.telephones.some((x) => x.replace(/\D/g, "").slice(-9) === String(t).replace(/\D/g, "").slice(-9)))),
         contact: lireContact,
+        suivis,
         capacites: ["catalogue", "contact", "suivi", "projet", "commentaire", "action", "consentement", "webhooks"],
         origines: async () => data(await appel("GET", "/customers/origins")),
         groupes: async () => data(await appel("GET", "/customers/groups")),
@@ -97278,7 +97308,7 @@ var require_gabarits = __commonJS({
       let n = 0;
       for (const g of api.leads.apprentissage.depuisAmbs(lignes)) {
         if (deja.has(g.origine)) continue;
-        await t.gabarits.insertRow(versLigne({ ...g, cree_le: /* @__PURE__ */ new Date(), active_le: /* @__PURE__ */ new Date() }));
+        await t.gabarits.insertRow(versLigne({ ...g, cree_le: /* @__PURE__ */ new Date() }));
         n++;
       }
       oublier();
@@ -97945,7 +97975,7 @@ var require_banc = __commonJS({
         } catch (e) {
           err = e.message;
         }
-        return { m: { id: m0.id, objet: String(m0.objet || ""), t: texteMail({ texte: m0.texte, html: m0.html }).slice(0, 6e3) }, d, err };
+        return { m: { id: m0.id, date: m0.date, motif: m0.motif_ancien, regle: m0.regle_ancien, objet: String(m0.objet || ""), t: texteMail({ texte: m0.texte, html: m0.html }).slice(0, 6e3) }, d, err };
       };
       for (const m0 of mails) res.push(await rejouer(m0, sansIA));
       if (avecIA && iaEchantillon > 0) {
@@ -97997,7 +98027,25 @@ var require_banc = __commonJS({
         nb.set(p, nb.get(p) + 1);
         for (const w of mots(m.objet + "\n" + m.t)) df.get(p).set(w, (df.get(p).get(w) || 0) + 1);
       }
-      const cat = /* @__PURE__ */ new Map();
+      const cat = /* @__PURE__ */ new Map(), attente = [];
+      const parId = new Map(biens.map((b) => [String(b.id), b]));
+      const ouAncien = (m, a, dfp, seuil) => {
+        const b = a && a.bien !== null && a.bien !== void 0 ? parId.get(String(a.bien)) : null;
+        const essais = [["reference_de_l_ancien", a && (a.champs.reference || a.reference)], ["reference_du_bien", b && b.reference], ["id_du_bien", a && a.bien]].filter(([, v]) => v !== null && v !== void 0 && String(v).trim().length >= 2);
+        const lignes = (m.objet + "\n" + m.t).split("\n");
+        for (const [quoi, v] of essais) {
+          const re = new RegExp("(^|[^\\w])" + String(v).trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "(?![\\w])", "i");
+          const i = lignes.findIndex((l) => re.test(l));
+          if (i >= 0) return { quoi, forme: forme(v), ligne: i === 0 ? "(objet)" : "ligne " + i, texte: (() => {
+            const l = lignes[i], mm = l.match(re), j = mm.index + mm[1].length;
+            return (squelette(l.slice(0, j), dfp, seuil) + " [CETTE_VALEUR] " + squelette(l.slice(j + String(v).trim().length), dfp, seuil)).trim().slice(0, 160);
+          })(), avant: i > 0 ? squelette(lignes[i - 1], dfp, seuil).slice(0, 120) : null };
+        }
+        return essais.length ? { quoi: "absente du mail", formes: essais.map(([q, v]) => q + " " + forme(v)) } : null;
+      };
+      const masqueMotif = (t) => String(t || "").replace(/[\w.+-]+@[\w.-]+/g, "[email]").replace(/["«“][^"»”]{0,120}["»”]/g, '"\u2026"').replace(/\d+/g, "#").slice(0, 80);
+      R.motifs_ancien = {};
+      R.regles_ancien = {};
       const inc = (o, k) => {
         o[k] = (o[k] || 0) + 1;
       };
@@ -98054,6 +98102,10 @@ var require_banc = __commonJS({
           for (const k of Object.keys(nous)) {
             let e = nous[k] === eux[k] ? nous[k] ? "accord" : null : ecart(k, eux[k], nous[k]);
             if (k === "bien" && e && e !== "accord" && eux.bien && !catalogue.has(eux.bien)) e = "bien de l'ancien absent du catalogue";
+            if (k === "bien" && e === "absent chez l'ancien") {
+              const b = parId.get(nous.bien);
+              if (b && b.cree_le && m.date && new Date(b.cree_le) > new Date(m.date)) e = "bien ajout\xE9 au catalogue apr\xE8s le mail";
+            }
             if (!e) continue;
             noterChamp(k, e);
             if (e !== "accord" && k !== "nom" && k !== "prenom") diffs.push({ champ: k, ecart: e, ...k === "reference" ? { forme_ancien: forme(eux.reference), forme_nous: forme(nous.reference), forme_portail: forme(norm.ref(bm.reference_portail)) } : {} });
@@ -98064,28 +98116,56 @@ var require_banc = __commonJS({
             if (ei !== "accord") diffs.push({ champ: "identite", ecart: ei, mots_ancien: idA.length, mots_nous: idN.length });
           }
         }
-        if (decA !== decN && !(decA === "pas de lead" && decN === "pas de lead")) diffs.push({ champ: "decision", ecart: `${decA} \u2192 ${decN}` });
+        if (decA !== decN && !(decA === "pas de lead" && decN === "pas de lead")) {
+          diffs.push({ champ: "decision", ecart: `${decA} \u2192 ${decN}` });
+          const kd = `${decA} \u2192 ${decN}`;
+          if (m.motif) inc(R.motifs_ancien[kd] || (R.motifs_ancien[kd] = {}), masqueMotif(m.motif));
+          if (m.regle) inc(R.regles_ancien[kd] || (R.regles_ancien[kd] = {}), masqueMotif(m.regle));
+        }
         if (err) diffs.push({ champ: "erreur", ecart: err.slice(0, 120) });
         for (const f of diffs) {
           const k = `${p}|${f.champ}|${f.ecart}${f.forme_ancien !== void 0 ? ` (${f.forme_ancien} / ${f.forme_nous})` : ""}`;
           const n = (cat.get(k) || 0) + 1;
           cat.set(k, n);
-          if (n > parCategorie || R.cas.length >= maxCas) continue;
-          const seuil = seuilDe(nb.get(p));
-          R.cas.push({
-            mail: m.id,
-            portail: p,
-            nature: x.nature || null,
-            lu_par: x.lu_par || null,
-            ...f,
-            rapprochement: d && d.rapprochement,
-            motifs: (d && d.motifs || []).map((t) => t.replace(/[\w.+-]+@[\w.-]+/g, "[email]").replace(/\d{3,}/g, "#")).slice(0, 4),
-            objet: squelette(m.objet, df.get(p) || /* @__PURE__ */ new Map(), seuil),
-            squelette: squelette(m.t, df.get(p) || /* @__PURE__ */ new Map(), seuil)
-          });
+          if (n <= parCategorie) attente.push({ k, m, d, x, p, f, a });
         }
       }
-      R.categories = Object.fromEntries([...cat].sort((a, b) => b[1] - a[1]));
+      const gravite = (k) => {
+        const [, ch, ec] = k.split("|");
+        if (ch === "erreur") return 11;
+        if (ch === "bien" && /^différent/.test(ec)) return 10;
+        if ((ch === "email" || ch === "tel") && /différent/.test(ec)) return 9;
+        if (ch === "identite" && /^(différent|en partie)/.test(ec)) return 8;
+        if (ch === "decision" && /^(envoyé → (non automatisé|pas de lead)|pas de lead → envoyé)/.test(ec)) return 7;
+        if ((ch === "negociateur" || ch === "agence") && /^différent/.test(ec)) return 7;
+        if (ch === "decision" && /^non automatisé → envoyé/.test(ec)) return 6;
+        if (ch === "bien" && /absent chez nous/.test(ec)) return 6;
+        if (ch === "reference" && /différente/.test(ec)) return 5;
+        return /absent chez l'ancien|ajouté au catalogue/.test(ec) ? 0 : 2;
+      };
+      const ordre = [...cat.keys()].sort((a, b) => gravite(b) - gravite(a) || cat.get(b) - cat.get(a));
+      const rang = new Map(ordre.map((k, i) => [k, i]));
+      attente.sort((u, v) => rang.get(u.k) - rang.get(v.k));
+      for (const { m, d, x, p, f, a } of attente.slice(0, maxCas)) {
+        const seuil = seuilDe(nb.get(p)), dfp = df.get(p) || /* @__PURE__ */ new Map();
+        const ou = a && a.bien !== null && a.bien !== void 0 && (f.champ === "bien" && f.ecart !== "accord" || f.champ === "decision" || f.champ === "reference") ? ouAncien(m, a, dfp, seuil) : null;
+        R.cas.push({
+          mail: m.id,
+          portail: p,
+          nature: x.nature || null,
+          lu_par: x.lu_par || null,
+          ...f,
+          gravite: gravite(`${p}|${f.champ}|${f.ecart}`),
+          ...ou ? { ou_l_ancien_a_lu_son_bien: ou } : {},
+          motif_ancien: m.motif ? masqueMotif(m.motif) : null,
+          regle_ancien: m.regle ? masqueMotif(m.regle) : null,
+          rapprochement: d && d.rapprochement,
+          motifs: (d && d.motifs || []).map((t) => t.replace(/[\w.+-]+@[\w.-]+/g, "[email]").replace(/\d{3,}/g, "#")).slice(0, 4),
+          objet: squelette(m.objet, dfp, seuil),
+          squelette: squelette(m.t, dfp, seuil)
+        });
+      }
+      R.categories = Object.fromEntries(ordre.map((k) => [k, cat.get(k)]));
       R.exemples = [];
       const vus = /* @__PURE__ */ new Map();
       for (const { m, d } of res) {
@@ -98098,7 +98178,7 @@ var require_banc = __commonJS({
       }
       return R;
     };
-    module2.exports = { banc, squelette, ecart, champDeLAncien, norm, forme, identite };
+    module2.exports = { banc, squelette, ecart, champDeLAncien, norm, forme, identite, mots2 };
   }
 });
 
@@ -98116,10 +98196,10 @@ var require_leads_banc = __commonJS({
       }
     };
     var DEFAUT = {
-      mails: { table: "email_brut_selection_habitat", expediteur: "expediteur", destinataire: "destinataire", objet: "objet", texte: "corps_texte", html: "corps_html", date: "date_envoi" },
+      mails: { table: "email_brut_selection_habitat", expediteur: "expediteur", destinataire: "destinataire", objet: "objet", texte: "corps_texte", html: "corps_html", date: "date_envoi", motif: "motif", regle: "regle_appliquee" },
       leads: { table: "lead", mail: "email_brut", source: "source", statut: "statut", reference: "reference_bien", bien: "product_id", agence: "agency_id", negociateur: "user_id" },
       champs: { table: "lead_champ", lead: "lead", nom: "nom_champ", valeur: "valeur" },
-      biens: { table: "bien", id: "product_id", reference: "model", prix: "prix", surface: "surface", pieces: "nb_pieces", type: "type_bien", ville: "ville", code_postal: "code_postal", negociateur: "user_id", agence: "agency_id", proprietaire: "customers_id" },
+      biens: { table: "bien", id: "product_id", reference: "model", prix: "prix", surface: "surface", pieces: "nb_pieces", type: "type_bien", ville: "ville", code_postal: "code_postal", negociateur: "user_id", agence: "agency_id", proprietaire: "customers_id", cree_le: "cree_le" },
       agences: { table: "agence", id: "agency_id", nom: "nom", boites: ["boite", "emails"] },
       gabarits: { table: "gabarit_version" }
     };
@@ -98147,7 +98227,7 @@ var require_leads_banc = __commonJS({
           name: "ia_echantillon",
           label: "IA : nombre de mails lus par l'IA (0 = pas d'IA)",
           type: "int",
-          default: 0,
+          default: 100,
           help: "Parmi les mails que ni les r\xE8gles ni les gabarits ne savent lire, r\xE9partis entre les portails. Co\xFBte des appels \xE0 l'IA r\xE9gl\xE9e dans les r\xE9glages Leads (plafond du jour non compt\xE9)."
         },
         { name: "exemples", label: "Exemples anonymis\xE9s par portail", type: "int", default: 3 },
@@ -98174,7 +98254,7 @@ var require_leads_banc = __commonJS({
         };
         const mails = [];
         await lotParLot(T(c.mails.table), (r) => {
-          if (!p.limite || mails.length < +p.limite) mails.push({ id: r.id, expediteur: r[c.mails.expediteur], destinataire: r[c.mails.destinataire], objet: r[c.mails.objet], texte: r[c.mails.texte], html: r[c.mails.html], date: r[c.mails.date] });
+          if (!p.limite || mails.length < +p.limite) mails.push({ id: r.id, expediteur: r[c.mails.expediteur], destinataire: r[c.mails.destinataire], objet: r[c.mails.objet], texte: r[c.mails.texte], html: r[c.mails.html], date: r[c.mails.date], motif_ancien: c.mails.motif ? r[c.mails.motif] : null, regle_ancien: c.mails.regle ? r[c.mails.regle] : null });
         });
         const anciens = /* @__PURE__ */ new Map(), leadVersMail = /* @__PURE__ */ new Map();
         await lotParLot(T(c.leads.table), (r) => {
@@ -98206,7 +98286,8 @@ var require_leads_banc = __commonJS({
           code_postal: r[c.biens.code_postal],
           negociateur_id: r[c.biens.negociateur],
           agence_id: r[c.biens.agence],
-          proprietaire_id: r[c.biens.proprietaire]
+          proprietaire_id: r[c.biens.proprietaire],
+          cree_le: c.biens.cree_le ? r[c.biens.cree_le] : null
         }));
         const agences = [];
         if (Table.findOne({ name: c.agences.table })) await lotParLot(T(c.agences.table), (r) => agences.push({
@@ -98243,7 +98324,7 @@ var require_leads_banc = __commonJS({
           }
           opts.gabarits = A.memoire(depart);
         }
-        const nIA = Math.max(0, +p.ia_echantillon || 0);
+        const nIA = p.ia_echantillon === void 0 || p.ia_echantillon === null || p.ia_echantillon === "" ? 100 : Math.max(0, +p.ia_echantillon || 0);
         if (nIA) {
           let R0 = {};
           try {
@@ -98257,7 +98338,8 @@ var require_leads_banc = __commonJS({
         R.biens_catalogue = biens.length;
         R.agences = agences.length;
         R.champs_ancien_inconnus = inconnus;
-        R.gabarits = { source: gabaritsDe || "aucun", au_depart: depart.length };
+        R.gabarits = { source: gabaritsDe || "aucun", au_depart: depart.length, actifs_au_depart: depart.filter((g) => g.statut === "actif").length };
+        R.domaines_agence = conf.domaines_agence;
         const File = require("@saltcorn/data/models/file");
         const nom = String(p.fichier || "banc-leads.json").replace(/[^\w.-]/g, "_");
         await File.from_contents(nom, "application/json", JSON.stringify(R, null, 1), ctx.user && ctx.user.id, 1);
@@ -98278,6 +98360,321 @@ var require_leads_banc = __commonJS({
           ia: R.ia,
           resume: `${R.mails} mails, ${acc.a} accords, ${acc.e} \xE9carts, ${R.erreurs} erreurs, gabarits ${R.gabarits.source} (${R.gabarits.au_depart})${ia} \u2014 Fichiers \u2192 ${nom}`
         };
+      }
+    }];
+  }
+});
+
+// src/lib/leads/controle.js
+var require_controle = __commonJS({
+  "src/lib/leads/controle.js"(exports2, module2) {
+    "use strict";
+    var V = require_valeurs();
+    var { texteMail, cle } = require_texte();
+    var { traiter } = require_traiter();
+    var M = require_memoire();
+    var { squelette, norm, identite, mots2 } = require_banc();
+    var neuf = (x) => String(x || "").replace(/\D/g, "").slice(-9);
+    var inc = (o, k) => {
+      o[k] = (o[k] || 0) + 1;
+    };
+    var controler = async ({ lignes, crm, crmMoteur = null, biens = [], conf = {}, opts = {}, parCategorie = 4, maxCas = 300, groupeDemandeur = null, origines = [] }) => {
+      const memoire = crmMoteur || M.creer({ biens });
+      const parId = new Map(biens.map((b) => [String(b.id), b]));
+      const origineParId = new Map(origines.map((o) => [String(o.id), o.code]));
+      const confC = { ...conf, etapes: { ...conf.etapes || {}, notification: false } };
+      const R = { leads: lignes.length, lus_dans_le_crm: 0, introuvables_dans_le_crm: 0, erreurs_crm: 0, erreurs_moteur: 0, portails: {}, controles: {}, cas: [], categories: {} };
+      const cat = /* @__PURE__ */ new Map(), attente = [], df = /* @__PURE__ */ new Map(), nb = /* @__PURE__ */ new Map();
+      const res = [];
+      for (const l of lignes) {
+        let d = null, k = null, suivis = null, errC = null, errM = null;
+        try {
+          d = await traiter({ ...l.mail }, memoire, confC, opts);
+        } catch (e) {
+          errM = e.message;
+          R.erreurs_moteur++;
+        }
+        try {
+          k = await crm.contact(l.contact_id);
+          if (k && crm.suivis) suivis = await crm.suivis(l.contact_id).catch((e) => {
+            errC = "suivis : " + e.message;
+            return null;
+          });
+        } catch (e) {
+          errC = e.message;
+          R.erreurs_crm++;
+        }
+        if (k) R.lus_dans_le_crm++;
+        else if (!errC) R.introuvables_dans_le_crm++;
+        const t = texteMail({ texte: l.mail.texte, html: l.mail.html }).slice(0, 6e3);
+        const p = d && d.extraction && d.extraction.portail || "inconnu";
+        if (!df.has(p)) {
+          df.set(p, /* @__PURE__ */ new Map());
+          nb.set(p, 0);
+        }
+        nb.set(p, nb.get(p) + 1);
+        for (const w of new Set(cle(l.mail.objet + "\n" + t).split(/[^a-z0-9']+/).filter((w2) => w2.length > 1 && !/\d/.test(w2)))) df.get(p).set(w, (df.get(p).get(w) || 0) + 1);
+        res.push({ l, d, k, suivis, errC, errM, t, p });
+      }
+      for (const { l, d, k, suivis, errC, errM, t, p } of res) {
+        const P = R.portails[p] || (R.portails[p] = { leads: 0, controles: {} });
+        P.leads++;
+        const noter = (ctl, e2, detail) => {
+          inc(P.controles[ctl] || (P.controles[ctl] = {}), e2);
+          inc(R.controles[ctl] || (R.controles[ctl] = {}), e2);
+          if (e2 === "accord" || e2 === "rien \xE0 contr\xF4ler") return;
+          const key = `${p}|${ctl}|${e2}`;
+          const n = (cat.get(key) || 0) + 1;
+          cat.set(key, n);
+          if (n <= parCategorie) attente.push({ key, l, d, t, p, ctl, e: e2, detail });
+        };
+        if (errM) noter("moteur", "erreur : " + errM.slice(0, 80));
+        if (errC) noter("lecture du crm", "erreur : " + errC.replace(/\d{3,}/g, "#").slice(0, 80));
+        if (!k) {
+          if (!errC) noter("fiche du contact", "introuvable dans le CRM");
+          continue;
+        }
+        const e = d && d.extraction || {}, c = e.contact || {};
+        if (crmMoteur && d && d.contact) noter("recherche du contact", d.contact.id == null ? d.contact.action === "creer" ? "le moteur cr\xE9erait une nouvelle fiche" : "aucune fiche : " + String(d.contact.action || "?") : String(d.contact.id) === String(l.contact_id) ? "accord" : "le moteur choisit une autre fiche");
+        const em = norm.email(c.email || c.email_relais), emK = (k.emails || [k.email]).map(norm.email).filter(Boolean);
+        noter("e-mail", !em && !emK.length ? "rien \xE0 contr\xF4ler" : !em ? "sur la fiche, absent du mail" : !emK.length ? "dans le mail, absent de la fiche" : emK.includes(em) ? "accord" : emK.some((x) => x.split("@")[1] === em.split("@")[1]) ? "m\xEAme domaine, adresse diff\xE9rente" : "adresse diff\xE9rente");
+        const tm = neuf(c.telephone), tK = (k.telephones || []).map(neuf).filter(Boolean);
+        noter("t\xE9l\xE9phone", !tm && !tK.length ? "rien \xE0 contr\xF4ler" : !tm ? "sur la fiche, absent du mail" : !tK.length ? "dans le mail, absent de la fiche" : tK.includes(tm) ? "accord" : "num\xE9ro diff\xE9rent");
+        const dn = V.decouperNom(c.nom_complet || "") || {};
+        const idM = mots2(c.prenom || dn.prenom, c.nom || dn.nom), idK = mots2(k.prenom, k.nom);
+        const ei = identite(idK, idM);
+        noter("pr\xE9nom et nom", !ei ? "rien \xE0 contr\xF4ler" : ei === "absent chez nous" ? "sur la fiche, absent du mail" : ei === "absent chez l'ancien" ? "dans le mail, absent de la fiche" : ei, { mots_fiche: idK.length, mots_mail: idM.length, prenom_en_capitales: !!(k.prenom && k.prenom === k.prenom.toUpperCase() && /[A-Z]{2}/.test(k.prenom)) });
+        if (k.prenom && /@|\d/.test(k.prenom + (k.nom || ""))) noter("pr\xE9nom et nom", "valeur mal form\xE9e (chiffre ou @)");
+        const oK = k.origine != null ? String(k.origine) : null, oA = d && d.origine && d.origine.id != null ? String(d.origine.id) : null;
+        noter("origine", !oK && !oA ? "rien \xE0 contr\xF4ler" : !oK ? "absente de la fiche" : !oA ? "le moteur n'en trouve pas" : oK === oA ? "accord" : `diff\xE9rente (fiche ${origineParId.get(oK) || "?"} / moteur ${origineParId.get(oA) || "?"})`);
+        if (groupeDemandeur != null) noter("groupe Demandeur", (k.groupes || []).map(String).includes(String(groupeDemandeur)) ? "accord" : "absent de la fiche");
+        const bienA = l.bien != null && l.bien !== "" ? String(l.bien) : null, bienM = d && d.bien ? String(d.bien.id) : null;
+        const sv = suivis ? suivis.map((x) => x.bien) : null;
+        if (bienA) noter("bien de l'ancien suivi sur la fiche", !sv ? "suivis illisibles" : sv.includes(bienA) ? "accord" : "non suivi");
+        if (bienM) noter("bien du moteur suivi sur la fiche", !sv ? "suivis illisibles" : sv.includes(bienM) ? "accord" : bienA && bienA !== bienM ? "non suivi (l'ancien a choisi un autre bien)" : "non suivi");
+        if (bienA && bienM) noter("m\xEAme bien (ancien / moteur)", bienA === bienM ? "accord" : "diff\xE9rent");
+        const b = parId.get(bienM || bienA || "");
+        if (b && b.negociateur_id != null) noter("n\xE9gociateur de la fiche = celui du bien", k.negociateur == null ? "absent de la fiche" : String(k.negociateur) === String(b.negociateur_id) ? "accord" : "diff\xE9rent");
+        if (b && b.agence_id != null) noter("agence de la fiche = celle du bien", k.agence == null ? "absente de la fiche" : String(k.agence) === String(b.agence_id) ? "accord" : "diff\xE9rente");
+        const veut = !!(d && (d.actions || []).some((x) => x.op === "ajouterConsentement"));
+        const kc = k.consentement_detail;
+        noter("consentement", k.consentement ? "pr\xE9sent sur la fiche" : veut ? "le moteur en poserait un, absent de la fiche" : "rien \xE0 contr\xF4ler");
+        if (kc) {
+          if (kc.raison && String(kc.raison).length > 64) noter("motif du consentement", "plus de 64 caract\xE8res");
+          if (!kc.preuves) noter("preuve du consentement", "aucune preuve jointe");
+          if (kc.date && l.mail.date && Math.abs(new Date(kc.date) - new Date(l.mail.date)) > 3 * 864e5) noter("date du consentement", "plus de 3 jours d'\xE9cart avec le mail");
+        }
+        const ecr = d && d.actions || [];
+        const fiche = ecr.find((x) => x.op === "creerContact") || ecr.find((x) => x.op === "majContact");
+        const w0 = fiche ? { ...fiche.donnees || {}, ...fiche.champs || {} } : null;
+        const w = w0 ? { ...w0, telephone: w0.telephone || w0.mobile || null } : null;
+        if (w) {
+          const fmt = {
+            email: (v) => /^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(v),
+            telephone: (v) => /^\+\d{8,15}$/.test(String(v).replace(/\s/g, "")),
+            prenom: (v) => !/[\d@]/.test(v) && String(v).trim().length > 1,
+            nom: (v) => !/[\d@]/.test(v) && String(v).trim().length > 1,
+            origine: (v) => /^\d+$/.test(String(v)),
+            negociateur: (v) => /^\d+$/.test(String(v)),
+            agence: (v) => /^\d+$/.test(String(v))
+          };
+          for (const [ch, ok] of Object.entries(fmt)) if (w[ch] != null && w[ch] !== "" && !ok(w[ch])) noter("\xE9criture : format", `${ch} mal form\xE9`);
+          const reel = { email: (k.emails || [k.email]).map(norm.email), telephone: (k.telephones || []).map(neuf), prenom: [norm.texte(k.prenom)], nom: [norm.texte(k.nom)], origine: [String(k.origine ?? "")], negociateur: [String(k.negociateur ?? "")], agence: [String(k.agence ?? "")] };
+          const prevu = { email: norm.email(w.email), telephone: neuf(w.telephone), prenom: norm.texte(w.prenom), nom: norm.texte(w.nom), origine: String(w.origine ?? ""), negociateur: String(w.negociateur ?? ""), agence: String(w.agence ?? "") };
+          for (const ch of Object.keys(prevu)) if (prevu[ch]) noter(`\xE9criture : ${ch}`, reel[ch].includes(prevu[ch]) ? "accord" : !reel[ch].filter(Boolean).length ? "le moteur l'\xE9crirait, absent de la fiche" : "le moteur \xE9crirait une autre valeur");
+        }
+        for (const x of ecr.filter((y) => y.op === "lierBien")) {
+          const bw = String((x.donnees && (x.donnees.bien ?? x.donnees.bienId)) ?? x.bien ?? "");
+          if (bw) noter("\xE9criture : bien suivi", !sv ? "suivis illisibles" : sv.includes(bw) ? "accord" : "le moteur suivrait un bien que la fiche ne suit pas");
+        }
+        const cw = ecr.find((x) => x.op === "ajouterConsentement");
+        if (cw) {
+          if (String(cw.motif || "").length > 64) noter("\xE9criture : consentement", "motif de plus de 64 caract\xE8res");
+          if (!(cw.preuves || []).length) noter("\xE9criture : consentement", "sans preuve");
+          if (l.mail.date && cw.date && Math.abs(new Date(cw.date) - new Date(l.mail.date)) > 864e5) noter("\xE9criture : consentement", "date diff\xE9rente de celle du mail");
+          else noter("\xE9criture : consentement", "accord");
+        }
+      }
+      const poids = (key) => {
+        const [, ctl, e] = key.split("|");
+        return /erreur/.test(e) ? 9 : /^écriture/.test(ctl) && !/absent de la fiche/.test(e) ? 8 : /e-mail|téléphone/.test(ctl) && /différent/.test(e) ? 8 : /même bien|négociateur/.test(ctl) ? 7 : /prénom/.test(ctl) && /différent|mal formée/.test(e) ? 6 : /consentement/.test(ctl) ? 5 : /origine|groupe/.test(ctl) ? 4 : 2;
+      };
+      const ordre = [...cat.keys()].sort((a, b) => poids(b) - poids(a) || cat.get(b) - cat.get(a));
+      const rang = new Map(ordre.map((k, i) => [k, i]));
+      attente.sort((u, v) => rang.get(u.key) - rang.get(v.key));
+      for (const x of attente.slice(0, maxCas)) {
+        const seuil = Math.max(5, Math.ceil((nb.get(x.p) || 1) * 0.1)), dfp = df.get(x.p) || /* @__PURE__ */ new Map();
+        R.cas.push({
+          mail: x.l.mail.id,
+          portail: x.p,
+          controle: x.ctl,
+          ecart: x.e,
+          ...x.detail ? { detail: x.detail } : {},
+          lu_par: x.d && x.d.extraction ? x.d.extraction.lu_par : null,
+          motifs_moteur: (x.d && x.d.motifs || []).map((m) => m.replace(/[\w.+-]+@[\w.-]+/g, "[email]").replace(/\d{3,}/g, "#")).slice(0, 3),
+          objet: squelette(x.l.mail.objet, dfp, seuil),
+          squelette: squelette(x.t, dfp, seuil)
+        });
+      }
+      R.categories = Object.fromEntries(ordre.map((k) => [k, cat.get(k)]));
+      return R;
+    };
+    module2.exports = { controler };
+  }
+});
+
+// src/blocks/leads_controle.js
+var require_leads_controle = __commonJS({
+  "src/blocks/leads_controle.js"(exports2, module2) {
+    "use strict";
+    var CAT = "Leads immobiliers";
+    var lu = (v, d) => {
+      if (v && typeof v === "object") return v;
+      try {
+        return JSON.parse(v);
+      } catch (e) {
+        return d;
+      }
+    };
+    var DEFAUT = {
+      mails: { table: "email_brut_selection_habitat", expediteur: "expediteur", destinataire: "destinataire", objet: "objet", texte: "corps_texte", html: "corps_html", date: "date_envoi" },
+      leads: { table: "lead", mail: "email_brut", contact: "customer_id", bien: "product_id", agence: "agency_id", negociateur: "user_id", source: "source", statut: "statut", envoyes: "publie,mis_a_jour,crm_partiel" },
+      biens: { table: "bien", id: "product_id", reference: "model", prix: "prix", surface: "surface", pieces: "nb_pieces", type: "type_bien", ville: "ville", code_postal: "code_postal", negociateur: "user_id", agence: "agency_id" },
+      agences: { table: "agence", id: "agency_id", nom: "nom", boites: ["boite", "emails"] },
+      origines: { table: "origine", code: "code", id: "origin_id" }
+    };
+    module2.exports = [{
+      name: "dzf_leads_controle_crm",
+      label: "Leads : contr\xF4le du CRM (fiches \u2194 mails)",
+      category: CAT,
+      icon: "fas fa-clipboard-check",
+      output: "controle",
+      timeout: 3600,
+      description: "Pour des leads d\xE9j\xE0 \xE9crits dans le CRM, relit chaque fiche (lecture seule) et la compare avec le mail d'origine et avec ce que le moteur \xE9crirait : la recherche du contact et du bien (dans le vrai CRM, en lecture seule), e-mail, t\xE9l\xE9phone, pr\xE9nom et nom, origine, groupe \xAB Demandeur \xBB, n\xE9gociateur et agence du bien, bien suivi, consentement (pr\xE9sence, motif, date, preuve), et chaque valeur que le moteur \xE9crirait (format, et m\xEAme valeur que la fiche). Rien n'est \xE9crit. Rapport sans donn\xE9e personnelle dans Fichiers.",
+      params: [
+        {
+          name: "source",
+          label: "Leads contr\xF4l\xE9s",
+          type: "select",
+          options: ["ancien syst\xE8me", "solution Leads"],
+          default: "ancien syst\xE8me",
+          help: "ancien syst\xE8me : table lead (r\xE9glable ci-dessous) ; solution Leads : ld_leads \xE9crits en mode r\xE9el"
+        },
+        { name: "correspondances", label: "Tables et champs de l'ancien syst\xE8me (JSON)", type: "json", help: 'Vide = tables AMBS. Ex. {"leads":{"contact":"customer_id"}}' },
+        { name: "domaines_agence", label: "Domaines de l'agence", help: "Les m\xEAmes que dans les r\xE9glages Leads" },
+        { name: "limite", label: "Nombre de leads (les plus r\xE9cents, r\xE9partis entre les portails)", type: "int", default: 200 },
+        { name: "moteur_crm", label: "Le moteur cherche contacts et biens dans le vrai CRM (lecture seule)", type: "bool", default: true, help: "D\xE9coch\xE9 : il cherche les biens dans le catalogue de l'ancien syst\xE8me, sans appel au CRM" },
+        { name: "fichier", label: "Nom du rapport", default: "controle-crm.json" }
+      ],
+      run: async (p, ctx = {}) => {
+        const Table = require("@saltcorn/data/models/table");
+        const api = require_api();
+        const { controler } = require_controle();
+        const K = lu(p.correspondances, {}) || {};
+        const c = Object.fromEntries(Object.entries(DEFAUT).map(([k, v]) => [k, { ...v, ...K[k] || {} }]));
+        const T = (n) => {
+          const t = Table.findOne({ name: n });
+          if (!t) throw Object.assign(new Error(`table \xAB ${n} \xBB introuvable`), { permanent: true });
+          return t;
+        };
+        const tous = async (n) => {
+          const t = Table.findOne({ name: n });
+          if (!t) return [];
+          const out = [];
+          for (let depuis = 0; ; ) {
+            const l = await t.getRows({ id: { gt: depuis } }, { orderBy: "id", limit: 1e3 });
+            if (!l.length) break;
+            out.push(...l);
+            depuis = l[l.length - 1].id;
+          }
+          return out;
+        };
+        const limite = Math.max(1, +p.limite || 200);
+        let cd = null;
+        try {
+          cd = await require_conf().charger();
+        } catch (e) {
+          cd = null;
+        }
+        const R0 = cd && cd.reglages || {};
+        const crmR = lu(R0.crm_reglages, {}) || {};
+        if (!crmR.base || !crmR.site_id) {
+          const ci = (await tous("config_immofacile"))[0];
+          if (ci) {
+            crmR.base = crmR.base || ci.base;
+            crmR.site_id = crmR.site_id || ci.site_id;
+          }
+        }
+        if (!crmR.base || !crmR.site_id) throw Object.assign(new Error("CRM non r\xE9gl\xE9 : lance d'abord l'installation des r\xE9glages Leads (base et site_id)"), { permanent: true });
+        const crm = api.crmDepuisCoffre("immofacile", crmR, R0.prefixe_secrets || "LEADS_CRM", "ombre");
+        let choisis = [];
+        if (p.source === "solution Leads") {
+          const L = (await tous(require_schema().nom("leads"))).filter((l) => l.contact_crm && !/^ombre/.test(String(l.contact_crm)) && l.mode === "reel");
+          choisis = L.map((l) => ({ mail_id: l.mail_id, contact_id: l.contact_crm, bien: l.bien_crm, source: l.portail, date: l.recu_le }));
+        } else {
+          const envoyes = new Set(String(c.leads.envoyes || "").split(/[\s,;]+/).filter(Boolean));
+          const L = (await tous(c.leads.table)).filter((l) => l[c.leads.contact] && l[c.leads.mail] && (!envoyes.size || envoyes.has(String(l[c.leads.statut]))));
+          choisis = L.map((l) => ({ mail_id: l[c.leads.mail], contact_id: l[c.leads.contact], bien: l[c.leads.bien], negociateur: l[c.leads.negociateur], agence: l[c.leads.agence], source: l[c.leads.source], id: l.id }));
+        }
+        choisis.sort((a, b) => (+b.id || +b.mail_id || 0) - (+a.id || +a.mail_id || 0));
+        const files = /* @__PURE__ */ new Map();
+        for (const x of choisis) {
+          const k = String(x.source || "?").toLowerCase();
+          if (!files.has(k)) files.set(k, []);
+          files.get(k).push(x);
+        }
+        const echantillon = [];
+        for (let i = 0; echantillon.length < limite && [...files.values()].some((f) => f.length > i); i++) for (const f of files.values()) if (f[i] && echantillon.length < limite) echantillon.push(f[i]);
+        const tM = p.source === "solution Leads" ? Table.findOne({ name: require_schema().nom("mails") }) : T(c.mails.table);
+        const m = p.source === "solution Leads" ? { expediteur: "expediteur", destinataire: "destinataire", objet: "objet", texte: "corps_texte", html: "corps_html", date: "date_envoi" } : c.mails;
+        const lignes = [];
+        for (const x of echantillon) {
+          const r = await tM.getRow({ id: +x.mail_id });
+          if (!r) continue;
+          lignes.push({ ...x, mail: { id: r.id, expediteur: r[m.expediteur], destinataire: r[m.destinataire], objet: r[m.objet], texte: r[m.texte], html: r[m.html], date: r[m.date] } });
+        }
+        const biens = (await tous(c.biens.table)).map((r) => ({
+          id: r[c.biens.id],
+          reference: r[c.biens.reference],
+          prix: r[c.biens.prix],
+          surface: r[c.biens.surface],
+          pieces: r[c.biens.pieces],
+          type: r[c.biens.type],
+          ville: r[c.biens.ville],
+          code_postal: r[c.biens.code_postal],
+          negociateur_id: r[c.biens.negociateur],
+          agence_id: r[c.biens.agence]
+        }));
+        const agences = (await tous(c.agences.table)).map((r) => ({ id: String(r[c.agences.id] ?? r.id), nom: r[c.agences.nom], boites: [].concat(c.agences.boites).flatMap((f) => String(r[f] || "").toLowerCase().match(/[\w.+-]+@[\w.-]+/g) || []) }));
+        const conf = { ...cd && cd.conf || {}, agences: agences.length ? agences : cd && cd.conf.agences || [] };
+        if (p.domaines_agence) conf.domaines_agence = String(p.domaines_agence).split(/[\s,;]+/).filter(Boolean);
+        if (!conf.origines || !conf.origines.length) conf.origines = (await tous(c.origines.table)).map((o) => ({ id: o[c.origines.id], code: o[c.origines.code] }));
+        conf.consentement = { actif: true, libelle: conf.consentement && conf.consentement.libelle || R0.consentement_libelle || "Demande de contact via {portail} le {date}" };
+        let groupe = crmR.groupe_demandeur ?? null;
+        if (groupe == null && crm.groupes) {
+          try {
+            const g = await crm.groupes() || [];
+            const d = g.find((x) => /^demandeurs?$/i.test(String(x.label || x.name || "").normalize("NFD").replace(/[̀-ͯ]/g, "").trim()));
+            groupe = d ? d.id : null;
+          } catch (e) {
+            groupe = null;
+          }
+        }
+        const R = await controler({ lignes, crm, crmMoteur: p.moteur_crm === false ? null : crm, biens, conf, groupeDemandeur: groupe, origines: conf.origines });
+        R.le = (/* @__PURE__ */ new Date()).toISOString();
+        R.source = p.source || "ancien syst\xE8me";
+        R.echantillon = lignes.length;
+        R.leads_disponibles = choisis.length;
+        R.groupe_demandeur_connu = groupe != null;
+        const File = require("@saltcorn/data/models/file");
+        const nom = String(p.fichier || "controle-crm.json").replace(/[^\w.-]/g, "_");
+        await File.from_contents(nom, "application/json", JSON.stringify(R, null, 1), ctx.user && ctx.user.id, 1);
+        const acc = Object.values(R.controles).reduce((s, C) => {
+          for (const [k, v] of Object.entries(C)) if (k === "accord") s.a += v;
+          else if (k !== "rien \xE0 contr\xF4ler") s.e += v;
+          return s;
+        }, { a: 0, e: 0 });
+        return { fichier: nom, leads: R.echantillon, lus: R.lus_dans_le_crm, accords: acc.a, ecarts: acc.e, resume: `${R.echantillon} leads, ${R.lus_dans_le_crm} fiches relues, ${acc.a} accords, ${acc.e} \xE9carts, ${R.erreurs_crm} erreurs de lecture \u2014 Fichiers \u2192 ${nom}` };
       }
     }];
   }
@@ -100004,7 +100401,7 @@ ${s}\r
 });
 
 // src/blocks/controle.js
-var require_controle = __commonJS({
+var require_controle2 = __commonJS({
   "src/blocks/controle.js"(exports2, module2) {
     "use strict";
     var redis = require_redis();
@@ -100247,7 +100644,7 @@ var require_surveillance_plus = __commonJS({
     var { getPath, deep } = require_engine();
     var { plain } = require_core();
     var now = () => Number(process.hrtime.bigint() / 1000000n);
-    var kv = () => require_controle().kv;
+    var kv = () => require_controle2().kv;
     var fetchT = async (url, opt = {}, ms = 15e3) => {
       const ctl = new AbortController();
       const t = setTimeout(() => ctl.abort(), ms);
@@ -100587,7 +100984,7 @@ var require_observabilite = __commonJS({
           { name: "silence_min", label: "Ne pas r\xE9p\xE9ter avant (minutes)", type: "int", default: 30 }
         ],
         run: async (p) => {
-          const { kv } = require_controle();
+          const { kv } = require_controle2();
           const k = `dzf:alerte:${p.cle}`;
           const prev = await kv.get(k);
           const now = Date.now();
@@ -101059,7 +101456,7 @@ var require_extras = __commonJS({
         return t;
       }
     };
-    var kv = () => require_controle().kv;
+    var kv = () => require_controle2().kv;
     var donnees = [
       {
         name: "dzf_table_obtenir",
@@ -101811,6 +102208,7 @@ var require_blocks = __commonJS({
       ...require_leads(),
       ...require_leads_solution(),
       ...require_leads_banc(),
+      ...require_leads_controle(),
       ...require_donnees_ext(),
       ...require_connecte(),
       ...require_utilitaires(),
@@ -101820,7 +102218,7 @@ var require_blocks = __commonJS({
       ...require_observabilite(),
       ...require_taches2(),
       ...require_extras(),
-      ...require_controle(),
+      ...require_controle2(),
       ...require_parcours()
     ];
     var CATEGORIES = ["Donn\xE9es", "Transformer", "R\xE9seau", "Messagerie", "IA", "Documents", "Stockage", "Donn\xE9es externes", "Pratique", "Services", "Blockchain", "DevOps", "OVHcloud", "Leads immobiliers", "Objets connect\xE9s", "S\xE9curit\xE9", "Surveillance", "Logs & m\xE9triques", "T\xE2ches & planification", "Contr\xF4le", "Extensions", "Mes blocs"];
@@ -102381,7 +102779,7 @@ var require_expose = __commonJS({
           return reply(res, 405, { erreur: "m\xE9thode non autoris\xE9e" });
         }
         const lim = +p.limite_minute || 60;
-        const { kv } = require_controle();
+        const { kv } = require_controle2();
         const n = await kv.incr(`dzf:api:${nom}:${clientIp(req)}:${Math.floor(Date.now() / 6e4)}`, 90);
         res.setHeader("X-RateLimit-Limit", String(lim));
         res.setHeader("X-RateLimit-Remaining", String(Math.max(0, lim - n)));

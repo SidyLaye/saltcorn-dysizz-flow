@@ -132,11 +132,18 @@ const fausseIA = () => {
   const crm = L.ADAPTATEURS.memoire.creer({ biens: [{ id: 77, reference: "IN-4444", prix: 250000, ville: "Rodez" }] });
   const d = await L.traiter(v1(GENS[8]), crm, conf, { ia: f.client, gabarits: store });
   assert.ok(d.bien && d.bien.id === 77, "bien trouvé par la référence lue par le gabarit : " + JSON.stringify([d.motifs, d.extraction.bien, d.extraction.lu_par, d.rapprochement]));
-  assert.ok(d.motifs.some((m) => /gabarit appris/.test(m)), d.motifs.join(" | "));
+  /* gabarit pas encore assez confirmé par l'IA : à vérifier ; confirmé 3 fois sans échec : il lit seul (simple mention) */
+  assert.ok(d.alertes.some((m) => /gabarit confirmé 3 fois/.test(m)) && !d.motifs.some((m) => /gabarit/.test(m)), JSON.stringify([d.motifs, d.alertes]));
+  const gid = d.extraction.lecture.gabarit.id;
+  await store.maj(gid, { nb_observations: 1, nb_echecs: 0 });
+  const d2 = await L.traiter(v1(GENS[8]), crm, conf, { gabarits: store });
+  assert.ok(d2.motifs.some((m) => /pas encore assez confirmé/.test(m)), JSON.stringify([d2.motifs, d2.alertes]));
+  await store.maj(gid, { nb_observations: 3, nb_echecs: 0 });
 
   /* 8. import des anciens gabarits AMBS */
   const vieux = [{ id: 8, source: "seloger", nature: "lead", signature: '{"ancres":["s\'intéresse à ce bien"],"expediteur":"lead.seloger.com"}', champs: [{ nom: "reference", motif: "Ref\\. de l'annonce\\s*:\\s*(\\S+)" }], statut: "actif", version: "acquereur", nb_observations: 11 }, { id: 9, statut: "quarantaine" }];
   const im = A.depuisAmbs(vieux);
   assert.strictEqual(im.length, 1); assert.strictEqual(im[0].origine, "ambs:8:acquereur");
+  assert.strictEqual(im[0].statut, "candidat", "un ancien gabarit n'est jamais cru sur parole"); assert.strictEqual(im[0].nb_observations, 0);
   console.log("apprentissage OK : nouveau portail appris en 3 mails, relu sans IA, changement de mise en page réappris");
 })().catch((e) => { console.error(e); process.exit(1); });
