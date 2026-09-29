@@ -4,6 +4,7 @@
 
 - Leads : un lead qui ne peut pas être automatisé (bien, agence, négociateur ou contact introuvable, expéditeur inconnu) est **transféré tel quel**, avec son objet d'origine, à l'adresse réglée dans `adresse_non_automatise` (ex. une boîte « non automatisé »). Plusieurs adresses possibles. Sans adresse : rien ne part, comme avant.
 - Leads : format des mails envoyés au choix (`format_envoi`) : `resume` (fiche du lead, défaut) ou `origine` (le mail reçu tel quel, son objet d'origine, l'en-tête d'origine et la liste des destinataires).
+- Leads : alerte quand le motif du consentement dépasse 64 caractères (Immofacile coupe au-delà).
 - Leads : un mail d'un portail connu dont l'objet n'est pas reconnu, mais qui porte les coordonnées d'un prospect et un bien, est traité comme un lead (alerte notée) : un portail qui change ses objets ne fait plus perdre de leads en silence.
 - Portails déclarés par le client (`ld_portails`) : une adresse exacte en plus des domaines (formulaire d'un site qui écrit depuis le domaine de l'agence) ; champ `origine` (code d'une origine du CRM). Réglage `origine_defaut` : origine utilisée quand le portail n'en a pas.
 

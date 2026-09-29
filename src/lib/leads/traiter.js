@@ -275,6 +275,7 @@ const etapeConsentement = (d, mail, conf = {}) => {
     const date = dateDuMail(mail) || d.date_mail || new Date();
     const motif = gabarit(conf.consentement.libelle || "Demande de contact via {portail} du {date}", { portail: d.portail || r.site_libelle || r.portail_nom || r.portail, date: dateFr(date) });
     d.actions.push({ op: "ajouterConsentement", date: new Date(date).toISOString(), motif, hors_horaires: r.hors_horaires, preuves: [preuveEml(mail)] });
+    if (motif.length > 64) d.alertes.push(`motif du consentement trop long (${motif.length} caractères) : Immofacile n'en garde que 64`);
   }
   return d;
 };
