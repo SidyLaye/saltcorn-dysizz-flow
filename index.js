@@ -1,4 +1,4 @@
-/* dysizz-flow 2.13.1 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.13.2 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.13.1" : "dev";
+    var VERSION2 = true ? "2.13.2" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -97861,6 +97861,44 @@ var require_leads_solution = __commonJS({
   }
 });
 
+// src/lib/arriere_plan.js
+var require_arriere_plan = __commonJS({
+  "src/lib/arriere_plan.js"(exports2, module2) {
+    "use strict";
+    var EN_COURS = globalThis[Symbol.for("dysizz-flow.arriere-plan")] || (globalThis[Symbol.for("dysizz-flow.arriere-plan")] = /* @__PURE__ */ new Map());
+    var tenant = () => {
+      try {
+        return require("@saltcorn/data/db").getTenantSchema();
+      } catch (e) {
+        return "public";
+      }
+    };
+    var enFond = async (p, ctx, bloc, fichier, travail) => {
+      if (p.arriere_plan === false || p.arriere_plan === "false") return travail();
+      const cle = tenant() + ":" + bloc;
+      const deja = EN_COURS.get(cle);
+      if (deja) return { lance: false, deja_en_cours: true, depuis: deja, resume: `D\xE9j\xE0 en cours depuis ${Math.round((Date.now() - deja) / 6e4)} min : le rapport arrivera dans Fichiers \u2192 ${fichier}` };
+      EN_COURS.set(cle, Date.now());
+      const t0 = Date.now();
+      travail().catch(async (e) => {
+        try {
+          const File = require("@saltcorn/data/models/file");
+          await File.from_contents(
+            String(fichier).replace(/\.json$/, "") + "-erreur.json",
+            "application/json",
+            JSON.stringify({ erreur: String(e && e.message || e).slice(0, 500), le: (/* @__PURE__ */ new Date()).toISOString(), apres_secondes: Math.round((Date.now() - t0) / 1e3) }, null, 1),
+            ctx && ctx.user && ctx.user.id,
+            1
+          );
+        } catch (x) {
+        }
+      }).finally(() => EN_COURS.delete(cle));
+      return { lance: true, fichier, resume: `Lanc\xE9 en arri\xE8re-plan : le rapport arrivera dans Fichiers \u2192 ${fichier} (quelques minutes). En cas de probl\xE8me : ${String(fichier).replace(/\.json$/, "")}-erreur.json` };
+    };
+    module2.exports = { enFond, EN_COURS };
+  }
+});
+
 // src/lib/leads/banc.js
 var require_banc = __commonJS({
   "src/lib/leads/banc.js"(exports2, module2) {
@@ -98231,9 +98269,10 @@ var require_leads_banc = __commonJS({
           help: "Parmi les mails que ni les r\xE8gles ni les gabarits ne savent lire, r\xE9partis entre les portails. Co\xFBte des appels \xE0 l'IA r\xE9gl\xE9e dans les r\xE9glages Leads (plafond du jour non compt\xE9)."
         },
         { name: "exemples", label: "Exemples anonymis\xE9s par portail", type: "int", default: 3 },
-        { name: "fichier", label: "Nom du rapport", default: "banc-leads.json" }
+        { name: "fichier", label: "Nom du rapport", default: "banc-leads.json" },
+        { name: "arriere_plan", label: "En arri\xE8re-plan (le rapport arrive dans Fichiers)", type: "bool", default: true, help: "D\xE9coch\xE9 : le bouton attend la fin (le proxy peut couper au bout d'une minute : \xAB Bad Gateway \xBB)" }
       ],
-      run: async (p, ctx = {}) => {
+      run: async (p, ctx = {}) => require_arriere_plan().enFond(p, ctx, "dzf_leads_banc", String(p.fichier || "banc-leads.json").replace(/[^\w.-]/g, "_"), async () => {
         const Table = require("@saltcorn/data/models/table");
         const api = require_api();
         const { banc, champDeLAncien } = require_banc();
@@ -98360,7 +98399,7 @@ var require_leads_banc = __commonJS({
           ia: R.ia,
           resume: `${R.mails} mails, ${acc.a} accords, ${acc.e} \xE9carts, ${R.erreurs} erreurs, gabarits ${R.gabarits.source} (${R.gabarits.au_depart})${ia} \u2014 Fichiers \u2192 ${nom}`
         };
-      }
+      })
     }];
   }
 });
@@ -98564,9 +98603,10 @@ var require_leads_controle = __commonJS({
         { name: "domaines_agence", label: "Domaines de l'agence", help: "Les m\xEAmes que dans les r\xE9glages Leads" },
         { name: "limite", label: "Nombre de leads (les plus r\xE9cents, r\xE9partis entre les portails)", type: "int", default: 200 },
         { name: "moteur_crm", label: "Le moteur cherche contacts et biens dans le vrai CRM (lecture seule)", type: "bool", default: true, help: "D\xE9coch\xE9 : il cherche les biens dans le catalogue de l'ancien syst\xE8me, sans appel au CRM" },
-        { name: "fichier", label: "Nom du rapport", default: "controle-crm.json" }
+        { name: "fichier", label: "Nom du rapport", default: "controle-crm.json" },
+        { name: "arriere_plan", label: "En arri\xE8re-plan (le rapport arrive dans Fichiers)", type: "bool", default: true, help: "D\xE9coch\xE9 : le bouton attend la fin (le proxy peut couper au bout d'une minute : \xAB Bad Gateway \xBB)" }
       ],
-      run: async (p, ctx = {}) => {
+      run: async (p, ctx = {}) => require_arriere_plan().enFond(p, ctx, "dzf_leads_controle_crm", String(p.fichier || "controle-crm.json").replace(/[^\w.-]/g, "_"), async () => {
         const Table = require("@saltcorn/data/models/table");
         const api = require_api();
         const { controler } = require_controle();
@@ -98675,7 +98715,7 @@ var require_leads_controle = __commonJS({
           return s;
         }, { a: 0, e: 0 });
         return { fichier: nom, leads: R.echantillon, lus: R.lus_dans_le_crm, accords: acc.a, ecarts: acc.e, resume: `${R.echantillon} leads, ${R.lus_dans_le_crm} fiches relues, ${acc.a} accords, ${acc.e} \xE9carts, ${R.erreurs_crm} erreurs de lecture \u2014 Fichiers \u2192 ${nom}` };
-      }
+      })
     }];
   }
 });

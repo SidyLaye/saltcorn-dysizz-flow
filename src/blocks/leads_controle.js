@@ -24,8 +24,9 @@ module.exports = [{
     { name: "limite", label: "Nombre de leads (les plus récents, répartis entre les portails)", type: "int", default: 200 },
     { name: "moteur_crm", label: "Le moteur cherche contacts et biens dans le vrai CRM (lecture seule)", type: "bool", default: true, help: "Décoché : il cherche les biens dans le catalogue de l'ancien système, sans appel au CRM" },
     { name: "fichier", label: "Nom du rapport", default: "controle-crm.json" },
+    { name: "arriere_plan", label: "En arrière-plan (le rapport arrive dans Fichiers)", type: "bool", default: true, help: "Décoché : le bouton attend la fin (le proxy peut couper au bout d'une minute : « Bad Gateway »)" },
   ],
-  run: async (p, ctx = {}) => {
+  run: async (p, ctx = {}) => require("../lib/arriere_plan").enFond(p, ctx, "dzf_leads_controle_crm", String(p.fichier || "controle-crm.json").replace(/[^\w.-]/g, "_"), async () => {
     const Table = require("@saltcorn/data/models/table");
     const api = require("../api");
     const { controler } = require("../lib/leads/controle");
@@ -88,5 +89,5 @@ module.exports = [{
     await File.from_contents(nom, "application/json", JSON.stringify(R, null, 1), ctx.user && ctx.user.id, 1);
     const acc = Object.values(R.controles).reduce((s, C) => { for (const [k, v] of Object.entries(C)) if (k === "accord") s.a += v; else if (k !== "rien à contrôler") s.e += v; return s; }, { a: 0, e: 0 });
     return { fichier: nom, leads: R.echantillon, lus: R.lus_dans_le_crm, accords: acc.a, ecarts: acc.e, resume: `${R.echantillon} leads, ${R.lus_dans_le_crm} fiches relues, ${acc.a} accords, ${acc.e} écarts, ${R.erreurs_crm} erreurs de lecture — Fichiers → ${nom}` };
-  },
+  }),
 }];
