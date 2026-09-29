@@ -1,5 +1,12 @@
 # Journal des versions
 
+## 2.13.2
+
+- Banc d'essai et contrôle du CRM : ils tournent en arrière-plan. Le bouton « Tester » répond tout de suite et le rapport arrive dans Fichiers à la fin. Avant, un travail de plusieurs minutes (IA, lectures Immofacile) faisait couper la requête par le proxy, avec l'erreur « Bad Gateway ».
+  - Si le travail échoue, un fichier « …-erreur.json » dit pourquoi.
+  - Un seul banc (ou contrôle) à la fois : un deuxième clic répond « déjà en cours ».
+  - Réglage « En arrière-plan » : décoché, le bouton attend la fin.
+
 ## 2.13.1
 
 - Nouveau bloc « Leads : contrôle du CRM (fiches ↔ mails) », en lecture seule. Pour des leads déjà écrits dans le CRM (par l'ancien système, ou par celui-ci une fois en service), il relit chaque fiche et la compare avec le mail d'origine et avec ce que le moteur ferait. Rien n'est écrit, et le rapport ne contient aucune donnée personnelle.

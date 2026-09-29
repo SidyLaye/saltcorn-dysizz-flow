@@ -27,8 +27,9 @@ module.exports = [{
       help: "Parmi les mails que ni les règles ni les gabarits ne savent lire, répartis entre les portails. Coûte des appels à l'IA réglée dans les réglages Leads (plafond du jour non compté)." },
     { name: "exemples", label: "Exemples anonymisés par portail", type: "int", default: 3 },
     { name: "fichier", label: "Nom du rapport", default: "banc-leads.json" },
+    { name: "arriere_plan", label: "En arrière-plan (le rapport arrive dans Fichiers)", type: "bool", default: true, help: "Décoché : le bouton attend la fin (le proxy peut couper au bout d'une minute : « Bad Gateway »)" },
   ],
-  run: async (p, ctx = {}) => {
+  run: async (p, ctx = {}) => require("../lib/arriere_plan").enFond(p, ctx, "dzf_leads_banc", String(p.fichier || "banc-leads.json").replace(/[^\w.-]/g, "_"), async () => {
     const Table = require("@saltcorn/data/models/table");
     const api = require("../api");
     const { banc, champDeLAncien } = require("../lib/leads/banc");
@@ -89,5 +90,5 @@ module.exports = [{
     const ia = nIA ? `, IA : ${R.ia.echantillon} mails (${R.ia.erreurs} erreurs)` : "";
     return { fichier: nom, mails: R.mails, erreurs: R.erreurs, accords: acc.a, ecarts: acc.e, cas: R.cas.length, gabarits: R.gabarits, ia: R.ia,
       resume: `${R.mails} mails, ${acc.a} accords, ${acc.e} écarts, ${R.erreurs} erreurs, gabarits ${R.gabarits.source} (${R.gabarits.au_depart})${ia} — Fichiers → ${nom}` };
-  },
+  }),
 }];
