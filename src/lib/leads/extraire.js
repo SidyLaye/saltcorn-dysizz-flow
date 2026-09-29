@@ -103,6 +103,14 @@ const couper = (L, i, exp, objet, agence = false) => {
   }
 };
 
+/* Un rôle n'est jamais un nom (« Coordonnées de l'acheteur : » suivi du vrai nom) : effacé, jamais écrit dans le CRM. */
+const ROLE = /^(l['’]|le |la |du |de la |un |une |cet |cette |ce |votre |notre )?(acheteurs?|acqu[ée]reurs?|prospects?|contacts?|clients?|internautes?|vendeurs?|demandeurs?|utilisateurs?|visiteurs?|particuliers?|propri[ée]taires?|locataires?|candidats?|buyers?|enquirers?|customers?|users?|madame|monsieur|m\.|mme|mr|mrs)$/i;
+const nettoyerNoms = (c = {}) => {
+  for (const k of ["nom", "prenom", "nom_complet"]) if (c[k] && ROLE.test(String(c[k]).trim())) delete c[k];
+  if (!c.nom && !c.prenom && c.nom_complet) { const dn = V.decouperNom(c.nom_complet) || {}; if (dn.nom) c.nom = dn.nom; if (dn.prenom) c.prenom = dn.prenom; }
+  return c;
+};
+
 const extraire = (mail, conf = {}) => {
   const texte = texteMail({ texte: mail.texte ?? mail.corps_texte, html: mail.html ?? mail.corps_html });
   const liens = lesLiens({ texte: mail.texte ?? mail.corps_texte, html: mail.html ?? mail.corps_html });
@@ -264,6 +272,7 @@ const extraire = (mail, conf = {}) => {
   /* Le prospect dit avoir aussi un bien à vendre : c'est un vendeur potentiel. */
   const vend = texte.match(/a(?:-t-il)? un bien à vendre\s*[:?]?\s*(oui|non)/i);
   if (vend && r.a_un_bien_a_vendre === undefined) r.a_un_bien_a_vendre = /oui/i.test(vend[1]);
+  nettoyerNoms(c);
   r.manquants = [];
   if (["lead", "relance", "recherche", "estimation", "direct", "reponse_campagne"].includes(r.nature)) {
     if (!c.email && !c.telephone) r.manquants.push("coordonnees");
@@ -275,4 +284,4 @@ const extraire = (mail, conf = {}) => {
   return r;
 };
 
-module.exports = { extraire, identifierSite, RELAIS };
+module.exports = { nettoyerNoms, extraire, identifierSite, RELAIS };

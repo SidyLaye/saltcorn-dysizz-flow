@@ -19,7 +19,7 @@ module.exports = [{
   description: "Rejoue le traitement des leads sur les mails déjà reçus par un ancien système et compare, mail par mail, avec ce qu'il avait trouvé : source, e-mail, téléphone, nom, prénom, référence, bien, agence, négociateur, décision. Mesure chaque étage de lecture (règles, gabarits, IA sur un échantillon). Rien n'est écrit (CRM et gabarits en mémoire). Rapport sans donnée personnelle dans Fichiers : accords par portail et par champ, type de chaque écart, squelette anonymisé des mails en écart.",
   params: [
     { name: "correspondances", label: "Tables et champs de l'ancien système (JSON)", type: "json", help: "Vide = tables AMBS (email_brut_selection_habitat, lead, lead_champ, bien, agence). Ex. {\"mails\":{\"table\":\"mails\"}}" },
-    { name: "domaines_agence", label: "Domaines de l'agence", help: "Ex. selectionhabitat.com (mails de l'équipe)" },
+    { name: "domaines_agence", label: "Domaines de l'agence (en plus)", help: "Déjà pris : ceux des réglages Leads et des boîtes des agences (table des agences)" },
     { name: "limite", label: "Nombre de mails (0 = tous)", type: "int", default: 0 },
     { name: "gabarits", label: "Gabarits", type: "select", options: ["ancien", "appris", "aucun"], default: "ancien",
       help: "ancien = ceux de l'ancien système (table gabarit_version) ; appris = ceux de la solution Leads (ld_gabarits) ; copiés en mémoire, jamais modifiés" },
@@ -29,7 +29,7 @@ module.exports = [{
     { name: "fichier", label: "Nom du rapport", default: "banc-leads.json" },
     { name: "arriere_plan", label: "En arrière-plan (le rapport arrive dans Fichiers)", type: "bool", default: true, help: "Décoché : le bouton attend la fin (le proxy peut couper au bout d'une minute : « Bad Gateway »)" },
   ],
-  run: async (p, ctx = {}) => require("../lib/arriere_plan").enFond(p, ctx, "dzf_leads_banc", String(p.fichier || "banc-leads.json").replace(/[^\w.-]/g, "_"), async () => {
+  run: async (p, ctx = {}) => require("../lib/arriere_plan").enFond(p, ctx, "dzf_leads_banc", String(p.fichier || "banc-leads.json").replace(/[^\w.-]/g, "_"), async (suivi = {}) => {
     const Table = require("@saltcorn/data/models/table");
     const api = require("../api");
     const { banc, champDeLAncien } = require("../lib/leads/banc");
@@ -39,6 +39,7 @@ module.exports = [{
     const lotParLot = async (t, f) => { for (let depuis = 0; ; ) { const l = await t.getRows({ id: { gt: depuis } }, { orderBy: "id", limit: 1000 }); if (!l.length) break; for (const r of l) f(r); depuis = l[l.length - 1].id; } };
 
     /* mails */
+    suivi.etape = "lecture des mails de l'ancien système";
     const mails = [];
     await lotParLot(T(c.mails.table), (r) => { if (!p.limite || mails.length < +p.limite) mails.push({ id: r.id, expediteur: r[c.mails.expediteur], destinataire: r[c.mails.destinataire], objet: r[c.mails.objet], texte: r[c.mails.texte], html: r[c.mails.html], date: r[c.mails.date], motif_ancien: c.mails.motif ? r[c.mails.motif] : null, regle_ancien: c.mails.regle ? r[c.mails.regle] : null }); });
     /* résultats de l'ancien système */
@@ -62,8 +63,10 @@ module.exports = [{
     const agences = [];
     if (Table.findOne({ name: c.agences.table })) await lotParLot(T(c.agences.table), (r) => agences.push({ id: String(r[c.agences.id] ?? r.id), nom: r[c.agences.nom],
       boites: [].concat(c.agences.boites).flatMap((f) => String(r[f] || "").toLowerCase().match(/[\w.+-]+@[\w.-]+/g) || []) }));
-    const conf = { domaines_agence: String(p.domaines_agence || "").split(/[\s,;]+/).filter(Boolean), agences };
-    try { const cd = await require("../lib/leads/tables/conf").charger(); conf.portails = cd.conf.portails; conf.sites = cd.conf.sites; } catch (e) { /* pas de tables leads : portails du code seulement */ }
+    const conf = { agences };
+    let domR = [];
+    try { const cd = await require("../lib/leads/tables/conf").charger(); conf.portails = cd.conf.portails; conf.sites = cd.conf.sites; domR = cd.conf.domaines_agence || []; } catch (e) { /* pas de tables leads : portails du code seulement */ }
+    conf.domaines_agence = require("../lib/leads/banc").domainesAgence(p.domaines_agence, domR, agences.flatMap((a) => a.boites));
     /* gabarits : copiés en mémoire (le banc n'écrit rien) ; ce que l'IA apprend pendant le banc y reste */
     const A = api.leads.apprentissage, opts = {};
     const choix = p.gabarits === false || p.gabarits === "aucun" ? "aucun" : p.gabarits === "appris" ? "appris" : p.gabarits === true ? "appris ou ancien" : "ancien";
@@ -80,7 +83,8 @@ module.exports = [{
       opts.ia = api.iaDepuisCoffre(R0.ia_fournisseur || "saltcorn", R0.ia_modele || "", "LEADS_IA_CLE", R0.ia_url || undefined);
     }
 
-    const R = await banc({ mails, anciens, biens, conf, opts, iaEchantillon: nIA, exemples: p.exemples === undefined || p.exemples === null || p.exemples === "" ? 3 : +p.exemples });
+    suivi.etape = "rejeu du moteur";
+    const R = await banc({ mails, anciens, biens, conf, opts, iaEchantillon: nIA, progres: suivi, exemples: p.exemples === undefined || p.exemples === null || p.exemples === "" ? 3 : +p.exemples });
     R.le = new Date().toISOString(); R.biens_catalogue = biens.length; R.agences = agences.length; R.champs_ancien_inconnus = inconnus;
     R.gabarits = { source: gabaritsDe || "aucun", au_depart: depart.length, actifs_au_depart: depart.filter((g) => g.statut === "actif").length }; R.domaines_agence = conf.domaines_agence;
     const File = require("@saltcorn/data/models/file");

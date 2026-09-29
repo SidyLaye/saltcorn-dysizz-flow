@@ -22,6 +22,7 @@ const DEFINITIVES = ["non_lead", "auto_reponse", "interne", "alerte_spam", "noti
 const manquantsImportants = (r) => (r.manquants || []).filter((m) => ["coordonnees", "nom", "reference"].includes(m));
 const recalculer = (r) => {
   const c = r.contact || {}, b = r.bien || {};
+  require("./extraire").nettoyerNoms(c);
   r.manquants = [];
   if (LEADS.includes(r.nature) || r.nature === "reponse_campagne") {
     if (!c.email && !c.telephone) r.manquants.push("coordonnees");

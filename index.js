@@ -1,4 +1,4 @@
-/* dysizz-flow 2.13.2 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.13.3 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.13.2" : "dev";
+    var VERSION2 = true ? "2.13.3" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -92553,6 +92553,11 @@ var require_portails = __commonJS({
             r.bien.titre = titre;
             const ref = titre.match(/\bREF\.?\s*(\d{3,})/i) || titre.match(/\b(\d{4,6})\b(?!\s*,)/);
             if (ref) r.bien.reference = ref[1];
+            const colle = titre.match(/\b([A-Z]{2,6}-?\d{3,6})\b/);
+            if (colle) {
+              if (!r.bien.reference) r.bien.reference = colle[1];
+              else if (colle[1] !== r.bien.reference) r.bien.reference_portail = colle[1];
+            }
             const lc = titre.match(/([A-ZÀ-Ÿ' -]{3,})\s*\((\d{5})/);
             if (lc) {
               r.bien.ville = lc[1].trim();
@@ -92963,7 +92968,8 @@ var require_portails = __commonJS({
         regles: ({ L, texte, r }) => {
           const i = L.findIndex((l) => /^coordonn[ée]es de/i.test(l));
           if (i >= 0) {
-            const n = L[i].replace(/^coordonn[ée]es de\s*/i, "").replace(/\s*:\s*$/, "").trim() || L[i + 1];
+            let n = L[i].replace(/^coordonn[ée]es de\s*/i, "").replace(/\s*:\s*$/, "").trim();
+            if (!n || /^(l['’]|la |le |du |de la |votre |cet |ce )?(acheteur|acqu[ée]reur|prospect|contact|client|vendeur|internaute)s?$/i.test(n)) n = L[i + 1];
             if (n && !/[📞📧@]/u.test(n) && !/\d{4}/.test(n)) r.contact.nom_complet = V.nomPropre(n);
           }
           const t = texte.match(/📞\s*([+\d][\d .]{8,})/u);
@@ -93339,6 +93345,16 @@ var require_extraire = __commonJS({
         return { expediteur: exp, objet: o, texte: L.slice(j).join("\n"), html: "", __agence: agence };
       }
     };
+    var ROLE = /^(l['’]|le |la |du |de la |un |une |cet |cette |ce |votre |notre )?(acheteurs?|acqu[ée]reurs?|prospects?|contacts?|clients?|internautes?|vendeurs?|demandeurs?|utilisateurs?|visiteurs?|particuliers?|propri[ée]taires?|locataires?|candidats?|buyers?|enquirers?|customers?|users?|madame|monsieur|m\.|mme|mr|mrs)$/i;
+    var nettoyerNoms = (c = {}) => {
+      for (const k of ["nom", "prenom", "nom_complet"]) if (c[k] && ROLE.test(String(c[k]).trim())) delete c[k];
+      if (!c.nom && !c.prenom && c.nom_complet) {
+        const dn = V.decouperNom(c.nom_complet) || {};
+        if (dn.nom) c.nom = dn.nom;
+        if (dn.prenom) c.prenom = dn.prenom;
+      }
+      return c;
+    };
     var extraire = (mail, conf = {}) => {
       const texte = texteMail({ texte: mail.texte ?? mail.corps_texte, html: mail.html ?? mail.corps_html });
       const liens = lesLiens({ texte: mail.texte ?? mail.corps_texte, html: mail.html ?? mail.corps_html });
@@ -93554,6 +93570,7 @@ var require_extraire = __commonJS({
       }
       const vend = texte.match(/a(?:-t-il)? un bien à vendre\s*[:?]?\s*(oui|non)/i);
       if (vend && r.a_un_bien_a_vendre === void 0) r.a_un_bien_a_vendre = /oui/i.test(vend[1]);
+      nettoyerNoms(c);
       r.manquants = [];
       if (["lead", "relance", "recherche", "estimation", "direct", "reponse_campagne"].includes(r.nature)) {
         if (!c.email && !c.telephone) r.manquants.push("coordonnees");
@@ -93564,7 +93581,7 @@ var require_extraire = __commonJS({
       r.destinataire = mail.destinataire || "";
       return r;
     };
-    module2.exports = { extraire, identifierSite, RELAIS };
+    module2.exports = { nettoyerNoms, extraire, identifierSite, RELAIS };
   }
 });
 
@@ -93681,8 +93698,9 @@ var require_rapprochement = __commonJS({
         for (const v of variantes(ref)) {
           const biens = await crm.biensParReference(v.valeur).catch(() => []);
           const exacts = biens.filter((x) => String(x.reference).trim().toLowerCase() === v.valeur.toLowerCase());
-          const hit = await essayer(v.etape, v.valeur, exacts, v.min, v.etape === "reference_complete");
-          if (hit) return { bien: hit, methode: v.etape, etapes, alertes, confiance: v.min ? "moyenne" : "haute" };
+          const forte = v.etape === "reference_complete" && v.valeur.replace(/[^A-Za-z0-9]/g, "").length >= 4;
+          const hit = await essayer(v.etape, v.valeur, exacts, forte ? v.min : Math.max(v.min, 1), forte);
+          if (hit) return { bien: hit, methode: v.etape, etapes, alertes, confiance: forte || v.min ? forte ? "haute" : "moyenne" : "moyenne" };
         }
       }
       if (crm.biensParCriteres && !opts.sansCriteres) {
@@ -94243,6 +94261,7 @@ var require_lecture = __commonJS({
     var manquantsImportants = (r) => (r.manquants || []).filter((m) => ["coordonnees", "nom", "reference"].includes(m));
     var recalculer = (r) => {
       const c = r.contact || {}, b = r.bien || {};
+      require_extraire().nettoyerNoms(c);
       r.manquants = [];
       if (LEADS.includes(r.nature) || r.nature === "reponse_campagne") {
         if (!c.email && !c.telephone) r.manquants.push("coordonnees");
@@ -97873,29 +97892,53 @@ var require_arriere_plan = __commonJS({
         return "public";
       }
     };
-    var enFond = async (p, ctx, bloc, fichier, travail) => {
-      if (p.arriere_plan === false || p.arriere_plan === "false") return travail();
+    var DUREE_MAX = 2 * 3600 * 1e3;
+    var etatTexte = (s) => `${s.etape || "d\xE9marrage"}${s.total ? ` : ${s.fait || 0} / ${s.total}` : ""}`;
+    var enFond = async (p, ctx, bloc, fichier, travail, { dureeMax = DUREE_MAX } = {}) => {
+      const suivi = { etape: "d\xE9marrage", fait: 0, total: 0, debut: Date.now() };
+      if (p.arriere_plan === false || p.arriere_plan === "false") return travail(suivi);
       const cle = tenant() + ":" + bloc;
       const deja = EN_COURS.get(cle);
-      if (deja) return { lance: false, deja_en_cours: true, depuis: deja, resume: `D\xE9j\xE0 en cours depuis ${Math.round((Date.now() - deja) / 6e4)} min : le rapport arrivera dans Fichiers \u2192 ${fichier}` };
-      EN_COURS.set(cle, Date.now());
-      const t0 = Date.now();
-      travail().catch(async (e) => {
+      if (deja && Date.now() - deja.debut < dureeMax)
+        return { lance: false, deja_en_cours: true, depuis: deja.debut, etat: etatTexte(deja), resume: `D\xE9j\xE0 en cours depuis ${Math.round((Date.now() - deja.debut) / 6e4)} min (${etatTexte(deja)}) : le rapport arrivera dans Fichiers \u2192 ${fichier}` };
+      EN_COURS.set(cle, suivi);
+      let db = null, schema = null;
+      try {
+        db = require("@saltcorn/data/db");
+        schema = db.getTenantSchema();
+      } catch (e) {
+        db = null;
+      }
+      const propre = (fn) => db && db.runWithTenant && schema ? db.runWithTenant(schema, fn) : fn();
+      let minuterie = null;
+      const limite = new Promise((_, ko) => {
+        minuterie = setTimeout(() => ko(new Error(`arr\xEAt\xE9 apr\xE8s ${Math.round(dureeMax / 6e4)} min (derni\xE8re \xE9tape : ${etatTexte(suivi)})`)), dureeMax);
+      });
+      new Promise((ok) => setImmediate(ok)).then(() => Promise.race([propre(() => travail(suivi)), limite])).catch((e) => propre(async () => {
         try {
           const File = require("@saltcorn/data/models/file");
           await File.from_contents(
             String(fichier).replace(/\.json$/, "") + "-erreur.json",
             "application/json",
-            JSON.stringify({ erreur: String(e && e.message || e).slice(0, 500), le: (/* @__PURE__ */ new Date()).toISOString(), apres_secondes: Math.round((Date.now() - t0) / 1e3) }, null, 1),
+            JSON.stringify({ erreur: String(e && e.message || e).slice(0, 500), derniere_etape: etatTexte(suivi), le: (/* @__PURE__ */ new Date()).toISOString(), apres_secondes: Math.round((Date.now() - suivi.debut) / 1e3) }, null, 1),
             ctx && ctx.user && ctx.user.id,
             1
           );
         } catch (x) {
         }
-      }).finally(() => EN_COURS.delete(cle));
-      return { lance: true, fichier, resume: `Lanc\xE9 en arri\xE8re-plan : le rapport arrivera dans Fichiers \u2192 ${fichier} (quelques minutes). En cas de probl\xE8me : ${String(fichier).replace(/\.json$/, "")}-erreur.json` };
+      })).finally(() => {
+        clearTimeout(minuterie);
+        if (EN_COURS.get(cle) === suivi) EN_COURS.delete(cle);
+      });
+      return { lance: true, fichier, resume: `Lanc\xE9 en arri\xE8re-plan : le rapport arrivera dans Fichiers \u2192 ${fichier} (quelques minutes). Recliquer montre o\xF9 il en est. En cas de probl\xE8me : ${String(fichier).replace(/\.json$/, "")}-erreur.json` };
     };
-    module2.exports = { enFond, EN_COURS };
+    var borne = (promesse, ms, quoi) => {
+      let t;
+      return Promise.race([promesse, new Promise((_, ko) => {
+        t = setTimeout(() => ko(new Error(`${quoi} : pas de r\xE9ponse apr\xE8s ${Math.round(ms / 1e3)} s`)), ms);
+      })]).finally(() => clearTimeout(t));
+    };
+    module2.exports = { enFond, borne, EN_COURS };
   }
 });
 
@@ -97965,16 +98008,18 @@ var require_banc = __commonJS({
       return l.split(/(\s+)/).map(m).join("").replace(/(…[\s…]*)+/g, "\u2026 ").trimEnd();
     }).filter((l) => l.trim()).join("\n").slice(0, 2500);
     var seuilDe = (n) => Math.max(5, Math.ceil((n || 1) * 0.1));
-    var banc = async ({ mails, anciens, biens = [], conf = {}, opts = {}, maxCas = 400, parCategorie = 4, alias = {}, exemples = 3, iaEchantillon = 0 }) => {
+    var banc = async ({ mails, anciens, biens = [], conf = {}, opts = {}, maxCas = 400, parCategorie = 4, alias = {}, exemples = 3, iaEchantillon = 0, progres = null }) => {
+      const P0 = progres || {};
       const crm = M.creer({ biens });
       const confB = { ...conf, etapes: { ...conf.etapes || {}, consentement: false, notification: false } };
       const R = { mails: mails.length, erreurs: 0, portails: {}, par_lecture: {}, sources: {}, decisions: {}, champs_ancien_inconnus: {}, cas: [] };
       const res = [];
       const IA = { appels: 0, erreurs: 0, cache: 0, echantillon: 0, par_portail: {} };
+      const { borne } = require_arriere_plan();
       const avecIA = opts.ia ? { ...opts, ia: { lire: async (m, t) => {
         IA.appels++;
         try {
-          const x = await opts.ia.lire(m, t);
+          const x = await borne(opts.ia.lire(m, t), 9e4, "IA");
           if (x && x.cache) IA.cache++;
           return x;
         } catch (e) {
@@ -98015,7 +98060,12 @@ var require_banc = __commonJS({
         }
         return { m: { id: m0.id, date: m0.date, motif: m0.motif_ancien, regle: m0.regle_ancien, objet: String(m0.objet || ""), t: texteMail({ texte: m0.texte, html: m0.html }).slice(0, 6e3) }, d, err };
       };
-      for (const m0 of mails) res.push(await rejouer(m0, sansIA));
+      P0.total = mails.length;
+      P0.fait = 0;
+      for (const m0 of mails) {
+        res.push(await rejouer(m0, sansIA));
+        P0.fait++;
+      }
       if (avecIA && iaEchantillon > 0) {
         const files = /* @__PURE__ */ new Map();
         res.forEach((x, i) => {
@@ -98030,7 +98080,11 @@ var require_banc = __commonJS({
           for (const f of files.values()) if (f[tour] !== void 0 && choisis.length < iaEchantillon) choisis.push(f[tour]);
         choisis.sort((a, b) => a - b);
         IA.echantillon = choisis.length;
+        P0.etape = "lecture par l'IA";
+        P0.total = choisis.length;
+        P0.fait = 0;
         for (const i of choisis) {
+          P0.fait++;
           res[i] = await rejouer(mails[i], avecIA);
           const p = res[i].d && res[i].d.extraction.portail || "inconnu";
           IA.par_portail[p] = (IA.par_portail[p] || 0) + 1;
@@ -98217,6 +98271,9 @@ var require_banc = __commonJS({
       return R;
     };
     module2.exports = { banc, squelette, ecart, champDeLAncien, norm, forme, identite, mots2 };
+    var PUBLICS = /^(gmail|googlemail|yahoo|ymail|hotmail|outlook|live|msn|orange|wanadoo|free|sfr|neuf|laposte|icloud|me|mac|aol|gmx|protonmail|proton|bbox|numericable|club-internet|aliceadsl|voila|libertysurf|tiscali)\./i;
+    var domainesAgence = (...sources) => [...new Set(sources.flat().flatMap((x) => String(x || "").toLowerCase().split(/[\s,;]+/)).map((x) => x.replace(/^.*@/, "").trim()).filter((d) => /^[a-z0-9.-]+\.[a-z]{2,}$/.test(d) && !PUBLICS.test(d)))];
+    module2.exports.domainesAgence = domainesAgence;
   }
 });
 
@@ -98251,7 +98308,7 @@ var require_leads_banc = __commonJS({
       description: "Rejoue le traitement des leads sur les mails d\xE9j\xE0 re\xE7us par un ancien syst\xE8me et compare, mail par mail, avec ce qu'il avait trouv\xE9 : source, e-mail, t\xE9l\xE9phone, nom, pr\xE9nom, r\xE9f\xE9rence, bien, agence, n\xE9gociateur, d\xE9cision. Mesure chaque \xE9tage de lecture (r\xE8gles, gabarits, IA sur un \xE9chantillon). Rien n'est \xE9crit (CRM et gabarits en m\xE9moire). Rapport sans donn\xE9e personnelle dans Fichiers : accords par portail et par champ, type de chaque \xE9cart, squelette anonymis\xE9 des mails en \xE9cart.",
       params: [
         { name: "correspondances", label: "Tables et champs de l'ancien syst\xE8me (JSON)", type: "json", help: 'Vide = tables AMBS (email_brut_selection_habitat, lead, lead_champ, bien, agence). Ex. {"mails":{"table":"mails"}}' },
-        { name: "domaines_agence", label: "Domaines de l'agence", help: "Ex. selectionhabitat.com (mails de l'\xE9quipe)" },
+        { name: "domaines_agence", label: "Domaines de l'agence (en plus)", help: "D\xE9j\xE0 pris : ceux des r\xE9glages Leads et des bo\xEEtes des agences (table des agences)" },
         { name: "limite", label: "Nombre de mails (0 = tous)", type: "int", default: 0 },
         {
           name: "gabarits",
@@ -98272,7 +98329,7 @@ var require_leads_banc = __commonJS({
         { name: "fichier", label: "Nom du rapport", default: "banc-leads.json" },
         { name: "arriere_plan", label: "En arri\xE8re-plan (le rapport arrive dans Fichiers)", type: "bool", default: true, help: "D\xE9coch\xE9 : le bouton attend la fin (le proxy peut couper au bout d'une minute : \xAB Bad Gateway \xBB)" }
       ],
-      run: async (p, ctx = {}) => require_arriere_plan().enFond(p, ctx, "dzf_leads_banc", String(p.fichier || "banc-leads.json").replace(/[^\w.-]/g, "_"), async () => {
+      run: async (p, ctx = {}) => require_arriere_plan().enFond(p, ctx, "dzf_leads_banc", String(p.fichier || "banc-leads.json").replace(/[^\w.-]/g, "_"), async (suivi = {}) => {
         const Table = require("@saltcorn/data/models/table");
         const api = require_api();
         const { banc, champDeLAncien } = require_banc();
@@ -98291,6 +98348,7 @@ var require_leads_banc = __commonJS({
             depuis = l[l.length - 1].id;
           }
         };
+        suivi.etape = "lecture des mails de l'ancien syst\xE8me";
         const mails = [];
         await lotParLot(T(c.mails.table), (r) => {
           if (!p.limite || mails.length < +p.limite) mails.push({ id: r.id, expediteur: r[c.mails.expediteur], destinataire: r[c.mails.destinataire], objet: r[c.mails.objet], texte: r[c.mails.texte], html: r[c.mails.html], date: r[c.mails.date], motif_ancien: c.mails.motif ? r[c.mails.motif] : null, regle_ancien: c.mails.regle ? r[c.mails.regle] : null });
@@ -98334,13 +98392,16 @@ var require_leads_banc = __commonJS({
           nom: r[c.agences.nom],
           boites: [].concat(c.agences.boites).flatMap((f) => String(r[f] || "").toLowerCase().match(/[\w.+-]+@[\w.-]+/g) || [])
         }));
-        const conf = { domaines_agence: String(p.domaines_agence || "").split(/[\s,;]+/).filter(Boolean), agences };
+        const conf = { agences };
+        let domR = [];
         try {
           const cd = await require_conf().charger();
           conf.portails = cd.conf.portails;
           conf.sites = cd.conf.sites;
+          domR = cd.conf.domaines_agence || [];
         } catch (e) {
         }
+        conf.domaines_agence = require_banc().domainesAgence(p.domaines_agence, domR, agences.flatMap((a) => a.boites));
         const A = api.leads.apprentissage, opts = {};
         const choix = p.gabarits === false || p.gabarits === "aucun" ? "aucun" : p.gabarits === "appris" ? "appris" : p.gabarits === true ? "appris ou ancien" : "ancien";
         let depart = [], gabaritsDe = null;
@@ -98372,7 +98433,8 @@ var require_leads_banc = __commonJS({
           }
           opts.ia = api.iaDepuisCoffre(R0.ia_fournisseur || "saltcorn", R0.ia_modele || "", "LEADS_IA_CLE", R0.ia_url || void 0);
         }
-        const R = await banc({ mails, anciens, biens, conf, opts, iaEchantillon: nIA, exemples: p.exemples === void 0 || p.exemples === null || p.exemples === "" ? 3 : +p.exemples });
+        suivi.etape = "rejeu du moteur";
+        const R = await banc({ mails, anciens, biens, conf, opts, iaEchantillon: nIA, progres: suivi, exemples: p.exemples === void 0 || p.exemples === null || p.exemples === "" ? 3 : +p.exemples });
         R.le = (/* @__PURE__ */ new Date()).toISOString();
         R.biens_catalogue = biens.length;
         R.agences = agences.length;
@@ -98417,7 +98479,11 @@ var require_controle = __commonJS({
     var inc = (o, k) => {
       o[k] = (o[k] || 0) + 1;
     };
-    var controler = async ({ lignes, crm, crmMoteur = null, biens = [], conf = {}, opts = {}, parCategorie = 4, maxCas = 300, groupeDemandeur = null, origines = [] }) => {
+    var controler = async ({ lignes, crm, crmMoteur = null, biens = [], conf = {}, opts = {}, parCategorie = 4, maxCas = 300, groupeDemandeur = null, origines = [], progres = null }) => {
+      const P0 = progres || {};
+      P0.total = lignes.length;
+      P0.fait = 0;
+      const { borne } = require_arriere_plan();
       const memoire = crmMoteur || M.creer({ biens });
       const parId = new Map(biens.map((b) => [String(b.id), b]));
       const origineParId = new Map(origines.map((o) => [String(o.id), o.code]));
@@ -98427,15 +98493,16 @@ var require_controle = __commonJS({
       const res = [];
       for (const l of lignes) {
         let d = null, k = null, suivis = null, errC = null, errM = null;
+        P0.fait++;
         try {
-          d = await traiter({ ...l.mail }, memoire, confC, opts);
+          d = await borne(traiter({ ...l.mail }, memoire, confC, opts), 12e4, "moteur");
         } catch (e) {
           errM = e.message;
           R.erreurs_moteur++;
         }
         try {
-          k = await crm.contact(l.contact_id);
-          if (k && crm.suivis) suivis = await crm.suivis(l.contact_id).catch((e) => {
+          k = await borne(crm.contact(l.contact_id), 6e4, "lecture de la fiche");
+          if (k && crm.suivis) suivis = await borne(crm.suivis(l.contact_id), 6e4, "lecture des suivis").catch((e) => {
             errC = "suivis : " + e.message;
             return null;
           });
@@ -98600,13 +98667,13 @@ var require_leads_controle = __commonJS({
           help: "ancien syst\xE8me : table lead (r\xE9glable ci-dessous) ; solution Leads : ld_leads \xE9crits en mode r\xE9el"
         },
         { name: "correspondances", label: "Tables et champs de l'ancien syst\xE8me (JSON)", type: "json", help: 'Vide = tables AMBS. Ex. {"leads":{"contact":"customer_id"}}' },
-        { name: "domaines_agence", label: "Domaines de l'agence", help: "Les m\xEAmes que dans les r\xE9glages Leads" },
-        { name: "limite", label: "Nombre de leads (les plus r\xE9cents, r\xE9partis entre les portails)", type: "int", default: 200 },
+        { name: "domaines_agence", label: "Domaines de l'agence (en plus)", help: "D\xE9j\xE0 pris : ceux des r\xE9glages Leads et des bo\xEEtes des agences" },
+        { name: "limite", label: "Nombre de leads (les plus r\xE9cents, r\xE9partis entre les portails)", type: "int", default: 50 },
         { name: "moteur_crm", label: "Le moteur cherche contacts et biens dans le vrai CRM (lecture seule)", type: "bool", default: true, help: "D\xE9coch\xE9 : il cherche les biens dans le catalogue de l'ancien syst\xE8me, sans appel au CRM" },
         { name: "fichier", label: "Nom du rapport", default: "controle-crm.json" },
         { name: "arriere_plan", label: "En arri\xE8re-plan (le rapport arrive dans Fichiers)", type: "bool", default: true, help: "D\xE9coch\xE9 : le bouton attend la fin (le proxy peut couper au bout d'une minute : \xAB Bad Gateway \xBB)" }
       ],
-      run: async (p, ctx = {}) => require_arriere_plan().enFond(p, ctx, "dzf_leads_controle_crm", String(p.fichier || "controle-crm.json").replace(/[^\w.-]/g, "_"), async () => {
+      run: async (p, ctx = {}) => require_arriere_plan().enFond(p, ctx, "dzf_leads_controle_crm", String(p.fichier || "controle-crm.json").replace(/[^\w.-]/g, "_"), async (suivi = {}) => {
         const Table = require("@saltcorn/data/models/table");
         const api = require_api();
         const { controler } = require_controle();
@@ -98629,7 +98696,7 @@ var require_leads_controle = __commonJS({
           }
           return out;
         };
-        const limite = Math.max(1, +p.limite || 200);
+        const limite = Math.max(1, +p.limite || 50);
         let cd = null;
         try {
           cd = await require_conf().charger();
@@ -98647,6 +98714,7 @@ var require_leads_controle = __commonJS({
         }
         if (!crmR.base || !crmR.site_id) throw Object.assign(new Error("CRM non r\xE9gl\xE9 : lance d'abord l'installation des r\xE9glages Leads (base et site_id)"), { permanent: true });
         const crm = api.crmDepuisCoffre("immofacile", crmR, R0.prefixe_secrets || "LEADS_CRM", "ombre");
+        suivi.etape = "choix des leads";
         let choisis = [];
         if (p.source === "solution Leads") {
           const L = (await tous(require_schema().nom("leads"))).filter((l) => l.contact_crm && !/^ombre/.test(String(l.contact_crm)) && l.mode === "reel");
@@ -98687,7 +98755,7 @@ var require_leads_controle = __commonJS({
         }));
         const agences = (await tous(c.agences.table)).map((r) => ({ id: String(r[c.agences.id] ?? r.id), nom: r[c.agences.nom], boites: [].concat(c.agences.boites).flatMap((f) => String(r[f] || "").toLowerCase().match(/[\w.+-]+@[\w.-]+/g) || []) }));
         const conf = { ...cd && cd.conf || {}, agences: agences.length ? agences : cd && cd.conf.agences || [] };
-        if (p.domaines_agence) conf.domaines_agence = String(p.domaines_agence).split(/[\s,;]+/).filter(Boolean);
+        conf.domaines_agence = require_banc().domainesAgence(p.domaines_agence, conf.domaines_agence || [], agences.flatMap((a) => a.boites));
         if (!conf.origines || !conf.origines.length) conf.origines = (await tous(c.origines.table)).map((o) => ({ id: o[c.origines.id], code: o[c.origines.code] }));
         conf.consentement = { actif: true, libelle: conf.consentement && conf.consentement.libelle || R0.consentement_libelle || "Demande de contact via {portail} le {date}" };
         let groupe = crmR.groupe_demandeur ?? null;
@@ -98700,7 +98768,8 @@ var require_leads_controle = __commonJS({
             groupe = null;
           }
         }
-        const R = await controler({ lignes, crm, crmMoteur: p.moteur_crm === false ? null : crm, biens, conf, groupeDemandeur: groupe, origines: conf.origines });
+        suivi.etape = "relecture des fiches dans le CRM";
+        const R = await controler({ progres: suivi, lignes, crm, crmMoteur: p.moteur_crm === false ? null : crm, biens, conf, groupeDemandeur: groupe, origines: conf.origines });
         R.le = (/* @__PURE__ */ new Date()).toISOString();
         R.source = p.source || "ancien syst\xE8me";
         R.echantillon = lignes.length;

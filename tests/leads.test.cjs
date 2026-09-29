@@ -379,6 +379,25 @@ const { CONF, MAILS } = require("./fixtures-leads.cjs");
       texte: "Hello Habitat,\nFrom:\nNom: Jan Test\nEmail: jan@example.org\nTéléphone: 0611223344\nRequest for Property:\nID: 8812\nObject: 12 Moulin à eau à vendre. Aveyron.\nURL:\n" }, CONF);
     assert.strictEqual(mo.bien.reference, "SEHA4567"); assert.strictEqual(mo.bien.reference_portail, "8812"); assert(/Moulin/.test(mo.bien.titre));
   }
+  /* Un rôle n'est jamais un nom : « Coordonnées de l'acheteur : » suivi du vrai nom (Zefir) ; « Nom : Acquéreur » effacé */
+  {
+    const z2 = extraire({ expediteur: "Zefir <agent@zefir.fr>", destinataire: "rodez@agence-exemple.fr", objet: "Cet acheteur attend votre réponse",
+      texte: "Rappel\nVous avez reçu une demande de contact pour le bien situé au Rodez (12000).\nCoordonnées de l’acheteur :\nPaul Martin\n📞 06 11 22 33 44\n📧 paul.martin@example.org Merci\nMaison à vendre - Maison - 5 pièces -...\n245 000 € - 120 m²\n🗺️ Rodez (12000)" }, CONF);
+    assert.strictEqual(z2.contact.prenom, "Paul"); assert.strictEqual(z2.contact.nom, "Martin");
+    const { nettoyerNoms } = require("../src/lib/leads/extraire");
+    assert.deepStrictEqual(nettoyerNoms({ nom: "Acquéreur", email: "x@example.org" }), { email: "x@example.org" });
+    assert.strictEqual(nettoyerNoms({ nom_complet: "l'acheteur" }).nom_complet, undefined);
+  }
+  /* Référence très courte : jamais une preuve seule (elle peut désigner un autre bien) ; Giraffe : référence accolée à des lettres */
+  {
+    const { rapprocher } = require("../src/lib/leads/rapprochement");
+    const crmC = require("../src/lib/leads/crm/memoire").creer({ biens: [{ id: 1, reference: "12", ville: "Rodez", code_postal: "12000" }, { id: 2, reference: "AGX12345", ville: "Albi" }] });
+    assert.strictEqual((await rapprocher({ bien: { reference: "12" } }, crmC)).bien, null, "référence de 2 caractères seule : pas de bien");
+    assert.strictEqual((await rapprocher({ bien: { reference: "12", ville: "Rodez", code_postal: "12000" } }, crmC)).bien.id, 1, "confirmée par la ville et le code postal");
+    const gi = extraire({ expediteur: "Giraffe360 <noreply@giraffe360.com>", destinataire: "rodez@agence-exemple.fr", objet: "Nouveau prospect – Demande d'accès à une visite virtuelle",
+      texte: "Vous avez reçu une nouvelle demande\nNom : Jan Test\nEmail : jan@example.org\nTéléphone : 0611223344\nNouveau prospect pour le projet : Maison AGX12345 (11000, France)\n" }, CONF);
+    assert.strictEqual(gi.bien.reference, "AGX12345");
+  }
   /* Réponse d'absence reconnue au texte (deux signes), jamais un prospect qui dit juste être absent */
   {
     const abs = extraire({ expediteur: "Claire <claire@example.org>", destinataire: "rodez@agence-exemple.fr", objet: "Re : Demande auprès de AGENCE EXEMPLE",

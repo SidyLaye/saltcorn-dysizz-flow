@@ -1,5 +1,19 @@
 # Journal des versions
 
+## 2.13.3
+
+- Banc d'essai et contrôle du CRM en arrière-plan : on voit où ils en sont, et ils ne peuvent plus tourner sans fin.
+  - Un nouveau clic pendant le travail montre l'étape et l'avancement (ex. « rejeu du moteur : 3 200 / 8 627 »).
+  - Délais maximaux : 90 s par lecture par l'IA, 1 min par lecture Immofacile, 2 min par lead contrôlé, 2 h en tout. Au-delà, « …-erreur.json » donne la dernière étape atteinte.
+  - Un travail resté bloqué n'empêche plus d'en relancer un (verrou libéré après 2 h).
+  - Le travail tourne dans un contexte propre (même tenant, connexions communes), plus dans celui de la requête du bouton.
+- Contrôle du CRM : 50 leads par défaut.
+- Rapprochement : une référence très courte (moins de 4 caractères, ex. « 12 ») n'est plus une preuve suffisante à elle seule. Le bien doit être confirmé par les faits du mail (ville, code postal, prix, surface).
+- Giraffe : une référence accolée à des lettres dans le nom du projet (ex. « AGX12345 ») est lue.
+- Zefir : quand le mail dit « Coordonnées de l'acheteur : » avec le nom sur la ligne suivante, c'est ce nom qui est lu. Avant, « l'acheteur » était pris pour le nom du prospect.
+- Banc d'essai et contrôle du CRM : les domaines de l'agence sont repris des réglages Leads et des boîtes des agences (hors messageries publiques). Le champ ne sert plus qu'à en ajouter : laissé vide, il faisait prendre les réponses de l'équipe (« Re : ») pour des prospects.
+- Tous les portails, l'IA et les gabarits : un rôle (acheteur, acquéreur, prospect, contact, client, internaute, vendeur, madame, monsieur…) n'est jamais retenu comme prénom ou nom, donc jamais écrit dans le CRM.
+
 ## 2.13.2
 
 - Banc d'essai et contrôle du CRM : ils tournent en arrière-plan. Le bouton « Tester » répond tout de suite et le rapport arrive dans Fichiers à la fin. Avant, un travail de plusieurs minutes (IA, lectures Immofacile) faisait couper la requête par le proxy, avec l'erreur « Bad Gateway ».
