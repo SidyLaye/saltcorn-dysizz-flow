@@ -17,7 +17,9 @@ const inc = (o, k) => { o[k] = (o[k] || 0) + 1; };
 
 /* lignes : [{ mail: { id, expediteur, destinataire, objet, texte, html, date }, contact_id, bien, negociateur, agence, source }]
    crm : adaptateur en lecture seule (contact(id), suivis(id)) ; biens : catalogue ; conf : configuration du moteur (consentement compris) */
-const controler = async ({ lignes, crm, crmMoteur = null, biens = [], conf = {}, opts = {}, parCategorie = 4, maxCas = 300, groupeDemandeur = null, origines = [] }) => {
+const controler = async ({ lignes, crm, crmMoteur = null, biens = [], conf = {}, opts = {}, parCategorie = 4, maxCas = 300, groupeDemandeur = null, origines = [], progres = null }) => {
+  const P0 = progres || {}; P0.total = lignes.length; P0.fait = 0;
+  const { borne } = require("./../arriere_plan");
   /* le moteur cherche contacts et biens dans le vrai CRM (lecture seule) si on le lui donne, sinon dans le catalogue */
   const memoire = crmMoteur || M.creer({ biens });
   const parId = new Map(biens.map((b) => [String(b.id), b]));
@@ -28,10 +30,11 @@ const controler = async ({ lignes, crm, crmMoteur = null, biens = [], conf = {},
   const res = [];
   for (const l of lignes) {
     let d = null, k = null, suivis = null, errC = null, errM = null;
-    try { d = await traiter({ ...l.mail }, memoire, confC, opts); } catch (e) { errM = e.message; R.erreurs_moteur++; }
+    P0.fait++;
+    try { d = await borne(traiter({ ...l.mail }, memoire, confC, opts), 120000, "moteur"); } catch (e) { errM = e.message; R.erreurs_moteur++; }
     try {
-      k = await crm.contact(l.contact_id);
-      if (k && crm.suivis) suivis = await crm.suivis(l.contact_id).catch((e) => { errC = "suivis : " + e.message; return null; });
+      k = await borne(crm.contact(l.contact_id), 60000, "lecture de la fiche");
+      if (k && crm.suivis) suivis = await borne(crm.suivis(l.contact_id), 60000, "lecture des suivis").catch((e) => { errC = "suivis : " + e.message; return null; });
     } catch (e) { errC = e.message; R.erreurs_crm++; }
     if (k) R.lus_dans_le_crm++; else if (!errC) R.introuvables_dans_le_crm++;
     const t = texteMail({ texte: l.mail.texte, html: l.mail.html }).slice(0, 6000);

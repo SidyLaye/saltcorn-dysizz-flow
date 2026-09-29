@@ -1,4 +1,4 @@
-/* dysizz-flow 2.13.2 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.13.3 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.13.2" : "dev";
+    var VERSION2 = true ? "2.13.3" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -97873,29 +97873,53 @@ var require_arriere_plan = __commonJS({
         return "public";
       }
     };
-    var enFond = async (p, ctx, bloc, fichier, travail) => {
-      if (p.arriere_plan === false || p.arriere_plan === "false") return travail();
+    var DUREE_MAX = 2 * 3600 * 1e3;
+    var etatTexte = (s) => `${s.etape || "d\xE9marrage"}${s.total ? ` : ${s.fait || 0} / ${s.total}` : ""}`;
+    var enFond = async (p, ctx, bloc, fichier, travail, { dureeMax = DUREE_MAX } = {}) => {
+      const suivi = { etape: "d\xE9marrage", fait: 0, total: 0, debut: Date.now() };
+      if (p.arriere_plan === false || p.arriere_plan === "false") return travail(suivi);
       const cle = tenant() + ":" + bloc;
       const deja = EN_COURS.get(cle);
-      if (deja) return { lance: false, deja_en_cours: true, depuis: deja, resume: `D\xE9j\xE0 en cours depuis ${Math.round((Date.now() - deja) / 6e4)} min : le rapport arrivera dans Fichiers \u2192 ${fichier}` };
-      EN_COURS.set(cle, Date.now());
-      const t0 = Date.now();
-      travail().catch(async (e) => {
+      if (deja && Date.now() - deja.debut < dureeMax)
+        return { lance: false, deja_en_cours: true, depuis: deja.debut, etat: etatTexte(deja), resume: `D\xE9j\xE0 en cours depuis ${Math.round((Date.now() - deja.debut) / 6e4)} min (${etatTexte(deja)}) : le rapport arrivera dans Fichiers \u2192 ${fichier}` };
+      EN_COURS.set(cle, suivi);
+      let db = null, schema = null;
+      try {
+        db = require("@saltcorn/data/db");
+        schema = db.getTenantSchema();
+      } catch (e) {
+        db = null;
+      }
+      const propre = (fn) => db && db.runWithTenant && schema ? db.runWithTenant(schema, fn) : fn();
+      let minuterie = null;
+      const limite = new Promise((_, ko) => {
+        minuterie = setTimeout(() => ko(new Error(`arr\xEAt\xE9 apr\xE8s ${Math.round(dureeMax / 6e4)} min (derni\xE8re \xE9tape : ${etatTexte(suivi)})`)), dureeMax);
+      });
+      new Promise((ok) => setImmediate(ok)).then(() => Promise.race([propre(() => travail(suivi)), limite])).catch((e) => propre(async () => {
         try {
           const File = require("@saltcorn/data/models/file");
           await File.from_contents(
             String(fichier).replace(/\.json$/, "") + "-erreur.json",
             "application/json",
-            JSON.stringify({ erreur: String(e && e.message || e).slice(0, 500), le: (/* @__PURE__ */ new Date()).toISOString(), apres_secondes: Math.round((Date.now() - t0) / 1e3) }, null, 1),
+            JSON.stringify({ erreur: String(e && e.message || e).slice(0, 500), derniere_etape: etatTexte(suivi), le: (/* @__PURE__ */ new Date()).toISOString(), apres_secondes: Math.round((Date.now() - suivi.debut) / 1e3) }, null, 1),
             ctx && ctx.user && ctx.user.id,
             1
           );
         } catch (x) {
         }
-      }).finally(() => EN_COURS.delete(cle));
-      return { lance: true, fichier, resume: `Lanc\xE9 en arri\xE8re-plan : le rapport arrivera dans Fichiers \u2192 ${fichier} (quelques minutes). En cas de probl\xE8me : ${String(fichier).replace(/\.json$/, "")}-erreur.json` };
+      })).finally(() => {
+        clearTimeout(minuterie);
+        if (EN_COURS.get(cle) === suivi) EN_COURS.delete(cle);
+      });
+      return { lance: true, fichier, resume: `Lanc\xE9 en arri\xE8re-plan : le rapport arrivera dans Fichiers \u2192 ${fichier} (quelques minutes). Recliquer montre o\xF9 il en est. En cas de probl\xE8me : ${String(fichier).replace(/\.json$/, "")}-erreur.json` };
     };
-    module2.exports = { enFond, EN_COURS };
+    var borne = (promesse, ms, quoi) => {
+      let t;
+      return Promise.race([promesse, new Promise((_, ko) => {
+        t = setTimeout(() => ko(new Error(`${quoi} : pas de r\xE9ponse apr\xE8s ${Math.round(ms / 1e3)} s`)), ms);
+      })]).finally(() => clearTimeout(t));
+    };
+    module2.exports = { enFond, borne, EN_COURS };
   }
 });
 
@@ -97965,16 +97989,18 @@ var require_banc = __commonJS({
       return l.split(/(\s+)/).map(m).join("").replace(/(…[\s…]*)+/g, "\u2026 ").trimEnd();
     }).filter((l) => l.trim()).join("\n").slice(0, 2500);
     var seuilDe = (n) => Math.max(5, Math.ceil((n || 1) * 0.1));
-    var banc = async ({ mails, anciens, biens = [], conf = {}, opts = {}, maxCas = 400, parCategorie = 4, alias = {}, exemples = 3, iaEchantillon = 0 }) => {
+    var banc = async ({ mails, anciens, biens = [], conf = {}, opts = {}, maxCas = 400, parCategorie = 4, alias = {}, exemples = 3, iaEchantillon = 0, progres = null }) => {
+      const P0 = progres || {};
       const crm = M.creer({ biens });
       const confB = { ...conf, etapes: { ...conf.etapes || {}, consentement: false, notification: false } };
       const R = { mails: mails.length, erreurs: 0, portails: {}, par_lecture: {}, sources: {}, decisions: {}, champs_ancien_inconnus: {}, cas: [] };
       const res = [];
       const IA = { appels: 0, erreurs: 0, cache: 0, echantillon: 0, par_portail: {} };
+      const { borne } = require_arriere_plan();
       const avecIA = opts.ia ? { ...opts, ia: { lire: async (m, t) => {
         IA.appels++;
         try {
-          const x = await opts.ia.lire(m, t);
+          const x = await borne(opts.ia.lire(m, t), 9e4, "IA");
           if (x && x.cache) IA.cache++;
           return x;
         } catch (e) {
@@ -98015,7 +98041,12 @@ var require_banc = __commonJS({
         }
         return { m: { id: m0.id, date: m0.date, motif: m0.motif_ancien, regle: m0.regle_ancien, objet: String(m0.objet || ""), t: texteMail({ texte: m0.texte, html: m0.html }).slice(0, 6e3) }, d, err };
       };
-      for (const m0 of mails) res.push(await rejouer(m0, sansIA));
+      P0.total = mails.length;
+      P0.fait = 0;
+      for (const m0 of mails) {
+        res.push(await rejouer(m0, sansIA));
+        P0.fait++;
+      }
       if (avecIA && iaEchantillon > 0) {
         const files = /* @__PURE__ */ new Map();
         res.forEach((x, i) => {
@@ -98030,7 +98061,11 @@ var require_banc = __commonJS({
           for (const f of files.values()) if (f[tour] !== void 0 && choisis.length < iaEchantillon) choisis.push(f[tour]);
         choisis.sort((a, b) => a - b);
         IA.echantillon = choisis.length;
+        P0.etape = "lecture par l'IA";
+        P0.total = choisis.length;
+        P0.fait = 0;
         for (const i of choisis) {
+          P0.fait++;
           res[i] = await rejouer(mails[i], avecIA);
           const p = res[i].d && res[i].d.extraction.portail || "inconnu";
           IA.par_portail[p] = (IA.par_portail[p] || 0) + 1;
@@ -98272,7 +98307,7 @@ var require_leads_banc = __commonJS({
         { name: "fichier", label: "Nom du rapport", default: "banc-leads.json" },
         { name: "arriere_plan", label: "En arri\xE8re-plan (le rapport arrive dans Fichiers)", type: "bool", default: true, help: "D\xE9coch\xE9 : le bouton attend la fin (le proxy peut couper au bout d'une minute : \xAB Bad Gateway \xBB)" }
       ],
-      run: async (p, ctx = {}) => require_arriere_plan().enFond(p, ctx, "dzf_leads_banc", String(p.fichier || "banc-leads.json").replace(/[^\w.-]/g, "_"), async () => {
+      run: async (p, ctx = {}) => require_arriere_plan().enFond(p, ctx, "dzf_leads_banc", String(p.fichier || "banc-leads.json").replace(/[^\w.-]/g, "_"), async (suivi = {}) => {
         const Table = require("@saltcorn/data/models/table");
         const api = require_api();
         const { banc, champDeLAncien } = require_banc();
@@ -98291,6 +98326,7 @@ var require_leads_banc = __commonJS({
             depuis = l[l.length - 1].id;
           }
         };
+        suivi.etape = "lecture des mails de l'ancien syst\xE8me";
         const mails = [];
         await lotParLot(T(c.mails.table), (r) => {
           if (!p.limite || mails.length < +p.limite) mails.push({ id: r.id, expediteur: r[c.mails.expediteur], destinataire: r[c.mails.destinataire], objet: r[c.mails.objet], texte: r[c.mails.texte], html: r[c.mails.html], date: r[c.mails.date], motif_ancien: c.mails.motif ? r[c.mails.motif] : null, regle_ancien: c.mails.regle ? r[c.mails.regle] : null });
@@ -98372,7 +98408,8 @@ var require_leads_banc = __commonJS({
           }
           opts.ia = api.iaDepuisCoffre(R0.ia_fournisseur || "saltcorn", R0.ia_modele || "", "LEADS_IA_CLE", R0.ia_url || void 0);
         }
-        const R = await banc({ mails, anciens, biens, conf, opts, iaEchantillon: nIA, exemples: p.exemples === void 0 || p.exemples === null || p.exemples === "" ? 3 : +p.exemples });
+        suivi.etape = "rejeu du moteur";
+        const R = await banc({ mails, anciens, biens, conf, opts, iaEchantillon: nIA, progres: suivi, exemples: p.exemples === void 0 || p.exemples === null || p.exemples === "" ? 3 : +p.exemples });
         R.le = (/* @__PURE__ */ new Date()).toISOString();
         R.biens_catalogue = biens.length;
         R.agences = agences.length;
@@ -98417,7 +98454,11 @@ var require_controle = __commonJS({
     var inc = (o, k) => {
       o[k] = (o[k] || 0) + 1;
     };
-    var controler = async ({ lignes, crm, crmMoteur = null, biens = [], conf = {}, opts = {}, parCategorie = 4, maxCas = 300, groupeDemandeur = null, origines = [] }) => {
+    var controler = async ({ lignes, crm, crmMoteur = null, biens = [], conf = {}, opts = {}, parCategorie = 4, maxCas = 300, groupeDemandeur = null, origines = [], progres = null }) => {
+      const P0 = progres || {};
+      P0.total = lignes.length;
+      P0.fait = 0;
+      const { borne } = require_arriere_plan();
       const memoire = crmMoteur || M.creer({ biens });
       const parId = new Map(biens.map((b) => [String(b.id), b]));
       const origineParId = new Map(origines.map((o) => [String(o.id), o.code]));
@@ -98427,15 +98468,16 @@ var require_controle = __commonJS({
       const res = [];
       for (const l of lignes) {
         let d = null, k = null, suivis = null, errC = null, errM = null;
+        P0.fait++;
         try {
-          d = await traiter({ ...l.mail }, memoire, confC, opts);
+          d = await borne(traiter({ ...l.mail }, memoire, confC, opts), 12e4, "moteur");
         } catch (e) {
           errM = e.message;
           R.erreurs_moteur++;
         }
         try {
-          k = await crm.contact(l.contact_id);
-          if (k && crm.suivis) suivis = await crm.suivis(l.contact_id).catch((e) => {
+          k = await borne(crm.contact(l.contact_id), 6e4, "lecture de la fiche");
+          if (k && crm.suivis) suivis = await borne(crm.suivis(l.contact_id), 6e4, "lecture des suivis").catch((e) => {
             errC = "suivis : " + e.message;
             return null;
           });
@@ -98601,12 +98643,12 @@ var require_leads_controle = __commonJS({
         },
         { name: "correspondances", label: "Tables et champs de l'ancien syst\xE8me (JSON)", type: "json", help: 'Vide = tables AMBS. Ex. {"leads":{"contact":"customer_id"}}' },
         { name: "domaines_agence", label: "Domaines de l'agence", help: "Les m\xEAmes que dans les r\xE9glages Leads" },
-        { name: "limite", label: "Nombre de leads (les plus r\xE9cents, r\xE9partis entre les portails)", type: "int", default: 200 },
+        { name: "limite", label: "Nombre de leads (les plus r\xE9cents, r\xE9partis entre les portails)", type: "int", default: 50 },
         { name: "moteur_crm", label: "Le moteur cherche contacts et biens dans le vrai CRM (lecture seule)", type: "bool", default: true, help: "D\xE9coch\xE9 : il cherche les biens dans le catalogue de l'ancien syst\xE8me, sans appel au CRM" },
         { name: "fichier", label: "Nom du rapport", default: "controle-crm.json" },
         { name: "arriere_plan", label: "En arri\xE8re-plan (le rapport arrive dans Fichiers)", type: "bool", default: true, help: "D\xE9coch\xE9 : le bouton attend la fin (le proxy peut couper au bout d'une minute : \xAB Bad Gateway \xBB)" }
       ],
-      run: async (p, ctx = {}) => require_arriere_plan().enFond(p, ctx, "dzf_leads_controle_crm", String(p.fichier || "controle-crm.json").replace(/[^\w.-]/g, "_"), async () => {
+      run: async (p, ctx = {}) => require_arriere_plan().enFond(p, ctx, "dzf_leads_controle_crm", String(p.fichier || "controle-crm.json").replace(/[^\w.-]/g, "_"), async (suivi = {}) => {
         const Table = require("@saltcorn/data/models/table");
         const api = require_api();
         const { controler } = require_controle();
@@ -98629,7 +98671,7 @@ var require_leads_controle = __commonJS({
           }
           return out;
         };
-        const limite = Math.max(1, +p.limite || 200);
+        const limite = Math.max(1, +p.limite || 50);
         let cd = null;
         try {
           cd = await require_conf().charger();
@@ -98647,6 +98689,7 @@ var require_leads_controle = __commonJS({
         }
         if (!crmR.base || !crmR.site_id) throw Object.assign(new Error("CRM non r\xE9gl\xE9 : lance d'abord l'installation des r\xE9glages Leads (base et site_id)"), { permanent: true });
         const crm = api.crmDepuisCoffre("immofacile", crmR, R0.prefixe_secrets || "LEADS_CRM", "ombre");
+        suivi.etape = "choix des leads";
         let choisis = [];
         if (p.source === "solution Leads") {
           const L = (await tous(require_schema().nom("leads"))).filter((l) => l.contact_crm && !/^ombre/.test(String(l.contact_crm)) && l.mode === "reel");
@@ -98700,7 +98743,8 @@ var require_leads_controle = __commonJS({
             groupe = null;
           }
         }
-        const R = await controler({ lignes, crm, crmMoteur: p.moteur_crm === false ? null : crm, biens, conf, groupeDemandeur: groupe, origines: conf.origines });
+        suivi.etape = "relecture des fiches dans le CRM";
+        const R = await controler({ progres: suivi, lignes, crm, crmMoteur: p.moteur_crm === false ? null : crm, biens, conf, groupeDemandeur: groupe, origines: conf.origines });
         R.le = (/* @__PURE__ */ new Date()).toISOString();
         R.source = p.source || "ancien syst\xE8me";
         R.echantillon = lignes.length;

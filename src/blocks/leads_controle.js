@@ -21,12 +21,12 @@ module.exports = [{
       help: "ancien système : table lead (réglable ci-dessous) ; solution Leads : ld_leads écrits en mode réel" },
     { name: "correspondances", label: "Tables et champs de l'ancien système (JSON)", type: "json", help: "Vide = tables AMBS. Ex. {\"leads\":{\"contact\":\"customer_id\"}}" },
     { name: "domaines_agence", label: "Domaines de l'agence", help: "Les mêmes que dans les réglages Leads" },
-    { name: "limite", label: "Nombre de leads (les plus récents, répartis entre les portails)", type: "int", default: 200 },
+    { name: "limite", label: "Nombre de leads (les plus récents, répartis entre les portails)", type: "int", default: 50 },
     { name: "moteur_crm", label: "Le moteur cherche contacts et biens dans le vrai CRM (lecture seule)", type: "bool", default: true, help: "Décoché : il cherche les biens dans le catalogue de l'ancien système, sans appel au CRM" },
     { name: "fichier", label: "Nom du rapport", default: "controle-crm.json" },
     { name: "arriere_plan", label: "En arrière-plan (le rapport arrive dans Fichiers)", type: "bool", default: true, help: "Décoché : le bouton attend la fin (le proxy peut couper au bout d'une minute : « Bad Gateway »)" },
   ],
-  run: async (p, ctx = {}) => require("../lib/arriere_plan").enFond(p, ctx, "dzf_leads_controle_crm", String(p.fichier || "controle-crm.json").replace(/[^\w.-]/g, "_"), async () => {
+  run: async (p, ctx = {}) => require("../lib/arriere_plan").enFond(p, ctx, "dzf_leads_controle_crm", String(p.fichier || "controle-crm.json").replace(/[^\w.-]/g, "_"), async (suivi = {}) => {
     const Table = require("@saltcorn/data/models/table");
     const api = require("../api");
     const { controler } = require("../lib/leads/controle");
@@ -34,7 +34,7 @@ module.exports = [{
     const c = Object.fromEntries(Object.entries(DEFAUT).map(([k, v]) => [k, { ...v, ...(K[k] || {}) }]));
     const T = (n) => { const t = Table.findOne({ name: n }); if (!t) throw Object.assign(new Error(`table « ${n} » introuvable`), { permanent: true }); return t; };
     const tous = async (n) => { const t = Table.findOne({ name: n }); if (!t) return []; const out = []; for (let depuis = 0; ; ) { const l = await t.getRows({ id: { gt: depuis } }, { orderBy: "id", limit: 1000 }); if (!l.length) break; out.push(...l); depuis = l[l.length - 1].id; } return out; };
-    const limite = Math.max(1, +p.limite || 200);
+    const limite = Math.max(1, +p.limite || 50);
 
     /* réglages Leads (s'ils existent) : CRM, origines, consentement */
     let cd = null; try { cd = await require("../lib/leads/tables/conf").charger(); } catch (e) { cd = null; }
@@ -48,6 +48,7 @@ module.exports = [{
     const crm = api.crmDepuisCoffre("immofacile", crmR, R0.prefixe_secrets || "LEADS_CRM", "ombre");
 
     /* leads à contrôler, avec leur mail */
+    suivi.etape = "choix des leads";
     let choisis = [];
     if (p.source === "solution Leads") {
       const L = (await tous(require("../lib/leads/tables/schema").nom("leads"))).filter((l) => l.contact_crm && !/^ombre/.test(String(l.contact_crm)) && l.mode === "reel");
@@ -82,7 +83,8 @@ module.exports = [{
     let groupe = crmR.groupe_demandeur ?? null;
     if (groupe == null && crm.groupes) { try { const g = (await crm.groupes()) || []; const d = g.find((x) => /^demandeurs?$/i.test(String(x.label || x.name || "").normalize("NFD").replace(/[̀-ͯ]/g, "").trim())); groupe = d ? d.id : null; } catch (e) { groupe = null; } }
 
-    const R = await controler({ lignes, crm, crmMoteur: p.moteur_crm === false ? null : crm, biens, conf, groupeDemandeur: groupe, origines: conf.origines });
+    suivi.etape = "relecture des fiches dans le CRM";
+    const R = await controler({ progres: suivi, lignes, crm, crmMoteur: p.moteur_crm === false ? null : crm, biens, conf, groupeDemandeur: groupe, origines: conf.origines });
     R.le = new Date().toISOString(); R.source = p.source || "ancien système"; R.echantillon = lignes.length; R.leads_disponibles = choisis.length; R.groupe_demandeur_connu = groupe != null;
     const File = require("@saltcorn/data/models/file");
     const nom = String(p.fichier || "controle-crm.json").replace(/[^\w.-]/g, "_");

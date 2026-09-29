@@ -29,7 +29,7 @@ module.exports = [{
     { name: "fichier", label: "Nom du rapport", default: "banc-leads.json" },
     { name: "arriere_plan", label: "En arrière-plan (le rapport arrive dans Fichiers)", type: "bool", default: true, help: "Décoché : le bouton attend la fin (le proxy peut couper au bout d'une minute : « Bad Gateway »)" },
   ],
-  run: async (p, ctx = {}) => require("../lib/arriere_plan").enFond(p, ctx, "dzf_leads_banc", String(p.fichier || "banc-leads.json").replace(/[^\w.-]/g, "_"), async () => {
+  run: async (p, ctx = {}) => require("../lib/arriere_plan").enFond(p, ctx, "dzf_leads_banc", String(p.fichier || "banc-leads.json").replace(/[^\w.-]/g, "_"), async (suivi = {}) => {
     const Table = require("@saltcorn/data/models/table");
     const api = require("../api");
     const { banc, champDeLAncien } = require("../lib/leads/banc");
@@ -39,6 +39,7 @@ module.exports = [{
     const lotParLot = async (t, f) => { for (let depuis = 0; ; ) { const l = await t.getRows({ id: { gt: depuis } }, { orderBy: "id", limit: 1000 }); if (!l.length) break; for (const r of l) f(r); depuis = l[l.length - 1].id; } };
 
     /* mails */
+    suivi.etape = "lecture des mails de l'ancien système";
     const mails = [];
     await lotParLot(T(c.mails.table), (r) => { if (!p.limite || mails.length < +p.limite) mails.push({ id: r.id, expediteur: r[c.mails.expediteur], destinataire: r[c.mails.destinataire], objet: r[c.mails.objet], texte: r[c.mails.texte], html: r[c.mails.html], date: r[c.mails.date], motif_ancien: c.mails.motif ? r[c.mails.motif] : null, regle_ancien: c.mails.regle ? r[c.mails.regle] : null }); });
     /* résultats de l'ancien système */
@@ -80,7 +81,8 @@ module.exports = [{
       opts.ia = api.iaDepuisCoffre(R0.ia_fournisseur || "saltcorn", R0.ia_modele || "", "LEADS_IA_CLE", R0.ia_url || undefined);
     }
 
-    const R = await banc({ mails, anciens, biens, conf, opts, iaEchantillon: nIA, exemples: p.exemples === undefined || p.exemples === null || p.exemples === "" ? 3 : +p.exemples });
+    suivi.etape = "rejeu du moteur";
+    const R = await banc({ mails, anciens, biens, conf, opts, iaEchantillon: nIA, progres: suivi, exemples: p.exemples === undefined || p.exemples === null || p.exemples === "" ? 3 : +p.exemples });
     R.le = new Date().toISOString(); R.biens_catalogue = biens.length; R.agences = agences.length; R.champs_ancien_inconnus = inconnus;
     R.gabarits = { source: gabaritsDe || "aucun", au_depart: depart.length, actifs_au_depart: depart.filter((g) => g.statut === "actif").length }; R.domaines_agence = conf.domaines_agence;
     const File = require("@saltcorn/data/models/file");

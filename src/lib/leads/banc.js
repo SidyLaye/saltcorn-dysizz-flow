@@ -84,14 +84,16 @@ const seuilDe = (n) => Math.max(5, Math.ceil((n || 1) * 0.1));
    anciens : Map(mail_id → { source, statut, reference, bien, agence, negociateur, champs: { email, tel, nom, prenom, reference } })
    biens : catalogue de l'ancien système au format du moteur ({ id, reference, prix, surface, pieces, type, ville, code_postal, negociateur_id, agence_id })
    conf : configuration du moteur (agences, domaines_agence, portails déclarés…) */
-const banc = async ({ mails, anciens, biens = [], conf = {}, opts = {}, maxCas = 400, parCategorie = 4, alias = {}, exemples = 3, iaEchantillon = 0 }) => {
+const banc = async ({ mails, anciens, biens = [], conf = {}, opts = {}, maxCas = 400, parCategorie = 4, alias = {}, exemples = 3, iaEchantillon = 0, progres = null }) => {
+  const P0 = progres || {};
   const crm = M.creer({ biens });
   const confB = { ...conf, etapes: { ...(conf.etapes || {}), consentement: false, notification: false } };
   const R = { mails: mails.length, erreurs: 0, portails: {}, par_lecture: {}, sources: {}, decisions: {}, champs_ancien_inconnus: {}, cas: [] };
   const res = [];
   /* IA : appels comptés ; jamais plus que l'échantillon demandé */
   const IA = { appels: 0, erreurs: 0, cache: 0, echantillon: 0, par_portail: {} };
-  const avecIA = opts.ia ? { ...opts, ia: { lire: async (m, t) => { IA.appels++; try { const x = await opts.ia.lire(m, t); if (x && x.cache) IA.cache++; return x; } catch (e) { IA.erreurs++; throw e; } } } } : null;
+  const { borne } = require("../arriere_plan");
+  const avecIA = opts.ia ? { ...opts, ia: { lire: async (m, t) => { IA.appels++; try { const x = await borne(opts.ia.lire(m, t), 90000, "IA"); if (x && x.cache) IA.cache++; return x; } catch (e) { IA.erreurs++; throw e; } } } } : null;
   const sansIA = { ...opts }; delete sansIA.ia; delete sansIA.budget; delete sansIA.noter;
   const gab0 = opts.gabarits && opts.gabarits.tous ? opts.gabarits.tous().length : null;
   /* 1. le moteur sur chaque mail (règles et gabarits ; l'IA vient ensuite, sur un échantillon) */
@@ -111,7 +113,8 @@ const banc = async ({ mails, anciens, biens = [], conf = {}, opts = {}, maxCas =
     } catch (e) { err = e.message; }
     return { m: { id: m0.id, date: m0.date, motif: m0.motif_ancien, regle: m0.regle_ancien, objet: String(m0.objet || ""), t: texteMail({ texte: m0.texte, html: m0.html }).slice(0, 6000) }, d, err };
   };
-  for (const m0 of mails) res.push(await rejouer(m0, sansIA));
+  P0.total = mails.length; P0.fait = 0;
+  for (const m0 of mails) { res.push(await rejouer(m0, sansIA)); P0.fait++; }
   /* 1 bis. IA sur un échantillon des mails qu'elle seule peut lire, réparti entre les portails */
   if (avecIA && iaEchantillon > 0) {
     const files = new Map();
@@ -121,7 +124,8 @@ const banc = async ({ mails, anciens, biens = [], conf = {}, opts = {}, maxCas =
       for (const f of files.values()) if (f[tour] !== undefined && choisis.length < iaEchantillon) choisis.push(f[tour]);
     choisis.sort((a, b) => a - b);
     IA.echantillon = choisis.length;
-    for (const i of choisis) { res[i] = await rejouer(mails[i], avecIA); const p = (res[i].d && res[i].d.extraction.portail) || "inconnu"; IA.par_portail[p] = (IA.par_portail[p] || 0) + 1; }
+    P0.etape = "lecture par l'IA"; P0.total = choisis.length; P0.fait = 0;
+    for (const i of choisis) { P0.fait++; res[i] = await rejouer(mails[i], avecIA); const p = (res[i].d && res[i].d.extraction.portail) || "inconnu"; IA.par_portail[p] = (IA.par_portail[p] || 0) + 1; }
   }
   /* 1 ter. ce que l'IA a appris sert aux autres mails de la même forme (comme en production) */
   if (gab0 !== null && opts.gabarits.tous().length > gab0) {
