@@ -332,5 +332,28 @@ const { CONF, MAILS } = require("./fixtures-leads.cjs");
     assert.strictEqual(n2.nature, "non_lead", "sans prospect : reste écarté");
   }
 
+  /* Mail AC3 sans site déclaré : la source est l'agence nommée dans l'objet, jamais « AC3 » */
+  {
+    const d0 = await traiter(MAILS.ac3, M.creer({}), { ...CONF, sites: [] });
+    assert(!/ac3/i.test(d0.portail || ""), "source sans AC3 : " + d0.portail);
+    assert.strictEqual(d0.portail, "Agence Exemple");
+    /* dans le CRM aussi, l'origine est l'agence (son site), trouvée par son nom */
+    const origines = [{ id: 11, code: "leboncoin", libelle: "Leboncoin" }, { id: 12, code: "agence_exemple_fr", libelle: "agence-exemple.fr" }, { id: 13, code: "ambs", libelle: "Autre" }];
+    const d1 = await traiter(MAILS.ac3, M.creer({}), { ...CONF, sites: [], origines, origine_defaut: "ambs" });
+    assert.strictEqual(d1.origine && d1.origine.id, 12, "origine CRM = le site de l'agence : " + JSON.stringify(d1.origine));
+    assert(!/ac3/i.test(JSON.stringify(d1.origine)));
+  }
+
+  /* AC3, création de compte : lead avec client ET bien, sinon non */
+  {
+    const avec = extraire({ ...MAILS.ac3, objet: "Création compte sur AGENCE EXEMPLE" }, CONF);
+    assert.strictEqual(avec.nature, "lead", "client + bien : lead");
+    const sansBien = extraire({ ...MAILS.ac3, objet: "Création compte sur AGENCE EXEMPLE", texte: MAILS.ac3.texte.replace(/Biens maison.*\n/, ""), html: "" }, CONF);
+    assert.strictEqual(sansBien.nature, "non_lead", "sans bien : pas un lead");
+    const sansClient = extraire({ ...MAILS.ac3, objet: "Création compte sur AGENCE EXEMPLE", texte: MAILS.ac3.texte.replace(/Client :.*?\n/, "\n") }, CONF);
+    assert.strictEqual(sansClient.nature, "non_lead", "sans client : pas un lead");
+    assert.strictEqual(extraire(MAILS.ac3, CONF).nature, "lead", "une demande reste un lead");
+  }
+
   console.log("leads + ovh : ok");
 })().catch((e) => { console.error(e); process.exit(1); });

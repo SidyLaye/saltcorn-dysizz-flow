@@ -1,4 +1,4 @@
-/* dysizz-flow 2.12.0 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.12.1 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.12.0" : "dev";
+    var VERSION2 = true ? "2.12.1" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -92783,8 +92783,10 @@ var require_portails = __commonJS({
         id: "site_agence",
         nom: "Site d'agence (AC3)",
         test: (d) => /ac3-groupe\.com$/.test(d),
+        /* création de compte sur le site : un lead seulement si le mail porte le client (e-mail ou téléphone) ET un bien */
+        valider: ({ o, r }) => /cr[ée]ation (de )?compte|account creation|account created/i.test(o) ? (r.contact.email || r.contact.telephone) && (r.bien.reference || r.bien.titre || r.bien.id_crm) ? "lead" : "non_lead" : null,
         nature: (o) => /résolution de votre demande|demande d.assistance|ticket/i.test(o) ? "non_lead" : /demande|request|création compte|account/i.test(o) ? "lead" : "non_lead",
-        regles: ({ L, texte, r }) => {
+        regles: ({ L, o, texte, r }) => {
           const cl = texte.match(/(?:client|customer)\s*:\s*([^\n]+)/i);
           if (cl) {
             const parts = cl[1].replace(/\s+(e-?mail|t[ée]l[ée]phone|phone)\s*:.*$/i, "").split(/\s+-\s+/).map((x) => x.trim());
@@ -92821,6 +92823,11 @@ var require_portails = __commonJS({
           }
           const d = texte.match(/délai du projet\s*:\s*(.+)/i);
           if (d) r.delai = d[1].trim();
+          const ag = String(o || "").match(/(?:demande auprès de|request to|création (?:de )?compte sur|account creation on)\s+(.+?)\s*$/i);
+          if (ag && ag[1].trim()) {
+            const n = V.nomPropre(ag[1].trim());
+            r.site_nom = n === n.toUpperCase() ? n.toLowerCase().replace(new RegExp("(^|[\\s'\u2019-])(\\p{L})", "gu"), (m, a, b2) => a + b2.toUpperCase()) : n;
+          }
           const oc = texte.match(/origine du contact\s*:\s*(.+)/i);
           if (oc) r.origine_declaree = oc[1].trim();
           if (/n'a pas accepté d'?[eê]tre recontacté par e-?mail/i.test(texte)) r.consentement_email = false;
@@ -93309,6 +93316,14 @@ var require_extraire = __commonJS({
         }
         for (const k of ["contact", "bien"]) for (const [c2, v] of Object.entries(r[k])) if (v !== null && v !== void 0 && v !== "" && !r.preuves[k + "." + c2]) r.preuves[k + "." + c2] = "portail:" + p.id;
         if (r.message && !r.preuves.message) r.preuves.message = "portail:" + p.id;
+      }
+      if (p && p.valider && r.nature !== "non_lead") {
+        try {
+          const n = p.valider({ o: objet, r });
+          if (n) r.nature = n;
+        } catch (e) {
+          r.erreur_regle = e.message;
+        }
       }
       if (r.nature === "reponse_campagne") {
         poser(r, "contact.email", V.email(mail.expediteur), "expediteur");
@@ -94847,11 +94862,13 @@ var require_traiter = __commonJS({
         const domaineMail = String(r.site || "").toLowerCase().replace(/^www\./, "");
         return memeOrigine || domaineMail && domaineConfig === domaineMail;
       }) || null : null;
-      const portailMetier = r.portail === "site_agence" ? siteCfg ? siteCfg.libelle || siteCfg.noms && siteCfg.noms[0] || siteCfg.domaine : r.portail_nom || r.site || r.site_origine || "Site agence" : r.portail_nom || r.portail;
+      const portailMetier = r.portail === "site_agence" ? siteCfg ? siteCfg.libelle || siteCfg.noms && siteCfg.noms[0] || siteCfg.domaine : r.site_nom || r.site || "Site de l'agence" : r.portail_nom || r.portail;
       if (r.portail === "site_agence") r.portail_nom = portailMetier;
       d.portail = portailMetier;
       d.source = portailMetier;
-      const origineCode = r.portail === "site_agence" ? r.site_origine : (conf.origines_portail || {})[r.portail] || r.portail;
+      const sansTld = (x) => String(x || "").toLowerCase().replace(/\.(com|fr|net|org|eu)\b/g, "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, "");
+      const origineSite = r.portail === "site_agence" && !siteCfg && r.site_nom ? ((conf.origines || []).find((o) => sansTld(o.libelle) === sansTld(r.site_nom) || sansTld(o.code) === sansTld(r.site_nom)) || {}).code : null;
+      const origineCode = r.portail === "site_agence" ? siteCfg && siteCfg.origine || r.site_origine || origineSite : (conf.origines_portail || {})[r.portail] || r.portail;
       const origine = (conf.origines || []).find((o) => o.code === origineCode) || conf.origine_defaut && (conf.origines || []).find((o) => o.code === conf.origine_defaut) || null;
       d.origine = origine ? { code: origine.code, libelle: r.portail === "site_agence" ? portailMetier : origine.libelle || portailMetier, id: origine.id } : { code: origineCode, libelle: portailMetier, id: null };
       if (origine && origine.code !== origineCode) d.origine.par_defaut = true;
@@ -94891,6 +94908,7 @@ var require_traiter = __commonJS({
         const date = dateDuMail(mail) || d.date_mail || /* @__PURE__ */ new Date();
         const motif = gabarit(conf.consentement.libelle || "Demande de contact via {portail} du {date}", { portail: d.portail || r.site_libelle || r.portail_nom || r.portail, date: dateFr(date) });
         d.actions.push({ op: "ajouterConsentement", date: new Date(date).toISOString(), motif, hors_horaires: r.hors_horaires, preuves: [preuveEml(mail)] });
+        if (motif.length > 64) d.alertes.push(`motif du consentement trop long (${motif.length} caract\xE8res) : Immofacile n'en garde que 64`);
       }
       return d;
     };
@@ -97692,6 +97710,306 @@ var require_leads_solution = __commonJS({
         })
       }
     ];
+  }
+});
+
+// src/lib/leads/banc.js
+var require_banc = __commonJS({
+  "src/lib/leads/banc.js"(exports2, module2) {
+    "use strict";
+    var V = require_valeurs();
+    var { texteMail, cle } = require_texte();
+    var { traiter } = require_traiter();
+    var M = require_memoire();
+    var norm = {
+      email: (x) => (V.email(x) || "").toLowerCase(),
+      tel: (x) => String(x || "").replace(/\D/g, "").slice(-9),
+      texte: (x) => cle(String(x || "")).replace(/[^a-z0-9]/g, ""),
+      ref: (x) => String(x || "").toUpperCase().replace(/[^A-Z0-9]/g, ""),
+      id: (x) => x === null || x === void 0 || x === "" ? "" : String(x).trim()
+    };
+    var ecart = (champ, a, n) => {
+      if (!a && !n) return null;
+      if (!n) return "absent chez nous";
+      if (!a) return "absent chez l'ancien";
+      if (champ === "email") return a.split("@")[1] === n.split("@")[1] ? "m\xEAme domaine, adresse diff\xE9rente" : "adresse diff\xE9rente";
+      if (champ === "tel") return "num\xE9ro diff\xE9rent";
+      if (champ === "reference") return a.includes(n) || n.includes(a) ? "l'une contient l'autre" : a.slice(0, -1) === n.slice(0, -1) ? "diff\xE8re par le dernier caract\xE8re" : "r\xE9f\xE9rence diff\xE9rente";
+      if (champ === "nom" || champ === "prenom") return "valeur diff\xE9rente";
+      return "diff\xE9rent";
+    };
+    var CHAMP_ANCIEN = [
+      [/^(email|e_?mail|mail|courriel|email_acquereur|email_prospect)$/, "email"],
+      [/^(tel|telephone|phone|mobile|portable|tel_acquereur|telephone_acquereur)$/, "tel"],
+      [/^(nom|lastname|last_name|nom_famille)$/, "nom"],
+      [/^(prenom|firstname|first_name)$/, "prenom"],
+      [/^(reference|ref|reference_bien|ref_bien|reference_annonce)$/, "reference"]
+    ];
+    var champDeLAncien = (n) => {
+      const k = cle(String(n || "")).replace(/[^a-z_]/g, "");
+      const x = CHAMP_ANCIEN.find(([re]) => re.test(k));
+      return x ? x[1] : null;
+    };
+    var decisionAncienne = (statut, aUnLead) => !aUnLead ? "pas de lead" : /rejet|quarant/i.test(String(statut)) ? "non automatis\xE9" : "envoy\xE9";
+    var decisionNouvelle = (st) => st === "pret" ? "envoy\xE9" : ["a_verifier", "a_trier"].includes(st) ? "non automatis\xE9" : "pas de lead";
+    var mots = (t) => new Set(cle(t).split(/[^a-z0-9']+/).filter((w) => w.length > 1 && !/\d/.test(w)));
+    var squelette = (texte, df, seuil) => String(texte || "").replace(/[\w.+-]+@[\w-]+(\.[\w-]+)+/g, " [email] ").replace(/(\+?\d[\d .-]{7,}\d)/g, " [tel] ").split("\n").map((l) => l.split(/(\s+)/).map((w) => {
+      if (/^\s+$/.test(w) || /^\[(email|tel)\]$/.test(w)) return w;
+      if (/\d/.test(w)) return w.replace(/\d+/g, "#");
+      const k = cle(w).replace(/[^a-z0-9']/g, "");
+      return !k || (df.get(k) || 0) >= seuil ? w : "\u2026";
+    }).join("").replace(/(…[\s…]*)+/g, "\u2026 ").trimEnd()).filter((l) => l.trim()).join("\n").slice(0, 2500);
+    var banc = async ({ mails, anciens, biens = [], conf = {}, opts = {}, maxCas = 400, parCategorie = 4, alias = {}, exemples = 3 }) => {
+      const crm = M.creer({ biens });
+      const confB = { ...conf, etapes: { ...conf.etapes || {}, consentement: false, notification: false } };
+      const R = { mails: mails.length, erreurs: 0, portails: {}, sources: {}, decisions: {}, champs_ancien_inconnus: {}, cas: [] };
+      const res = [];
+      for (const m0 of mails) {
+        let d = null, err = null;
+        try {
+          const x = await traiter({ ...m0, date: m0.date }, crm, confB, opts);
+          const e = x.extraction || {};
+          d = {
+            statut: x.statut,
+            motifs: x.motifs,
+            bien: x.bien ? { id: x.bien.id } : null,
+            agence: x.agence ? { id: x.agence.id } : null,
+            negociateur: x.negociateur && typeof x.negociateur === "object" ? { id: x.negociateur.id } : x.negociateur || null,
+            extraction: { portail: e.portail, portail_nom: e.portail_nom, nature: e.nature, lu_par: e.lu_par, contact: e.contact, bien: { reference: e.bien && e.bien.reference } }
+          };
+        } catch (e) {
+          err = e.message;
+          R.erreurs++;
+        }
+        res.push({ m: { id: m0.id, objet: String(m0.objet || ""), t: texteMail({ texte: m0.texte, html: m0.html }).slice(0, 6e3) }, d, err });
+      }
+      const df = /* @__PURE__ */ new Map(), nb = /* @__PURE__ */ new Map();
+      for (const { m, d } of res) {
+        const p = d && d.extraction && d.extraction.portail || "inconnu";
+        if (!df.has(p)) {
+          df.set(p, /* @__PURE__ */ new Map());
+          nb.set(p, 0);
+        }
+        nb.set(p, nb.get(p) + 1);
+        for (const w of mots(m.objet + "\n" + m.t)) df.get(p).set(w, (df.get(p).get(w) || 0) + 1);
+      }
+      const cat = /* @__PURE__ */ new Map();
+      const inc = (o, k) => {
+        o[k] = (o[k] || 0) + 1;
+      };
+      for (const { m, d, err } of res) {
+        const a = anciens.get(m.id) || null;
+        const x = d && d.extraction || {}, c = x.contact || {}, bm = x.bien || {};
+        const p = x.portail || (err ? "erreur" : "inconnu");
+        const P = R.portails[p] || (R.portails[p] = { mails: 0, natures: {}, decisions: {}, champs: {} });
+        P.mails++;
+        inc(P.natures, x.nature || "?");
+        const decA = decisionAncienne(a && a.statut, !!a), decN = err ? "erreur" : decisionNouvelle(d && d.statut);
+        inc(P.decisions, `${decA} \u2192 ${decN}`);
+        inc(R.decisions, `${decA} \u2192 ${decN}`);
+        if (a) {
+          const srcA = norm.texte(a.source), srcN = norm.texte(x.portail), nomN = norm.texte(x.portail_nom);
+          const memeSource = !!srcA && ((alias[srcA] || []).map(norm.texte).includes(srcN) || srcA === srcN || srcA === nomN || srcN && srcA.includes(srcN) || nomN && srcA.includes(nomN) || srcN && srcN.includes(srcA));
+          inc(R.sources, `${a.source || "?"} \u2192 ${x.portail || "?"}${memeSource ? "" : " (?)"}`);
+        }
+        const diffs = [];
+        if (a && decA !== "pas de lead") {
+          const nous = {
+            email: norm.email(c.email),
+            tel: norm.tel(c.telephone),
+            nom: norm.texte(c.nom || (V.decouperNom(c.nom_complet || "") || {}).nom),
+            prenom: norm.texte(c.prenom || (V.decouperNom(c.nom_complet || "") || {}).prenom),
+            reference: norm.ref(bm.reference),
+            bien: norm.id(d && d.bien && d.bien.id),
+            agence: norm.id(d && d.agence && d.agence.id),
+            negociateur: norm.id(d && d.negociateur && (d.negociateur.id || d.negociateur))
+          };
+          const eux = {
+            email: norm.email(a.champs.email),
+            tel: norm.tel(a.champs.tel),
+            nom: norm.texte(a.champs.nom),
+            prenom: norm.texte(a.champs.prenom),
+            reference: norm.ref(a.champs.reference || a.reference),
+            bien: norm.id(a.bien),
+            agence: norm.id(a.agence),
+            negociateur: norm.id(a.negociateur)
+          };
+          for (const k of Object.keys(nous)) {
+            const C = P.champs[k] || (P.champs[k] = { accord: 0 });
+            const e = nous[k] === eux[k] ? nous[k] ? "accord" : null : ecart(k, eux[k], nous[k]);
+            if (!e) continue;
+            inc(C, e);
+            if (e !== "accord") diffs.push({ champ: k, ecart: e });
+          }
+        }
+        if (decA !== decN && !(decA === "pas de lead" && decN === "pas de lead")) diffs.push({ champ: "decision", ecart: `${decA} \u2192 ${decN}` });
+        if (err) diffs.push({ champ: "erreur", ecart: err.slice(0, 120) });
+        for (const f of diffs) {
+          const k = `${p}|${f.champ}|${f.ecart}`;
+          const n = (cat.get(k) || 0) + 1;
+          cat.set(k, n);
+          if (n > parCategorie || R.cas.length >= maxCas) continue;
+          const seuil = Math.max(3, Math.ceil((nb.get(p) || 1) * 0.05));
+          R.cas.push({
+            mail: m.id,
+            portail: p,
+            nature: x.nature || null,
+            lu_par: x.lu_par || null,
+            champ: f.champ,
+            ecart: f.ecart,
+            motifs: (d && d.motifs || []).map((t) => t.replace(/[\w.+-]+@[\w.-]+/g, "[email]").replace(/\d{3,}/g, "#")).slice(0, 4),
+            objet: squelette(m.objet, df.get(p) || /* @__PURE__ */ new Map(), seuil),
+            squelette: squelette(m.t, df.get(p) || /* @__PURE__ */ new Map(), seuil)
+          });
+        }
+      }
+      R.categories = Object.fromEntries([...cat].sort((a, b) => b[1] - a[1]));
+      R.exemples = [];
+      const vus = /* @__PURE__ */ new Map();
+      for (const { m, d } of res) {
+        const x = d && d.extraction || {}, p = x.portail || "inconnu";
+        const n = (vus.get(p) || 0) + 1;
+        if (n > exemples) continue;
+        vus.set(p, n);
+        const seuil = Math.max(3, Math.ceil((nb.get(p) || 1) * 0.05));
+        R.exemples.push({ mail: m.id, portail: p, nature: x.nature || null, lu_par: x.lu_par || null, statut: d && d.statut, objet: squelette(m.objet, df.get(p) || /* @__PURE__ */ new Map(), seuil), squelette: squelette(m.t, df.get(p) || /* @__PURE__ */ new Map(), seuil) });
+      }
+      return R;
+    };
+    module2.exports = { banc, squelette, ecart, champDeLAncien, norm };
+  }
+});
+
+// src/blocks/leads_banc.js
+var require_leads_banc = __commonJS({
+  "src/blocks/leads_banc.js"(exports2, module2) {
+    "use strict";
+    var CAT = "Leads immobiliers";
+    var lu = (v, d) => {
+      if (v && typeof v === "object") return v;
+      try {
+        return JSON.parse(v);
+      } catch (e) {
+        return d;
+      }
+    };
+    var DEFAUT = {
+      mails: { table: "email_brut_selection_habitat", expediteur: "expediteur", destinataire: "destinataire", objet: "objet", texte: "corps_texte", html: "corps_html", date: "date_envoi" },
+      leads: { table: "lead", mail: "email_brut", source: "source", statut: "statut", reference: "reference_bien", bien: "product_id", agence: "agency_id", negociateur: "user_id" },
+      champs: { table: "lead_champ", lead: "lead", nom: "nom_champ", valeur: "valeur" },
+      biens: { table: "bien", id: "product_id", reference: "model", prix: "prix", surface: "surface", pieces: "nb_pieces", type: "type_bien", ville: "ville", code_postal: "code_postal", negociateur: "user_id", agence: "agency_id", proprietaire: "customers_id" },
+      agences: { table: "agence", id: "agency_id", nom: "nom", boites: ["boite", "emails"] }
+    };
+    module2.exports = [{
+      name: "dzf_leads_banc",
+      label: "Leads : banc d'essai sur les mails d'un ancien syst\xE8me",
+      category: CAT,
+      icon: "fas fa-balance-scale",
+      output: "banc",
+      timeout: 3600,
+      description: "Rejoue le traitement des leads sur les mails d\xE9j\xE0 re\xE7us par un ancien syst\xE8me et compare, mail par mail, avec ce qu'il avait trouv\xE9 : source, e-mail, t\xE9l\xE9phone, nom, pr\xE9nom, r\xE9f\xE9rence, bien, agence, n\xE9gociateur, d\xE9cision. Rien n'est \xE9crit (CRM en m\xE9moire). Rapport sans donn\xE9e personnelle dans Fichiers : accords par portail et par champ, type de chaque \xE9cart, squelette anonymis\xE9 des mails en \xE9cart.",
+      params: [
+        { name: "correspondances", label: "Tables et champs de l'ancien syst\xE8me (JSON)", type: "json", help: 'Vide = tables AMBS (email_brut_selection_habitat, lead, lead_champ, bien, agence). Ex. {"mails":{"table":"mails"}}' },
+        { name: "domaines_agence", label: "Domaines de l'agence", help: "Ex. selectionhabitat.com (mails de l'\xE9quipe)" },
+        { name: "limite", label: "Nombre de mails (0 = tous)", type: "int", default: 0 },
+        { name: "gabarits", label: "Utiliser les gabarits appris (table des gabarits leads)", type: "bool", default: true },
+        { name: "exemples", label: "Exemples anonymis\xE9s par portail", type: "int", default: 3 },
+        { name: "fichier", label: "Nom du rapport", default: "banc-leads.json" }
+      ],
+      run: async (p, ctx = {}) => {
+        const Table = require("@saltcorn/data/models/table");
+        const api = require_api();
+        const { banc, champDeLAncien } = require_banc();
+        const K = lu(p.correspondances, {}) || {};
+        const c = Object.fromEntries(Object.entries(DEFAUT).map(([k, v]) => [k, { ...v, ...K[k] || {} }]));
+        const T = (n) => {
+          const t = Table.findOne({ name: n });
+          if (!t) throw Object.assign(new Error(`table \xAB ${n} \xBB introuvable`), { permanent: true });
+          return t;
+        };
+        const lotParLot = async (t, f) => {
+          for (let depuis = 0; ; ) {
+            const l = await t.getRows({ id: { gt: depuis } }, { orderBy: "id", limit: 1e3 });
+            if (!l.length) break;
+            for (const r of l) f(r);
+            depuis = l[l.length - 1].id;
+          }
+        };
+        const mails = [];
+        await lotParLot(T(c.mails.table), (r) => {
+          if (!p.limite || mails.length < +p.limite) mails.push({ id: r.id, expediteur: r[c.mails.expediteur], destinataire: r[c.mails.destinataire], objet: r[c.mails.objet], texte: r[c.mails.texte], html: r[c.mails.html], date: r[c.mails.date] });
+        });
+        const anciens = /* @__PURE__ */ new Map(), leadVersMail = /* @__PURE__ */ new Map();
+        await lotParLot(T(c.leads.table), (r) => {
+          const m = r[c.leads.mail];
+          if (m === null || m === void 0) return;
+          leadVersMail.set(r.id, m);
+          anciens.set(m, { source: r[c.leads.source], statut: r[c.leads.statut], reference: r[c.leads.reference], bien: r[c.leads.bien], agence: r[c.leads.agence], negociateur: r[c.leads.negociateur], champs: {} });
+        });
+        const inconnus = {};
+        if (Table.findOne({ name: c.champs.table })) await lotParLot(T(c.champs.table), (r) => {
+          const a = anciens.get(leadVersMail.get(r[c.champs.lead]));
+          if (!a) return;
+          const k = champDeLAncien(r[c.champs.nom]);
+          if (!k) {
+            inconnus[r[c.champs.nom]] = (inconnus[r[c.champs.nom]] || 0) + 1;
+            return;
+          }
+          if (r[c.champs.valeur] !== null && r[c.champs.valeur] !== "") a.champs[k] = r[c.champs.valeur];
+        });
+        const biens = [];
+        if (Table.findOne({ name: c.biens.table })) await lotParLot(T(c.biens.table), (r) => biens.push({
+          id: r[c.biens.id],
+          reference: r[c.biens.reference],
+          prix: r[c.biens.prix],
+          surface: r[c.biens.surface],
+          pieces: r[c.biens.pieces],
+          type: r[c.biens.type],
+          ville: r[c.biens.ville],
+          code_postal: r[c.biens.code_postal],
+          negociateur_id: r[c.biens.negociateur],
+          agence_id: r[c.biens.agence],
+          proprietaire_id: r[c.biens.proprietaire]
+        }));
+        const agences = [];
+        if (Table.findOne({ name: c.agences.table })) await lotParLot(T(c.agences.table), (r) => agences.push({
+          id: String(r[c.agences.id] ?? r.id),
+          nom: r[c.agences.nom],
+          boites: [].concat(c.agences.boites).flatMap((f) => String(r[f] || "").toLowerCase().match(/[\w.+-]+@[\w.-]+/g) || [])
+        }));
+        const conf = { domaines_agence: String(p.domaines_agence || "").split(/[\s,;]+/).filter(Boolean), agences };
+        try {
+          const cd = await require_conf().charger();
+          conf.portails = cd.conf.portails;
+          conf.sites = cd.conf.sites;
+        } catch (e) {
+        }
+        const opts = {};
+        if (p.gabarits !== false) {
+          try {
+            Object.assign(opts, await require_gabarits().optionsLecture(api));
+            delete opts.ia;
+            delete opts.noter;
+          } catch (e) {
+          }
+        }
+        const R = await banc({ mails, anciens, biens, conf, opts, exemples: p.exemples === void 0 || p.exemples === null || p.exemples === "" ? 3 : +p.exemples });
+        R.le = (/* @__PURE__ */ new Date()).toISOString();
+        R.biens_catalogue = biens.length;
+        R.agences = agences.length;
+        R.champs_ancien_inconnus = inconnus;
+        R.gabarits = !!opts.gabarits;
+        const File = require("@saltcorn/data/models/file");
+        const nom = String(p.fichier || "banc-leads.json").replace(/[^\w.-]/g, "_");
+        await File.from_contents(nom, "application/json", JSON.stringify(R, null, 1), ctx.user && ctx.user.id, 1);
+        const acc = Object.values(R.portails).reduce((s, P) => {
+          for (const C of Object.values(P.champs)) for (const [k, v] of Object.entries(C)) if (k === "accord") s.a += v;
+          else s.e += v;
+          return s;
+        }, { a: 0, e: 0 });
+        return { fichier: nom, mails: R.mails, erreurs: R.erreurs, accords: acc.a, ecarts: acc.e, cas: R.cas.length, resume: `${R.mails} mails, ${acc.a} accords, ${acc.e} \xE9carts, ${R.erreurs} erreurs \u2014 Fichiers \u2192 ${nom}` };
+      }
+    }];
   }
 });
 
@@ -101222,6 +101540,7 @@ var require_blocks = __commonJS({
       ...require_ovh2(),
       ...require_leads(),
       ...require_leads_solution(),
+      ...require_leads_banc(),
       ...require_donnees_ext(),
       ...require_connecte(),
       ...require_utilitaires(),

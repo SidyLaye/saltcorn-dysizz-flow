@@ -224,14 +224,19 @@ const etapeContact = async (d, crm, conf = {}) => {
       }) || null
     : null;
   const portailMetier = r.portail === "site_agence"
-    ? (siteCfg ? siteCfg.libelle || (siteCfg.noms && siteCfg.noms[0]) || siteCfg.domaine : r.portail_nom || r.site || r.site_origine || "Site agence")
+    ? (siteCfg ? siteCfg.libelle || (siteCfg.noms && siteCfg.noms[0]) || siteCfg.domaine : r.site_nom || r.site || "Site de l'agence")
     : (r.portail_nom || r.portail);
   /* site_agence reste une information technique de l'extraction ; au niveau métier,
      portail = source = origine = l'agence (son site) */
   if (r.portail === "site_agence") r.portail_nom = portailMetier;
   d.portail = portailMetier;
   d.source = portailMetier;
-  const origineCode = r.portail === "site_agence" ? r.site_origine : (conf.origines_portail || {})[r.portail] || r.portail;
+  /* site d'une agence sans réglage : l'origine du CRM qui porte le nom de l'agence (« agence-hamilton.com » pour « Agence Hamilton ») */
+  const sansTld = (x) => String(x || "").toLowerCase().replace(/\.(com|fr|net|org|eu)\b/g, "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, "");
+  const origineSite = r.portail === "site_agence" && !siteCfg && r.site_nom
+    ? ((conf.origines || []).find((o) => sansTld(o.libelle) === sansTld(r.site_nom) || sansTld(o.code) === sansTld(r.site_nom)) || {}).code
+    : null;
+  const origineCode = r.portail === "site_agence" ? (siteCfg && siteCfg.origine) || r.site_origine || origineSite : (conf.origines_portail || {})[r.portail] || r.portail;
   /* origine du CRM : celle du portail, sinon l'origine par défaut réglée (ex. l'agence elle-même) */
   const origine = (conf.origines || []).find((o) => o.code === origineCode) || (conf.origine_defaut && (conf.origines || []).find((o) => o.code === conf.origine_defaut)) || null;
   d.origine = origine
@@ -275,6 +280,7 @@ const etapeConsentement = (d, mail, conf = {}) => {
     const date = dateDuMail(mail) || d.date_mail || new Date();
     const motif = gabarit(conf.consentement.libelle || "Demande de contact via {portail} du {date}", { portail: d.portail || r.site_libelle || r.portail_nom || r.portail, date: dateFr(date) });
     d.actions.push({ op: "ajouterConsentement", date: new Date(date).toISOString(), motif, hors_horaires: r.hors_horaires, preuves: [preuveEml(mail)] });
+    if (motif.length > 64) d.alertes.push(`motif du consentement trop long (${motif.length} caractères) : Immofacile n'en garde que 64`);
   }
   return d;
 };
