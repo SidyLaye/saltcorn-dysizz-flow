@@ -1,4 +1,4 @@
-/* dysizz-flow 2.13.3 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.13.4 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.13.3" : "dev";
+    var VERSION2 = true ? "2.13.4" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -94839,7 +94839,14 @@ var require_traiter = __commonJS({
       if (conv.role === "equipe" && r.nature === "interne") {
         const dos = choisirDossier(connus, { references: cles.references, relais: cles.relais });
         if (!dos) {
-          d.motifs.push("message de l'\xE9quipe sans dossier connu : rien \xE0 faire");
+          const trace = cles.email || cles.relais || cles.telephone || conv.messages.some((m) => m.role === "prospect");
+          if (!trace) {
+            d.motifs.push("message de l'\xE9quipe sans dossier connu : rien \xE0 faire");
+            return fin();
+          }
+          r.nature = "reponse_equipe";
+          d.statut = "a_trier";
+          d.motifs.push("r\xE9ponse de l'\xE9quipe \xE0 un prospect inconnu du syst\xE8me (lead d'origine jamais re\xE7u ?) : \xE0 v\xE9rifier");
           return fin();
         }
         r.nature = "reponse_equipe";

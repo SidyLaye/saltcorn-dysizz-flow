@@ -1,5 +1,12 @@
 # Journal des versions
 
+## 2.13.4
+
+- Réponse de l'équipe (« Re : ») à un prospect que le système ne connaît pas : elle n'est plus perdue.
+  - Si le mail cité contient un prospect (e-mail, relais du portail, téléphone ou message), c'est peut-être la seule trace d'un lead jamais reçu : le mail est transféré à « non automatisé », pour être vérifié.
+  - Rien n'est écrit dans le CRM. Sans prospect cité (message interne), rien ne change : rien à faire.
+  - Vu au banc d'essai : 58 mails de ce type sur 8 672.
+
 ## 2.13.3
 
 - Banc d'essai et contrôle du CRM en arrière-plan : on voit où ils en sont, et ils ne peuvent plus tourner sans fin.
