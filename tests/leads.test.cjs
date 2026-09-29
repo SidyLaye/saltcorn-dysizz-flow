@@ -355,5 +355,30 @@ const { CONF, MAILS } = require("./fixtures-leads.cjs");
     assert.strictEqual(extraire(MAILS.ac3, CONF).nature, "lead", "une demande reste un lead");
   }
 
+  /* Zefir : un acheteur, pas une estimation */
+  {
+    const z = extraire({ expediteur: "Zefir <agent@zefir.fr>", destinataire: "rodez@agence-exemple.fr", objet: "Un acheteur Zefir souhaite visiter l’un de vos biens !",
+      texte: "Bonjour,\nVous avez reçu une demande de contact pour le bien situé à Rodez (12000).\nCoordonnées de Paul Martin :\n📞 06 11 22 33 44\n📧 paul.martin@example.org\nMaison à vendre - Maison - 5 pièces - 120 m²\n245 000 € - 120 m²\n🗺️ Rodez (12000)" }, CONF);
+    assert.strictEqual(z.nature, "lead", "Zefir acheteur = lead");
+    assert.strictEqual(z.contact.email, "paul.martin@example.org"); assert(/0611223344$|611223344$/.test(String(V.telephone(z.contact.telephone)).replace(/\D/g, "")));
+    assert.strictEqual(z.bien.code_postal, "12000"); assert.strictEqual(z.bien.prix, 245000);
+  }
+  /* Réponse d'absence reconnue au texte (deux signes), jamais un prospect qui dit juste être absent */
+  {
+    const abs = extraire({ expediteur: "Claire <claire@example.org>", destinataire: "rodez@agence-exemple.fr", objet: "Re : Demande auprès de AGENCE EXEMPLE",
+      texte: "Madame, Monsieur,\nJe suis absente jusqu'au 25 août. Pour toute demande urgente, veuillez contacter le 05 00 00 00 00.\nCordialement" }, CONF);
+    assert.strictEqual(abs.nature, "auto_reponse", "réponse d'absence");
+    const pro = extraire({ expediteur: "Claire <claire@example.org>", destinataire: "rodez@agence-exemple.fr", objet: "Re : maison réf. 30123",
+      texte: "Bonjour, je serai absente le 12 mais la maison réf. 30123 m'intéresse, pouvez-vous me rappeler au 06 11 22 33 44 ?" }, CONF);
+    assert.notStrictEqual(pro.nature, "auto_reponse", "un prospect absent un jour n'est pas une réponse automatique");
+  }
+  /* Un acheteur qui demande une brochure ou cite le site internet n'est pas du démarchage */
+  {
+    const b = extraire({ ...MAILS.leboncoin, texte: MAILS.leboncoin.texte.replace(/« .*? »/s, "« Bonjour, vu sur votre site internet, pouvez-vous m'envoyer la brochure ? »") }, CONF);
+    assert(!b.suspect, "acheteur, pas démarchage : " + b.suspect);
+    const d2 = extraire({ ...MAILS.leboncoin, texte: MAILS.leboncoin.texte.replace(/« .*? »/s, "« Bonjour, je vous propose mes services de photographe et de création de votre site internet. »") }, CONF);
+    assert(/démarchage/.test(d2.suspect || ""), "démarchage toujours repéré");
+  }
+
   console.log("leads + ovh : ok");
 })().catch((e) => { console.error(e); process.exit(1); });

@@ -1,5 +1,15 @@
 # Journal des versions
 
+## 2.12.2
+
+Corrections tirées du banc d'essai sur les 8 612 vrais mails d'AMBS.
+
+- Un mail qui n'est pas un lead (ni client ni bien : expéditeur inconnu, réponse à une campagne) n'est plus transféré au « non automatisé » ; seuls les leads à qui il manque quelque chose (bien, agence, négociateur, contact) et les mails directs d'un particulier y partent.
+- Réponse d'absence reconnue à son texte (objet « Re : … »), avec deux signes obligatoires (l'absence et « pour toute demande… » / « je n'aurai pas accès… ») ; jamais pour un mail de portail.
+- Démarchage : un acheteur qui demande une brochure ou cite le site internet n'est plus signalé (règle resserrée sur les vrais signes de démarchage).
+- Zefir : « Un acheteur Zefir souhaite visiter… » est un lead acheteur (et non une estimation) ; coordonnées, bien, prix, ville et code postal lus.
+- Banc d'essai : toute valeur après « Libellé : » est masquée (un nom qui revenait souvent pouvait passer) ; identité comparée prénom + nom ensemble ; e-mail relais compté ; forme des références (lettres → A, chiffres → 9) ; raison du rejet d'un bien ; bien de l'ancien absent du catalogue signalé à part.
+
 ## 2.12.1
 
 - Leads, site d'agence (AC3) : une « création de compte » n'est un lead que si le mail porte le client (e-mail ou téléphone) et un bien.

@@ -115,8 +115,13 @@ const extraire = (mail, conf = {}) => {
   r.portail_nom = p ? p.nom : null;
 
   const auto = /^(automatic reply|réponse automatique|automatische antwort|automatisch antwoord|auto(matic)?[- ]?reply|out of office|absence|abwesenheit|risposta automatica|respuesta automática|email not in use|your email to|undeliverable|non remis|delivery status|mail delivery)/i.test(objet.replace(/^(re|tr|fwd?)\s*:\s*/i, ""));
+  /* réponse d'absence reconnue au texte (objet « Re : … ») : il faut DEUX signes, l'absence et le renvoi vers
+     quelqu'un d'autre ou l'accès coupé, pour ne jamais écarter un prospect qui dit simplement être absent un jour */
+  const debut = texte.slice(0, 700);
+  const absentTexte = /\b(je (suis|serai) (actuellement |en ce moment )?(absente?|en (congés?|vacances))|de retour (le|à partir du|au bureau)|i (am|will be) (currently )?(out of (the )?office|away|on (holiday|leave))|out of (the )?office)\b/i.test(debut)
+    && /(pour toute (demande|urgence|question)|en (mon|cas d.)absence|je n.aurai (pas|qu.un) accès|je ne (consulterai|lirai|pourrai) pas|during my absence|for (any )?urgent|limited access|please contact)/i.test(debut);
   const campagne = (conf.objets_campagnes || []).find((c) => cle(objet).includes(cle(c)));
-  if (auto) r.nature = "auto_reponse";
+  if (auto || (!p && absentTexte)) r.nature = "auto_reponse";
   else if (p) r.nature = p.nature(objet, texte, d);
   else if (domAgence.some((x) => d === x || d.endsWith("." + x)) && !(mail.__deballe && mail.__agence)) {
     r.nature = "interne";
@@ -254,7 +259,7 @@ const extraire = (mail, conf = {}) => {
     const m = String(r.message || "").slice(0, 1500);
     if (/\b(message )?test\b.{0,20}\b(message )?test\b|^\s*test\s*$/i.test(m)) r.suspect = "message de test";
     else if (/(nous avons|j.ai) (déjà )?trouvé (un bien|une maison|notre bien|ce que)|n.(e )?(sommes|suis) plus (intéressé|à la recherche)|no longer (interested|looking)|already found/i.test(m)) r.suspect = "le prospect dit ne plus chercher (à noter dans le CRM)";
-    else if (/(photographe|vid[ée]o(graphe)?s? (par )?drone|shooting|home staging|référencement|site internet|visibilité en ligne|nos services|notre agence de communication|partenariat commercial|je vous propose (mes|nos) services|prestataire|devis gratuit|leads? qualifiés|brochures?|je (refais|réalise|crée|propose)|plaquettes?|visite virtuelle 3d|rachat de (votre )?agence|cession (de )?cabinet|résiliation (du|de mon) mandat|résilier (le|mon) mandat)/i.test(m)) r.suspect = "démarchage ou demande qui n'est pas un achat";
+    else if (/(photographe|vid[ée]o(graphe)?s? (par )?drone|shooting|home staging|référencement (de|naturel|google)|(création|refonte) de (votre |votre nouveau )?site|visibilité en ligne|nos services|notre agence de communication|partenariat commercial|je vous propose (mes|nos) services|prestataire|devis gratuit|leads? qualifiés|je (réalise|crée|refais) (des|vos|votre)|visite virtuelle 3d|rachat de (votre )?agence|cession (de )?cabinet|résiliation (du|de mon) mandat|résilier (le|mon) mandat)/i.test(m)) r.suspect = "démarchage ou demande qui n'est pas un achat";
   }
   /* Le prospect dit avoir aussi un bien à vendre : c'est un vendeur potentiel. */
   const vend = texte.match(/a(?:-t-il)? un bien à vendre\s*[:?]?\s*(oui|non)/i);

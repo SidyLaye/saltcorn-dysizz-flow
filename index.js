@@ -1,4 +1,4 @@
-/* dysizz-flow 2.12.1 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.12.2 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.12.1" : "dev";
+    var VERSION2 = true ? "2.12.2" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -92948,7 +92948,38 @@ var require_portails = __commonJS({
         const m = texte.match(/# commentaire\s*\n([\s\S]*?)\n#/i);
         if (m) r.message = m[1].trim();
       } },
-      { id: "zefir", nom: "Zefir (Zefir)", test: (d) => /zefir\.fr$/.test(d), nature: () => "estimation" },
+      /* Zefir : « Un acheteur Zefir souhaite visiter l'un de vos biens », « Cet acheteur attend votre retour » : un ACHETEUR */
+      {
+        id: "zefir",
+        nom: "Zefir (Zefir)",
+        test: (d) => /zefir\.fr$/.test(d),
+        nature: (o, t) => /acheteur|visiter|visite/i.test(o + "\n" + String(t).slice(0, 800)) ? "lead" : /vendeur|estimation|estimer/i.test(o) ? "estimation" : "non_lead",
+        regles: ({ L, texte, r }) => {
+          const i = L.findIndex((l) => /^coordonn[ée]es de/i.test(l));
+          if (i >= 0) {
+            const n = L[i].replace(/^coordonn[ée]es de\s*/i, "").replace(/\s*:\s*$/, "").trim() || L[i + 1];
+            if (n && !/[📞📧@]/u.test(n) && !/\d{4}/.test(n)) r.contact.nom_complet = V.nomPropre(n);
+          }
+          const t = texte.match(/📞\s*([+\d][\d .]{8,})/u);
+          if (t) r.contact.telephone = t[1].trim();
+          const e = texte.match(/📧\s*(\S+@\S+)/u);
+          if (e) r.contact.email = V.email(e[1]);
+          const b = L.find((l) => /(vendre|vente)\s*-\s*\w+/i.test(l));
+          if (b) {
+            r.bien.titre = b;
+            Object.assign(r.bien, { ...V.faitsTitre(b), ...r.bien });
+            const ty = b.match(/-\s*(maison|appartement|terrain|propri[ée]t[ée]|immeuble|local|grange|moulin|villa)/i);
+            if (ty) r.bien.type = V.typeBien(ty[1]);
+          }
+          const pr = L.find((l) => /\d[\d  .]*\s*€/.test(l));
+          if (pr) r.bien.prix = V.prix(pr);
+          const lc = texte.match(/🗺️?\s*([^\n(]+?)\s*\((\d{5})\)/u);
+          if (lc) {
+            r.bien.ville = lc[1].trim();
+            r.bien.code_postal = lc[2];
+          }
+        }
+      },
       { id: "huisenaanbod", nom: "HUISenAANBOD.nl", test: (d) => /huisenaanbod\.nl$/.test(d), nature: (o, t) => /#naamaanvrager|#vraag|#adv_details/i.test(t) ? "non_lead" : "lead" },
       { id: "kyero", nom: "KYERO", test: (d) => /kyero\.com$/.test(d), nature: () => "lead" },
       { id: "jamesedition", nom: "JAMES EDITION", test: (d) => /jamesedition\.com$/.test(d), nature: (o) => /enquiry|inquiry|demande|request|message|lead|contact/i.test(o) && !/app is here|newsletter|webinar|report|rapport/i.test(o) ? "lead" : "non_lead" },
@@ -93280,8 +93311,10 @@ var require_extraire = __commonJS({
       r.portail = p ? p.id : null;
       r.portail_nom = p ? p.nom : null;
       const auto = /^(automatic reply|réponse automatique|automatische antwort|automatisch antwoord|auto(matic)?[- ]?reply|out of office|absence|abwesenheit|risposta automatica|respuesta automática|email not in use|your email to|undeliverable|non remis|delivery status|mail delivery)/i.test(objet.replace(/^(re|tr|fwd?)\s*:\s*/i, ""));
+      const debut = texte.slice(0, 700);
+      const absentTexte = /\b(je (suis|serai) (actuellement |en ce moment )?(absente?|en (congés?|vacances))|de retour (le|à partir du|au bureau)|i (am|will be) (currently )?(out of (the )?office|away|on (holiday|leave))|out of (the )?office)\b/i.test(debut) && /(pour toute (demande|urgence|question)|en (mon|cas d.)absence|je n.aurai (pas|qu.un) accès|je ne (consulterai|lirai|pourrai) pas|during my absence|for (any )?urgent|limited access|please contact)/i.test(debut);
       const campagne = (conf.objets_campagnes || []).find((c2) => cle(objet).includes(cle(c2)));
-      if (auto) r.nature = "auto_reponse";
+      if (auto || !p && absentTexte) r.nature = "auto_reponse";
       else if (p) r.nature = p.nature(objet, texte, d);
       else if (domAgence.some((x) => d === x || d.endsWith("." + x)) && !(mail.__deballe && mail.__agence)) {
         r.nature = "interne";
@@ -93478,7 +93511,7 @@ var require_extraire = __commonJS({
         const m = String(r.message || "").slice(0, 1500);
         if (/\b(message )?test\b.{0,20}\b(message )?test\b|^\s*test\s*$/i.test(m)) r.suspect = "message de test";
         else if (/(nous avons|j.ai) (déjà )?trouvé (un bien|une maison|notre bien|ce que)|n.(e )?(sommes|suis) plus (intéressé|à la recherche)|no longer (interested|looking)|already found/i.test(m)) r.suspect = "le prospect dit ne plus chercher (\xE0 noter dans le CRM)";
-        else if (/(photographe|vid[ée]o(graphe)?s? (par )?drone|shooting|home staging|référencement|site internet|visibilité en ligne|nos services|notre agence de communication|partenariat commercial|je vous propose (mes|nos) services|prestataire|devis gratuit|leads? qualifiés|brochures?|je (refais|réalise|crée|propose)|plaquettes?|visite virtuelle 3d|rachat de (votre )?agence|cession (de )?cabinet|résiliation (du|de mon) mandat|résilier (le|mon) mandat)/i.test(m)) r.suspect = "d\xE9marchage ou demande qui n'est pas un achat";
+        else if (/(photographe|vid[ée]o(graphe)?s? (par )?drone|shooting|home staging|référencement (de|naturel|google)|(création|refonte) de (votre |votre nouveau )?site|visibilité en ligne|nos services|notre agence de communication|partenariat commercial|je vous propose (mes|nos) services|prestataire|devis gratuit|leads? qualifiés|je (réalise|crée|refais) (des|vos|votre)|visite virtuelle 3d|rachat de (votre )?agence|cession (de )?cabinet|résiliation (du|de mon) mandat|résilier (le|mon) mandat)/i.test(m)) r.suspect = "d\xE9marchage ou demande qui n'est pas un achat";
       }
       const vend = texte.match(/a(?:-t-il)? un bien à vendre\s*[:?]?\s*(oui|non)/i);
       if (vend && r.a_un_bien_a_vendre === void 0) r.a_un_bien_a_vendre = /oui/i.test(vend[1]);
@@ -97501,7 +97534,8 @@ ${a}<div style="padding:18px 24px"><div style="font-size:13px;color:#6b7280;marg
         return t && await t.getRow({ id: +id }) || {};
       };
       if (!envoiNormal) {
-        if (["a_verifier", "a_trier"].includes(d.statut) && nonAuto.length) {
+        const pasUnLead = ["inconnu", "reponse_campagne"].includes(d.extraction && d.extraction.nature);
+        if (["a_verifier", "a_trier"].includes(d.statut) && !pasUnLead && nonAuto.length) {
           const { objet, html } = transfert(await mailRecu());
           return {
             simuler: !R.envoi_mails,
@@ -97739,6 +97773,7 @@ var require_banc = __commonJS({
       return "diff\xE9rent";
     };
     var CHAMP_ANCIEN = [
+      [/^(nom_complet|nomcomplet|full_name|fullname)$/, "nom_complet"],
       [/^(email|e_?mail|mail|courriel|email_acquereur|email_prospect)$/, "email"],
       [/^(tel|telephone|phone|mobile|portable|tel_acquereur|telephone_acquereur)$/, "tel"],
       [/^(nom|lastname|last_name|nom_famille)$/, "nom"],
@@ -97751,14 +97786,32 @@ var require_banc = __commonJS({
       return x ? x[1] : null;
     };
     var decisionAncienne = (statut, aUnLead) => !aUnLead ? "pas de lead" : /rejet|quarant/i.test(String(statut)) ? "non automatis\xE9" : "envoy\xE9";
-    var decisionNouvelle = (st) => st === "pret" ? "envoy\xE9" : ["a_verifier", "a_trier"].includes(st) ? "non automatis\xE9" : "pas de lead";
+    var decisionNouvelle = (st, nature) => st === "pret" ? "envoy\xE9" : ["a_verifier", "a_trier"].includes(st) && !["inconnu", "reponse_campagne"].includes(nature) ? "non automatis\xE9" : "pas de lead";
+    var forme = (x) => String(x || "").toUpperCase().replace(/[A-Z]/g, "A").replace(/[0-9]/g, "9").slice(0, 30);
+    var mots2 = (...v) => [...new Set(v.flatMap((x) => cle(String(x || "")).split(/[^a-z]+/).filter((w) => w.length > 1)))].sort();
+    var identite = (a, n) => {
+      if (!a.length && !n.length) return null;
+      if (!n.length) return "absent chez nous";
+      if (!a.length) return "absent chez l'ancien";
+      if (a.join(" ") === n.join(" ")) return "accord";
+      const communs = a.filter((w) => n.includes(w)).length;
+      return communs === Math.min(a.length, n.length) ? "l'un contient l'autre" : communs ? "en partie" : "diff\xE9rent";
+    };
     var mots = (t) => new Set(cle(t).split(/[^a-z0-9']+/).filter((w) => w.length > 1 && !/\d/.test(w)));
-    var squelette = (texte, df, seuil) => String(texte || "").replace(/[\w.+-]+@[\w-]+(\.[\w-]+)+/g, " [email] ").replace(/(\+?\d[\d .-]{7,}\d)/g, " [tel] ").split("\n").map((l) => l.split(/(\s+)/).map((w) => {
-      if (/^\s+$/.test(w) || /^\[(email|tel)\]$/.test(w)) return w;
+    var motMasque = (df, seuil) => (w) => {
+      if (!w || /^\s+$/.test(w) || /^\[(email|tel)\]$/.test(w)) return w;
       if (/\d/.test(w)) return w.replace(/\d+/g, "#");
       const k = cle(w).replace(/[^a-z0-9']/g, "");
       return !k || (df.get(k) || 0) >= seuil ? w : "\u2026";
-    }).join("").replace(/(…[\s…]*)+/g, "\u2026 ").trimEnd()).filter((l) => l.trim()).join("\n").slice(0, 2500);
+    };
+    var valeurMasquee = (v) => v.split(/(\s+)/).map((w) => !w || /^\s+$/.test(w) || /^\[(email|tel)\]$/.test(w) ? w : /\d/.test(w) && w.length <= 24 ? forme(w) : "\u2026").join("").replace(/(…[\s…]*)+/g, "\u2026 ").trim();
+    var squelette = (texte, df, seuil) => String(texte || "").replace(/[\w.+-]+@[\w-]+(\.[\w-]+)+/g, " [email] ").replace(/(\+?\d[\d .-]{7,}\d)/g, " [tel] ").split("\n").map((l) => {
+      const lv = l.match(/^(\s*[^:\n]*[A-Za-zÀ-ÿ][^:\n]{0,40}?)\s*:\s*(\S.*)$/);
+      const m = motMasque(df, seuil);
+      if (lv && !/^https?$/i.test(lv[1].trim())) return lv[1].split(/(\s+)/).map(m).join("") + " : " + valeurMasquee(lv[2]);
+      return l.split(/(\s+)/).map(m).join("").replace(/(…[\s…]*)+/g, "\u2026 ").trimEnd();
+    }).filter((l) => l.trim()).join("\n").slice(0, 2500);
+    var seuilDe = (n) => Math.max(5, Math.ceil((n || 1) * 0.1));
     var banc = async ({ mails, anciens, biens = [], conf = {}, opts = {}, maxCas = 400, parCategorie = 4, alias = {}, exemples = 3 }) => {
       const crm = M.creer({ biens });
       const confB = { ...conf, etapes: { ...conf.etapes || {}, consentement: false, notification: false } };
@@ -97769,13 +97822,20 @@ var require_banc = __commonJS({
         try {
           const x = await traiter({ ...m0, date: m0.date }, crm, confB, opts);
           const e = x.extraction || {};
+          const rb = x.rapprochement || null;
           d = {
             statut: x.statut,
             motifs: x.motifs,
             bien: x.bien ? { id: x.bien.id } : null,
+            rapprochement: rb ? {
+              methode: rb.methode || null,
+              confiance: rb.confiance || null,
+              motif: rb.motif || null,
+              etapes: (rb.etapes || []).map((e2) => ({ etape: e2.etape, trouves: e2.trouves, ambigu: !!e2.ambigu, raisons: (e2.candidats || []).map((c) => c.raison).filter(Boolean).slice(0, 3) }))
+            } : null,
             agence: x.agence ? { id: x.agence.id } : null,
             negociateur: x.negociateur && typeof x.negociateur === "object" ? { id: x.negociateur.id } : x.negociateur || null,
-            extraction: { portail: e.portail, portail_nom: e.portail_nom, nature: e.nature, lu_par: e.lu_par, contact: e.contact, bien: { reference: e.bien && e.bien.reference } }
+            extraction: { portail: e.portail, portail_nom: e.portail_nom, nature: e.nature, lu_par: e.lu_par, contact: e.contact, bien: { reference: e.bien && e.bien.reference, reference_portail: e.bien && e.bien.reference_portail } }
           };
         } catch (e) {
           err = e.message;
@@ -97783,6 +97843,7 @@ var require_banc = __commonJS({
         }
         res.push({ m: { id: m0.id, objet: String(m0.objet || ""), t: texteMail({ texte: m0.texte, html: m0.html }).slice(0, 6e3) }, d, err });
       }
+      const catalogue = new Set(biens.map((b) => String(b.id)));
       const df = /* @__PURE__ */ new Map(), nb = /* @__PURE__ */ new Map();
       for (const { m, d } of res) {
         const p = d && d.extraction && d.extraction.portail || "inconnu";
@@ -97804,7 +97865,7 @@ var require_banc = __commonJS({
         const P = R.portails[p] || (R.portails[p] = { mails: 0, natures: {}, decisions: {}, champs: {} });
         P.mails++;
         inc(P.natures, x.nature || "?");
-        const decA = decisionAncienne(a && a.statut, !!a), decN = err ? "erreur" : decisionNouvelle(d && d.statut);
+        const decA = decisionAncienne(a && a.statut, !!a), decN = err ? "erreur" : decisionNouvelle(d && d.statut, x.nature);
         inc(P.decisions, `${decA} \u2192 ${decN}`);
         inc(R.decisions, `${decA} \u2192 ${decN}`);
         if (a) {
@@ -97815,7 +97876,7 @@ var require_banc = __commonJS({
         const diffs = [];
         if (a && decA !== "pas de lead") {
           const nous = {
-            email: norm.email(c.email),
+            email: norm.email(c.email || c.email_relais),
             tel: norm.tel(c.telephone),
             nom: norm.texte(c.nom || (V.decouperNom(c.nom_complet || "") || {}).nom),
             prenom: norm.texte(c.prenom || (V.decouperNom(c.nom_complet || "") || {}).prenom),
@@ -97834,29 +97895,38 @@ var require_banc = __commonJS({
             agence: norm.id(a.agence),
             negociateur: norm.id(a.negociateur)
           };
+          const dn = V.decouperNom(c.nom_complet || "") || {};
+          const idN = mots2(c.prenom || dn.prenom, c.nom || dn.nom), idA = mots2(a.champs.prenom, a.champs.nom, a.champs.nom_complet);
           for (const k of Object.keys(nous)) {
             const C = P.champs[k] || (P.champs[k] = { accord: 0 });
-            const e = nous[k] === eux[k] ? nous[k] ? "accord" : null : ecart(k, eux[k], nous[k]);
+            let e = nous[k] === eux[k] ? nous[k] ? "accord" : null : ecart(k, eux[k], nous[k]);
+            if (k === "bien" && e && e !== "accord" && eux.bien && !catalogue.has(eux.bien)) e = "bien de l'ancien absent du catalogue";
             if (!e) continue;
             inc(C, e);
-            if (e !== "accord") diffs.push({ champ: k, ecart: e });
+            if (e !== "accord" && k !== "nom" && k !== "prenom") diffs.push({ champ: k, ecart: e, ...k === "reference" ? { forme_ancien: forme(eux.reference), forme_nous: forme(nous.reference), forme_portail: forme(norm.ref(bm.reference_portail)) } : {} });
+          }
+          const ei = identite(idA, idN);
+          if (ei) {
+            const C = P.champs.identite || (P.champs.identite = { accord: 0 });
+            inc(C, ei);
+            if (ei !== "accord") diffs.push({ champ: "identite", ecart: ei, mots_ancien: idA.length, mots_nous: idN.length });
           }
         }
         if (decA !== decN && !(decA === "pas de lead" && decN === "pas de lead")) diffs.push({ champ: "decision", ecart: `${decA} \u2192 ${decN}` });
         if (err) diffs.push({ champ: "erreur", ecart: err.slice(0, 120) });
         for (const f of diffs) {
-          const k = `${p}|${f.champ}|${f.ecart}`;
+          const k = `${p}|${f.champ}|${f.ecart}${f.forme_ancien !== void 0 ? ` (${f.forme_ancien} / ${f.forme_nous})` : ""}`;
           const n = (cat.get(k) || 0) + 1;
           cat.set(k, n);
           if (n > parCategorie || R.cas.length >= maxCas) continue;
-          const seuil = Math.max(3, Math.ceil((nb.get(p) || 1) * 0.05));
+          const seuil = seuilDe(nb.get(p));
           R.cas.push({
             mail: m.id,
             portail: p,
             nature: x.nature || null,
             lu_par: x.lu_par || null,
-            champ: f.champ,
-            ecart: f.ecart,
+            ...f,
+            rapprochement: d && d.rapprochement,
             motifs: (d && d.motifs || []).map((t) => t.replace(/[\w.+-]+@[\w.-]+/g, "[email]").replace(/\d{3,}/g, "#")).slice(0, 4),
             objet: squelette(m.objet, df.get(p) || /* @__PURE__ */ new Map(), seuil),
             squelette: squelette(m.t, df.get(p) || /* @__PURE__ */ new Map(), seuil)
@@ -97871,12 +97941,12 @@ var require_banc = __commonJS({
         const n = (vus.get(p) || 0) + 1;
         if (n > exemples) continue;
         vus.set(p, n);
-        const seuil = Math.max(3, Math.ceil((nb.get(p) || 1) * 0.05));
+        const seuil = seuilDe(nb.get(p));
         R.exemples.push({ mail: m.id, portail: p, nature: x.nature || null, lu_par: x.lu_par || null, statut: d && d.statut, objet: squelette(m.objet, df.get(p) || /* @__PURE__ */ new Map(), seuil), squelette: squelette(m.t, df.get(p) || /* @__PURE__ */ new Map(), seuil) });
       }
       return R;
     };
-    module2.exports = { banc, squelette, ecart, champDeLAncien, norm };
+    module2.exports = { banc, squelette, ecart, champDeLAncien, norm, forme, identite };
   }
 });
 
