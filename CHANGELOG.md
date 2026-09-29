@@ -2,6 +2,12 @@
 
 ## 2.13.1
 
+- Nouveau bloc « Leads : contrôle du CRM (fiches ↔ mails) », en lecture seule. Pour des leads déjà écrits dans le CRM (par l'ancien système, ou par celui-ci une fois en service), il relit chaque fiche et la compare avec le mail d'origine et avec ce que le moteur ferait. Rien n'est écrit, et le rapport ne contient aucune donnée personnelle.
+  - **Recherche** : le moteur cherche le contact et le bien dans le vrai CRM, en lecture seule. On voit s'il retrouve la même fiche que l'ancien, ou s'il en créerait une.
+  - **Lecture** : e-mail, téléphone, prénom et nom de la fiche comparés au mail.
+  - **Fiche** : origine, groupe « Demandeur », négociateur et agence du bien, bien suivi, consentement (présence, motif de 64 caractères au plus, date, preuve).
+  - **Écriture** : chaque valeur que le moteur écrirait, contrôlée au bon format et comparée à la fiche réelle. Cela couvre e-mail, téléphone ou mobile, prénom, nom, origine, négociateur, agence, bien suivi et consentement.
+- Immofacile : lecture des biens suivis d'un contact et du détail de son consentement, permise en lecture seule.
 - Leads, gabarits : un gabarit ne lit seul un mail qui part sans vérification que s'il a été confirmé par l'IA au moins 3 fois, sans échec. Sinon le mail est à vérifier, comme un mail lu par l'IA ou par les règles générales.
 - Leads, gabarits d'un ancien système : ils sont repris comme **candidats**, à confirmer par l'IA avant de servir. Sur les vrais mails d'AMBS, 84 gabarits « actifs » de l'ancien avaient presque tous 0 observation, et ceux qui ont servi au banc donnaient un mauvais e-mail 4 fois sur 11.
 - Banc d'essai, diagnostic des écarts :

@@ -18,7 +18,7 @@ const creer = (cfg = {}) => {
   const f = cfg.fetch || fetch;
   let jeton = null, expire = 0, defs = null, typesBien = null;
   const journal = cfg.journal || (() => {});
-  const LECTURE = (m, p) => (m === "GET" ? /^\/(discovery|customers\/\d+|customers\/(origins|groups)|criterias\/|products\/\d+|agencies|users)/.test(p) && !/\/(consent|follow-ups|actions|search-requests)/.test(p) : m === "POST" && ["/products/search", "/products/search/count", "/customers/search"].includes(p.split("?")[0]));
+  const LECTURE = (m, p) => (m === "GET" ? /^\/(discovery|customers\/\d+|customers\/(origins|groups)|criterias\/|products\/\d+|agencies|users)/.test(p) && (!/\/(consent|follow-ups|actions|search-requests)/.test(p) || /^\/customers\/\d+\/(follow-ups|actions)(\?|$)/.test(p)) : m === "POST" && ["/products/search", "/products/search/count", "/customers/search"].includes(p.split("?")[0]));
 
   /* Le délai couvre aussi la lecture du corps, qui peut rester suspendue après
      réception des en-têtes. Un POST d'écriture ambigu n'est jamais rejoué. */
@@ -189,7 +189,22 @@ const creer = (cfg = {}) => {
      (c'est pour ça que l'ancien service ne les retrouvait jamais à la relecture). */
   const lireContact = async (id) => {
     const c = data(await appel("GET", `/customers/${Number(id)}?include=origin,groups,user,agency,searchRequests,consent`));
-    return c && c.id ? { ...versContact(c), recherches: (c.searchRequests || []).map((x) => ({ id: x.id, comment: x.comment || "" })) } : null;
+    if (!c || !c.id) return null;
+    const k = c.consent && !(c.consent.revokedAt || c.consent.revoked_at) ? c.consent : null;
+    return { ...versContact(c), recherches: (c.searchRequests || []).map((x) => ({ id: x.id, comment: x.comment || "" })),
+      consentement_detail: k ? { raison: k.reason ?? null, date: k.consentDate ?? k.consent_date ?? null, hors_horaires: k.acceptOutsideHours ?? k.accept_outside_hours ?? null,
+        preuves: Array.isArray(k.proofs) ? k.proofs.length : k.proofs ? 1 : 0 } : null };
+  };
+  /* Biens suivis par un contact (GET /customers/{id}/follow-ups) : lecture seule, pour les contrôles. */
+  const suivis = async (id) => {
+    const out = [];
+    for (let page = 1; page <= 10; page++) {
+      const j = await appel("GET", `/customers/${Number(id)}/follow-ups?page=${page}&per_page=100`);
+      const l = Array.isArray(j && j.data) ? j.data : [];
+      for (const x of l) { const pid = x.product_id ?? x.productId ?? (x.product && x.product.id) ?? x.id; if (pid != null) out.push({ bien: String(pid), cree_le: x.created_at ?? x.createdAt ?? null }); }
+      const m = j && j.meta; if (!l.length || !m || (m.last_page && page >= m.last_page) || (!m.last_page && !m.next_cursor && l.length < 100)) break;
+    }
+    return out;
   };
   const tolere409 = async (fn) => { try { return await fn(); } catch (e) { if (e.http === 409) return { deja: true }; throw e; } };
 
@@ -212,6 +227,7 @@ const creer = (cfg = {}) => {
     contactsParEmail: (e) => chercherContacts({ email: e }).then((l) => l.filter((c) => c.emails.map((x) => String(x).toLowerCase()).includes(String(e).toLowerCase()))),
     contactsParTelephone: (t) => chercherContacts({ phone: String(t).replace(/^\+33/, "0") }).then((l) => l.filter((c) => c.telephones.some((x) => x.replace(/\D/g, "").slice(-9) === String(t).replace(/\D/g, "").slice(-9)))),
     contact: lireContact,
+    suivis,
     capacites: ["catalogue", "contact", "suivi", "projet", "commentaire", "action", "consentement", "webhooks"],
     origines: async () => data(await appel("GET", "/customers/origins")),
     groupes: async () => data(await appel("GET", "/customers/groups")),

@@ -249,4 +249,4 @@ const banc = async ({ mails, anciens, biens = [], conf = {}, opts = {}, maxCas =
   return R;
 };
 
-module.exports = { banc, squelette, ecart, champDeLAncien, norm, forme, identite };
+module.exports = { banc, squelette, ecart, champDeLAncien, norm, forme, identite, mots2 };
