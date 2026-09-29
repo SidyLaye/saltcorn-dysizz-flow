@@ -109,7 +109,7 @@ const banc = async ({ mails, anciens, biens = [], conf = {}, opts = {}, maxCas =
         /* le mail aurait eu besoin de l'IA, qui n'a pas été appelée (hors échantillon, ou IA coupée) */
         ia_manquante: !(e.lu_par || []).includes("ia") && aCompleter(e), ia: e.lecture && e.lecture.ia ? { statut: e.lecture.ia.statut } : null };
     } catch (e) { err = e.message; }
-    return { m: { id: m0.id, objet: String(m0.objet || ""), t: texteMail({ texte: m0.texte, html: m0.html }).slice(0, 6000) }, d, err };
+    return { m: { id: m0.id, date: m0.date, motif: m0.motif_ancien, regle: m0.regle_ancien, objet: String(m0.objet || ""), t: texteMail({ texte: m0.texte, html: m0.html }).slice(0, 6000) }, d, err };
   };
   for (const m0 of mails) res.push(await rejouer(m0, sansIA));
   /* 1 bis. IA sur un échantillon des mails qu'elle seule peut lire, réparti entre les portails */
@@ -143,7 +143,22 @@ const banc = async ({ mails, anciens, biens = [], conf = {}, opts = {}, maxCas =
     for (const w of mots(m.objet + "\n" + m.t)) df.get(p).set(w, (df.get(p).get(w) || 0) + 1);
   }
   /* 3. comparaison */
-  const cat = new Map();
+  const cat = new Map(), attente = [];
+  const parId = new Map(biens.map((b) => [String(b.id), b]));
+  /* où l'ancien a-t-il lu son bien ? la ligne du mail qui porte sa référence ou l'identifiant du bien (anonymisée) */
+  const ouAncien = (m, a, dfp, seuil) => {
+    const b = a && a.bien !== null && a.bien !== undefined ? parId.get(String(a.bien)) : null;
+    const essais = [["reference_de_l_ancien", a && (a.champs.reference || a.reference)], ["reference_du_bien", b && b.reference], ["id_du_bien", a && a.bien]].filter(([, v]) => v !== null && v !== undefined && String(v).trim().length >= 2);
+    const lignes = (m.objet + "\n" + m.t).split("\n");
+    for (const [quoi, v] of essais) {
+      const re = new RegExp("(^|[^\\w])" + String(v).trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "(?![\\w])", "i");
+      const i = lignes.findIndex((l) => re.test(l));
+      if (i >= 0) return { quoi, forme: forme(v), ligne: i === 0 ? "(objet)" : "ligne " + i, texte: (() => { const l = lignes[i], mm = l.match(re), j = mm.index + mm[1].length; return (squelette(l.slice(0, j), dfp, seuil) + " [CETTE_VALEUR] " + squelette(l.slice(j + String(v).trim().length), dfp, seuil)).trim().slice(0, 160); })(), avant: i > 0 ? squelette(lignes[i - 1], dfp, seuil).slice(0, 120) : null };
+    }
+    return essais.length ? { quoi: "absente du mail", formes: essais.map(([q, v]) => q + " " + forme(v)) } : null;
+  };
+  const masqueMotif = (t) => String(t || "").replace(/[\w.+-]+@[\w.-]+/g, "[email]").replace(/["«“][^"»”]{0,120}["»”]/g, "\"…\"").replace(/\d+/g, "#").slice(0, 80);
+  R.motifs_ancien = {}; R.regles_ancien = {};
   const inc = (o, k) => { o[k] = (o[k] || 0) + 1; };
   for (const { m, d, err } of res) {
     const a = anciens.get(m.id) || null;
@@ -175,6 +190,7 @@ const banc = async ({ mails, anciens, biens = [], conf = {}, opts = {}, maxCas =
       for (const k of Object.keys(nous)) {
         let e = nous[k] === eux[k] ? (nous[k] ? "accord" : null) : ecart(k, eux[k], nous[k]);
         if (k === "bien" && e && e !== "accord" && eux.bien && !catalogue.has(eux.bien)) e = "bien de l'ancien absent du catalogue";
+        if (k === "bien" && e === "absent chez l'ancien") { const b = parId.get(nous.bien); if (b && b.cree_le && m.date && new Date(b.cree_le) > new Date(m.date)) e = "bien ajouté au catalogue après le mail"; }
         if (!e) continue;
         noterChamp(k, e);
         /* nom et prénom séparés : comptés, mais un écart ne compte que sur l'identité entière (ci-dessous) */
@@ -183,19 +199,44 @@ const banc = async ({ mails, anciens, biens = [], conf = {}, opts = {}, maxCas =
       const ei = identite(idA, idN);
       if (ei) { noterChamp("identite", ei); if (ei !== "accord") diffs.push({ champ: "identite", ecart: ei, mots_ancien: idA.length, mots_nous: idN.length }); }
     }
-    if (decA !== decN && !(decA === "pas de lead" && decN === "pas de lead")) diffs.push({ champ: "decision", ecart: `${decA} → ${decN}` });
+    if (decA !== decN && !(decA === "pas de lead" && decN === "pas de lead")) {
+      diffs.push({ champ: "decision", ecart: `${decA} → ${decN}` });
+      const kd = `${decA} → ${decN}`;
+      if (m.motif) inc(R.motifs_ancien[kd] || (R.motifs_ancien[kd] = {}), masqueMotif(m.motif));
+      if (m.regle) inc(R.regles_ancien[kd] || (R.regles_ancien[kd] = {}), masqueMotif(m.regle));
+    }
     if (err) diffs.push({ champ: "erreur", ecart: err.slice(0, 120) });
     /* un cas par catégorie (portail × champ × écart), quelques exemples chacun */
     for (const f of diffs) {
       const k = `${p}|${f.champ}|${f.ecart}${f.forme_ancien !== undefined ? ` (${f.forme_ancien} / ${f.forme_nous})` : ""}`;
       const n = (cat.get(k) || 0) + 1; cat.set(k, n);
-      if (n > parCategorie || R.cas.length >= maxCas) continue;
-      const seuil = seuilDe(nb.get(p));
-      R.cas.push({ mail: m.id, portail: p, nature: x.nature || null, lu_par: x.lu_par || null, ...f, rapprochement: d && d.rapprochement, motifs: ((d && d.motifs) || []).map((t) => t.replace(/[\w.+-]+@[\w.-]+/g, "[email]").replace(/\d{3,}/g, "#")).slice(0, 4),
-        objet: squelette(m.objet, df.get(p) || new Map(), seuil), squelette: squelette(m.t, df.get(p) || new Map(), seuil) });
+      if (n <= parCategorie) attente.push({ k, m, d, x, p, f, a });
     }
   }
-  R.categories = Object.fromEntries([...cat].sort((a, b) => b[1] - a[1]));
+  /* cas montrés : d'abord les écarts qui changent qui reçoit le lead ou comment on joint le prospect */
+  const gravite = (k) => { const [, ch, ec] = k.split("|");
+    if (ch === "erreur") return 11;
+    if (ch === "bien" && /^différent/.test(ec)) return 10;
+    if ((ch === "email" || ch === "tel") && /différent/.test(ec)) return 9;
+    if (ch === "identite" && /^(différent|en partie)/.test(ec)) return 8;
+    if (ch === "decision" && /^(envoyé → (non automatisé|pas de lead)|pas de lead → envoyé)/.test(ec)) return 7;
+    if ((ch === "negociateur" || ch === "agence") && /^différent/.test(ec)) return 7;
+    if (ch === "decision" && /^non automatisé → envoyé/.test(ec)) return 6;
+    if (ch === "bien" && /absent chez nous/.test(ec)) return 6;
+    if (ch === "reference" && /différente/.test(ec)) return 5;
+    return /absent chez l'ancien|ajouté au catalogue/.test(ec) ? 0 : 2; };
+  const ordre = [...cat.keys()].sort((a, b) => gravite(b) - gravite(a) || cat.get(b) - cat.get(a));
+  const rang = new Map(ordre.map((k, i) => [k, i]));
+  attente.sort((u, v) => rang.get(u.k) - rang.get(v.k));
+  for (const { m, d, x, p, f, a } of attente.slice(0, maxCas)) {
+    const seuil = seuilDe(nb.get(p)), dfp = df.get(p) || new Map();
+    const ou = a && a.bien !== null && a.bien !== undefined && ((f.champ === "bien" && f.ecart !== "accord") || f.champ === "decision" || f.champ === "reference") ? ouAncien(m, a, dfp, seuil) : null;
+    R.cas.push({ mail: m.id, portail: p, nature: x.nature || null, lu_par: x.lu_par || null, ...f, gravite: gravite(`${p}|${f.champ}|${f.ecart}`), ...(ou ? { ou_l_ancien_a_lu_son_bien: ou } : {}),
+      motif_ancien: m.motif ? masqueMotif(m.motif) : null, regle_ancien: m.regle ? masqueMotif(m.regle) : null,
+      rapprochement: d && d.rapprochement, motifs: ((d && d.motifs) || []).map((t) => t.replace(/[\w.+-]+@[\w.-]+/g, "[email]").replace(/\d{3,}/g, "#")).slice(0, 4),
+      objet: squelette(m.objet, dfp, seuil), squelette: squelette(m.t, dfp, seuil) });
+  }
+  R.categories = Object.fromEntries(ordre.map((k) => [k, cat.get(k)]));
   /* quelques mails de chaque portail, même sans écart : pour voir leur forme (anonymisée) */
   R.exemples = [];
   const vus = new Map();

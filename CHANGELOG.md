@@ -1,5 +1,15 @@
 # Journal des versions
 
+## 2.13.1
+
+- Leads : un mail lu par un gabarit actif (une forme déjà vue et confirmée) n'est plus envoyé d'office au « non automatisé ». C'est seulement mentionné, comme le faisait l'ancien système. Un mail complété par l'IA ou lu par les règles générales reste à vérifier.
+- Banc d'essai, diagnostic des écarts :
+  - pour chaque écart, le motif et la règle de l'ancien système (anonymisés) ;
+  - quand les deux systèmes ne trouvent pas le même bien, la ligne du mail (anonymisée) où l'ancien avait lu sa référence ou l'identifiant du bien ;
+  - un bien entré dans le catalogue après le mail est signalé à part.
+- Banc d'essai, présentation : les exemples montrent d'abord les écarts graves (autre bien, autre e-mail ou téléphone, autre identité, lead perdu), et le rapport indique les domaines de l'agence utilisés.
+- Banc d'essai : l'IA lit 100 mails par défaut (0 pour la couper), y compris depuis un déclencheur réglé avant cette version.
+
 ## 2.13.0
 
 Banc d'essai complet (règles, gabarits, IA) et références lues d'après les vrais mails.

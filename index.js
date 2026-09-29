@@ -1,4 +1,4 @@
-/* dysizz-flow 2.13.0 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.13.1 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.13.0" : "dev";
+    var VERSION2 = true ? "2.13.1" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -94860,7 +94860,8 @@ var require_traiter = __commonJS({
       if (r.portail === "inconnu" || r.lu_par.length > 1) {
         const a = r.lecture && r.lecture.apprentissage, g = r.lecture && r.lecture.gabarit;
         const qui = r.portail === "inconnu" ? `nouvel exp\xE9diteur \xAB ${r.portail_inconnu} \xBB` : `mail de ${r.portail_nom || r.portail || "source non reconnue"}`;
-        d.motifs.push(qui + (r.lu_par.includes("ia") ? ` : compl\xE9t\xE9 par l'IA${a && a.fait !== "rien" ? `, gabarit ${a.fait} (${a.observations} observation(s))` : ""}` : g ? ` : lu avec un gabarit appris (${g.source})` : " : lu par les r\xE8gles g\xE9n\xE9rales"));
+        if (g && !r.lu_par.includes("ia")) d.alertes.push(qui + ` : lu avec un gabarit appris (${g.source})`);
+        else d.motifs.push(qui + (r.lu_par.includes("ia") ? ` : compl\xE9t\xE9 par l'IA${a && a.fait !== "rien" ? `, gabarit ${a.fait} (${a.observations} observation(s))` : ""}` : " : lu par les r\xE8gles g\xE9n\xE9rales"));
       }
       if (r.lecture && r.lecture.ia && r.lecture.ia.statut !== "ok") d.alertes.push(r.lecture.etapes.slice(-1)[0] || "IA non disponible");
       d.duree_ms = Date.now() - t0;
@@ -97945,7 +97946,7 @@ var require_banc = __commonJS({
         } catch (e) {
           err = e.message;
         }
-        return { m: { id: m0.id, objet: String(m0.objet || ""), t: texteMail({ texte: m0.texte, html: m0.html }).slice(0, 6e3) }, d, err };
+        return { m: { id: m0.id, date: m0.date, motif: m0.motif_ancien, regle: m0.regle_ancien, objet: String(m0.objet || ""), t: texteMail({ texte: m0.texte, html: m0.html }).slice(0, 6e3) }, d, err };
       };
       for (const m0 of mails) res.push(await rejouer(m0, sansIA));
       if (avecIA && iaEchantillon > 0) {
@@ -97997,7 +97998,25 @@ var require_banc = __commonJS({
         nb.set(p, nb.get(p) + 1);
         for (const w of mots(m.objet + "\n" + m.t)) df.get(p).set(w, (df.get(p).get(w) || 0) + 1);
       }
-      const cat = /* @__PURE__ */ new Map();
+      const cat = /* @__PURE__ */ new Map(), attente = [];
+      const parId = new Map(biens.map((b) => [String(b.id), b]));
+      const ouAncien = (m, a, dfp, seuil) => {
+        const b = a && a.bien !== null && a.bien !== void 0 ? parId.get(String(a.bien)) : null;
+        const essais = [["reference_de_l_ancien", a && (a.champs.reference || a.reference)], ["reference_du_bien", b && b.reference], ["id_du_bien", a && a.bien]].filter(([, v]) => v !== null && v !== void 0 && String(v).trim().length >= 2);
+        const lignes = (m.objet + "\n" + m.t).split("\n");
+        for (const [quoi, v] of essais) {
+          const re = new RegExp("(^|[^\\w])" + String(v).trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "(?![\\w])", "i");
+          const i = lignes.findIndex((l) => re.test(l));
+          if (i >= 0) return { quoi, forme: forme(v), ligne: i === 0 ? "(objet)" : "ligne " + i, texte: (() => {
+            const l = lignes[i], mm = l.match(re), j = mm.index + mm[1].length;
+            return (squelette(l.slice(0, j), dfp, seuil) + " [CETTE_VALEUR] " + squelette(l.slice(j + String(v).trim().length), dfp, seuil)).trim().slice(0, 160);
+          })(), avant: i > 0 ? squelette(lignes[i - 1], dfp, seuil).slice(0, 120) : null };
+        }
+        return essais.length ? { quoi: "absente du mail", formes: essais.map(([q, v]) => q + " " + forme(v)) } : null;
+      };
+      const masqueMotif = (t) => String(t || "").replace(/[\w.+-]+@[\w.-]+/g, "[email]").replace(/["«“][^"»”]{0,120}["»”]/g, '"\u2026"').replace(/\d+/g, "#").slice(0, 80);
+      R.motifs_ancien = {};
+      R.regles_ancien = {};
       const inc = (o, k) => {
         o[k] = (o[k] || 0) + 1;
       };
@@ -98054,6 +98073,10 @@ var require_banc = __commonJS({
           for (const k of Object.keys(nous)) {
             let e = nous[k] === eux[k] ? nous[k] ? "accord" : null : ecart(k, eux[k], nous[k]);
             if (k === "bien" && e && e !== "accord" && eux.bien && !catalogue.has(eux.bien)) e = "bien de l'ancien absent du catalogue";
+            if (k === "bien" && e === "absent chez l'ancien") {
+              const b = parId.get(nous.bien);
+              if (b && b.cree_le && m.date && new Date(b.cree_le) > new Date(m.date)) e = "bien ajout\xE9 au catalogue apr\xE8s le mail";
+            }
             if (!e) continue;
             noterChamp(k, e);
             if (e !== "accord" && k !== "nom" && k !== "prenom") diffs.push({ champ: k, ecart: e, ...k === "reference" ? { forme_ancien: forme(eux.reference), forme_nous: forme(nous.reference), forme_portail: forme(norm.ref(bm.reference_portail)) } : {} });
@@ -98064,28 +98087,56 @@ var require_banc = __commonJS({
             if (ei !== "accord") diffs.push({ champ: "identite", ecart: ei, mots_ancien: idA.length, mots_nous: idN.length });
           }
         }
-        if (decA !== decN && !(decA === "pas de lead" && decN === "pas de lead")) diffs.push({ champ: "decision", ecart: `${decA} \u2192 ${decN}` });
+        if (decA !== decN && !(decA === "pas de lead" && decN === "pas de lead")) {
+          diffs.push({ champ: "decision", ecart: `${decA} \u2192 ${decN}` });
+          const kd = `${decA} \u2192 ${decN}`;
+          if (m.motif) inc(R.motifs_ancien[kd] || (R.motifs_ancien[kd] = {}), masqueMotif(m.motif));
+          if (m.regle) inc(R.regles_ancien[kd] || (R.regles_ancien[kd] = {}), masqueMotif(m.regle));
+        }
         if (err) diffs.push({ champ: "erreur", ecart: err.slice(0, 120) });
         for (const f of diffs) {
           const k = `${p}|${f.champ}|${f.ecart}${f.forme_ancien !== void 0 ? ` (${f.forme_ancien} / ${f.forme_nous})` : ""}`;
           const n = (cat.get(k) || 0) + 1;
           cat.set(k, n);
-          if (n > parCategorie || R.cas.length >= maxCas) continue;
-          const seuil = seuilDe(nb.get(p));
-          R.cas.push({
-            mail: m.id,
-            portail: p,
-            nature: x.nature || null,
-            lu_par: x.lu_par || null,
-            ...f,
-            rapprochement: d && d.rapprochement,
-            motifs: (d && d.motifs || []).map((t) => t.replace(/[\w.+-]+@[\w.-]+/g, "[email]").replace(/\d{3,}/g, "#")).slice(0, 4),
-            objet: squelette(m.objet, df.get(p) || /* @__PURE__ */ new Map(), seuil),
-            squelette: squelette(m.t, df.get(p) || /* @__PURE__ */ new Map(), seuil)
-          });
+          if (n <= parCategorie) attente.push({ k, m, d, x, p, f, a });
         }
       }
-      R.categories = Object.fromEntries([...cat].sort((a, b) => b[1] - a[1]));
+      const gravite = (k) => {
+        const [, ch, ec] = k.split("|");
+        if (ch === "erreur") return 11;
+        if (ch === "bien" && /^différent/.test(ec)) return 10;
+        if ((ch === "email" || ch === "tel") && /différent/.test(ec)) return 9;
+        if (ch === "identite" && /^(différent|en partie)/.test(ec)) return 8;
+        if (ch === "decision" && /^(envoyé → (non automatisé|pas de lead)|pas de lead → envoyé)/.test(ec)) return 7;
+        if ((ch === "negociateur" || ch === "agence") && /^différent/.test(ec)) return 7;
+        if (ch === "decision" && /^non automatisé → envoyé/.test(ec)) return 6;
+        if (ch === "bien" && /absent chez nous/.test(ec)) return 6;
+        if (ch === "reference" && /différente/.test(ec)) return 5;
+        return /absent chez l'ancien|ajouté au catalogue/.test(ec) ? 0 : 2;
+      };
+      const ordre = [...cat.keys()].sort((a, b) => gravite(b) - gravite(a) || cat.get(b) - cat.get(a));
+      const rang = new Map(ordre.map((k, i) => [k, i]));
+      attente.sort((u, v) => rang.get(u.k) - rang.get(v.k));
+      for (const { m, d, x, p, f, a } of attente.slice(0, maxCas)) {
+        const seuil = seuilDe(nb.get(p)), dfp = df.get(p) || /* @__PURE__ */ new Map();
+        const ou = a && a.bien !== null && a.bien !== void 0 && (f.champ === "bien" && f.ecart !== "accord" || f.champ === "decision" || f.champ === "reference") ? ouAncien(m, a, dfp, seuil) : null;
+        R.cas.push({
+          mail: m.id,
+          portail: p,
+          nature: x.nature || null,
+          lu_par: x.lu_par || null,
+          ...f,
+          gravite: gravite(`${p}|${f.champ}|${f.ecart}`),
+          ...ou ? { ou_l_ancien_a_lu_son_bien: ou } : {},
+          motif_ancien: m.motif ? masqueMotif(m.motif) : null,
+          regle_ancien: m.regle ? masqueMotif(m.regle) : null,
+          rapprochement: d && d.rapprochement,
+          motifs: (d && d.motifs || []).map((t) => t.replace(/[\w.+-]+@[\w.-]+/g, "[email]").replace(/\d{3,}/g, "#")).slice(0, 4),
+          objet: squelette(m.objet, dfp, seuil),
+          squelette: squelette(m.t, dfp, seuil)
+        });
+      }
+      R.categories = Object.fromEntries(ordre.map((k) => [k, cat.get(k)]));
       R.exemples = [];
       const vus = /* @__PURE__ */ new Map();
       for (const { m, d } of res) {
@@ -98116,10 +98167,10 @@ var require_leads_banc = __commonJS({
       }
     };
     var DEFAUT = {
-      mails: { table: "email_brut_selection_habitat", expediteur: "expediteur", destinataire: "destinataire", objet: "objet", texte: "corps_texte", html: "corps_html", date: "date_envoi" },
+      mails: { table: "email_brut_selection_habitat", expediteur: "expediteur", destinataire: "destinataire", objet: "objet", texte: "corps_texte", html: "corps_html", date: "date_envoi", motif: "motif", regle: "regle_appliquee" },
       leads: { table: "lead", mail: "email_brut", source: "source", statut: "statut", reference: "reference_bien", bien: "product_id", agence: "agency_id", negociateur: "user_id" },
       champs: { table: "lead_champ", lead: "lead", nom: "nom_champ", valeur: "valeur" },
-      biens: { table: "bien", id: "product_id", reference: "model", prix: "prix", surface: "surface", pieces: "nb_pieces", type: "type_bien", ville: "ville", code_postal: "code_postal", negociateur: "user_id", agence: "agency_id", proprietaire: "customers_id" },
+      biens: { table: "bien", id: "product_id", reference: "model", prix: "prix", surface: "surface", pieces: "nb_pieces", type: "type_bien", ville: "ville", code_postal: "code_postal", negociateur: "user_id", agence: "agency_id", proprietaire: "customers_id", cree_le: "cree_le" },
       agences: { table: "agence", id: "agency_id", nom: "nom", boites: ["boite", "emails"] },
       gabarits: { table: "gabarit_version" }
     };
@@ -98147,7 +98198,7 @@ var require_leads_banc = __commonJS({
           name: "ia_echantillon",
           label: "IA : nombre de mails lus par l'IA (0 = pas d'IA)",
           type: "int",
-          default: 0,
+          default: 100,
           help: "Parmi les mails que ni les r\xE8gles ni les gabarits ne savent lire, r\xE9partis entre les portails. Co\xFBte des appels \xE0 l'IA r\xE9gl\xE9e dans les r\xE9glages Leads (plafond du jour non compt\xE9)."
         },
         { name: "exemples", label: "Exemples anonymis\xE9s par portail", type: "int", default: 3 },
@@ -98174,7 +98225,7 @@ var require_leads_banc = __commonJS({
         };
         const mails = [];
         await lotParLot(T(c.mails.table), (r) => {
-          if (!p.limite || mails.length < +p.limite) mails.push({ id: r.id, expediteur: r[c.mails.expediteur], destinataire: r[c.mails.destinataire], objet: r[c.mails.objet], texte: r[c.mails.texte], html: r[c.mails.html], date: r[c.mails.date] });
+          if (!p.limite || mails.length < +p.limite) mails.push({ id: r.id, expediteur: r[c.mails.expediteur], destinataire: r[c.mails.destinataire], objet: r[c.mails.objet], texte: r[c.mails.texte], html: r[c.mails.html], date: r[c.mails.date], motif_ancien: c.mails.motif ? r[c.mails.motif] : null, regle_ancien: c.mails.regle ? r[c.mails.regle] : null });
         });
         const anciens = /* @__PURE__ */ new Map(), leadVersMail = /* @__PURE__ */ new Map();
         await lotParLot(T(c.leads.table), (r) => {
@@ -98206,7 +98257,8 @@ var require_leads_banc = __commonJS({
           code_postal: r[c.biens.code_postal],
           negociateur_id: r[c.biens.negociateur],
           agence_id: r[c.biens.agence],
-          proprietaire_id: r[c.biens.proprietaire]
+          proprietaire_id: r[c.biens.proprietaire],
+          cree_le: c.biens.cree_le ? r[c.biens.cree_le] : null
         }));
         const agences = [];
         if (Table.findOne({ name: c.agences.table })) await lotParLot(T(c.agences.table), (r) => agences.push({
@@ -98243,7 +98295,7 @@ var require_leads_banc = __commonJS({
           }
           opts.gabarits = A.memoire(depart);
         }
-        const nIA = Math.max(0, +p.ia_echantillon || 0);
+        const nIA = p.ia_echantillon === void 0 || p.ia_echantillon === null || p.ia_echantillon === "" ? 100 : Math.max(0, +p.ia_echantillon || 0);
         if (nIA) {
           let R0 = {};
           try {
@@ -98258,6 +98310,7 @@ var require_leads_banc = __commonJS({
         R.agences = agences.length;
         R.champs_ancien_inconnus = inconnus;
         R.gabarits = { source: gabaritsDe || "aucun", au_depart: depart.length };
+        R.domaines_agence = conf.domaines_agence;
         const File = require("@saltcorn/data/models/file");
         const nom = String(p.fichier || "banc-leads.json").replace(/[^\w.-]/g, "_");
         await File.from_contents(nom, "application/json", JSON.stringify(R, null, 1), ctx.user && ctx.user.id, 1);

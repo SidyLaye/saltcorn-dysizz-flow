@@ -132,7 +132,8 @@ const fausseIA = () => {
   const crm = L.ADAPTATEURS.memoire.creer({ biens: [{ id: 77, reference: "IN-4444", prix: 250000, ville: "Rodez" }] });
   const d = await L.traiter(v1(GENS[8]), crm, conf, { ia: f.client, gabarits: store });
   assert.ok(d.bien && d.bien.id === 77, "bien trouvé par la référence lue par le gabarit : " + JSON.stringify([d.motifs, d.extraction.bien, d.extraction.lu_par, d.rapprochement]));
-  assert.ok(d.motifs.some((m) => /gabarit appris/.test(m)), d.motifs.join(" | "));
+  /* un gabarit actif lit sûrement : mentionné en alerte, ce n'est pas un motif de « non automatisé » */
+  assert.ok(d.alertes.some((m) => /gabarit appris/.test(m)) && !d.motifs.some((m) => /gabarit appris/.test(m)), d.motifs.join(" | "));
 
   /* 8. import des anciens gabarits AMBS */
   const vieux = [{ id: 8, source: "seloger", nature: "lead", signature: '{"ancres":["s\'intéresse à ce bien"],"expediteur":"lead.seloger.com"}', champs: [{ nom: "reference", motif: "Ref\\. de l'annonce\\s*:\\s*(\\S+)" }], statut: "actif", version: "acquereur", nb_observations: 11 }, { id: 9, statut: "quarantaine" }];

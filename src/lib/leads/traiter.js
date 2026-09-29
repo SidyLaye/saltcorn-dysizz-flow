@@ -147,7 +147,9 @@ const etapeLire = async (mail, conf = {}, opts = {}) => {
   if (r.portail === "inconnu" || r.lu_par.length > 1) {
     const a = r.lecture && r.lecture.apprentissage, g = r.lecture && r.lecture.gabarit;
     const qui = r.portail === "inconnu" ? `nouvel expéditeur « ${r.portail_inconnu} »` : `mail de ${r.portail_nom || r.portail || "source non reconnue"}`;
-    d.motifs.push(qui + (r.lu_par.includes("ia") ? ` : complété par l'IA${a && a.fait !== "rien" ? `, gabarit ${a.fait} (${a.observations} observation(s))` : ""}` : g ? ` : lu avec un gabarit appris (${g.source})` : " : lu par les règles générales"));
+    /* un gabarit actif (forme déjà vue et confirmée plusieurs fois) lit sûrement : simple mention ; l'IA ou les règles générales : à vérifier */
+    if (g && !r.lu_par.includes("ia")) d.alertes.push(qui + ` : lu avec un gabarit appris (${g.source})`);
+    else d.motifs.push(qui + (r.lu_par.includes("ia") ? ` : complété par l'IA${a && a.fait !== "rien" ? `, gabarit ${a.fait} (${a.observations} observation(s))` : ""}` : " : lu par les règles générales"));
   }
   if (r.lecture && r.lecture.ia && r.lecture.ia.statut !== "ok") d.alertes.push(r.lecture.etapes.slice(-1)[0] || "IA non disponible");
   d.duree_ms = Date.now() - t0;
