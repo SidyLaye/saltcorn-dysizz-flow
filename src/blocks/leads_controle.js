@@ -20,7 +20,7 @@ module.exports = [{
     { name: "source", label: "Leads contrôlés", type: "select", options: ["ancien système", "solution Leads"], default: "ancien système",
       help: "ancien système : table lead (réglable ci-dessous) ; solution Leads : ld_leads écrits en mode réel" },
     { name: "correspondances", label: "Tables et champs de l'ancien système (JSON)", type: "json", help: "Vide = tables AMBS. Ex. {\"leads\":{\"contact\":\"customer_id\"}}" },
-    { name: "domaines_agence", label: "Domaines de l'agence", help: "Les mêmes que dans les réglages Leads" },
+    { name: "domaines_agence", label: "Domaines de l'agence (en plus)", help: "Déjà pris : ceux des réglages Leads et des boîtes des agences" },
     { name: "limite", label: "Nombre de leads (les plus récents, répartis entre les portails)", type: "int", default: 50 },
     { name: "moteur_crm", label: "Le moteur cherche contacts et biens dans le vrai CRM (lecture seule)", type: "bool", default: true, help: "Décoché : il cherche les biens dans le catalogue de l'ancien système, sans appel au CRM" },
     { name: "fichier", label: "Nom du rapport", default: "controle-crm.json" },
@@ -76,7 +76,7 @@ module.exports = [{
       ville: r[c.biens.ville], code_postal: r[c.biens.code_postal], negociateur_id: r[c.biens.negociateur], agence_id: r[c.biens.agence] }));
     const agences = (await tous(c.agences.table)).map((r) => ({ id: String(r[c.agences.id] ?? r.id), nom: r[c.agences.nom], boites: [].concat(c.agences.boites).flatMap((f) => String(r[f] || "").toLowerCase().match(/[\w.+-]+@[\w.-]+/g) || []) }));
     const conf = { ...((cd && cd.conf) || {}), agences: agences.length ? agences : ((cd && cd.conf.agences) || []) };
-    if (p.domaines_agence) conf.domaines_agence = String(p.domaines_agence).split(/[\s,;]+/).filter(Boolean);
+    conf.domaines_agence = require("../lib/leads/banc").domainesAgence(p.domaines_agence, conf.domaines_agence || [], agences.flatMap((a) => a.boites));
     if (!conf.origines || !conf.origines.length) conf.origines = (await tous(c.origines.table)).map((o) => ({ id: o[c.origines.id], code: o[c.origines.code] }));
     conf.consentement = { actif: true, libelle: (conf.consentement && conf.consentement.libelle) || R0.consentement_libelle || "Demande de contact via {portail} le {date}" };
     /* groupe « Demandeur » : celui des réglages, sinon celui du CRM */

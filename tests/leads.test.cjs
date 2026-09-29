@@ -379,6 +379,15 @@ const { CONF, MAILS } = require("./fixtures-leads.cjs");
       texte: "Hello Habitat,\nFrom:\nNom: Jan Test\nEmail: jan@example.org\nTéléphone: 0611223344\nRequest for Property:\nID: 8812\nObject: 12 Moulin à eau à vendre. Aveyron.\nURL:\n" }, CONF);
     assert.strictEqual(mo.bien.reference, "SEHA4567"); assert.strictEqual(mo.bien.reference_portail, "8812"); assert(/Moulin/.test(mo.bien.titre));
   }
+  /* Un rôle n'est jamais un nom : « Coordonnées de l'acheteur : » suivi du vrai nom (Zefir) ; « Nom : Acquéreur » effacé */
+  {
+    const z2 = extraire({ expediteur: "Zefir <agent@zefir.fr>", destinataire: "rodez@agence-exemple.fr", objet: "Cet acheteur attend votre réponse",
+      texte: "Rappel\nVous avez reçu une demande de contact pour le bien situé au Rodez (12000).\nCoordonnées de l’acheteur :\nPaul Martin\n📞 06 11 22 33 44\n📧 paul.martin@example.org Merci\nMaison à vendre - Maison - 5 pièces -...\n245 000 € - 120 m²\n🗺️ Rodez (12000)" }, CONF);
+    assert.strictEqual(z2.contact.prenom, "Paul"); assert.strictEqual(z2.contact.nom, "Martin");
+    const { nettoyerNoms } = require("../src/lib/leads/extraire");
+    assert.deepStrictEqual(nettoyerNoms({ nom: "Acquéreur", email: "x@example.org" }), { email: "x@example.org" });
+    assert.strictEqual(nettoyerNoms({ nom_complet: "l'acheteur" }).nom_complet, undefined);
+  }
   /* Référence très courte : jamais une preuve seule (elle peut désigner un autre bien) ; Giraffe : référence accolée à des lettres */
   {
     const { rapprocher } = require("../src/lib/leads/rapprochement");

@@ -302,7 +302,10 @@ const PORTAILS = [
     nature: (o, t) => (/acheteur|visiter|visite/i.test(o + "\n" + String(t).slice(0, 800)) ? "lead" : /vendeur|estimation|estimer/i.test(o) ? "estimation" : "non_lead"),
     regles: ({ L, texte, r }) => {
       const i = L.findIndex((l) => /^coordonn[ée]es de/i.test(l));
-      if (i >= 0) { const n = L[i].replace(/^coordonn[ée]es de\s*/i, "").replace(/\s*:\s*$/, "").trim() || L[i + 1]; if (n && !/[📞📧@]/u.test(n) && !/\d{4}/.test(n)) r.contact.nom_complet = V.nomPropre(n); }
+      /* « Coordonnées de Paul Martin : » ou « Coordonnées de l'acheteur : » suivi du nom sur la ligne d'après */
+      if (i >= 0) { let n = L[i].replace(/^coordonn[ée]es de\s*/i, "").replace(/\s*:\s*$/, "").trim();
+        if (!n || /^(l['’]|la |le |du |de la |votre |cet |ce )?(acheteur|acqu[ée]reur|prospect|contact|client|vendeur|internaute)s?$/i.test(n)) n = L[i + 1];
+        if (n && !/[📞📧@]/u.test(n) && !/\d{4}/.test(n)) r.contact.nom_complet = V.nomPropre(n); }
       const t = texte.match(/📞\s*([+\d][\d .]{8,})/u); if (t) r.contact.telephone = t[1].trim();
       const e = texte.match(/📧\s*(\S+@\S+)/u); if (e) r.contact.email = V.email(e[1]);
       const b = L.find((l) => /(vendre|vente)\s*-\s*\w+/i.test(l)); if (b) { r.bien.titre = b; Object.assign(r.bien, { ...V.faitsTitre(b), ...r.bien }); const ty = b.match(/-\s*(maison|appartement|terrain|propri[ée]t[ée]|immeuble|local|grange|moulin|villa)/i); if (ty) r.bien.type = V.typeBien(ty[1]); }

@@ -19,7 +19,7 @@ module.exports = [{
   description: "Rejoue le traitement des leads sur les mails déjà reçus par un ancien système et compare, mail par mail, avec ce qu'il avait trouvé : source, e-mail, téléphone, nom, prénom, référence, bien, agence, négociateur, décision. Mesure chaque étage de lecture (règles, gabarits, IA sur un échantillon). Rien n'est écrit (CRM et gabarits en mémoire). Rapport sans donnée personnelle dans Fichiers : accords par portail et par champ, type de chaque écart, squelette anonymisé des mails en écart.",
   params: [
     { name: "correspondances", label: "Tables et champs de l'ancien système (JSON)", type: "json", help: "Vide = tables AMBS (email_brut_selection_habitat, lead, lead_champ, bien, agence). Ex. {\"mails\":{\"table\":\"mails\"}}" },
-    { name: "domaines_agence", label: "Domaines de l'agence", help: "Ex. selectionhabitat.com (mails de l'équipe)" },
+    { name: "domaines_agence", label: "Domaines de l'agence (en plus)", help: "Déjà pris : ceux des réglages Leads et des boîtes des agences (table des agences)" },
     { name: "limite", label: "Nombre de mails (0 = tous)", type: "int", default: 0 },
     { name: "gabarits", label: "Gabarits", type: "select", options: ["ancien", "appris", "aucun"], default: "ancien",
       help: "ancien = ceux de l'ancien système (table gabarit_version) ; appris = ceux de la solution Leads (ld_gabarits) ; copiés en mémoire, jamais modifiés" },
@@ -63,8 +63,10 @@ module.exports = [{
     const agences = [];
     if (Table.findOne({ name: c.agences.table })) await lotParLot(T(c.agences.table), (r) => agences.push({ id: String(r[c.agences.id] ?? r.id), nom: r[c.agences.nom],
       boites: [].concat(c.agences.boites).flatMap((f) => String(r[f] || "").toLowerCase().match(/[\w.+-]+@[\w.-]+/g) || []) }));
-    const conf = { domaines_agence: String(p.domaines_agence || "").split(/[\s,;]+/).filter(Boolean), agences };
-    try { const cd = await require("../lib/leads/tables/conf").charger(); conf.portails = cd.conf.portails; conf.sites = cd.conf.sites; } catch (e) { /* pas de tables leads : portails du code seulement */ }
+    const conf = { agences };
+    let domR = [];
+    try { const cd = await require("../lib/leads/tables/conf").charger(); conf.portails = cd.conf.portails; conf.sites = cd.conf.sites; domR = cd.conf.domaines_agence || []; } catch (e) { /* pas de tables leads : portails du code seulement */ }
+    conf.domaines_agence = require("../lib/leads/banc").domainesAgence(p.domaines_agence, domR, agences.flatMap((a) => a.boites));
     /* gabarits : copiés en mémoire (le banc n'écrit rien) ; ce que l'IA apprend pendant le banc y reste */
     const A = api.leads.apprentissage, opts = {};
     const choix = p.gabarits === false || p.gabarits === "aucun" ? "aucun" : p.gabarits === "appris" ? "appris" : p.gabarits === true ? "appris ou ancien" : "ancien";

@@ -254,3 +254,10 @@ const banc = async ({ mails, anciens, biens = [], conf = {}, opts = {}, maxCas =
 };
 
 module.exports = { banc, squelette, ecart, champDeLAncien, norm, forme, identite, mots2 };
+
+/* Domaines de l'agence pour le banc et les contrôles : ceux donnés, ceux des réglages Leads, et ceux des boîtes
+   des agences (sauf messageries publiques) — un champ laissé vide ne fait plus prendre l'équipe pour un prospect. */
+const PUBLICS = /^(gmail|googlemail|yahoo|ymail|hotmail|outlook|live|msn|orange|wanadoo|free|sfr|neuf|laposte|icloud|me|mac|aol|gmx|protonmail|proton|bbox|numericable|club-internet|aliceadsl|voila|libertysurf|tiscali)\./i;
+const domainesAgence = (...sources) => [...new Set(sources.flat().flatMap((x) => String(x || "").toLowerCase().split(/[\s,;]+/))
+  .map((x) => x.replace(/^.*@/, "").trim()).filter((d) => /^[a-z0-9.-]+\.[a-z]{2,}$/.test(d) && !PUBLICS.test(d)))];
+module.exports.domainesAgence = domainesAgence;

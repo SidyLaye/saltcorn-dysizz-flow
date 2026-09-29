@@ -10,6 +10,9 @@
 - Contrôle du CRM : 50 leads par défaut.
 - Rapprochement : une référence très courte (moins de 4 caractères, ex. « 12 ») n'est plus une preuve suffisante à elle seule. Le bien doit être confirmé par les faits du mail (ville, code postal, prix, surface).
 - Giraffe : une référence accolée à des lettres dans le nom du projet (ex. « AGX12345 ») est lue.
+- Zefir : quand le mail dit « Coordonnées de l'acheteur : » avec le nom sur la ligne suivante, c'est ce nom qui est lu. Avant, « l'acheteur » était pris pour le nom du prospect.
+- Banc d'essai et contrôle du CRM : les domaines de l'agence sont repris des réglages Leads et des boîtes des agences (hors messageries publiques). Le champ ne sert plus qu'à en ajouter : laissé vide, il faisait prendre les réponses de l'équipe (« Re : ») pour des prospects.
+- Tous les portails, l'IA et les gabarits : un rôle (acheteur, acquéreur, prospect, contact, client, internaute, vendeur, madame, monsieur…) n'est jamais retenu comme prénom ou nom, donc jamais écrit dans le CRM.
 
 ## 2.13.2
 

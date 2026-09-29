@@ -92968,7 +92968,8 @@ var require_portails = __commonJS({
         regles: ({ L, texte, r }) => {
           const i = L.findIndex((l) => /^coordonn[ée]es de/i.test(l));
           if (i >= 0) {
-            const n = L[i].replace(/^coordonn[ée]es de\s*/i, "").replace(/\s*:\s*$/, "").trim() || L[i + 1];
+            let n = L[i].replace(/^coordonn[ée]es de\s*/i, "").replace(/\s*:\s*$/, "").trim();
+            if (!n || /^(l['’]|la |le |du |de la |votre |cet |ce )?(acheteur|acqu[ée]reur|prospect|contact|client|vendeur|internaute)s?$/i.test(n)) n = L[i + 1];
             if (n && !/[📞📧@]/u.test(n) && !/\d{4}/.test(n)) r.contact.nom_complet = V.nomPropre(n);
           }
           const t = texte.match(/📞\s*([+\d][\d .]{8,})/u);
@@ -93344,6 +93345,16 @@ var require_extraire = __commonJS({
         return { expediteur: exp, objet: o, texte: L.slice(j).join("\n"), html: "", __agence: agence };
       }
     };
+    var ROLE = /^(l['’]|le |la |du |de la |un |une |cet |cette |ce |votre |notre )?(acheteurs?|acqu[ée]reurs?|prospects?|contacts?|clients?|internautes?|vendeurs?|demandeurs?|utilisateurs?|visiteurs?|particuliers?|propri[ée]taires?|locataires?|candidats?|buyers?|enquirers?|customers?|users?|madame|monsieur|m\.|mme|mr|mrs)$/i;
+    var nettoyerNoms = (c = {}) => {
+      for (const k of ["nom", "prenom", "nom_complet"]) if (c[k] && ROLE.test(String(c[k]).trim())) delete c[k];
+      if (!c.nom && !c.prenom && c.nom_complet) {
+        const dn = V.decouperNom(c.nom_complet) || {};
+        if (dn.nom) c.nom = dn.nom;
+        if (dn.prenom) c.prenom = dn.prenom;
+      }
+      return c;
+    };
     var extraire = (mail, conf = {}) => {
       const texte = texteMail({ texte: mail.texte ?? mail.corps_texte, html: mail.html ?? mail.corps_html });
       const liens = lesLiens({ texte: mail.texte ?? mail.corps_texte, html: mail.html ?? mail.corps_html });
@@ -93559,6 +93570,7 @@ var require_extraire = __commonJS({
       }
       const vend = texte.match(/a(?:-t-il)? un bien à vendre\s*[:?]?\s*(oui|non)/i);
       if (vend && r.a_un_bien_a_vendre === void 0) r.a_un_bien_a_vendre = /oui/i.test(vend[1]);
+      nettoyerNoms(c);
       r.manquants = [];
       if (["lead", "relance", "recherche", "estimation", "direct", "reponse_campagne"].includes(r.nature)) {
         if (!c.email && !c.telephone) r.manquants.push("coordonnees");
@@ -93569,7 +93581,7 @@ var require_extraire = __commonJS({
       r.destinataire = mail.destinataire || "";
       return r;
     };
-    module2.exports = { extraire, identifierSite, RELAIS };
+    module2.exports = { nettoyerNoms, extraire, identifierSite, RELAIS };
   }
 });
 
@@ -94249,6 +94261,7 @@ var require_lecture = __commonJS({
     var manquantsImportants = (r) => (r.manquants || []).filter((m) => ["coordonnees", "nom", "reference"].includes(m));
     var recalculer = (r) => {
       const c = r.contact || {}, b = r.bien || {};
+      require_extraire().nettoyerNoms(c);
       r.manquants = [];
       if (LEADS.includes(r.nature) || r.nature === "reponse_campagne") {
         if (!c.email && !c.telephone) r.manquants.push("coordonnees");
@@ -98258,6 +98271,9 @@ var require_banc = __commonJS({
       return R;
     };
     module2.exports = { banc, squelette, ecart, champDeLAncien, norm, forme, identite, mots2 };
+    var PUBLICS = /^(gmail|googlemail|yahoo|ymail|hotmail|outlook|live|msn|orange|wanadoo|free|sfr|neuf|laposte|icloud|me|mac|aol|gmx|protonmail|proton|bbox|numericable|club-internet|aliceadsl|voila|libertysurf|tiscali)\./i;
+    var domainesAgence = (...sources) => [...new Set(sources.flat().flatMap((x) => String(x || "").toLowerCase().split(/[\s,;]+/)).map((x) => x.replace(/^.*@/, "").trim()).filter((d) => /^[a-z0-9.-]+\.[a-z]{2,}$/.test(d) && !PUBLICS.test(d)))];
+    module2.exports.domainesAgence = domainesAgence;
   }
 });
 
@@ -98292,7 +98308,7 @@ var require_leads_banc = __commonJS({
       description: "Rejoue le traitement des leads sur les mails d\xE9j\xE0 re\xE7us par un ancien syst\xE8me et compare, mail par mail, avec ce qu'il avait trouv\xE9 : source, e-mail, t\xE9l\xE9phone, nom, pr\xE9nom, r\xE9f\xE9rence, bien, agence, n\xE9gociateur, d\xE9cision. Mesure chaque \xE9tage de lecture (r\xE8gles, gabarits, IA sur un \xE9chantillon). Rien n'est \xE9crit (CRM et gabarits en m\xE9moire). Rapport sans donn\xE9e personnelle dans Fichiers : accords par portail et par champ, type de chaque \xE9cart, squelette anonymis\xE9 des mails en \xE9cart.",
       params: [
         { name: "correspondances", label: "Tables et champs de l'ancien syst\xE8me (JSON)", type: "json", help: 'Vide = tables AMBS (email_brut_selection_habitat, lead, lead_champ, bien, agence). Ex. {"mails":{"table":"mails"}}' },
-        { name: "domaines_agence", label: "Domaines de l'agence", help: "Ex. selectionhabitat.com (mails de l'\xE9quipe)" },
+        { name: "domaines_agence", label: "Domaines de l'agence (en plus)", help: "D\xE9j\xE0 pris : ceux des r\xE9glages Leads et des bo\xEEtes des agences (table des agences)" },
         { name: "limite", label: "Nombre de mails (0 = tous)", type: "int", default: 0 },
         {
           name: "gabarits",
@@ -98376,13 +98392,16 @@ var require_leads_banc = __commonJS({
           nom: r[c.agences.nom],
           boites: [].concat(c.agences.boites).flatMap((f) => String(r[f] || "").toLowerCase().match(/[\w.+-]+@[\w.-]+/g) || [])
         }));
-        const conf = { domaines_agence: String(p.domaines_agence || "").split(/[\s,;]+/).filter(Boolean), agences };
+        const conf = { agences };
+        let domR = [];
         try {
           const cd = await require_conf().charger();
           conf.portails = cd.conf.portails;
           conf.sites = cd.conf.sites;
+          domR = cd.conf.domaines_agence || [];
         } catch (e) {
         }
+        conf.domaines_agence = require_banc().domainesAgence(p.domaines_agence, domR, agences.flatMap((a) => a.boites));
         const A = api.leads.apprentissage, opts = {};
         const choix = p.gabarits === false || p.gabarits === "aucun" ? "aucun" : p.gabarits === "appris" ? "appris" : p.gabarits === true ? "appris ou ancien" : "ancien";
         let depart = [], gabaritsDe = null;
@@ -98648,7 +98667,7 @@ var require_leads_controle = __commonJS({
           help: "ancien syst\xE8me : table lead (r\xE9glable ci-dessous) ; solution Leads : ld_leads \xE9crits en mode r\xE9el"
         },
         { name: "correspondances", label: "Tables et champs de l'ancien syst\xE8me (JSON)", type: "json", help: 'Vide = tables AMBS. Ex. {"leads":{"contact":"customer_id"}}' },
-        { name: "domaines_agence", label: "Domaines de l'agence", help: "Les m\xEAmes que dans les r\xE9glages Leads" },
+        { name: "domaines_agence", label: "Domaines de l'agence (en plus)", help: "D\xE9j\xE0 pris : ceux des r\xE9glages Leads et des bo\xEEtes des agences" },
         { name: "limite", label: "Nombre de leads (les plus r\xE9cents, r\xE9partis entre les portails)", type: "int", default: 50 },
         { name: "moteur_crm", label: "Le moteur cherche contacts et biens dans le vrai CRM (lecture seule)", type: "bool", default: true, help: "D\xE9coch\xE9 : il cherche les biens dans le catalogue de l'ancien syst\xE8me, sans appel au CRM" },
         { name: "fichier", label: "Nom du rapport", default: "controle-crm.json" },
@@ -98736,7 +98755,7 @@ var require_leads_controle = __commonJS({
         }));
         const agences = (await tous(c.agences.table)).map((r) => ({ id: String(r[c.agences.id] ?? r.id), nom: r[c.agences.nom], boites: [].concat(c.agences.boites).flatMap((f) => String(r[f] || "").toLowerCase().match(/[\w.+-]+@[\w.-]+/g) || []) }));
         const conf = { ...cd && cd.conf || {}, agences: agences.length ? agences : cd && cd.conf.agences || [] };
-        if (p.domaines_agence) conf.domaines_agence = String(p.domaines_agence).split(/[\s,;]+/).filter(Boolean);
+        conf.domaines_agence = require_banc().domainesAgence(p.domaines_agence, conf.domaines_agence || [], agences.flatMap((a) => a.boites));
         if (!conf.origines || !conf.origines.length) conf.origines = (await tous(c.origines.table)).map((o) => ({ id: o[c.origines.id], code: o[c.origines.code] }));
         conf.consentement = { actif: true, libelle: conf.consentement && conf.consentement.libelle || R0.consentement_libelle || "Demande de contact via {portail} le {date}" };
         let groupe = crmR.groupe_demandeur ?? null;
