@@ -121,6 +121,40 @@ const fieldsFor = async (name, tableName) => {
   return { label: name, description: a.description || "", icon: "fas fa-plug", fields: await Promise.all((fs || []).filter((f) => f && f.name).map(normField)) };
 };
 
+/* ---------- qui lance un workflow ? ----------
+   Un workflow « à la main » est souvent lancé par un déclencheur de table (bloc « Lancer un autre
+   workflow » sur un ajout, une modification…) ou par une étape d'un autre workflow : on le montre. */
+const EVT = { Insert: "à chaque ajout dans", Update: "à chaque modification dans", Delete: "à chaque suppression dans", Validate: "avant chaque écriture dans", Often: "toutes les ~5 minutes", Hourly: "toutes les heures", Daily: "chaque jour", Weekly: "chaque semaine", Never: "à la main", "API call": "par appel d'API" };
+const lanceurs = async () => {
+  const Trigger = require("@saltcorn/data/models/trigger");
+  const Table = require("@saltcorn/data/models/table");
+  const WorkflowStep = require("@saltcorn/data/models/workflow_step");
+  const out = new Map();
+  const ajouter = (nom, l) => { if (!nom) return; if (!out.has(nom)) out.set(nom, []); out.get(nom).push(l); };
+  const tous = Trigger.find({});
+  for (const t of tous) {
+    const cible = t.configuration && typeof t.configuration.workflow === "string" ? t.configuration.workflow : null;
+    if (!cible || t.action === "Workflow") continue;
+    const tb = t.table_id ? (Table.findOne({ id: t.table_id }) || {}).name : "";
+    ajouter(cible, { texte: `${EVT[t.when_trigger] || t.when_trigger}${tb ? " " + tb : ""}`, table: tb, via: `déclencheur ${t.name}`, lien: `/actions/edit/${t.id}` });
+  }
+  const noms = new Map(tous.filter((t) => t.action === "Workflow").map((t) => [t.id, t.name]));
+  for (const st of await WorkflowStep.find({})) {
+    const cible = st.action_name && noms && [...noms.values()].includes(st.action_name) ? st.action_name : st.configuration && typeof st.configuration.workflow === "string" ? st.configuration.workflow : null;
+    const parent = noms.get(st.trigger_id);
+    if (!cible || !parent || cible === parent) continue;
+    ajouter(cible, { texte: `par le workflow ${parent}`, via: `étape ${st.name}`, lien: `/dysizz-flow/editeur/${st.trigger_id}` });
+  }
+  return out;
+};
+
+/* résumé court : deux lanceurs en clair, au-delà leur nombre et les tables concernées */
+const resumeLanceurs = (l) => {
+  if (l.length <= 2) return "lancé " + l.map((x) => x.texte).join(", ");
+  const tables = [...new Set(l.map((x) => x.table).filter(Boolean))];
+  return `lancé par ${l.length} déclencheurs` + (tables.length ? ` sur ${tables.slice(0, 4).join(", ")}${tables.length > 4 ? ` +${tables.length - 4}` : ""}` : "");
+};
+
 /* ---------- lecture / écriture d'un workflow ---------- */
 const loadWorkflow = async (id) => {
   const Trigger = require("@saltcorn/data/models/trigger");
@@ -130,9 +164,12 @@ const loadWorkflow = async (id) => {
   if (!t || t.action !== "Workflow") return null;
   const steps = await WorkflowStep.find({ trigger_id: t.id });
   const table = t.table_id ? Table.findOne({ id: t.table_id }) : null;
+  const lz = (await lanceurs()).get(t.name) || [];
   return {
     id: t.id, name: t.name, description: t.description || "", when_trigger: t.when_trigger, table: table ? table.name : "", channel: t.channel || "",
     layout: (t.configuration && t.configuration.dzf_layout) || {},
+    lanceurs: lz,
+    lance_par: lz.length ? resumeLanceurs(lz) : "",
     steps: steps.map((s) => ({ id: s.id, name: s.name, action_name: s.action_name, configuration: s.configuration || {}, next_step: s.next_step || "", only_if: s.only_if || "", initial_step: !!s.initial_step })),
   };
 };
@@ -196,6 +233,7 @@ const listPage = async (req, res) => {
   const counts = new Map();
   for (const s of await WS.find({})) counts.set(s.trigger_id, (counts.get(s.trigger_id) || 0) + 1);
   const whenL = Object.fromEntries(WHEN);
+  const parQui = await lanceurs();
   const card = (t) => {
     const r = last.get(t.id);
     const tb = t.table_id ? (Table.findOne({ id: t.table_id }) || {}).name : "";
@@ -203,7 +241,7 @@ const listPage = async (req, res) => {
     return `<div class="dzf-wf" data-search="${esc((t.name + " " + (t.description || "")).toLowerCase())}">
 <a class="dzf-wf-main" href="/dysizz-flow/editeur/${t.id}"><span class="dzf-wf-ic"><i class="fas fa-project-diagram"></i></span>
 <span><b>${esc(t.name)}</b><small>${esc(t.description || "")}</small>
-<span class="dzf-wf-meta"><span><i class="far fa-clock"></i> ${esc(whenL[t.when_trigger] || t.when_trigger)}${tb ? ` · ${esc(tb)}` : ""}</span><span>${counts.get(t.id) || 0} étape(s)</span>
+<span class="dzf-wf-meta"><span><i class="far fa-clock"></i> ${t.when_trigger === "Never" && (parQui.get(t.name) || []).length ? esc(resumeLanceurs(parQui.get(t.name))) : esc(whenL[t.when_trigger] || t.when_trigger) + (tb ? ` · ${esc(tb)}` : "")}</span><span>${counts.get(t.id) || 0} étape(s)</span>
 ${r ? `<span class="${r.status === "Error" ? "ko" : "ok"}">${r.status === "Error" ? "dernière exécution en erreur" : "dernière exécution " + esc(new Date(r.started_at).toLocaleString("fr-FR", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }))}</span>` : '<span class="mute">jamais lancé</span>'}
 ${e ? `<span class="ko">${e} erreur(s) sur 7 j</span>` : ""}</span></span></a>
 <div class="dzf-wf-actions"><a class="btn btn-sm btn-primary" href="/dysizz-flow/editeur/${t.id}"><i class="fas fa-pen"></i> Ouvrir</a>

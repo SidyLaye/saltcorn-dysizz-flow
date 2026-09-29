@@ -220,14 +220,18 @@
     if (s.action_name === "ForLoop" || s.action_name === "SetErrorHandler") ports += '<span class="dzfe-port side" data-p="loop" title="' + (s.action_name === "ForLoop" ? "Première étape de la boucle" : "Étape en cas d'erreur") + '"></span>';
     return '<div class="dzfe-node' + (S.sel === s.name ? " sel" : "") + (err ? " err" : "") + (done ? " ok" : "") + (b.builtin ? " builtin" : "") + '" data-n="' + esc(s.name) + '" style="left:' + S.layout[s.name].x + "px;top:" + S.layout[s.name].y + 'px">' +
       '<span class="dzfe-ic"><i class="' + esc(b.icon || "fas fa-cube") + '"></i></span><span class="dzfe-nt"><b>' + esc(b.label) + "</b><small>" + esc(s.name) + (c.sortie ? " → " + esc(c.sortie) : "") + "</small>" +
-      (summary(s) ? '<em>' + esc(summary(s)) + "</em>" : "") + "</span>" +
+      (summary(s) ? '<em>' + esc(summary(s)) + "</em>" : "") +
+      (s.only_if ? '<span class="dzfe-si" title="Seulement si : ' + esc(s.only_if) + '">si ' + esc(s.only_if) + "</span>" : "") + "</span>" +
       (s.only_if ? '<span class="dzfe-if" title="Seulement si : ' + esc(s.only_if) + '"><i class="fas fa-filter"></i></span>' : "") +
       '<span class="dzfe-in"></span>' + ports + "</div>";
   }
   function drawNodes() {
     var t = S.layout[TRIG] || { x: 0, y: 0 };
     var wl = (B.when.filter(function (w) { return w[0] === S.wf.when_trigger; })[0] || [0, S.wf.when_trigger])[1];
-    var html = '<div class="dzfe-node trig' + (S.sel === TRIG ? " sel" : "") + '" data-n="' + TRIG + '" style="left:' + t.x + "px;top:" + t.y + 'px"><span class="dzfe-ic"><i class="fas fa-bolt"></i></span><span class="dzfe-nt"><b>Déclencheur</b><small>' + esc(wl) + (S.wf.table ? " · " + esc(S.wf.table) : "") + '</small></span><span class="dzfe-port" data-p="out" title="Tirer vers la première étape"></span></div>';
+    var lz = S.wf.lanceurs || [];
+    var lp = S.wf.lance_par || "";
+    var qui = S.wf.when_trigger === "Never" && lz.length ? lp.charAt(0).toUpperCase() + lp.slice(1) : wl + (S.wf.table ? " · " + S.wf.table : "");
+    var html = '<div class="dzfe-node trig' + (S.sel === TRIG ? " sel" : "") + '" data-n="' + TRIG + '" style="left:' + t.x + "px;top:" + t.y + 'px"><span class="dzfe-ic"><i class="fas fa-bolt"></i></span><span class="dzfe-nt"><b>Déclencheur</b><small title="' + esc(qui) + '">' + esc(qui) + '</small></span><span class="dzfe-port" data-p="out" title="Tirer vers la première étape"></span></div>';
     html += S.steps.map(nodeHtml).join("");
     nodesEl.innerHTML = html;
     var hint = $(".dzfe-hint");
@@ -428,7 +432,7 @@
   function panelEmpty() {
     return '<div class="dzfe-pe"><i class="fas fa-mouse-pointer"></i><b>Clique sur un bloc pour le régler</b><p>Astuces :</p><ul>' +
       "<li>Tire le petit rond sous un bloc vers un autre pour les relier.</li><li>Relâche dans le vide pour ajouter une étape à cet endroit.</li>" +
-      "<li>Chaque étape range son résultat dans une variable ; les suivantes la lisent avec <code>{{nom}}</code> (bouton <b>{ }</b>).</li>" +
+      "<li>Chaque étape range son résultat dans une variable ; les suivantes la lisent avec <code>{{nom}}</code> (bouton <kbd class='dzfe-kbd'>{ }</kbd>).</li>" +
       "<li>Molette : se déplacer · Ctrl + molette : zoomer · Suppr : effacer le bloc choisi.</li><li>Ctrl S : enregistrer · Ctrl Z : annuler.</li></ul></div>";
   }
   function panelTrigger() {
@@ -436,6 +440,7 @@
     panelEl.innerHTML = '<div class="dzfe-ph"><span class="dzfe-ic trig"><i class="fas fa-bolt"></i></span><div><b>Déclencheur</b><small>Quand le workflow démarre</small></div><button class="dzfe-x" data-a="close"><i class="fas fa-times"></i></button></div>' +
       '<div class="dzfe-pb-body"><div class="dzfe-f"><label>Nom du workflow</label><div class="dzfe-fi"><input data-w="name" value="' + esc(S.wf.name) + '" placeholder="ex. releve_mails"></div></div>' +
       '<div class="dzfe-f"><label>Description</label><div class="dzfe-fi"><textarea data-w="description" rows="2" placeholder="Ce que fait ce workflow, en une phrase">' + esc(S.wf.description) + "</textarea></div></div>" +
+      ((S.wf.lanceurs || []).length ? '<div class="dzfe-f"><label>Déjà lancé par</label><ul class="dzfe-lz">' + S.wf.lanceurs.map(function (l) { return '<li><b>' + esc(l.texte) + '</b> <a href="' + esc(l.lien) + '" target="_blank" rel="noopener">' + esc(l.via) + ' <i class="fas fa-external-link-alt"></i></a></li>'; }).join("") + '</ul><p class="dzfe-note">Ces déclencheurs lancent ce workflow en plus du réglage ci-dessous. Pour le lancer seulement d\'ici, choisis l\'événement ci-dessous et supprime le déclencheur.</p></div>' : "") +
       '<div class="dzfe-f"><label>Quand démarre-t-il ?</label><div class="dzfe-when">' + B.when.map(function (w) { return '<label class="' + (S.wf.when_trigger === w[0] ? "on" : "") + '"><input type="radio" name="when" value="' + esc(w[0]) + '"' + (S.wf.when_trigger === w[0] ? " checked" : "") + ">" + esc(w[1]) + "</label>"; }).join("") + "</div></div>" +
       '<div class="dzfe-f" style="' + (need ? "" : "display:none") + '"><label>Quelle table ?</label><div class="dzfe-fi"><select data-w="table"><option value="">— choisir —</option>' + B.tables.map(function (t) { return '<option' + (t.name === S.wf.table ? " selected" : "") + ">" + esc(t.name) + "</option>"; }).join("") + '</select></div><small class="help">Dans les étapes, les champs de la ligne sont disponibles directement : {{nom_du_champ}}.</small></div>' +
       (S.wf.when_trigger === "API call" ? '<p class="dzfe-note">Adresse Saltcorn : <code>POST /api/action/' + esc(S.wf.name || "nom") + '</code>. Pour une adresse publique protégée (jeton, signature, limite), utilise plutôt les <a href="/dysizz-flow/api" target="_blank">Points d\'API</a> : laisse ce workflow « à la main » et choisis-le dans un point.</p>' : "") +
