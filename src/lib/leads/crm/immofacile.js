@@ -7,6 +7,11 @@
 const { typeBien } = require("../valeurs");
 const { cle } = require("../texte");
 
+/* Jetons gardés d'un adaptateur à l'autre (un workflow en étapes en crée un par étape) :
+   clé = empreinte de l'adresse, du site et des identifiants, jamais les identifiants eux-mêmes. */
+const JETONS = new Map();
+const empreinte = (...x) => require("crypto").createHash("sha256").update(x.map(String).join("\n")).digest("hex");
+
 const creer = (cfg = {}) => {
   const base = String(cfg.base || "https://v2.immo-facile.com/api").replace(/\/+$/, "");
   const racine = new URL(base).origin + "/api/v2/site";
@@ -38,6 +43,9 @@ const creer = (cfg = {}) => {
     if (jeton && Date.now() < expire - 60000) return jeton;
     const basic = await cfg.secret("basic");
     if (!basic) throw Object.assign(new Error("identifiants Immofacile absents (coffre : basic)"), { permanent: true });
+    const cleJeton = empreinte(base, cfg.site_id, basic);
+    const garde = JETONS.get(cleJeton);
+    if (garde && Date.now() < garde.expire - 60000) { jeton = garde.jeton; expire = garde.expire; return jeton; }
     let r, tx;
     for (let essai = 1; essai <= 4; essai++) {
       try { ({ r, tx } = await lectureHttp(`${base}/client/token/site`, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded", Authorization: /^basic /i.test(basic) ? basic : "Basic " + basic, Accept: "application/json" }, body: "site_id=" + encodeURIComponent(cfg.site_id) })); }
@@ -49,6 +57,8 @@ const creer = (cfg = {}) => {
     const j = JSON.parse(tx);
     if (!j.access_token) throw new Error("jeton Immofacile reçu sans access_token");
     jeton = j.access_token; expire = Date.now() + (+j.expires_in || 3000) * 1000;
+    if (JETONS.size > 200) JETONS.clear();
+    JETONS.set(cleJeton, { jeton, expire });
     return jeton;
   };
 
@@ -67,7 +77,7 @@ const creer = (cfg = {}) => {
         await pause(null, essai); continue;
       }
       journal({ methode, chemin, statut: r.status, ms: Date.now() - t0 });
-      if (r.status === 401 && essai === 1) { jeton = null; continue; }
+      if (r.status === 401 && essai === 1) { for (const [k, v] of JETONS) if (v.jeton === jeton) JETONS.delete(k); jeton = null; continue; }
       if ((r.status === 429 || (r.status >= 500 && rejouable)) && essai < 4) { await pause(r, essai); continue; }
       if (!r.ok) throw Object.assign(new Error(`Immofacile ${methode} ${chemin} → HTTP ${r.status}`), { http: r.status, ambiguous: !rejouable && r.status >= 500, permanent: (!rejouable && r.status >= 500) || (r.status >= 400 && r.status < 500 && r.status !== 429) });
       try { return tx ? JSON.parse(tx) : {}; } catch (e) { return { brut: tx }; }

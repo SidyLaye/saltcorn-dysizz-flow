@@ -63,8 +63,18 @@ module.exports = [
     name: "dzf_verrou", label: "Verrou (une exécution à la fois)", category: "Contrôle", icon: "fas fa-lock", output: "verrou",
     description: "Empêche deux exécutions du même travail en même temps, même avec plusieurs serveurs. « prendre » renvoie vrai si tu as le verrou ; pense à « libérer » à la fin (il expire seul sinon).",
     params: [{ name: "action", label: "Action", type: "select", options: ["prendre", "libérer"], default: "prendre" }, { name: "nom", label: "Nom du verrou", required: true, help: "Ex. releve-mails" },
-      { name: "duree", label: "Expire après (secondes)", type: "int", default: 600 }],
+      { name: "duree", label: "Expire après (secondes)", type: "int", default: 600 },
+      { name: "attente", label: "Si le verrou est pris : attendre jusqu'à (secondes)", type: "int", default: 0, showIf: { action: "prendre" }, help: "0 = répondre tout de suite (vrai / faux). Plus de 0 : attendre qu'il se libère, puis s'arrêter en erreur si le temps est dépassé (le travail pourra être repris)." }],
     run: async (p) => {
+      if (p.action !== "libérer" && +p.attente > 0) {
+        const fin = Date.now() + Math.min(+p.attente, 300) * 1000;
+        const un = { ...p, attente: 0 };
+        for (;;) {
+          if (await module.exports.find((b) => b.name === "dzf_verrou").run(un)) return true;
+          if (Date.now() > fin) throw Object.assign(new Error(`verrou « ${p.nom} » toujours pris après ${p.attente} s`), { temporaire: true });
+          await new Promise((r) => setTimeout(r, 150 + Math.random() * 250));
+        }
+      }
       const key = `dzf:verrou:${p.nom}`;
       if (redis.available()) {
         if (p.action === "libérer") { await redis.cmd(["DEL", key]); return true; }

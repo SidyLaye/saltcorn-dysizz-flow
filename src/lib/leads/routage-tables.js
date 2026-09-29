@@ -11,7 +11,8 @@
                    couper_negociateur, assistante (garder | couper | remplacer, ou « reçoit », « ne reçoit pas »,
                    « remplacé(e) »), assistante_remplacante (→ equipe),
                    adresses_libres ("a@x, b@y")
-   - copies      : email, portee ("tous" = en copie de chaque lead), actif
+   - copies      : email, libelle, actif, portee : « tous » (chaque lead), « agence » (+ agence), « groupe » (+ groupe),
+                   « personnes » (+ personnes : "3,7,9", numéros de l'équipe)
 
    Une colonne absente est ignorée : une table plus simple fonctionne aussi. */
 "use strict";
@@ -64,6 +65,12 @@ const lireRoutage = async (noms = {}, fuseau = "Europe/Paris") => {
     absences: abs.map((a) => ({ personne_id: a.personne, debut: jourDe(a.debut, fuseau), fin: jourDe(a.fin, fuseau),
       remplacant: a.remplacant ? ref(a.remplacant) : /@/.test(String(a.remplacant_adresse || "")) ? { email: String(a.remplacant_adresse).trim() } : null, motif: a.motif })),
     siege: cp.filter((d) => !d.portee || d.portee === "tous").map((d) => d.email).filter(Boolean),
+    /* copies ciblées : les membres de l'agence ou du groupe aujourd'hui, ou les personnes choisies */
+    copies: cp.filter((d) => d.portee && d.portee !== "tous" && d.email).map((d) => {
+      const par = (champ) => (d[champ] === null || d[champ] === undefined || d[champ] === "" ? [] : eq.filter((p) => String(p[champ] ?? "") === String(d[champ])).map((p) => String(p.id)));
+      const vises = d.portee === "agence" ? par("agence") : d.portee === "groupe" ? par("groupe") : d.portee === "personnes" ? ids(d.personnes) : [];
+      return { email: d.email, nom: d.libelle || d.email, cible: { negociateurs: [...new Set(vises)] } };
+    }),
   };
 };
 

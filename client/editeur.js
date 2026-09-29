@@ -33,13 +33,63 @@
 
   /* ---------------- routage : ce que devient next_step ---------------- */
   var COND = /^\s*\(?\s*([\s\S]+?)\s*\)?\s*\?\s*"([^"]*)"\s*:\s*"([^"]*)"\s*$/;
+  /* next_step écrit à la main (workflows d'origine) : « cond ? etape_a : (cond2 ? "b" : c) »,
+     noms entre guillemets ou non, conditions imbriquées. On en tire un arbre si… sinon… */
+  function sansParens(x) {
+    x = x.trim();
+    while (x.charAt(0) === "(" && x.charAt(x.length - 1) === ")") {
+      var d = 0, ok = true;
+      for (var i = 0; i < x.length; i++) { var c = x.charAt(i); if (c === "(") d++; else if (c === ")") { d--; if (d === 0 && i < x.length - 1) { ok = false; break; } } }
+      if (!ok) break; x = x.slice(1, -1).trim();
+    }
+    return x;
+  }
+  function feuille(x) { var m = /^"([A-Za-z_][A-Za-z0-9_]*)"$|^'([A-Za-z_][A-Za-z0-9_]*)'$|^([A-Za-z_][A-Za-z0-9_]*)$/.exec(x); var n = m && (m[1] || m[2] || m[3]); return n && stepBy(n) ? { to: n } : null; }
+  function ternaire(x) {
+    x = sansParens(x);
+    var f = feuille(x); if (f) return f;
+    var d = 0, q = null, pos = -1, niv = 0, deux = -1;
+    for (var i = 0; i < x.length; i++) {
+      var c = x.charAt(i);
+      if (q) { if (c === "\\") i++; else if (c === q) q = null; continue; }
+      if (c === '"' || c === "'" || c === "`") { q = c; continue; }
+      if (c === "(" || c === "[" || c === "{") d++; else if (c === ")" || c === "]" || c === "}") d--;
+      else if (d === 0 && c === "?" && x.charAt(i + 1) !== "." && x.charAt(i + 1) !== "?" && x.charAt(i - 1) !== "?") { if (pos < 0) pos = i; else niv++; }
+      else if (d === 0 && c === ":" && pos >= 0) { if (niv === 0) { deux = i; break; } niv--; }
+    }
+    if (pos < 0 || deux < 0) return null;
+    var oui = ternaire(x.slice(pos + 1, deux)), non = ternaire(x.slice(deux + 1));
+    if (!oui || !non) return null;
+    return { cond: x.slice(0, pos).trim(), oui: oui, non: non };
+  }
+  /* condition lisible : « typeof x !== "undefined" && x » devient « x » */
+  function lisible(c) {
+    c = sansParens(c || "");
+    c = c.replace(/\(?\s*typeof\s+([\w.$]+)\s*!==?\s*["']undefined["']\s*&&\s*\1\s*\)?/g, "$1");
+    c = c.replace(/\(?\s*typeof\s+([\w.$]+)\s*!==?\s*["']undefined["']\s*&&\s*/g, "");
+    c = c.replace(/\(?\s*typeof\s+([\w.$]+)\s*===?\s*["']undefined["']\s*\|\|\s*!\s*\1\s*\)?/g, "pas de $1");
+    c = c.replace(/\(?\s*typeof\s+([\w.$]+)\s*===?\s*["']undefined["']\s*\|\|\s*/g, "");
+    return sansParens(c);
+  }
+  function cibles(arbre, out, etiquette, sorte) {
+    if (arbre.to) { out.push({ to: arbre.to, label: etiquette, kind: sorte }); return out; }
+    var l = lisible(arbre.cond);
+    cibles(arbre.oui, out, "si " + l, "oui");
+    cibles(arbre.non, out, "sinon", "non");
+    return out;
+  }
   function routeOf(s) {
     var n = (s.next_step || "").trim();
     if (!n) return { mode: "end" };
     if (stepBy(n) || /^[A-Za-z_][A-Za-z0-9_]*$/.test(n)) return { mode: "simple", to: n };
+    var f = feuille(n); if (f) return { mode: "simple", to: f.to };
     var m = COND.exec(n);
+    if (m && stepBy(m[2]) && stepBy(m[3])) return { mode: "cond", expr: m[1], yes: m[2], no: m[3] };
+    var a = ternaire(n);
+    if (a && a.oui.to && a.non.to) return { mode: "cond", expr: sansParens(a.cond), yes: a.oui.to, no: a.non.to };
+    if (a) return { mode: "expr", expr: n, targets: cibles(a, [], "", "") };
     if (m) return { mode: "cond", expr: m[1], yes: m[2], no: m[3] };
-    var t = []; n.replace(/"([A-Za-z_][A-Za-z0-9_]*)"/g, function (_, x) { if (stepBy(x)) t.push(x); });
+    var t = []; n.replace(/"([A-Za-z_][A-Za-z0-9_]*)"/g, function (_, x) { if (stepBy(x)) t.push({ to: x, label: "?" }); });
     return { mode: "expr", expr: n, targets: t };
   }
   function setRoute(s, r) {
@@ -56,7 +106,7 @@
       var r = routeOf(s);
       if (r.mode === "simple" && stepBy(r.to)) out.push({ from: s.name, port: "out", to: r.to });
       if (r.mode === "cond") { if (stepBy(r.yes)) out.push({ from: s.name, port: "yes", to: r.yes, kind: "oui" }); if (stepBy(r.no)) out.push({ from: s.name, port: "no", to: r.no, kind: "non" }); }
-      if (r.mode === "expr") r.targets.forEach(function (t) { out.push({ from: s.name, port: "out", to: t, label: "?", dashed: true }); });
+      if (r.mode === "expr") r.targets.forEach(function (t) { out.push({ from: s.name, port: "out", to: t.to, label: t.label, kind: t.kind, dashed: !t.kind }); });
       var c = s.configuration || {};
       if (s.action_name === "ForLoop" && stepBy(c.loop_body_initial_step)) out.push({ from: s.name, port: "loop", to: c.loop_body_initial_step, label: "pour chaque", dashed: true });
       if (s.action_name === "SetErrorHandler" && stepBy(c.error_handling_step)) out.push({ from: s.name, port: "loop", to: c.error_handling_step, label: "si erreur", dashed: true });
@@ -68,7 +118,7 @@
       var r = routeOf(s);
       if (r.mode === "simple" && r.to === oldN) r.to = newN;
       if (r.mode === "cond") { if (r.yes === oldN) r.yes = newN; if (r.no === oldN) r.no = newN; }
-      if (r.mode === "expr") r.expr = r.expr.split('"' + oldN + '"').join('"' + newN + '"');
+      if (r.mode === "expr") r.expr = r.expr.split('"' + oldN + '"').join('"' + newN + '"').replace(new RegExp("(^|[^\\w.$\"'])" + oldN + "(?![\\w$])", "g"), "$1" + newN);
       setRoute(s, r);
       var c = s.configuration || {};
       if (c.loop_body_initial_step === oldN) c.loop_body_initial_step = newN;
@@ -81,22 +131,38 @@
   function autoLayout(force) {
     var need = force || S.steps.some(function (s) { return !S.layout[s.name]; }) || !S.layout[TRIG];
     if (!need) return;
-    var level = {}, order = [], q = [];
+    /* rangement en couches : chaque étape sous toutes celles qui y mènent (retours en arrière
+       ignorés), puis, dans chaque couche, ordre selon la position des étapes d'avant (moins de croisements) */
+    var es = edges().filter(function (e) { return e.from !== TRIG; });
+    var suiv = {}, prec = {};
+    S.steps.forEach(function (s) { suiv[s.name] = []; prec[s.name] = []; });
+    es.forEach(function (e) { if (suiv[e.from] && prec[e.to] && e.from !== e.to && suiv[e.from].indexOf(e.to) < 0) { suiv[e.from].push(e.to); prec[e.to].push(e.from); } });
     var first = S.steps.filter(function (s) { return s.initial_step; })[0];
-    if (first) { level[first.name] = 1; q.push(first.name); }
-    var es = edges();
-    while (q.length) {
-      var n = q.shift(); order.push(n);
-      es.filter(function (e) { return e.from === n; }).forEach(function (e) { if (level[e.to] === undefined) { level[e.to] = level[n] + 1; q.push(e.to); } });
-    }
-    var maxL = Math.max.apply(null, [1].concat(Object.keys(level).map(function (k) { return level[k]; })));
-    S.steps.forEach(function (s) { if (level[s.name] === undefined) { level[s.name] = ++maxL; } });
+    var racines = (first ? [first.name] : []).concat(S.steps.filter(function (s) { return s !== first && !prec[s.name].length; }).map(function (s) { return s.name; }));
+    var etat = {}, retour = {}, ordre = [];
+    function dfs(n) { etat[n] = 1; suiv[n].forEach(function (m) { if (etat[m] === 1) retour[n + ">" + m] = 1; else if (!etat[m]) dfs(m); }); etat[n] = 2; ordre.push(n); }
+    racines.forEach(function (n) { if (!etat[n]) dfs(n); });
+    S.steps.forEach(function (s) { if (!etat[s.name]) dfs(s.name); });
+    ordre.reverse();
+    var level = {};
+    ordre.forEach(function (n) { if (level[n] === undefined) level[n] = 1; suiv[n].forEach(function (m) { if (!retour[n + ">" + m]) level[m] = Math.max(level[m] || 1, level[n] + 1); }); });
     var rows = {};
-    S.steps.forEach(function (s) { var l = level[s.name]; (rows[l] = rows[l] || []).push(s.name); });
+    ordre.forEach(function (n) { (rows[level[n]] = rows[level[n]] || []).push(n); });
+    var niveaux = Object.keys(rows).map(Number).sort(function (a, b) { return a - b; });
+    var rang = {};
+    niveaux.forEach(function (l) { rows[l].forEach(function (n, i) { rang[n] = i; }); });
+    for (var tour = 0; tour < 4; tour++) {
+      niveaux.forEach(function (l) {
+        var bar = {};
+        rows[l].forEach(function (n) { var ps = prec[n].filter(function (p) { return level[p] < l; }); bar[n] = ps.length ? ps.reduce(function (t, p) { return t + rang[p]; }, 0) / ps.length : rang[n]; });
+        rows[l].sort(function (a, b) { return bar[a] - bar[b]; });
+        rows[l].forEach(function (n, i) { rang[n] = i; });
+      });
+    }
     if (force || !S.layout[TRIG]) S.layout[TRIG] = { x: 0, y: 0 };
-    Object.keys(rows).forEach(function (l) {
+    niveaux.forEach(function (l) {
       var r = rows[l];
-      r.forEach(function (n, i) { if (force || !S.layout[n]) S.layout[n] = { x: (i - (r.length - 1) / 2) * (NW + 60), y: l * (NH + 56) }; });
+      r.forEach(function (n, i) { if (force || !S.layout[n]) S.layout[n] = { x: Math.round((i - (r.length - 1) / 2) * (NW + 70)), y: l * (NH + 70) }; });
     });
   }
 
@@ -257,7 +323,7 @@
       var b = { x: tl.x + NW / 2, y: tl.y };
       var d = path(a, b, e.port === "loop");
       html += '<path class="dzfe-edge' + (e.dashed ? " dashed" : "") + (e.kind === "non" ? " no" : e.kind === "oui" ? " yes" : "") + '" d="' + d + '" marker-end="url(#dzfe-arr)" data-from="' + esc(e.from) + '" data-port="' + e.port + '"/>';
-      if (e.label) { var mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2; html += '<text class="dzfe-el" x="' + mx + '" y="' + my + '">' + esc(e.label) + "</text>"; }
+      if (e.label) { var mx = a.x + (b.x - a.x) * 0.3, my = a.y + Math.max(22, (b.y - a.y) * 0.3), court = e.label.length > 38 ? e.label.slice(0, 36) + "…" : e.label; html += '<text class="dzfe-el' + (e.kind === "non" ? " no" : e.kind === "oui" ? " yes" : "") + '" x="' + mx + '" y="' + my + '"><title>' + esc(e.label) + "</title>" + esc(court) + "</text>"; }
     });
     if (extra) html += '<path class="dzfe-edge live" d="' + extra + '"/>';
     svg.innerHTML = html;
@@ -346,13 +412,16 @@
     var nz = Math.min(2, Math.max(0.3, S.zoom * f)), k = nz / S.zoom;
     S.px = cx - r.left - (cx - r.left - S.px) * k; S.py = cy - r.top - (cy - r.top - S.py) * k; S.zoom = nz; applyView();
   }
-  function fit() {
+  /* tout : faire tenir tout le workflow (bouton « Tout voir ») ; sinon, un grand workflow
+     s'ouvre en haut, à une taille lisible, et se parcourt à la molette */
+  function fit(tout) {
     var ns = [TRIG].concat(S.steps.map(function (s) { return s.name; })).map(function (n) { return S.layout[n]; }).filter(Boolean);
     if (!ns.length) return;
     var x0 = Math.min.apply(null, ns.map(function (l) { return l.x; })), y0 = Math.min.apply(null, ns.map(function (l) { return l.y; }));
     var x1 = Math.max.apply(null, ns.map(function (l) { return l.x + NW; })), y1 = Math.max.apply(null, ns.map(function (l) { return l.y + NH; }));
     var r = canvas.getBoundingClientRect();
     S.zoom = Math.min(1.2, Math.max(0.3, Math.min((r.width - 80) / (x1 - x0 || 1), (r.height - 80) / (y1 - y0 || 1))));
+    if (tout !== true && S.zoom < 0.7) S.zoom = Math.min(0.85, Math.max(0.3, (r.width - 80) / (x1 - x0 || 1)));
     S.px = (r.width - (x1 - x0) * S.zoom) / 2 - x0 * S.zoom; S.py = 40 - y0 * S.zoom; applyView();
   }
 
@@ -543,7 +612,7 @@
     if (a === "undo" && S.undo.length) { S.redo.push(snapshot()); restore(S.undo.pop()); }
     if (a === "redo" && S.redo.length) { S.undo.push(snapshot()); restore(S.redo.pop()); }
     if (a === "tidy") { push(); autoLayout(true); changed(false); fit(); }
-    if (a === "zin") zoomAt(1.2); if (a === "zout") zoomAt(1 / 1.2); if (a === "fit") fit();
+    if (a === "zin") zoomAt(1.2); if (a === "zout") zoomAt(1 / 1.2); if (a === "fit") fit(true);
     if (a === "save") save();
     if (a === "run") runDialog();
     if (a === "code") codeDialog();

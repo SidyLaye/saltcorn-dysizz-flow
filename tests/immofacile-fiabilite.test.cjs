@@ -48,5 +48,13 @@ const config = (fetch) => ({ fetch, secret: async () => "fictif", site_id: "demo
   const ombre = creer({ ...config(async () => { n++; throw new Error("ne doit pas être appelé"); }), lectureSeule: true });
   await assert.rejects(ombre.ajouterConsentement(1, { motif: "Test", date: "2026-09-27" }), e => e.ombre);
   assert.equal(n, 0, "mode ombre : aucun appel pour une écriture");
-  console.log("Immofacile : délais auth/corps, reprises de lectures, absence de doublons d'écriture et mode ombre OK");
+  /* un workflow en étapes crée un adaptateur par étape : le jeton est gardé de l'un à l'autre */
+  let jetons = 0;
+  const f = async (url) => { if (url.endsWith("/client/token/site")) { jetons++; return token(); } return json({ data: [] }); };
+  const cfgPartage = (secret) => ({ fetch: f, secret: async () => secret, site_id: "partage", delai_ms: 50, attendre: async () => {} });
+  await creer(cfgPartage("A")).origines(); await creer(cfgPartage("A")).origines(); await creer(cfgPartage("A")).origines();
+  assert.equal(jetons, 1, "un seul jeton pour trois adaptateurs aux mêmes identifiants");
+  await creer(cfgPartage("B")).origines();
+  assert.equal(jetons, 2, "d'autres identifiants : un autre jeton");
+  console.log("Immofacile : délais auth/corps, reprises de lectures, absence de doublons d'écriture, mode ombre et jeton partagé OK");
 })().catch(e => { console.error(e); process.exitCode = 1; });

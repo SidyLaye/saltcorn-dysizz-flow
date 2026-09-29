@@ -8,7 +8,7 @@ const autreJour = (jourIso % 7) + 1;
 const plus = (j) => new Date(Date.parse(auj + "T12:00:00Z") + j * 864e5);
 const DONNEES = {
   equipe: [
-    { id: 1, nom: "Alice", email: "alice@ex.org", role: "negociateur", actif: true, assistante: 3, temps: "plein" },
+    { id: 1, nom: "Alice", email: "alice@ex.org", role: "negociateur", actif: true, assistante: 3, temps: "plein", groupe: 7 },
     { id: 2, nom: "Bruno", email: "bruno@ex.org", role: "negociateur", actif: true, temps: "mi_temps", jours: String(autreJour), remplacant_hors_jours: 1 },
     { id: 3, nom: "Chloé", email: "chloe@ex.org", role: "assistante", actif: true },
     { id: 4, nom: "Denis", email: "denis@ex.org", role: "negociateur", actif: false, remplacant_inactif: 1 },
@@ -20,7 +20,12 @@ const DONNEES = {
     { id: 2, personne: 6, debut: plus(-10), fin: plus(-1), remplacant: 1, motif: "congés", actif: true },
   ],
   regle_envoi: [{ id: 1, nom: "groupe Albi", actif: true, negociateurs: "5,6", adresses_libres: "direction@ex.org" }],
-  destinataire_custom: [{ id: 1, email: "siege@ex.org", portee: "tous", actif: true }],
+  destinataire_custom: [
+    { id: 1, email: "siege@ex.org", portee: "tous", actif: true },
+    { id: 2, email: "compta@ex.org", libelle: "Compta Tarn", portee: "groupe", groupe: 7, actif: true },
+    { id: 3, email: "direct@ex.org", libelle: "Direction", portee: "personnes", personnes: "6", actif: true },
+    { id: 4, email: "coupe@ex.org", portee: "tous", actif: false },
+  ],
   vue_routage: [],
 };
 const table = (name) => {
@@ -49,7 +54,11 @@ const B = (n) => BLOCKS.find((b) => b.name === n);
   assert.deepStrictEqual(conf.regles[0].cible, { negociateurs: ["5", "6"] }, "règle de groupe");
   assert.deepStrictEqual(conf.siege, ["siege@ex.org"]);
   const qui = async (id) => (await B("dzf_lead_destinataires").run({ negociateur: String(id), routage: "tables", tables: {} })).liste.map((d) => d.email);
-  assert.deepStrictEqual((await qui(1)).sort(), ["alice@ex.org", "chloe@ex.org", "siege@ex.org"], "titulaire, son assistante, le siège");
+  assert.deepStrictEqual((await qui(1)).sort(), ["alice@ex.org", "chloe@ex.org", "compta@ex.org", "siege@ex.org"], "titulaire, son assistante, le siège, la copie de son groupe");
+  /* copies ciblées : seulement pour les personnes visées ; une copie coupée n'envoie rien */
+  assert.ok(!(await qui(5)).includes("compta@ex.org"), "copie de groupe : pas pour une personne hors du groupe");
+  assert.ok((await qui(6)).includes("direct@ex.org") && !(await qui(1)).includes("direct@ex.org"), "copie pour des personnes choisies");
+  assert.ok(!(await qui(1)).includes("coupe@ex.org"), "copie coupée");
   assert.ok((await qui(2)).includes("alice@ex.org") && !(await qui(2)).includes("bruno@ex.org"), "mi-temps : jour non travaillé → remplaçant");
   assert.ok((await qui(4)).includes("alice@ex.org") && !(await qui(4)).includes("denis@ex.org"), "parti : son remplaçant reçoit");
   const emma = await qui(5);

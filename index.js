@@ -1,4 +1,4 @@
-/* dysizz-flow 2.9.0 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.10.0 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.9.0" : "dev";
+    var VERSION2 = true ? "2.10.0" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -94266,6 +94266,10 @@ var require_routage = __commonJS({
         for (const e of r.adresses_libres || []) ajouterAdresse(e, "adresse_libre", nego.nom, "adresse ajout\xE9e par une r\xE8gle");
       }
       for (const e of conf.siege || []) ajouterAdresse(e, "siege", "tous", "le si\xE8ge re\xE7oit toujours");
+      for (const c of conf.copies || []) {
+        const vise = c && c.cible && (c.cible.tous || (c.cible.negociateurs || []).map(String).includes(String(negoId)));
+        if (vise) ajouterAdresse(c.email, "copie", c.nom || "copie", c.cible.tous ? "en copie de chaque lead" : `en copie pour ${nego ? nego.nom : "ce n\xE9gociateur"}`);
+      }
       return { liste, trace, regle: r.id || null };
     };
     var absentsSemaine = (conf, lundi = /* @__PURE__ */ new Date()) => {
@@ -94590,40 +94594,42 @@ var require_traiter = __commonJS({
       return ok.length === 1 ? ok[0] : null;
     };
     var vide = () => ({ statut: "ignore", motifs: [], actions: [], alertes: [] });
-    var traiter = async (mail, crm, conf = {}, opts = {}) => {
+    var actifs = (conf) => Object.fromEntries(ETAPES.map((k) => [k, !(conf.etapes && conf.etapes[k] === false)]));
+    var dateDuMail = (mail) => mail.date || mail.date_envoi || null;
+    var etapeLire = async (mail, conf = {}, opts = {}) => {
       const t0 = Date.now();
-      const actif = Object.fromEntries(ETAPES.map((k) => [k, !(conf.etapes && conf.etapes[k] === false)]));
       const r = await lire(mail, conf, { ia: opts.ia, gabarits: opts.gabarits, budget: opts.budget, noter: opts.noter });
       const conv = C.messages(r.mail_deballe ? { ...mail, ...r.mail_deballe, html: "" } : mail, r, conf);
       const cles = C.cles(r, conv.texte, conf);
       const connus = opts.dossiers ? await opts.dossiers.trouver(cles).catch(() => []) : [];
-      const d = { extraction: r, ...vide(), role: conv.role, fil: { cles, messages: conv.messages, dossiers_connus: connus.length } };
+      const d = { extraction: r, ...vide(), role: conv.role, fil: { cles, messages: conv.messages, dossiers_connus: connus.length }, date_mail: dateDuMail(mail), interne: { connus } };
       const fin = () => {
+        d.fin = true;
         d.duree_ms = Date.now() - t0;
         return d;
       };
       if (conv.role === "equipe" && r.nature === "interne") {
-        const dos2 = choisirDossier(connus, { references: cles.references, relais: cles.relais });
-        if (!dos2) {
+        const dos = choisirDossier(connus, { references: cles.references, relais: cles.relais });
+        if (!dos) {
           d.motifs.push("message de l'\xE9quipe sans dossier connu : rien \xE0 faire");
           return fin();
         }
         r.nature = "reponse_equipe";
         d.statut = "suivi";
-        d.dossier = { id: dos2.id, existant: true, bien_id: dos2.bien_id, contact_id: dos2.contact_id, recherche_id: dos2.recherche_id };
-        const tous2 = C.fusionner(dos2.messages || [], conv.messages);
-        d.fil.messages_dossier = tous2;
-        d.fil.reponse_equipe = { date: mail.date || mail.date_envoi || null, auteur: (conv.messages[0] || {}).auteur || null };
-        if (actif.commentaire && dos2.contact_id && dos2.recherche_id) d.actions.push({ op: "majRecherche", contact: dos2.contact_id, id: dos2.recherche_id, donnees: { comment: C.commentaire(tous2, conf.commentaire || {}) } });
+        d.dossier = { id: dos.id, existant: true, bien_id: dos.bien_id, contact_id: dos.contact_id, recherche_id: dos.recherche_id };
+        const tous = C.fusionner(dos.messages || [], conv.messages);
+        d.fil.messages_dossier = tous;
+        d.fil.reponse_equipe = { date: dateDuMail(mail), auteur: (conv.messages[0] || {}).auteur || null };
+        if (actifs(conf).commentaire && dos.contact_id && dos.recherche_id) d.actions.push({ op: "majRecherche", contact: dos.contact_id, id: dos.recherche_id, donnees: { comment: C.commentaire(tous, conf.commentaire || {}) } });
         return fin();
       }
       if (["inconnu", "reponse_campagne", "direct"].includes(r.nature) && connus.length && conv.role === "prospect") {
-        const dos2 = choisirDossier(connus, { references: cles.references, relais: cles.relais });
-        if (dos2) {
+        const dos = choisirDossier(connus, { references: cles.references, relais: cles.relais });
+        if (dos) {
           r.nature = "relance";
           r.reponse_client = true;
-          if (dos2.bien_id && !r.bien.id_crm && !r.bien.reference) {
-            r.bien.id_crm = String(dos2.bien_id);
+          if (dos.bien_id && !r.bien.id_crm && !r.bien.reference) {
+            r.bien.id_crm = String(dos.bien_id);
             r.preuves["bien.id_crm"] = "dossier";
           }
         }
@@ -94649,29 +94655,44 @@ var require_traiter = __commonJS({
         d.motifs.push(qui + (r.lu_par.includes("ia") ? ` : compl\xE9t\xE9 par l'IA${a && a.fait !== "rien" ? `, gabarit ${a.fait} (${a.observations} observation(s))` : ""}` : g ? ` : lu avec un gabarit appris (${g.source})` : " : lu par les r\xE8gles g\xE9n\xE9rales"));
       }
       if (r.lecture && r.lecture.ia && r.lecture.ia.statut !== "ok") d.alertes.push(r.lecture.etapes.slice(-1)[0] || "IA non disponible");
+      d.duree_ms = Date.now() - t0;
+      return d;
+    };
+    var etapeBien = async (d, crm, conf = {}) => {
+      if (d.fin) return d;
+      const t0 = Date.now();
+      const r = d.extraction, cles = d.fil.cles, connus = d.interne && d.interne.connus || [];
       let rb = { bien: null, methode: null, etapes: [], alertes: [] };
-      if (actif.bien) {
+      if (actifs(conf).bien) {
         rb = await rapprocher(r, crm, conf.rapprochement || {});
         for (const a of rb.alertes || []) d.alertes.push(a);
       }
       d.bien = rb.bien;
       d.rapprochement = { methode: rb.methode, confiance: rb.confiance, motif: rb.motif, etapes: rb.etapes };
-      if (actif.bien && !rb.bien && ["lead", "relance"].includes(r.nature)) d.motifs.push("bien non trouv\xE9 : " + rb.motif);
+      if (actifs(conf).bien && !rb.bien && ["lead", "relance"].includes(r.nature)) d.motifs.push("bien non trouv\xE9 : " + rb.motif);
       if (rb.bien && rb.confiance === "basse") d.motifs.push("bien \xE0 confirmer : trouv\xE9 sur deux crit\xE8res seulement");
       const dos = choisirDossier(connus, { bienId: rb.bien && rb.bien.id, references: cles.references, relais: cles.relais });
       d.dossier = dos ? { id: dos.id, existant: true, bien_id: rb.bien && rb.bien.id || dos.bien_id, contact_id: dos.contact_id, recherche_id: dos.recherche_id } : { id: null, existant: false, bien_id: rb.bien ? rb.bien.id : null, contact_id: null, recherche_id: null };
       d.dossier.cle = { relais: cles.relais, email: cles.email, telephone: cles.telephone, reference: r.bien && (r.bien.reference || r.bien.id_crm) || null };
       if (dos) {
-        for (const m of conv.messages) if (m.role === "prospect" && m.source === "mail") {
+        for (const m of d.fil.messages) if (m.role === "prospect" && m.source === "mail") {
           if (m.type === "demande") m.type = "relance";
           if ((!m.auteur || m.auteur === "Prospect") && dos.nom) m.auteur = dos.nom;
         }
       }
-      const tous = C.fusionner(dos && dos.messages || [], conv.messages);
-      d.fil.messages_dossier = tous;
-      const ag = trouverAgence(r, rb.bien, conf);
+      d.fil.messages_dossier = C.fusionner(dos && dos.messages || [], d.fil.messages);
+      d.interne = { ...d.interne || {}, dos: dos || null };
+      d.duree_ms = (d.duree_ms || 0) + Date.now() - t0;
+      return d;
+    };
+    var etapeContact = async (d, crm, conf = {}) => {
+      if (d.fin) return d;
+      const t0 = Date.now();
+      const actif = actifs(conf), r = d.extraction, dos = d.interne && d.interne.dos || null, tous = d.fil.messages_dossier || [];
+      const rbBien = d.bien;
+      const ag = trouverAgence(r, rbBien, conf);
       d.agence = ag.agence ? { id: ag.agence.id, nom: ag.agence.nom, par: ag.par } : null;
-      const negoId = rb.bien && rb.bien.negociateur_id ? rb.bien.negociateur_id : dos && dos.negociateur ? dos.negociateur : ag.agence && ag.agence.negociateur_defaut ? ag.agence.negociateur_defaut : null;
+      const negoId = rbBien && rbBien.negociateur_id ? rbBien.negociateur_id : dos && dos.negociateur ? dos.negociateur : ag.agence && ag.agence.negociateur_defaut ? ag.agence.negociateur_defaut : null;
       let negoFinal = negoId;
       if (!negoFinal && r.bien && r.bien.titre) {
         const p = negociateurCite(r.bien.titre, conf.routage && conf.routage.personnes || []);
@@ -94697,7 +94718,8 @@ var require_traiter = __commonJS({
         if (rc.action === "impossible") d.motifs.push("contact impossible : ni e-mail ni t\xE9l\xE9phone");
       }
       d.contact = { id: rc.contact ? rc.contact.id : null, action: rc.action, par: rc.par, trace: rc.trace };
-      if (rb.bien && rb.bien.proprietaire_id && rc.contact && String(rb.bien.proprietaire_id) === String(rc.contact.id)) d.motifs.push("\xE0 v\xE9rifier : le mail vient du propri\xE9taire du bien (vendeur), pas d'un acqu\xE9reur");
+      d.interne = { ...d.interne || {}, contact_crm: rc.contact || null };
+      if (rbBien && rbBien.proprietaire_id && rc.contact && String(rbBien.proprietaire_id) === String(rc.contact.id)) d.motifs.push("\xE0 v\xE9rifier : le mail vient du propri\xE9taire du bien (vendeur), pas d'un acqu\xE9reur");
       const siteCfg = r.portail === "site_agence" ? (conf.sites || []).find((s) => {
         const memeOrigine = r.site_origine && String(s.origine || "") === String(r.site_origine);
         const domaineConfig = String(s.domaine || "").toLowerCase().replace(/^www\./, "");
@@ -94705,55 +94727,56 @@ var require_traiter = __commonJS({
         return memeOrigine || domaineMail && domaineConfig === domaineMail;
       }) || null : null;
       const portailMetier = r.portail === "site_agence" ? siteCfg ? siteCfg.libelle || siteCfg.noms && siteCfg.noms[0] || siteCfg.domaine : r.portail_nom || r.site || r.site_origine || "Site agence" : r.portail_nom || r.portail;
-      if (r.portail === "site_agence")
-        r.portail_nom = portailMetier;
+      if (r.portail === "site_agence") r.portail_nom = portailMetier;
       d.portail = portailMetier;
       d.source = portailMetier;
       const origineCode = r.portail === "site_agence" ? r.site_origine : (conf.origines_portail || {})[r.portail] || r.portail;
       const origine = (conf.origines || []).find((o) => o.code === origineCode) || null;
-      d.origine = origine ? {
-        code: origine.code,
-        libelle: r.portail === "site_agence" ? portailMetier : origine.libelle || portailMetier,
-        id: origine.id
-      } : {
-        code: origineCode,
-        libelle: portailMetier,
-        id: null
-      };
+      d.origine = origine ? { code: origine.code, libelle: r.portail === "site_agence" ? portailMetier : origine.libelle || portailMetier, id: origine.id } : { code: origineCode, libelle: portailMetier, id: null };
       if (!origine && origineCode) d.alertes.push(`origine \xAB ${origineCode} \xBB non reli\xE9e \xE0 une origine du CRM`);
       const ok = actif.contact && rc.action !== "impossible";
       if (ok && rc.action === "creer") d.actions.push({ op: "creerContact", donnees: { email: c.email, prenom: c.prenom, nom: c.nom, telephone: c.telephone, origine: d.origine.id, agence: d.agence && d.agence.id, negociateur: negoFinal } });
       if (ok && rc.action === "mettre_a_jour") {
         const patch = completer(rc.contact, c);
-        if (d.origine && d.origine.id && (!rc.contact || String(rc.contact.origine || "") !== String(d.origine.id))) {
-          patch.origine = d.origine.id;
-        }
+        if (d.origine && d.origine.id && (!rc.contact || String(rc.contact.origine || "") !== String(d.origine.id))) patch.origine = d.origine.id;
         if (negoFinal && rc.contact && "negociateur" in rc.contact && !rc.contact.negociateur) {
           patch.negociateur = negoFinal;
           if (d.agence) patch.agence = d.agence.id;
         }
         if (Object.keys(patch).length) d.actions.push({ op: "majContact", id: rc.contact.id, donnees: patch });
       }
-      const nouveauBien = rb.bien && !(dos && String(dos.bien_id) === String(rb.bien.id));
-      if (ok && actif.suivi && nouveauBien) d.actions.push({ op: "lierBien", bien: rb.bien.id });
+      const nouveauBien = rbBien && !(dos && String(dos.bien_id) === String(rbBien.id));
+      if (ok && actif.suivi && nouveauBien) d.actions.push({ op: "lierBien", bien: rbBien.id });
       const comment = actif.commentaire ? C.commentaire(tous, conf.commentaire || {}) : null;
       if (ok && actif.projet) {
         if (dos && dos.recherche_id) {
           if (comment) d.actions.push({ op: "majRecherche", id: dos.recherche_id, donnees: { comment } });
         } else {
-          const cr = criteresProjet(r, rb.bien, conf.marges_projet);
-          if (cr) d.actions.push({ op: "creerRecherche", donnees: { ...cr, libelle: `${r.portail_nom || r.portail || "Demande"}${rb.bien && rb.bien.reference ? " \u2014 r\xE9f. " + rb.bien.reference : ""}`, comment } });
+          const cr = criteresProjet(r, rbBien, conf.marges_projet);
+          if (cr) d.actions.push({ op: "creerRecherche", donnees: { ...cr, libelle: `${r.portail_nom || r.portail || "Demande"}${rbBien && rbBien.reference ? " \u2014 r\xE9f. " + rbBien.reference : ""}`, comment } });
         }
       }
-      if (ok && actif.action && conf.action_lead && r.message) d.actions.push({ op: "ajouterAction", donnees: { action_id: conf.action_lead, negociateur: negoFinal, texte: [r.portail_nom, r.message].filter(Boolean).join(" \u2014 ").slice(0, 4e3), date: mail.date || mail.date_envoi || null } });
-      const dejaConsenti = dos && dos.consentement || rc.contact && rc.contact.consentement || connus.some((x) => x.consentement && rc.contact && String(x.contact_id) === String(rc.contact.id));
-      if (ok && actif.consentement && conf.consentement && conf.consentement.actif && !dejaConsenti) {
-        const date = mail.date || mail.date_envoi || /* @__PURE__ */ new Date();
+      if (ok && actif.action && conf.action_lead && r.message) d.actions.push({ op: "ajouterAction", donnees: { action_id: conf.action_lead, negociateur: negoFinal, texte: [r.portail_nom, r.message].filter(Boolean).join(" \u2014 ").slice(0, 4e3), date: d.date_mail || null } });
+      d.duree_ms = (d.duree_ms || 0) + Date.now() - t0;
+      return d;
+    };
+    var etapeConsentement = (d, mail, conf = {}) => {
+      if (d.fin) return d;
+      const r = d.extraction, dos = d.interne && d.interne.dos || null, rcc = d.interne && d.interne.contact_crm || null, connus = d.interne && d.interne.connus || [];
+      const ok = actifs(conf).contact && d.contact && d.contact.action !== "impossible";
+      const dejaConsenti = dos && dos.consentement || rcc && rcc.consentement || connus.some((x) => x.consentement && rcc && String(x.contact_id) === String(rcc.id));
+      if (ok && actifs(conf).consentement && conf.consentement && conf.consentement.actif && !dejaConsenti) {
+        const date = dateDuMail(mail) || d.date_mail || /* @__PURE__ */ new Date();
         const motif = gabarit(conf.consentement.libelle || "Demande de contact via {portail} du {date}", { portail: d.portail || r.site_libelle || r.portail_nom || r.portail, date: dateFr(date) });
         d.actions.push({ op: "ajouterConsentement", date: new Date(date).toISOString(), motif, hors_horaires: r.hors_horaires, preuves: [preuveEml(mail)] });
       }
-      if (actif.notification) {
-        const dest = destinataires(negoFinal, mail.date || mail.date_envoi || /* @__PURE__ */ new Date(), conf.routage || {});
+      return d;
+    };
+    var etapeDestinataires = (d, conf = {}) => {
+      if (d.fin) return d;
+      const dos = d.interne && d.interne.dos || null;
+      if (actifs(conf).notification) {
+        const dest = destinataires(d.negociateur, d.date_mail || /* @__PURE__ */ new Date(), conf.routage || {});
         if (dos && (conf.notifier_relances || "negociateur") === "negociateur") {
           const avant = dest.liste.length;
           dest.liste = dest.liste.filter((x) => (x.roles || [x.role]).some((ro) => ["negociateur", "assistante"].includes(ro)));
@@ -94762,13 +94785,34 @@ var require_traiter = __commonJS({
         if ((conf.notifier_relances || "negociateur") === "non" && dos) dest.liste = [];
         d.destinataires = dest;
       }
+      return conclure(d);
+    };
+    var conclure = (d) => {
+      if (d.fin) return d;
+      const r = d.extraction, dos = d.interne && d.interne.dos || null;
       d.statut = d.motifs.length ? "a_verifier" : "pret";
-      if (r.nature === "direct" && !rb.bien && !dos) {
+      if (r.nature === "direct" && !d.bien && !dos) {
         d.statut = "a_trier";
         d.motifs.push("mail direct sans bien reconnu");
       }
       if (r.suspect === "message de test") d.statut = "a_trier";
-      return fin();
+      return d;
+    };
+    var nettoyer = (d) => {
+      delete d.interne;
+      delete d.fin;
+      delete d.date_mail;
+      return d;
+    };
+    var traiter = async (mail, crm, conf = {}, opts = {}) => {
+      const t0 = Date.now();
+      let d = await etapeLire(mail, conf, opts);
+      d = await etapeBien(d, crm, conf);
+      d = await etapeContact(d, crm, conf);
+      d = etapeConsentement(d, mail, conf);
+      d = etapeDestinataires(d, conf);
+      d.duree_ms = Date.now() - t0;
+      return nettoyer(d);
     };
     var executer = async (dossier, crm, { mode = "ombre" } = {}) => {
       const res = [];
@@ -94804,7 +94848,7 @@ var require_traiter = __commonJS({
       }
       return { contactId, rechercheId, consentement, resultats: res };
     };
-    module2.exports = { traiter, executer, preuveEml, trouverAgence, choisirDossier, criteresProjet, NATURES_LEAD, ETAPES };
+    module2.exports = { traiter, executer, preuveEml, trouverAgence, choisirDossier, criteresProjet, NATURES_LEAD, ETAPES, etapeLire, etapeBien, etapeContact, etapeConsentement, etapeDestinataires, conclure, nettoyer };
   }
 });
 
@@ -94871,7 +94915,13 @@ var require_routage_tables = __commonJS({
           remplacant: a.remplacant ? ref(a.remplacant) : /@/.test(String(a.remplacant_adresse || "")) ? { email: String(a.remplacant_adresse).trim() } : null,
           motif: a.motif
         })),
-        siege: cp.filter((d) => !d.portee || d.portee === "tous").map((d) => d.email).filter(Boolean)
+        siege: cp.filter((d) => !d.portee || d.portee === "tous").map((d) => d.email).filter(Boolean),
+        /* copies ciblées : les membres de l'agence ou du groupe aujourd'hui, ou les personnes choisies */
+        copies: cp.filter((d) => d.portee && d.portee !== "tous" && d.email).map((d) => {
+          const par = (champ) => d[champ] === null || d[champ] === void 0 || d[champ] === "" ? [] : eq.filter((p) => String(p[champ] ?? "") === String(d[champ])).map((p) => String(p.id));
+          const vises = d.portee === "agence" ? par("agence") : d.portee === "groupe" ? par("groupe") : d.portee === "personnes" ? ids(d.personnes) : [];
+          return { email: d.email, nom: d.libelle || d.email, cible: { negociateurs: [...new Set(vises)] } };
+        })
       };
     };
     module2.exports = { lireRoutage, jourDe, modeAssistante, NOMS };
@@ -94884,6 +94934,8 @@ var require_immofacile = __commonJS({
     "use strict";
     var { typeBien } = require_valeurs();
     var { cle } = require_texte();
+    var JETONS = /* @__PURE__ */ new Map();
+    var empreinte = (...x) => require("crypto").createHash("sha256").update(x.map(String).join("\n")).digest("hex");
     var creer = (cfg = {}) => {
       const base = String(cfg.base || "https://v2.immo-facile.com/api").replace(/\/+$/, "");
       const racine = new URL(base).origin + "/api/v2/site";
@@ -94914,6 +94966,13 @@ var require_immofacile = __commonJS({
         if (jeton && Date.now() < expire - 6e4) return jeton;
         const basic = await cfg.secret("basic");
         if (!basic) throw Object.assign(new Error("identifiants Immofacile absents (coffre : basic)"), { permanent: true });
+        const cleJeton = empreinte(base, cfg.site_id, basic);
+        const garde = JETONS.get(cleJeton);
+        if (garde && Date.now() < garde.expire - 6e4) {
+          jeton = garde.jeton;
+          expire = garde.expire;
+          return jeton;
+        }
         let r, tx;
         for (let essai = 1; essai <= 4; essai++) {
           try {
@@ -94934,6 +94993,8 @@ var require_immofacile = __commonJS({
         if (!j.access_token) throw new Error("jeton Immofacile re\xE7u sans access_token");
         jeton = j.access_token;
         expire = Date.now() + (+j.expires_in || 3e3) * 1e3;
+        if (JETONS.size > 200) JETONS.clear();
+        JETONS.set(cleJeton, { jeton, expire });
         return jeton;
       };
       const appel = async (methode, chemin, corps, { multipart } = {}) => {
@@ -94954,6 +95015,7 @@ var require_immofacile = __commonJS({
           }
           journal({ methode, chemin, statut: r.status, ms: Date.now() - t0 });
           if (r.status === 401 && essai === 1) {
+            for (const [k, v] of JETONS) if (v.jeton === jeton) JETONS.delete(k);
             jeton = null;
             continue;
           }
@@ -97447,9 +97509,19 @@ var require_controle = __commonJS({
         params: [
           { name: "action", label: "Action", type: "select", options: ["prendre", "lib\xE9rer"], default: "prendre" },
           { name: "nom", label: "Nom du verrou", required: true, help: "Ex. releve-mails" },
-          { name: "duree", label: "Expire apr\xE8s (secondes)", type: "int", default: 600 }
+          { name: "duree", label: "Expire apr\xE8s (secondes)", type: "int", default: 600 },
+          { name: "attente", label: "Si le verrou est pris : attendre jusqu'\xE0 (secondes)", type: "int", default: 0, showIf: { action: "prendre" }, help: "0 = r\xE9pondre tout de suite (vrai / faux). Plus de 0 : attendre qu'il se lib\xE8re, puis s'arr\xEAter en erreur si le temps est d\xE9pass\xE9 (le travail pourra \xEAtre repris)." }
         ],
         run: async (p) => {
+          if (p.action !== "lib\xE9rer" && +p.attente > 0) {
+            const fin = Date.now() + Math.min(+p.attente, 300) * 1e3;
+            const un = { ...p, attente: 0 };
+            for (; ; ) {
+              if (await module2.exports.find((b) => b.name === "dzf_verrou").run(un)) return true;
+              if (Date.now() > fin) throw Object.assign(new Error(`verrou \xAB ${p.nom} \xBB toujours pris apr\xE8s ${p.attente} s`), { temporaire: true });
+              await new Promise((r) => setTimeout(r, 150 + Math.random() * 250));
+            }
+          }
           const key = `dzf:verrou:${p.nom}`;
           if (redis.available()) {
             if (p.action === "lib\xE9rer") {
@@ -101231,7 +101303,7 @@ var require_assets = __commonJS({
     });
   });
 })();
-` }, "editeur.css": { "src": '.dzfe{--bg:var(--dz-bg,#f4f5f8);--sf:var(--dz-surface,#fff);--s2:var(--dz-surface-2,#eef0f4);--bd:var(--dz-border,rgba(15,20,40,.12));--tx:var(--dz-text,#161a26);--mu:var(--dz-text-mute,#6b7285);--pr:var(--dz-primary,#5b5bf0);--pk:var(--dz-primary-ink,#4545d8);--ok:#12a150;--ko:#e5484d;--wa:#f5a524;--mono:var(--dz-font-mono,ui-monospace,SFMono-Regular,Menlo,monospace);\nposition:fixed;inset:0;z-index:4000;display:flex;flex-direction:column;background:var(--bg);color:var(--tx);font-size:14px;line-height:1.4}\n.dzfe,.dzfe p,.dzfe li,.dzfe label,.dzfe small,.dzfe input,.dzfe select,.dzfe textarea,.dzfe button{font-family:var(--dz-font-body,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif)}\n@media (prefers-color-scheme:dark){.dzfe:not(.light){--bg:#0f1117;--sf:#171a23;--s2:#1f2330;--bd:rgba(255,255,255,.1);--tx:#eceef5;--mu:#9aa1b5}}\n[data-dz-theme="dark"] .dzfe,html.dark .dzfe{--bg:#0f1117;--sf:#171a23;--s2:#1f2330;--bd:rgba(255,255,255,.1);--tx:#eceef5;--mu:#9aa1b5}\n.dzfe *{box-sizing:border-box}\n.dzfe-loading{margin:auto;color:var(--mu)}\n.dzfe button{font:inherit;color:inherit}\n.dzfe-top{display:flex;align-items:center;gap:.5rem;padding:.55rem .8rem;background:var(--sf);border-bottom:1px solid var(--bd);min-height:54px}\n.dzfe-back{width:36px;height:36px;display:grid;place-items:center;border-radius:10px;color:var(--mu)!important;text-decoration:none!important}\n.dzfe-back:hover{background:var(--s2)}\n.dzfe-name{border:1px solid transparent;background:transparent;font-weight:650;font-size:1.05rem;padding:.35rem .5rem;border-radius:8px;min-width:120px;width:min(340px,40vw);color:var(--tx)}\n.dzfe-name:hover,.dzfe-name:focus{border-color:var(--bd);background:var(--bg);outline:none}\n.dzfe-status{font-size:.78rem;color:var(--mu)}.dzfe-status.dirty{color:var(--wa)}\n.dzfe-sp{flex:1}\n.dzfe-btn{display:inline-flex;align-items:center;gap:.45rem;border:1px solid var(--bd);background:var(--sf);padding:.42rem .75rem;border-radius:10px;cursor:pointer;font-weight:550;white-space:nowrap}\n.dzfe-btn:hover{background:var(--s2)}.dzfe-btn:disabled{opacity:.5}\n.dzfe-btn.primary{background:var(--pr);border-color:var(--pr);color:#fff}.dzfe-btn.primary:hover{filter:brightness(1.07)}\n.dzfe-btn.danger{color:var(--ko);border-color:color-mix(in srgb,var(--ko) 40%,transparent)}\n.dzfe-body{flex:1;display:grid;grid-template-columns:270px minmax(0,1fr) 360px;min-height:0}\n.dzfe-pal{background:var(--sf);border-right:1px solid var(--bd);display:flex;flex-direction:column;min-height:0}\n.dzfe-pal-head{padding:.6rem;display:flex;gap:.4rem;border-bottom:1px solid var(--bd)}\n.dzfe-pal-q,.dzfe-in-q{width:100%;border:1px solid var(--bd);background:var(--bg);border-radius:10px;padding:.5rem .7rem;color:var(--tx)}\n.dzfe-pal-list{overflow:auto;padding:.3rem .4rem 2rem}\n.dzfe-cat summary{cursor:pointer;font-weight:650;font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--mu);padding:.6rem .4rem .35rem;list-style:none}\n.dzfe-cat summary::-webkit-details-marker{display:none}.dzfe-cat summary small{font-weight:500;opacity:.7}\n.dzfe-pb{display:flex;gap:.6rem;align-items:flex-start;padding:.5rem .55rem;border-radius:10px;cursor:grab;border:1px solid transparent;background:none;width:100%;text-align:left}\n.dzfe-pb:hover{background:var(--s2);border-color:var(--bd)}\n.dzfe-pb i{width:30px;height:30px;flex:none;display:grid;place-items:center;border-radius:8px;background:color-mix(in srgb,var(--pr) 13%,transparent);color:var(--pk);font-size:.9rem}\n.dzfe-pb span{display:flex;flex-direction:column;min-width:0}.dzfe-pb b{font-weight:600;font-size:.86rem}\n.dzfe-pb small{color:var(--mu);font-size:.74rem;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}\n.dzfe-canvas{position:relative;overflow:hidden;background-color:var(--bg);background-image:radial-gradient(color-mix(in srgb,var(--tx) 14%,transparent) 1px,transparent 1px);background-size:22px 22px;cursor:grab;touch-action:none;outline:none}\n.dzfe-canvas:active{cursor:grabbing}\n.dzfe-world{position:absolute;left:0;top:0;transform-origin:0 0}\n.dzfe-svg{position:absolute;left:-5000px;top:-5000px;width:10000px;height:10000px;overflow:visible;pointer-events:none}\n.dzfe-svg>*{transform:translate(5000px,5000px)}\n.dzfe-edge{fill:none;stroke:color-mix(in srgb,var(--tx) 45%,transparent);stroke-width:2}\n.dzfe-edge.dashed{stroke-dasharray:6 5}.dzfe-edge.yes{stroke:var(--ok)}.dzfe-edge.no{stroke:var(--ko)}\n.dzfe-edge.live{stroke:var(--pr);stroke-dasharray:5 4}\n.dzfe-arrow{fill:color-mix(in srgb,var(--tx) 55%,transparent)}\n.dzfe-el{font-size:11px;fill:var(--mu);paint-order:stroke;stroke:var(--bg);stroke-width:4px;text-anchor:middle}\n.dzfe-node{position:absolute;width:232px;min-height:66px;display:flex;gap:.6rem;align-items:center;padding:.55rem .7rem;background:var(--sf);border:1.5px solid var(--bd);border-radius:14px;box-shadow:0 1px 2px rgba(0,0,0,.06),0 6px 18px rgba(20,20,60,.06);cursor:pointer;user-select:none;transition:border-color .12s,box-shadow .12s}\n.dzfe-node:hover{border-color:color-mix(in srgb,var(--pr) 50%,var(--bd))}\n.dzfe-node.sel{border-color:var(--pr);box-shadow:0 0 0 4px color-mix(in srgb,var(--pr) 20%,transparent)}\n.dzfe-node.target{border-color:var(--ok);box-shadow:0 0 0 4px color-mix(in srgb,var(--ok) 22%,transparent)}\n.dzfe-node.err{border-color:var(--ko);box-shadow:0 0 0 4px color-mix(in srgb,var(--ko) 20%,transparent)}\n.dzfe-node.ok::after{content:"\\2713";position:absolute;right:-8px;top:-8px;width:20px;height:20px;border-radius:50%;background:var(--ok);color:#fff;font-size:12px;display:grid;place-items:center}\n.dzfe-node.trig{background:linear-gradient(135deg,color-mix(in srgb,var(--pr) 16%,var(--sf)),var(--sf))}\n.dzfe-ic{width:38px;height:38px;flex:none;border-radius:10px;display:grid;place-items:center;background:color-mix(in srgb,var(--pr) 14%,transparent);color:var(--pk);font-size:1rem}\n.dzfe-ic.trig,.dzfe-node.trig .dzfe-ic{background:var(--pr);color:#fff}\n.dzfe-node.builtin .dzfe-ic{background:color-mix(in srgb,var(--wa) 20%,transparent);color:#a86b00}\n.dzfe-nt{display:flex;flex-direction:column;min-width:0}\n.dzfe-nt b{font-size:.86rem;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}\n.dzfe-nt small{font-size:.72rem;color:var(--mu);font-family:var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}\n.dzfe-nt em{font-style:normal;font-size:.72rem;color:var(--mu);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}\n.dzfe-if{position:absolute;left:-10px;top:-10px;width:22px;height:22px;border-radius:50%;background:var(--wa);color:#fff;font-size:10px;display:grid;place-items:center}\n.dzfe-in{position:absolute;left:50%;top:-6px;width:12px;height:12px;margin-left:-6px;border-radius:50%;background:var(--sf);border:2px solid color-mix(in srgb,var(--tx) 30%,transparent)}\n.dzfe-node.trig .dzfe-in{display:none}\n.dzfe-port{position:absolute;left:50%;bottom:-8px;width:16px;height:16px;margin-left:-8px;border-radius:50%;background:var(--pr);border:3px solid var(--sf);cursor:crosshair;box-shadow:0 0 0 1px var(--pr);transition:transform .1s}\n.dzfe-port:hover{transform:scale(1.35)}\n.dzfe-port.yes,.dzfe-port.no{width:auto;height:18px;padding:0 6px;border-radius:9px;font-size:10px;font-weight:700;color:#fff;border-width:2px;display:grid;place-items:center;margin-left:0;bottom:-10px}\n.dzfe-port.yes{left:30%;transform:translateX(-50%);background:var(--ok);box-shadow:0 0 0 1px var(--ok)}\n.dzfe-port.no{left:70%;transform:translateX(-50%);background:var(--ko);box-shadow:0 0 0 1px var(--ko)}\n.dzfe-port.side{left:auto;right:-8px;bottom:auto;top:50%;margin:-8px 0 0;background:var(--wa);box-shadow:0 0 0 1px var(--wa)}\n.dzfe-zoom{position:absolute;left:12px;bottom:12px;display:flex;flex-direction:column;background:var(--sf);border:1px solid var(--bd);border-radius:10px;overflow:hidden}\n.dzfe-zoom button{border:0;background:none;width:34px;height:32px;cursor:pointer;font-size:1rem}.dzfe-zoom button:hover{background:var(--s2)}\n.dzfe-hint{position:absolute;left:50%;top:45%;transform:translate(-50%,-50%);pointer-events:none}\n.dzfe-hint>div{pointer-events:auto;max-width:380px;text-align:center;background:var(--sf);border:1px dashed var(--bd);border-radius:16px;padding:1.2rem 1.4rem;color:var(--mu)}\n.dzfe-hint i{font-size:1.6rem;color:var(--pr);display:block;margin-bottom:.4rem}.dzfe-hint b{color:var(--tx);font-size:1.05rem}\n.dzfe-panel{background:var(--sf);border-left:1px solid var(--bd);overflow:auto;min-height:0}\n.dzfe-ph{display:flex;gap:.7rem;align-items:center;padding:.9rem 1rem .5rem;position:sticky;top:0;background:var(--sf);z-index:2}\n.dzfe-ph b{display:block;font-size:1rem}.dzfe-ph small{color:var(--mu)}\n.dzfe-x{margin-left:auto;border:0;background:none;width:32px;height:32px;border-radius:8px;cursor:pointer;color:var(--mu)}.dzfe-x:hover{background:var(--s2)}\n.dzfe-desc{padding:0 1rem;color:var(--mu);font-size:.84rem;margin:.2rem 0 .6rem}.dzfe-desc a{white-space:nowrap}\n.dzfe-tabs{display:flex;gap:.2rem;padding:0 1rem;border-bottom:1px solid var(--bd);position:sticky;top:62px;background:var(--sf);z-index:2}\n.dzfe-tabs button{border:0;background:none;padding:.55rem .6rem;cursor:pointer;color:var(--mu);font-weight:600;border-bottom:2px solid transparent}\n.dzfe-tabs button.on{color:var(--pk);border-bottom-color:var(--pr)}\n.dzfe-pb-body{padding:.9rem 1rem 3rem;display:flex;flex-direction:column;gap:.85rem}\n.dzfe-f{display:flex;flex-direction:column;gap:.3rem;position:relative}\n.dzfe-f>label{font-weight:600;font-size:.84rem}.dzfe-f>label small{font-weight:400;color:var(--mu)}\n.dzfe-f .req{color:var(--ko)}\n.dzfe-fi{display:flex;gap:.35rem;align-items:flex-start}\n.dzfe-f input:not([type=checkbox]):not([type=radio]),.dzfe-f select,.dzfe-f textarea,.dzfe-ctx,.dzfe-all,.dzfe-json{width:100%;border:1px solid var(--bd);background:var(--bg);color:var(--tx);border-radius:10px;padding:.5rem .65rem;font:inherit;font-size:.88rem}\n.dzfe-f input:focus,.dzfe-f select:focus,.dzfe-f textarea:focus{outline:none;border-color:var(--pr);box-shadow:0 0 0 3px color-mix(in srgb,var(--pr) 18%,transparent)}\n.dzfe .mono{font-family:var(--mono)!important;font-size:.8rem!important;line-height:1.5;tab-size:2}\n.dzfe-f .help{color:var(--mu);font-size:.76rem}.dzfe-ferr{color:var(--ko);font-size:.76rem}.dzfe-ferr:empty{display:none}\n.dzfe-vb{flex:none;border:1px solid var(--bd);background:var(--s2);border-radius:8px;padding:.45rem .5rem;cursor:pointer;font-family:var(--mono);font-size:.78rem;font-weight:700;color:var(--pk)}\n.dzfe-vm{position:absolute;right:0;top:100%;z-index:10;width:300px;max-height:320px;overflow:auto;background:var(--sf);border:1px solid var(--bd);border-radius:12px;box-shadow:0 12px 30px rgba(0,0,0,.18);padding:.5rem;display:flex;flex-direction:column;gap:.15rem}\n.dzfe-vm>b{font-size:.78rem;color:var(--mu);padding:.2rem .3rem}\n.dzfe-vm button{border:0;background:none;text-align:left;padding:.35rem .4rem;border-radius:8px;cursor:pointer;display:flex;flex-direction:column}\n.dzfe-vm button:hover{background:var(--s2)}.dzfe-vm code{font-size:.8rem;color:var(--pk)}.dzfe-vm small{color:var(--mu);font-size:.72rem}\n.dzfe-sw{display:flex!important;align-items:center;gap:.6rem;cursor:pointer;font-weight:600;font-size:.86rem}\n.dzfe-sw input{position:absolute;opacity:0;width:0;height:0}\n.dzfe-sw span{width:38px;height:22px;border-radius:11px;background:color-mix(in srgb,var(--tx) 22%,transparent);position:relative;flex:none;transition:background .15s}\n.dzfe-sw span::after{content:"";position:absolute;left:3px;top:3px;width:16px;height:16px;border-radius:50%;background:#fff;transition:transform .15s}\n.dzfe-sw input:checked+span{background:var(--pr)}.dzfe-sw input:checked+span::after{transform:translateX(16px)}\n.dzfe-sw input:focus-visible+span{box-shadow:0 0 0 3px color-mix(in srgb,var(--pr) 30%,transparent)}\n.dzfe-adv{border:1px solid var(--bd);border-radius:12px;padding:.5rem .75rem}\n.dzfe-adv summary{cursor:pointer;font-weight:600;font-size:.84rem;color:var(--mu)}\n.dzfe-adv[open]{display:flex;flex-direction:column;gap:.8rem}\n.dzfe-when{display:flex;flex-direction:column;gap:.3rem}\n.dzfe-when label{display:flex;gap:.55rem;align-items:center;border:1px solid var(--bd);border-radius:10px;padding:.5rem .65rem;cursor:pointer;font-size:.86rem}\n.dzfe-when label.on{border-color:var(--pr);background:color-mix(in srgb,var(--pr) 8%,transparent)}\n.dzfe-seg{display:flex;border:1px solid var(--bd);border-radius:10px;overflow:hidden}\n.dzfe-seg button{flex:1;border:0;background:none;padding:.45rem .3rem;cursor:pointer;font-size:.8rem;font-weight:600;color:var(--mu)}\n.dzfe-seg button+button{border-left:1px solid var(--bd)}.dzfe-seg button.on{background:var(--pr);color:#fff}\n.dzfe-chips{display:flex;flex-wrap:wrap;gap:.25rem}.dzfe-chips button{border:1px solid var(--bd);background:var(--s2);border-radius:99px;padding:.1rem .5rem;font-family:var(--mono);font-size:.72rem;cursor:pointer}\n.dzfe-danger{margin-top:.8rem;padding-top:.8rem;border-top:1px solid var(--bd)}\n.dzfe-pe{padding:2rem 1.3rem;color:var(--mu)}.dzfe-pe>i{font-size:1.6rem;color:var(--pr)}.dzfe-pe b{display:block;color:var(--tx);font-size:1rem;margin:.5rem 0}\n.dzfe-pe ul{padding-left:1.1rem;display:flex;flex-direction:column;gap:.4rem;font-size:.84rem}\n.dzfe-mute{color:var(--mu);font-size:.84rem}.dzfe-warn{color:var(--wa)}.dzfe-note{font-size:.82rem;background:var(--s2);border-radius:10px;padding:.6rem .7rem}\n.dzfe-fh{margin:.4rem 0 0;font-size:.8rem;text-transform:uppercase;letter-spacing:.05em;color:var(--mu)}\n.dzfe-run{position:fixed;left:270px;right:360px;bottom:0;max-height:0;overflow:hidden;background:var(--sf);border-top:1px solid var(--bd);box-shadow:0 -10px 30px rgba(0,0,0,.08);transition:max-height .2s;z-index:3}\n.dzfe-run.open{max-height:45vh;overflow:auto}\n.dzfe-rh{display:flex;gap:.8rem;align-items:center;padding:.6rem 1rem;position:sticky;top:0;background:var(--sf)}\n.dzfe-rh .ok{color:var(--ok)}.dzfe-rh .ko{color:var(--ko)}.dzfe-rh span{color:var(--mu);font-size:.82rem}\n.dzfe-rerr{margin:0 1rem .6rem;padding:.6rem .8rem;border-radius:10px;background:color-mix(in srgb,var(--ko) 10%,transparent);color:var(--ko);font-size:.86rem}\n.dzfe-rctx{padding:0 1rem 1rem;font-size:.82rem;font-family:var(--mono)}\n.dzfe-rctx ul{list-style:none;margin:.2rem 0 .2rem .9rem;padding:0;border-left:1px dashed var(--bd);padding-left:.6rem}\n.dzfe-rctx summary{cursor:pointer;color:var(--mu)}.dzfe-rctx b{color:var(--pk);font-weight:600}\n.dzfe-rctx .string{color:#b35900}.dzfe-rctx .number{color:#0b7a55}.dzfe-rctx .boolean{color:#7a3fd1}.dzfe-rctx .n{color:var(--mu)}\n.dzfe-modal{position:fixed;inset:0;background:rgba(10,12,20,.45);display:none;align-items:center;justify-content:center;z-index:10;padding:1rem}\n.dzfe-modal.open{display:flex}\n.dzfe-mb{background:var(--sf);border-radius:16px;padding:1.2rem 1.3rem;width:min(640px,100%);max-height:88vh;overflow:auto;display:flex;flex-direction:column;gap:.7rem;box-shadow:0 30px 80px rgba(0,0,0,.3)}\n.dzfe-mb h3{margin:0;font-size:1.1rem}\n.dzfe-mact{display:flex;gap:.5rem;justify-content:flex-end}\n.dzfe-pick{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:.3rem;max-height:50vh;overflow:auto}\n.dzfe-toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--tx);color:var(--bg);padding:.6rem 1rem;border-radius:12px;z-index:20;font-weight:600;transition:opacity .3s}\n.dzfe-toast.bad{background:var(--ko);color:#fff}.dzfe-toast.out{opacity:0}\n.dzfe-only-m,.dzfe-fab{display:none}\n@media (max-width:1100px){\n.dzfe-body{grid-template-columns:minmax(0,1fr)}\n.dzfe-pal{position:fixed;left:0;top:54px;bottom:0;width:min(320px,88vw);z-index:6;transform:translateX(-102%);transition:transform .2s;box-shadow:10px 0 30px rgba(0,0,0,.15)}\n.dzfe.pal-open .dzfe-pal{transform:none}\n.dzfe-panel{position:fixed;left:0;right:0;bottom:0;max-height:62vh;z-index:5;border-left:0;border-top:1px solid var(--bd);border-radius:18px 18px 0 0;transform:translateY(102%);transition:transform .2s;box-shadow:0 -10px 30px rgba(0,0,0,.15)}\n.dzfe.panel-open .dzfe-panel{transform:none}\n.dzfe-tabs{top:58px}\n.dzfe-only-m{display:inline-flex}\n.dzfe-fab{display:grid;place-items:center;position:absolute;right:16px;bottom:16px;width:52px;height:52px;border-radius:50%;border:0;background:var(--pr);color:#fff;font-size:1.2rem;box-shadow:0 8px 20px rgba(0,0,0,.2)}\n.dzfe-run{left:0;right:0}\n.dzfe-btn span{display:none}\n.dzfe-top{gap:.3rem;padding:.45rem .5rem}\n.dzfe-name{min-width:0;width:auto;flex:1;font-size:.95rem}\n.dzfe-sp{display:none}\n.dzfe-top [data-a="undo"],.dzfe-top [data-a="redo"],.dzfe-top [data-a="tidy"]{display:none}\n.dzfe-status{display:none}\n}\n@media (prefers-reduced-motion:reduce){.dzfe *{transition:none!important}}\n.dzfe code{color:var(--pk)!important;background:var(--s2)!important;padding:.05rem .3rem;border-radius:5px;font-family:var(--mono)!important;font-size:.85em!important}\n.dzfe-si{display:block;font-size:.7rem;font-family:var(--mono);color:#b45309;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}\n.dzfe-lz{margin:0;padding:0;list-style:none;display:grid;gap:.35rem}\n.dzfe-lz li{background:var(--s2);border:1px solid var(--bd);border-radius:10px;padding:.45rem .6rem;font-size:.84rem}\n.dzfe-lz a{font-size:.78rem;margin-left:.3rem}\n.dzfe-kbd{display:inline-block;font-family:var(--mono);font-size:.78rem;font-weight:700;padding:0 .35rem;border:1px solid var(--bd);border-radius:6px;background:var(--s2);color:var(--pk)}' }, "editeur.js": { "src": `/* =====================================================================
+` }, "editeur.css": { "src": '.dzfe{--bg:var(--dz-bg,#f4f5f8);--sf:var(--dz-surface,#fff);--s2:var(--dz-surface-2,#eef0f4);--bd:var(--dz-border,rgba(15,20,40,.12));--tx:var(--dz-text,#161a26);--mu:var(--dz-text-mute,#6b7285);--pr:var(--dz-primary,#5b5bf0);--pk:var(--dz-primary-ink,#4545d8);--ok:#12a150;--ko:#e5484d;--wa:#f5a524;--mono:var(--dz-font-mono,ui-monospace,SFMono-Regular,Menlo,monospace);\nposition:fixed;inset:0;z-index:4000;display:flex;flex-direction:column;background:var(--bg);color:var(--tx);font-size:14px;line-height:1.4}\n.dzfe,.dzfe p,.dzfe li,.dzfe label,.dzfe small,.dzfe input,.dzfe select,.dzfe textarea,.dzfe button{font-family:var(--dz-font-body,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif)}\n@media (prefers-color-scheme:dark){.dzfe:not(.light){--bg:#0f1117;--sf:#171a23;--s2:#1f2330;--bd:rgba(255,255,255,.1);--tx:#eceef5;--mu:#9aa1b5}}\n[data-dz-theme="dark"] .dzfe,html.dark .dzfe{--bg:#0f1117;--sf:#171a23;--s2:#1f2330;--bd:rgba(255,255,255,.1);--tx:#eceef5;--mu:#9aa1b5}\n.dzfe *{box-sizing:border-box}\n.dzfe-loading{margin:auto;color:var(--mu)}\n.dzfe button{font:inherit;color:inherit}\n.dzfe-top{display:flex;align-items:center;gap:.5rem;padding:.55rem .8rem;background:var(--sf);border-bottom:1px solid var(--bd);min-height:54px}\n.dzfe-back{width:36px;height:36px;display:grid;place-items:center;border-radius:10px;color:var(--mu)!important;text-decoration:none!important}\n.dzfe-back:hover{background:var(--s2)}\n.dzfe-name{border:1px solid transparent;background:transparent;font-weight:650;font-size:1.05rem;padding:.35rem .5rem;border-radius:8px;min-width:120px;width:min(340px,40vw);color:var(--tx)}\n.dzfe-name:hover,.dzfe-name:focus{border-color:var(--bd);background:var(--bg);outline:none}\n.dzfe-status{font-size:.78rem;color:var(--mu)}.dzfe-status.dirty{color:var(--wa)}\n.dzfe-sp{flex:1}\n.dzfe-btn{display:inline-flex;align-items:center;gap:.45rem;border:1px solid var(--bd);background:var(--sf);padding:.42rem .75rem;border-radius:10px;cursor:pointer;font-weight:550;white-space:nowrap}\n.dzfe-btn:hover{background:var(--s2)}.dzfe-btn:disabled{opacity:.5}\n.dzfe-btn.primary{background:var(--pr);border-color:var(--pr);color:#fff}.dzfe-btn.primary:hover{filter:brightness(1.07)}\n.dzfe-btn.danger{color:var(--ko);border-color:color-mix(in srgb,var(--ko) 40%,transparent)}\n.dzfe-body{flex:1;display:grid;grid-template-columns:270px minmax(0,1fr) 360px;min-height:0}\n.dzfe-pal{background:var(--sf);border-right:1px solid var(--bd);display:flex;flex-direction:column;min-height:0}\n.dzfe-pal-head{padding:.6rem;display:flex;gap:.4rem;border-bottom:1px solid var(--bd)}\n.dzfe-pal-q,.dzfe-in-q{width:100%;border:1px solid var(--bd);background:var(--bg);border-radius:10px;padding:.5rem .7rem;color:var(--tx)}\n.dzfe-pal-list{overflow:auto;padding:.3rem .4rem 2rem}\n.dzfe-cat summary{cursor:pointer;font-weight:650;font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--mu);padding:.6rem .4rem .35rem;list-style:none}\n.dzfe-cat summary::-webkit-details-marker{display:none}.dzfe-cat summary small{font-weight:500;opacity:.7}\n.dzfe-pb{display:flex;gap:.6rem;align-items:flex-start;padding:.5rem .55rem;border-radius:10px;cursor:grab;border:1px solid transparent;background:none;width:100%;text-align:left}\n.dzfe-pb:hover{background:var(--s2);border-color:var(--bd)}\n.dzfe-pb i{width:30px;height:30px;flex:none;display:grid;place-items:center;border-radius:8px;background:color-mix(in srgb,var(--pr) 13%,transparent);color:var(--pk);font-size:.9rem}\n.dzfe-pb span{display:flex;flex-direction:column;min-width:0}.dzfe-pb b{font-weight:600;font-size:.86rem}\n.dzfe-pb small{color:var(--mu);font-size:.74rem;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}\n.dzfe-canvas{position:relative;overflow:hidden;background-color:var(--bg);background-image:radial-gradient(color-mix(in srgb,var(--tx) 14%,transparent) 1px,transparent 1px);background-size:22px 22px;cursor:grab;touch-action:none;outline:none}\n.dzfe-canvas:active{cursor:grabbing}\n.dzfe-world{position:absolute;left:0;top:0;transform-origin:0 0}\n.dzfe-svg{position:absolute;left:-5000px;top:-5000px;width:10000px;height:10000px;overflow:visible;pointer-events:none}\n.dzfe-svg>*{transform:translate(5000px,5000px)}\n.dzfe-edge{fill:none;stroke:color-mix(in srgb,var(--tx) 45%,transparent);stroke-width:2}\n.dzfe-edge.dashed{stroke-dasharray:6 5}.dzfe-edge.yes{stroke:var(--ok)}.dzfe-edge.no{stroke:var(--ko)}\n.dzfe-edge.live{stroke:var(--pr);stroke-dasharray:5 4}\n.dzfe-arrow{fill:color-mix(in srgb,var(--tx) 55%,transparent)}\n.dzfe-el{font-size:11px;fill:var(--mu);paint-order:stroke;stroke:var(--bg);stroke-width:4px;text-anchor:middle}.dzfe-el.yes{fill:#15803d}.dzfe-el.no{fill:#b91c1c}\n.dzfe-node{position:absolute;width:232px;min-height:66px;display:flex;gap:.6rem;align-items:center;padding:.55rem .7rem;background:var(--sf);border:1.5px solid var(--bd);border-radius:14px;box-shadow:0 1px 2px rgba(0,0,0,.06),0 6px 18px rgba(20,20,60,.06);cursor:pointer;user-select:none;transition:border-color .12s,box-shadow .12s}\n.dzfe-node:hover{border-color:color-mix(in srgb,var(--pr) 50%,var(--bd))}\n.dzfe-node.sel{border-color:var(--pr);box-shadow:0 0 0 4px color-mix(in srgb,var(--pr) 20%,transparent)}\n.dzfe-node.target{border-color:var(--ok);box-shadow:0 0 0 4px color-mix(in srgb,var(--ok) 22%,transparent)}\n.dzfe-node.err{border-color:var(--ko);box-shadow:0 0 0 4px color-mix(in srgb,var(--ko) 20%,transparent)}\n.dzfe-node.ok::after{content:"\\2713";position:absolute;right:-8px;top:-8px;width:20px;height:20px;border-radius:50%;background:var(--ok);color:#fff;font-size:12px;display:grid;place-items:center}\n.dzfe-node.trig{background:linear-gradient(135deg,color-mix(in srgb,var(--pr) 16%,var(--sf)),var(--sf))}\n.dzfe-ic{width:38px;height:38px;flex:none;border-radius:10px;display:grid;place-items:center;background:color-mix(in srgb,var(--pr) 14%,transparent);color:var(--pk);font-size:1rem}\n.dzfe-ic.trig,.dzfe-node.trig .dzfe-ic{background:var(--pr);color:#fff}\n.dzfe-node.builtin .dzfe-ic{background:color-mix(in srgb,var(--wa) 20%,transparent);color:#a86b00}\n.dzfe-nt{display:flex;flex-direction:column;min-width:0}\n.dzfe-nt b{font-size:.86rem;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}\n.dzfe-nt small{font-size:.72rem;color:var(--mu);font-family:var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}\n.dzfe-nt em{font-style:normal;font-size:.72rem;color:var(--mu);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}\n.dzfe-if{position:absolute;left:-10px;top:-10px;width:22px;height:22px;border-radius:50%;background:var(--wa);color:#fff;font-size:10px;display:grid;place-items:center}\n.dzfe-in{position:absolute;left:50%;top:-6px;width:12px;height:12px;margin-left:-6px;border-radius:50%;background:var(--sf);border:2px solid color-mix(in srgb,var(--tx) 30%,transparent)}\n.dzfe-node.trig .dzfe-in{display:none}\n.dzfe-port{position:absolute;left:50%;bottom:-8px;width:16px;height:16px;margin-left:-8px;border-radius:50%;background:var(--pr);border:3px solid var(--sf);cursor:crosshair;box-shadow:0 0 0 1px var(--pr);transition:transform .1s}\n.dzfe-port:hover{transform:scale(1.35)}\n.dzfe-port.yes,.dzfe-port.no{width:auto;height:18px;padding:0 6px;border-radius:9px;font-size:10px;font-weight:700;color:#fff;border-width:2px;display:grid;place-items:center;margin-left:0;bottom:-10px}\n.dzfe-port.yes{left:30%;transform:translateX(-50%);background:var(--ok);box-shadow:0 0 0 1px var(--ok)}\n.dzfe-port.no{left:70%;transform:translateX(-50%);background:var(--ko);box-shadow:0 0 0 1px var(--ko)}\n.dzfe-port.side{left:auto;right:-8px;bottom:auto;top:50%;margin:-8px 0 0;background:var(--wa);box-shadow:0 0 0 1px var(--wa)}\n.dzfe-zoom{position:absolute;left:12px;bottom:12px;display:flex;flex-direction:column;background:var(--sf);border:1px solid var(--bd);border-radius:10px;overflow:hidden}\n.dzfe-zoom button{border:0;background:none;width:34px;height:32px;cursor:pointer;font-size:1rem}.dzfe-zoom button:hover{background:var(--s2)}\n.dzfe-hint{position:absolute;left:50%;top:45%;transform:translate(-50%,-50%);pointer-events:none}\n.dzfe-hint>div{pointer-events:auto;max-width:380px;text-align:center;background:var(--sf);border:1px dashed var(--bd);border-radius:16px;padding:1.2rem 1.4rem;color:var(--mu)}\n.dzfe-hint i{font-size:1.6rem;color:var(--pr);display:block;margin-bottom:.4rem}.dzfe-hint b{color:var(--tx);font-size:1.05rem}\n.dzfe-panel{background:var(--sf);border-left:1px solid var(--bd);overflow:auto;min-height:0}\n.dzfe-ph{display:flex;gap:.7rem;align-items:center;padding:.9rem 1rem .5rem;position:sticky;top:0;background:var(--sf);z-index:2}\n.dzfe-ph b{display:block;font-size:1rem}.dzfe-ph small{color:var(--mu)}\n.dzfe-x{margin-left:auto;border:0;background:none;width:32px;height:32px;border-radius:8px;cursor:pointer;color:var(--mu)}.dzfe-x:hover{background:var(--s2)}\n.dzfe-desc{padding:0 1rem;color:var(--mu);font-size:.84rem;margin:.2rem 0 .6rem}.dzfe-desc a{white-space:nowrap}\n.dzfe-tabs{display:flex;gap:.2rem;padding:0 1rem;border-bottom:1px solid var(--bd);position:sticky;top:62px;background:var(--sf);z-index:2}\n.dzfe-tabs button{border:0;background:none;padding:.55rem .6rem;cursor:pointer;color:var(--mu);font-weight:600;border-bottom:2px solid transparent}\n.dzfe-tabs button.on{color:var(--pk);border-bottom-color:var(--pr)}\n.dzfe-pb-body{padding:.9rem 1rem 3rem;display:flex;flex-direction:column;gap:.85rem}\n.dzfe-f{display:flex;flex-direction:column;gap:.3rem;position:relative}\n.dzfe-f>label{font-weight:600;font-size:.84rem}.dzfe-f>label small{font-weight:400;color:var(--mu)}\n.dzfe-f .req{color:var(--ko)}\n.dzfe-fi{display:flex;gap:.35rem;align-items:flex-start}\n.dzfe-f input:not([type=checkbox]):not([type=radio]),.dzfe-f select,.dzfe-f textarea,.dzfe-ctx,.dzfe-all,.dzfe-json{width:100%;border:1px solid var(--bd);background:var(--bg);color:var(--tx);border-radius:10px;padding:.5rem .65rem;font:inherit;font-size:.88rem}\n.dzfe-f input:focus,.dzfe-f select:focus,.dzfe-f textarea:focus{outline:none;border-color:var(--pr);box-shadow:0 0 0 3px color-mix(in srgb,var(--pr) 18%,transparent)}\n.dzfe .mono{font-family:var(--mono)!important;font-size:.8rem!important;line-height:1.5;tab-size:2}\n.dzfe-f .help{color:var(--mu);font-size:.76rem}.dzfe-ferr{color:var(--ko);font-size:.76rem}.dzfe-ferr:empty{display:none}\n.dzfe-vb{flex:none;border:1px solid var(--bd);background:var(--s2);border-radius:8px;padding:.45rem .5rem;cursor:pointer;font-family:var(--mono);font-size:.78rem;font-weight:700;color:var(--pk)}\n.dzfe-vm{position:absolute;right:0;top:100%;z-index:10;width:300px;max-height:320px;overflow:auto;background:var(--sf);border:1px solid var(--bd);border-radius:12px;box-shadow:0 12px 30px rgba(0,0,0,.18);padding:.5rem;display:flex;flex-direction:column;gap:.15rem}\n.dzfe-vm>b{font-size:.78rem;color:var(--mu);padding:.2rem .3rem}\n.dzfe-vm button{border:0;background:none;text-align:left;padding:.35rem .4rem;border-radius:8px;cursor:pointer;display:flex;flex-direction:column}\n.dzfe-vm button:hover{background:var(--s2)}.dzfe-vm code{font-size:.8rem;color:var(--pk)}.dzfe-vm small{color:var(--mu);font-size:.72rem}\n.dzfe-sw{display:flex!important;align-items:center;gap:.6rem;cursor:pointer;font-weight:600;font-size:.86rem}\n.dzfe-sw input{position:absolute;opacity:0;width:0;height:0}\n.dzfe-sw span{width:38px;height:22px;border-radius:11px;background:color-mix(in srgb,var(--tx) 22%,transparent);position:relative;flex:none;transition:background .15s}\n.dzfe-sw span::after{content:"";position:absolute;left:3px;top:3px;width:16px;height:16px;border-radius:50%;background:#fff;transition:transform .15s}\n.dzfe-sw input:checked+span{background:var(--pr)}.dzfe-sw input:checked+span::after{transform:translateX(16px)}\n.dzfe-sw input:focus-visible+span{box-shadow:0 0 0 3px color-mix(in srgb,var(--pr) 30%,transparent)}\n.dzfe-adv{border:1px solid var(--bd);border-radius:12px;padding:.5rem .75rem}\n.dzfe-adv summary{cursor:pointer;font-weight:600;font-size:.84rem;color:var(--mu)}\n.dzfe-adv[open]{display:flex;flex-direction:column;gap:.8rem}\n.dzfe-when{display:flex;flex-direction:column;gap:.3rem}\n.dzfe-when label{display:flex;gap:.55rem;align-items:center;border:1px solid var(--bd);border-radius:10px;padding:.5rem .65rem;cursor:pointer;font-size:.86rem}\n.dzfe-when label.on{border-color:var(--pr);background:color-mix(in srgb,var(--pr) 8%,transparent)}\n.dzfe-seg{display:flex;border:1px solid var(--bd);border-radius:10px;overflow:hidden}\n.dzfe-seg button{flex:1;border:0;background:none;padding:.45rem .3rem;cursor:pointer;font-size:.8rem;font-weight:600;color:var(--mu)}\n.dzfe-seg button+button{border-left:1px solid var(--bd)}.dzfe-seg button.on{background:var(--pr);color:#fff}\n.dzfe-chips{display:flex;flex-wrap:wrap;gap:.25rem}.dzfe-chips button{border:1px solid var(--bd);background:var(--s2);border-radius:99px;padding:.1rem .5rem;font-family:var(--mono);font-size:.72rem;cursor:pointer}\n.dzfe-danger{margin-top:.8rem;padding-top:.8rem;border-top:1px solid var(--bd)}\n.dzfe-pe{padding:2rem 1.3rem;color:var(--mu)}.dzfe-pe>i{font-size:1.6rem;color:var(--pr)}.dzfe-pe b{display:block;color:var(--tx);font-size:1rem;margin:.5rem 0}\n.dzfe-pe ul{padding-left:1.1rem;display:flex;flex-direction:column;gap:.4rem;font-size:.84rem}\n.dzfe-mute{color:var(--mu);font-size:.84rem}.dzfe-warn{color:var(--wa)}.dzfe-note{font-size:.82rem;background:var(--s2);border-radius:10px;padding:.6rem .7rem}\n.dzfe-fh{margin:.4rem 0 0;font-size:.8rem;text-transform:uppercase;letter-spacing:.05em;color:var(--mu)}\n.dzfe-run{position:fixed;left:270px;right:360px;bottom:0;max-height:0;overflow:hidden;background:var(--sf);border-top:1px solid var(--bd);box-shadow:0 -10px 30px rgba(0,0,0,.08);transition:max-height .2s;z-index:3}\n.dzfe-run.open{max-height:45vh;overflow:auto}\n.dzfe-rh{display:flex;gap:.8rem;align-items:center;padding:.6rem 1rem;position:sticky;top:0;background:var(--sf)}\n.dzfe-rh .ok{color:var(--ok)}.dzfe-rh .ko{color:var(--ko)}.dzfe-rh span{color:var(--mu);font-size:.82rem}\n.dzfe-rerr{margin:0 1rem .6rem;padding:.6rem .8rem;border-radius:10px;background:color-mix(in srgb,var(--ko) 10%,transparent);color:var(--ko);font-size:.86rem}\n.dzfe-rctx{padding:0 1rem 1rem;font-size:.82rem;font-family:var(--mono)}\n.dzfe-rctx ul{list-style:none;margin:.2rem 0 .2rem .9rem;padding:0;border-left:1px dashed var(--bd);padding-left:.6rem}\n.dzfe-rctx summary{cursor:pointer;color:var(--mu)}.dzfe-rctx b{color:var(--pk);font-weight:600}\n.dzfe-rctx .string{color:#b35900}.dzfe-rctx .number{color:#0b7a55}.dzfe-rctx .boolean{color:#7a3fd1}.dzfe-rctx .n{color:var(--mu)}\n.dzfe-modal{position:fixed;inset:0;background:rgba(10,12,20,.45);display:none;align-items:center;justify-content:center;z-index:10;padding:1rem}\n.dzfe-modal.open{display:flex}\n.dzfe-mb{background:var(--sf);border-radius:16px;padding:1.2rem 1.3rem;width:min(640px,100%);max-height:88vh;overflow:auto;display:flex;flex-direction:column;gap:.7rem;box-shadow:0 30px 80px rgba(0,0,0,.3)}\n.dzfe-mb h3{margin:0;font-size:1.1rem}\n.dzfe-mact{display:flex;gap:.5rem;justify-content:flex-end}\n.dzfe-pick{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:.3rem;max-height:50vh;overflow:auto}\n.dzfe-toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--tx);color:var(--bg);padding:.6rem 1rem;border-radius:12px;z-index:20;font-weight:600;transition:opacity .3s}\n.dzfe-toast.bad{background:var(--ko);color:#fff}.dzfe-toast.out{opacity:0}\n.dzfe-only-m,.dzfe-fab{display:none}\n@media (max-width:1100px){\n.dzfe-body{grid-template-columns:minmax(0,1fr)}\n.dzfe-pal{position:fixed;left:0;top:54px;bottom:0;width:min(320px,88vw);z-index:6;transform:translateX(-102%);transition:transform .2s;box-shadow:10px 0 30px rgba(0,0,0,.15)}\n.dzfe.pal-open .dzfe-pal{transform:none}\n.dzfe-panel{position:fixed;left:0;right:0;bottom:0;max-height:62vh;z-index:5;border-left:0;border-top:1px solid var(--bd);border-radius:18px 18px 0 0;transform:translateY(102%);transition:transform .2s;box-shadow:0 -10px 30px rgba(0,0,0,.15)}\n.dzfe.panel-open .dzfe-panel{transform:none}\n.dzfe-tabs{top:58px}\n.dzfe-only-m{display:inline-flex}\n.dzfe-fab{display:grid;place-items:center;position:absolute;right:16px;bottom:16px;width:52px;height:52px;border-radius:50%;border:0;background:var(--pr);color:#fff;font-size:1.2rem;box-shadow:0 8px 20px rgba(0,0,0,.2)}\n.dzfe-run{left:0;right:0}\n.dzfe-btn span{display:none}\n.dzfe-top{gap:.3rem;padding:.45rem .5rem}\n.dzfe-name{min-width:0;width:auto;flex:1;font-size:.95rem}\n.dzfe-sp{display:none}\n.dzfe-top [data-a="undo"],.dzfe-top [data-a="redo"],.dzfe-top [data-a="tidy"]{display:none}\n.dzfe-status{display:none}\n}\n@media (prefers-reduced-motion:reduce){.dzfe *{transition:none!important}}\n.dzfe code{color:var(--pk)!important;background:var(--s2)!important;padding:.05rem .3rem;border-radius:5px;font-family:var(--mono)!important;font-size:.85em!important}\n.dzfe-si{display:block;font-size:.7rem;font-family:var(--mono);color:#b45309;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}\n.dzfe-lz{margin:0;padding:0;list-style:none;display:grid;gap:.35rem}\n.dzfe-lz li{background:var(--s2);border:1px solid var(--bd);border-radius:10px;padding:.45rem .6rem;font-size:.84rem}\n.dzfe-lz a{font-size:.78rem;margin-left:.3rem}\n.dzfe-kbd{display:inline-block;font-family:var(--mono);font-size:.78rem;font-weight:700;padding:0 .35rem;border:1px solid var(--bd);border-radius:6px;background:var(--s2);color:var(--pk)}' }, "editeur.js": { "src": `/* =====================================================================
    dysizz-flow \u2014 \xE9diteur visuel de workflows (toile fa\xE7on n8n).
    Aucune d\xE9pendance. Tout se passe dans le navigateur ; le serveur n'est
    appel\xE9 que pour lire les r\xE9glages d'un bloc, enregistrer et essayer.
@@ -101266,13 +101338,63 @@ var require_assets = __commonJS({
 
   /* ---------------- routage : ce que devient next_step ---------------- */
   var COND = /^\\s*\\(?\\s*([\\s\\S]+?)\\s*\\)?\\s*\\?\\s*"([^"]*)"\\s*:\\s*"([^"]*)"\\s*$/;
+  /* next_step \xE9crit \xE0 la main (workflows d'origine) : \xAB cond ? etape_a : (cond2 ? "b" : c) \xBB,
+     noms entre guillemets ou non, conditions imbriqu\xE9es. On en tire un arbre si\u2026 sinon\u2026 */
+  function sansParens(x) {
+    x = x.trim();
+    while (x.charAt(0) === "(" && x.charAt(x.length - 1) === ")") {
+      var d = 0, ok = true;
+      for (var i = 0; i < x.length; i++) { var c = x.charAt(i); if (c === "(") d++; else if (c === ")") { d--; if (d === 0 && i < x.length - 1) { ok = false; break; } } }
+      if (!ok) break; x = x.slice(1, -1).trim();
+    }
+    return x;
+  }
+  function feuille(x) { var m = /^"([A-Za-z_][A-Za-z0-9_]*)"$|^'([A-Za-z_][A-Za-z0-9_]*)'$|^([A-Za-z_][A-Za-z0-9_]*)$/.exec(x); var n = m && (m[1] || m[2] || m[3]); return n && stepBy(n) ? { to: n } : null; }
+  function ternaire(x) {
+    x = sansParens(x);
+    var f = feuille(x); if (f) return f;
+    var d = 0, q = null, pos = -1, niv = 0, deux = -1;
+    for (var i = 0; i < x.length; i++) {
+      var c = x.charAt(i);
+      if (q) { if (c === "\\\\") i++; else if (c === q) q = null; continue; }
+      if (c === '"' || c === "'" || c === "\`") { q = c; continue; }
+      if (c === "(" || c === "[" || c === "{") d++; else if (c === ")" || c === "]" || c === "}") d--;
+      else if (d === 0 && c === "?" && x.charAt(i + 1) !== "." && x.charAt(i + 1) !== "?" && x.charAt(i - 1) !== "?") { if (pos < 0) pos = i; else niv++; }
+      else if (d === 0 && c === ":" && pos >= 0) { if (niv === 0) { deux = i; break; } niv--; }
+    }
+    if (pos < 0 || deux < 0) return null;
+    var oui = ternaire(x.slice(pos + 1, deux)), non = ternaire(x.slice(deux + 1));
+    if (!oui || !non) return null;
+    return { cond: x.slice(0, pos).trim(), oui: oui, non: non };
+  }
+  /* condition lisible : \xAB typeof x !== "undefined" && x \xBB devient \xAB x \xBB */
+  function lisible(c) {
+    c = sansParens(c || "");
+    c = c.replace(/\\(?\\s*typeof\\s+([\\w.$]+)\\s*!==?\\s*["']undefined["']\\s*&&\\s*\\1\\s*\\)?/g, "$1");
+    c = c.replace(/\\(?\\s*typeof\\s+([\\w.$]+)\\s*!==?\\s*["']undefined["']\\s*&&\\s*/g, "");
+    c = c.replace(/\\(?\\s*typeof\\s+([\\w.$]+)\\s*===?\\s*["']undefined["']\\s*\\|\\|\\s*!\\s*\\1\\s*\\)?/g, "pas de $1");
+    c = c.replace(/\\(?\\s*typeof\\s+([\\w.$]+)\\s*===?\\s*["']undefined["']\\s*\\|\\|\\s*/g, "");
+    return sansParens(c);
+  }
+  function cibles(arbre, out, etiquette, sorte) {
+    if (arbre.to) { out.push({ to: arbre.to, label: etiquette, kind: sorte }); return out; }
+    var l = lisible(arbre.cond);
+    cibles(arbre.oui, out, "si " + l, "oui");
+    cibles(arbre.non, out, "sinon", "non");
+    return out;
+  }
   function routeOf(s) {
     var n = (s.next_step || "").trim();
     if (!n) return { mode: "end" };
     if (stepBy(n) || /^[A-Za-z_][A-Za-z0-9_]*$/.test(n)) return { mode: "simple", to: n };
+    var f = feuille(n); if (f) return { mode: "simple", to: f.to };
     var m = COND.exec(n);
+    if (m && stepBy(m[2]) && stepBy(m[3])) return { mode: "cond", expr: m[1], yes: m[2], no: m[3] };
+    var a = ternaire(n);
+    if (a && a.oui.to && a.non.to) return { mode: "cond", expr: sansParens(a.cond), yes: a.oui.to, no: a.non.to };
+    if (a) return { mode: "expr", expr: n, targets: cibles(a, [], "", "") };
     if (m) return { mode: "cond", expr: m[1], yes: m[2], no: m[3] };
-    var t = []; n.replace(/"([A-Za-z_][A-Za-z0-9_]*)"/g, function (_, x) { if (stepBy(x)) t.push(x); });
+    var t = []; n.replace(/"([A-Za-z_][A-Za-z0-9_]*)"/g, function (_, x) { if (stepBy(x)) t.push({ to: x, label: "?" }); });
     return { mode: "expr", expr: n, targets: t };
   }
   function setRoute(s, r) {
@@ -101289,7 +101411,7 @@ var require_assets = __commonJS({
       var r = routeOf(s);
       if (r.mode === "simple" && stepBy(r.to)) out.push({ from: s.name, port: "out", to: r.to });
       if (r.mode === "cond") { if (stepBy(r.yes)) out.push({ from: s.name, port: "yes", to: r.yes, kind: "oui" }); if (stepBy(r.no)) out.push({ from: s.name, port: "no", to: r.no, kind: "non" }); }
-      if (r.mode === "expr") r.targets.forEach(function (t) { out.push({ from: s.name, port: "out", to: t, label: "?", dashed: true }); });
+      if (r.mode === "expr") r.targets.forEach(function (t) { out.push({ from: s.name, port: "out", to: t.to, label: t.label, kind: t.kind, dashed: !t.kind }); });
       var c = s.configuration || {};
       if (s.action_name === "ForLoop" && stepBy(c.loop_body_initial_step)) out.push({ from: s.name, port: "loop", to: c.loop_body_initial_step, label: "pour chaque", dashed: true });
       if (s.action_name === "SetErrorHandler" && stepBy(c.error_handling_step)) out.push({ from: s.name, port: "loop", to: c.error_handling_step, label: "si erreur", dashed: true });
@@ -101301,7 +101423,7 @@ var require_assets = __commonJS({
       var r = routeOf(s);
       if (r.mode === "simple" && r.to === oldN) r.to = newN;
       if (r.mode === "cond") { if (r.yes === oldN) r.yes = newN; if (r.no === oldN) r.no = newN; }
-      if (r.mode === "expr") r.expr = r.expr.split('"' + oldN + '"').join('"' + newN + '"');
+      if (r.mode === "expr") r.expr = r.expr.split('"' + oldN + '"').join('"' + newN + '"').replace(new RegExp("(^|[^\\\\w.$\\"'])" + oldN + "(?![\\\\w$])", "g"), "$1" + newN);
       setRoute(s, r);
       var c = s.configuration || {};
       if (c.loop_body_initial_step === oldN) c.loop_body_initial_step = newN;
@@ -101314,22 +101436,38 @@ var require_assets = __commonJS({
   function autoLayout(force) {
     var need = force || S.steps.some(function (s) { return !S.layout[s.name]; }) || !S.layout[TRIG];
     if (!need) return;
-    var level = {}, order = [], q = [];
+    /* rangement en couches : chaque \xE9tape sous toutes celles qui y m\xE8nent (retours en arri\xE8re
+       ignor\xE9s), puis, dans chaque couche, ordre selon la position des \xE9tapes d'avant (moins de croisements) */
+    var es = edges().filter(function (e) { return e.from !== TRIG; });
+    var suiv = {}, prec = {};
+    S.steps.forEach(function (s) { suiv[s.name] = []; prec[s.name] = []; });
+    es.forEach(function (e) { if (suiv[e.from] && prec[e.to] && e.from !== e.to && suiv[e.from].indexOf(e.to) < 0) { suiv[e.from].push(e.to); prec[e.to].push(e.from); } });
     var first = S.steps.filter(function (s) { return s.initial_step; })[0];
-    if (first) { level[first.name] = 1; q.push(first.name); }
-    var es = edges();
-    while (q.length) {
-      var n = q.shift(); order.push(n);
-      es.filter(function (e) { return e.from === n; }).forEach(function (e) { if (level[e.to] === undefined) { level[e.to] = level[n] + 1; q.push(e.to); } });
-    }
-    var maxL = Math.max.apply(null, [1].concat(Object.keys(level).map(function (k) { return level[k]; })));
-    S.steps.forEach(function (s) { if (level[s.name] === undefined) { level[s.name] = ++maxL; } });
+    var racines = (first ? [first.name] : []).concat(S.steps.filter(function (s) { return s !== first && !prec[s.name].length; }).map(function (s) { return s.name; }));
+    var etat = {}, retour = {}, ordre = [];
+    function dfs(n) { etat[n] = 1; suiv[n].forEach(function (m) { if (etat[m] === 1) retour[n + ">" + m] = 1; else if (!etat[m]) dfs(m); }); etat[n] = 2; ordre.push(n); }
+    racines.forEach(function (n) { if (!etat[n]) dfs(n); });
+    S.steps.forEach(function (s) { if (!etat[s.name]) dfs(s.name); });
+    ordre.reverse();
+    var level = {};
+    ordre.forEach(function (n) { if (level[n] === undefined) level[n] = 1; suiv[n].forEach(function (m) { if (!retour[n + ">" + m]) level[m] = Math.max(level[m] || 1, level[n] + 1); }); });
     var rows = {};
-    S.steps.forEach(function (s) { var l = level[s.name]; (rows[l] = rows[l] || []).push(s.name); });
+    ordre.forEach(function (n) { (rows[level[n]] = rows[level[n]] || []).push(n); });
+    var niveaux = Object.keys(rows).map(Number).sort(function (a, b) { return a - b; });
+    var rang = {};
+    niveaux.forEach(function (l) { rows[l].forEach(function (n, i) { rang[n] = i; }); });
+    for (var tour = 0; tour < 4; tour++) {
+      niveaux.forEach(function (l) {
+        var bar = {};
+        rows[l].forEach(function (n) { var ps = prec[n].filter(function (p) { return level[p] < l; }); bar[n] = ps.length ? ps.reduce(function (t, p) { return t + rang[p]; }, 0) / ps.length : rang[n]; });
+        rows[l].sort(function (a, b) { return bar[a] - bar[b]; });
+        rows[l].forEach(function (n, i) { rang[n] = i; });
+      });
+    }
     if (force || !S.layout[TRIG]) S.layout[TRIG] = { x: 0, y: 0 };
-    Object.keys(rows).forEach(function (l) {
+    niveaux.forEach(function (l) {
       var r = rows[l];
-      r.forEach(function (n, i) { if (force || !S.layout[n]) S.layout[n] = { x: (i - (r.length - 1) / 2) * (NW + 60), y: l * (NH + 56) }; });
+      r.forEach(function (n, i) { if (force || !S.layout[n]) S.layout[n] = { x: Math.round((i - (r.length - 1) / 2) * (NW + 70)), y: l * (NH + 70) }; });
     });
   }
 
@@ -101490,7 +101628,7 @@ var require_assets = __commonJS({
       var b = { x: tl.x + NW / 2, y: tl.y };
       var d = path(a, b, e.port === "loop");
       html += '<path class="dzfe-edge' + (e.dashed ? " dashed" : "") + (e.kind === "non" ? " no" : e.kind === "oui" ? " yes" : "") + '" d="' + d + '" marker-end="url(#dzfe-arr)" data-from="' + esc(e.from) + '" data-port="' + e.port + '"/>';
-      if (e.label) { var mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2; html += '<text class="dzfe-el" x="' + mx + '" y="' + my + '">' + esc(e.label) + "</text>"; }
+      if (e.label) { var mx = a.x + (b.x - a.x) * 0.3, my = a.y + Math.max(22, (b.y - a.y) * 0.3), court = e.label.length > 38 ? e.label.slice(0, 36) + "\u2026" : e.label; html += '<text class="dzfe-el' + (e.kind === "non" ? " no" : e.kind === "oui" ? " yes" : "") + '" x="' + mx + '" y="' + my + '"><title>' + esc(e.label) + "</title>" + esc(court) + "</text>"; }
     });
     if (extra) html += '<path class="dzfe-edge live" d="' + extra + '"/>';
     svg.innerHTML = html;
@@ -101579,13 +101717,16 @@ var require_assets = __commonJS({
     var nz = Math.min(2, Math.max(0.3, S.zoom * f)), k = nz / S.zoom;
     S.px = cx - r.left - (cx - r.left - S.px) * k; S.py = cy - r.top - (cy - r.top - S.py) * k; S.zoom = nz; applyView();
   }
-  function fit() {
+  /* tout : faire tenir tout le workflow (bouton \xAB Tout voir \xBB) ; sinon, un grand workflow
+     s'ouvre en haut, \xE0 une taille lisible, et se parcourt \xE0 la molette */
+  function fit(tout) {
     var ns = [TRIG].concat(S.steps.map(function (s) { return s.name; })).map(function (n) { return S.layout[n]; }).filter(Boolean);
     if (!ns.length) return;
     var x0 = Math.min.apply(null, ns.map(function (l) { return l.x; })), y0 = Math.min.apply(null, ns.map(function (l) { return l.y; }));
     var x1 = Math.max.apply(null, ns.map(function (l) { return l.x + NW; })), y1 = Math.max.apply(null, ns.map(function (l) { return l.y + NH; }));
     var r = canvas.getBoundingClientRect();
     S.zoom = Math.min(1.2, Math.max(0.3, Math.min((r.width - 80) / (x1 - x0 || 1), (r.height - 80) / (y1 - y0 || 1))));
+    if (tout !== true && S.zoom < 0.7) S.zoom = Math.min(0.85, Math.max(0.3, (r.width - 80) / (x1 - x0 || 1)));
     S.px = (r.width - (x1 - x0) * S.zoom) / 2 - x0 * S.zoom; S.py = 40 - y0 * S.zoom; applyView();
   }
 
@@ -101776,7 +101917,7 @@ var require_assets = __commonJS({
     if (a === "undo" && S.undo.length) { S.redo.push(snapshot()); restore(S.undo.pop()); }
     if (a === "redo" && S.redo.length) { S.undo.push(snapshot()); restore(S.redo.pop()); }
     if (a === "tidy") { push(); autoLayout(true); changed(false); fit(); }
-    if (a === "zin") zoomAt(1.2); if (a === "zout") zoomAt(1 / 1.2); if (a === "fit") fit();
+    if (a === "zin") zoomAt(1.2); if (a === "zout") zoomAt(1 / 1.2); if (a === "fit") fit(true);
     if (a === "save") save();
     if (a === "run") runDialog();
     if (a === "code") codeDialog();
