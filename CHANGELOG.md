@@ -1,5 +1,12 @@
 # Journal des versions
 
+## 2.10.0
+
+- Leads, routage « tables » : **copies ciblées**. Une adresse de `destinataire_custom` peut recevoir en copie :
+  - tous les leads (`portee` = « tous », comme avant) ;
+  - ou seulement ceux d'une agence (`agence`), d'un groupe (`groupe`, membres au moment de l'envoi) ou de personnes choisies (`personnes` = "3,7,9").
+- Moteur : `conf.copies` = `[{ email, nom, cible }]` à côté de `conf.siege`.
+
 ## 2.9.0
 
 - Éditeur de workflows :

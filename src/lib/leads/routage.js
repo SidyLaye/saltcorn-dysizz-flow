@@ -2,7 +2,7 @@
    - le négociateur du bien (sauf s'il est coupé par une règle) ;
    - son assistant(e) : gardé(e), coupé(e) ou remplacé(e) ;
    - des adresses libres en plus, sans limite ;
-   - le siège, toujours.
+   - le siège, toujours ; et les adresses en copie ciblées (une agence, un groupe, des personnes).
    Chaque personne absente (congés) ou hors de ses jours de travail (mi-temps)
    est remplacée par la personne choisie ; la chaîne de remplacement est suivie
    (sans boucle). Tout est expliqué dans « trace ».
@@ -13,7 +13,8 @@
      regles:   [{ cible: { negociateurs: [id…] } | { tous: true }, couper_negociateur, assistante: "garder"|"couper"|"remplacer",
                   assistante_remplacante: ref, adresses_libres: [email…], actif }],
      absences: [{ personne_id, debut: "AAAA-MM-JJ", fin: "AAAA-MM-JJ", remplacant: ref, motif }],
-     siege:    [email…],
+     siege:    [email…],                    // en copie de chaque lead
+     copies:   [{ email, nom, cible: { tous: true } | { negociateurs: [id…] } }], // en copie de certains leads seulement
      fuseau_horaire: "Europe/Paris" // UTC par défaut
    }
    ref = { personne: id } | { email: "x@y" } */
@@ -97,6 +98,11 @@ const destinataires = (negoId, quand = new Date(), conf = {}) => {
     for (const e of r.adresses_libres || []) ajouterAdresse(e, "adresse_libre", nego.nom, "adresse ajoutée par une règle");
   }
   for (const e of conf.siege || []) ajouterAdresse(e, "siege", "tous", "le siège reçoit toujours");
+  /* copies ciblées : seulement pour les négociateurs visés (agence, groupe, personnes choisies) */
+  for (const c of conf.copies || []) {
+    const vise = c && c.cible && (c.cible.tous || (c.cible.negociateurs || []).map(String).includes(String(negoId)));
+    if (vise) ajouterAdresse(c.email, "copie", c.nom || "copie", c.cible.tous ? "en copie de chaque lead" : `en copie pour ${nego ? nego.nom : "ce négociateur"}`);
+  }
   return { liste, trace, regle: r.id || null };
 };
 
