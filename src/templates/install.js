@@ -23,6 +23,7 @@ const SCHEMAS = {
 const createTable = async (name, fields) => {
   const Table = require("@saltcorn/data/models/table");
   const Field = require("@saltcorn/data/models/field");
+  await require("../lib/rafraichir").libererNom(name);
   const t = await Table.create(name, { min_role_read: 1, min_role_write: 1 });
   for (const [n, type, o] of fields) await Field.create({ table: t, name: n, label: n.charAt(0).toUpperCase() + n.slice(1).replace(/_/g, " "), type, ...o });
   await require("../lib/rafraichir").rafraichir();

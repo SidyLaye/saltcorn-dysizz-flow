@@ -41,6 +41,7 @@ const ensureTables = async () => {
   for (const [k, d] of Object.entries(DEFS)) {
     let t = await require("./lib/rafraichir").trouverTable(d.name);
     if (!t) {
+      await require("./lib/rafraichir").libererNom(d.name);
       t = await Table.create(d.name, { min_role_read: 1, min_role_write: 1, description: "dysizz-flow" });
       for (const [name, type, o] of d.fields) await Field.create({ table: t, name, label: name, type, ...(o || {}) });
       await require("./lib/rafraichir").rafraichir();

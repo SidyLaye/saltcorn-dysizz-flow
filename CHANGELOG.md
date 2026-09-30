@@ -1,5 +1,11 @@
 # Journal des versions
 
+## 2.13.7
+
+- Une table Postgres qui porte le nom d'une table à créer, mais que Saltcorn ne connaît pas (reste d'un essai, d'un ancien plugin ou d'un script), bloquait toute l'installation avec « relation "ld_mails" already exists ».
+  - Elle est maintenant renommée « <nom>_ancienne_<date> ». Rien n'est effacé : ses données restent.
+  - Le bloc « Leads : préparer les tables » dit quelles tables ont été mises de côté.
+
 ## 2.13.6
 
 - Serveur à plusieurs processus : une table ou un workflow créé par dysizz-flow est vu partout, sans redémarrage.
