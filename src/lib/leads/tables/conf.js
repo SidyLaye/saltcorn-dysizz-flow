@@ -46,6 +46,8 @@ const charger = async () => {
     domaines_agence: liste(R.domaines_agence), sites: json(R.sites, []), objets_campagnes: String(R.objets_campagnes || "").split("\n").map((x) => x.trim()).filter(Boolean),
     id_crm_liens: String(R.id_crm_liens || "").split("\n").map((x) => x.trim()).filter(Boolean), origines_portail: { ...Object.fromEntries(portails.filter((p) => p.origine).map((p) => ["declare_" + p.id, p.origine])), ...json(R.origines_portail, {}) },
     origine_defaut: R.origine_defaut || null,
+    /* numéros qui ne sont jamais ceux d'un prospect (standard d'agence, portail) ; ceux de l'équipe sont déjà exclus */
+    telephones_exclus: liste(R.telephones_exclus),
     utiliser_relais: R.utiliser_relais !== false,
     /* étapes coupées par le client (tout est actif par défaut) */
     etapes: json(R.etapes, {}),
@@ -58,7 +60,7 @@ const charger = async () => {
     origines: origines.map((o) => ({ id: o.crm_id ? (isFinite(+o.crm_id) ? +o.crm_id : o.crm_id) : null, code: o.code, libelle: o.libelle })),
     consentement: { actif: !!R.consentement_actif, libelle: R.consentement_libelle },
     routage: {
-      personnes: personnes.map((p) => ({ id: idMoteur.get(p.id), ligne: p.id, nom: p.nom, alias: String(p.alias || "").split(/[,;\n]+/).map((x) => x.trim()).filter(Boolean), email: p.email, role: p.role || "negociateur", actif: p.actif !== false, agence_id: p.agence_crm_id,
+      personnes: personnes.map((p) => ({ id: idMoteur.get(p.id), ligne: p.id, nom: p.nom, telephone: p.telephone || null, alias: String(p.alias || "").split(/[,;\n]+/).map((x) => x.trim()).filter(Boolean), email: p.email, role: p.role || "negociateur", actif: p.actif !== false, agence_id: p.agence_crm_id,
         assistante_id: p.assistante ? idMoteur.get(p.assistante) : null, temps: p.temps || "plein", jours: liste(p.jours).map(Number).filter((n) => n >= 1 && n <= 7), remplacant_hors_jours: ref(p.remplacant_hors_jours),
         remplacant_inactif: ref(p.remplacant_inactif), groupe: p.groupe || null })),
       regles: regles.filter((r) => r.actif !== false).map((r) => ({ id: "r" + r.id, libelle: r.libelle, cible: cibleDe(r),

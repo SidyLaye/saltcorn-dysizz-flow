@@ -113,4 +113,36 @@ const importerAmbs = async (api, lignes) => {
   return n;
 };
 
-module.exports = { optionsLecture, stockage, importerAmbs, appelsDuJour, noter, oublier, versGabarit, lireCommuns };
+/* Résultat de la vérification des anciens gabarits (verif_gabarits) : les gabarits gardés (fiables ou corrigés)
+   remplacent leur ancienne copie ; ceux qui sont retirés ne lisent plus (quarantaine, rien n'est effacé) ;
+   les gabarits appris par l'IA sont ajoutés. Relançable : chaque gabarit est retrouvé par son origine. */
+const enregistrerVerification = async (api, R) => {
+  const t = await tables();
+  const A = api.leads.apprentissage;
+  const lignes = await t.gabarits.getRows({});
+  const idAncien = (o) => (String(o || "").match(/^ambs:(\d+)(?::|$)/) || [])[1] || null;
+  const fait = { mis_a_jour: 0, ajoutes: 0, retires: 0, appris: 0 };
+  const gardes = new Set();
+  for (const g of R.gardes) {
+    const id = idAncien(g.origine); gardes.add(id);
+    const ex = lignes.filter((l) => idAncien(l.origine) === id);
+    const ligne = versLigne({ ...g, active_le: new Date(), vu_le: new Date() });
+    if (ex.length) { await t.gabarits.updateRow(ligne, ex[0].id); for (const x of ex.slice(1)) await t.gabarits.updateRow({ statut: "quarantaine" }, x.id); fait.mis_a_jour++; }
+    else { await t.gabarits.insertRow({ ...ligne, cree_le: new Date() }); fait.ajoutes++; }
+  }
+  for (const d of R.detail.filter((x) => x.verdict === "retiré")) {
+    for (const l of lignes.filter((x) => idAncien(x.origine) === String(d.id) && x.statut !== "quarantaine" && !gardes.has(String(d.id)))) { await t.gabarits.updateRow({ statut: "quarantaine" }, l.id); fait.retires++; }
+  }
+  const formes = new Set(lignes.map((l) => A.cleForme(versGabarit(l)) + l.champs));
+  for (const g of R.nouveaux || []) {
+    const k = A.cleForme(g) + JSON.stringify(g.champs);
+    if (formes.has(k)) continue;
+    formes.add(k);
+    await t.gabarits.insertRow(versLigne({ ...g, cree_le: new Date(), vu_le: new Date() }));
+    fait.appris++;
+  }
+  oublier();
+  return fait;
+};
+
+module.exports = { optionsLecture, stockage, importerAmbs, enregistrerVerification, appelsDuJour, noter, oublier, versGabarit, lireCommuns };

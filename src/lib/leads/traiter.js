@@ -231,6 +231,8 @@ const etapeContact = async (d, crm, conf = {}) => {
       else rc.contact = { ...rc.contact, consentement_inconnu: true };
     }
     if (rc.action === "impossible") d.motifs.push("contact impossible : ni e-mail ni téléphone");
+    /* Immofacile ne crée pas de contact sans e-mail : le lead passe à la main (le numéro suffit s'il retrouve une fiche) */
+    if (rc.action === "creer" && !c.email) d.motifs.push("pas d'e-mail : le CRM ne crée pas de contact sans e-mail (à créer à la main avec le téléphone)");
   }
   d.contact = { id: rc.contact ? rc.contact.id : null, action: rc.action, par: rc.par, trace: rc.trace };
   d.interne = { ...(d.interne || {}), contact_crm: rc.contact || null };
@@ -357,11 +359,17 @@ const traiter = async (mail, crm, conf = {}, opts = {}) => {
 
 /* Exécute le plan : en mode « ombre », rien n'est écrit, tout est journalisé.
    Rend aussi les identifiants à garder dans le dossier (contact, projet de recherche). */
-const executer = async (dossier, crm, { mode = "ombre" } = {}) => {
+const executer = async (dossier, crm, { mode = "ombre", ecrireAVerifier = false } = {}) => {
   const res = [];
   let contactId = dossier.contact && dossier.contact.id;
   let rechercheId = dossier.dossier && dossier.dossier.recherche_id;
   let consentement = false;
+  /* Lead non automatisé (à vérifier, à trier) : traité à la main, rien n'est écrit dans le CRM (comme l'ancien
+     système, qui n'écrivait rien pour un lead en quarantaine), sauf réglage contraire. */
+  if (dossier.statut && !["pret", "suivi"].includes(dossier.statut) && !ecrireAVerifier) {
+    for (const a of dossier.actions || []) res.push({ op: a.op, fait: false, note: "non automatisé : rien n'est écrit dans le CRM" });
+    return { contactId, rechercheId, consentement, resultats: res, non_automatise: true };
+  }
   for (const a of dossier.actions) {
     if (mode !== "reel") { res.push({ ...a, donnees: a.donnees && a.donnees.comment ? { ...a.donnees, comment: `(${a.donnees.comment.length} caractères)` } : a.donnees, preuves: a.preuves && a.preuves.map((p) => p.nom), fait: false, mode }); continue; }
     try {

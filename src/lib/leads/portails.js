@@ -189,9 +189,9 @@ const PORTAILS = [
   },
   {
     id: "properstar", nom: "Properstar", test: (d) => /properstar\.com$/.test(d),
-    nature: (o) => (/nouveau message|new message|demande/i.test(o) ? "lead" : "non_lead"),
+    nature: (o) => (/nouveau message|new message|demande|visite|tour request/i.test(o) ? "lead" : "non_lead"),
     regles: ({ L, texte, r }) => {
-      const n = texte.match(/=\s*(?:nouveau message de|new message from)\s+(.+?)\s*=/i); if (n) r.contact.nom_complet = n[1];
+      const n = texte.match(/=\s*(?:nouveau message de|new message from|nouvelle demande de visite de|new (?:tour|visit) request from)\s+(.+?)\s*=/i) || texte.match(/de la part de\s+([A-ZÀ-Ÿ][^.\n=]{2,60})\./); if (n) r.contact.nom_complet = n[1].trim();
       const i = L.findIndex((l) => /^=\s*(nouveau message|new message)/i.test(l));
       if (i >= 0) r.message = bloc(L, i + 1);
       const j = L.findIndex((l) => /annonce désirée|desired listing/i.test(l));
@@ -220,7 +220,7 @@ const PORTAILS = [
     id: "site_agence", nom: "Site d'agence (AC3)", test: (d) => /ac3-groupe\.com$/.test(d),
     /* création de compte sur le site : un lead seulement si le mail porte le client (e-mail ou téléphone) ET un bien */
     valider: ({ o, r }) => (/cr[ée]ation (de )?compte|account creation|account created/i.test(o)
-      ? ((r.contact.email || r.contact.telephone) && (r.bien.reference || r.bien.titre || r.bien.id_crm) ? "lead" : "non_lead") : null),
+      ? ((r.contact.email || r.contact.telephone) && (r.bien.reference || r.bien.titre || r.bien.id_crm) ? "lead" : r.contact.email || r.contact.telephone ? ((r.suspect = "création de compte sur le site, sans bien : à traiter à la main"), "lead") : "non_lead") : null),
     nature: (o) => (/résolution de votre demande|demande d.assistance|ticket/i.test(o) ? "non_lead" : /demande|request|création compte|account/i.test(o) ? "lead" : "non_lead"),
     regles: ({ L, o, texte, r }) => {
       const cl = texte.match(/(?:client|customer)\s*:\s*([^\n]+)/i);
@@ -312,6 +312,16 @@ const PORTAILS = [
       const pr = L.find((l) => /\d[\d  .]*\s*€/.test(l)); if (pr) r.bien.prix = V.prix(pr);
       const lc = texte.match(/🗺️?\s*([^\n(]+?)\s*\((\d{5})\)/u); if (lc) { r.bien.ville = lc[1].trim(); r.bien.code_postal = lc[2]; }
     } },
+  { id: "cessionpme", nom: "CessionPME", test: (d) => /cessionpme\.com$/.test(d), nature: (o) => (/prise de contact/i.test(o) ? "lead" : "non_lead"),
+    regles: ({ o, texte, r }) => {
+      const ref = (o.match(/référence\s+CessionPME\s+([\w-]+)/i) || texte.match(/référence\s+CessionPME\s+([\w-]+)/i) || [])[1]; if (ref) r.bien.reference = ref;
+      const n = texte.match(/Monsieur ou Madame\s+(.+?)\s*\(/i); if (n) r.contact.nom_complet = n[1].trim();
+      const e = texte.match(/Email\s*:\s*(\S+@\S+)/i); if (e) r.contact.email = V.email(e[1]);
+      const t = texte.match(/t[ée]l[ée]phone\s*:\s*(\+?[\d .]{8,})/i); if (t) r.contact.telephone = t[1].trim();
+      const pr = texte.match(/Prix de vente\s+([\d  .]+)\s*€/i); if (pr) r.bien.prix = V.prix(pr[1] + " €");
+      const sf = texte.match(/Surface\s+([\d  .,]+)\s*m/i); if (sf) r.bien.surface = V.surface(sf[1] + " m²");
+      const lo = texte.match(/Localisation\s+(.+)/i); if (lo) r.bien.ville = lo[1].trim().slice(0, 60);
+    } },
   { id: "huisenaanbod", nom: "HUISenAANBOD.nl", test: (d) => /huisenaanbod\.nl$/.test(d), nature: (o, t) => (/#naamaanvrager|#vraag|#adv_details/i.test(t) ? "non_lead" : "lead") },
   { id: "kyero", nom: "KYERO", test: (d) => /kyero\.com$/.test(d), nature: () => "lead",
     regles: ({ o, texte, r }) => { const m = texte.match(/\*\*\[([A-Z0-9-]{5,})\]\s*\*\*/) || o.match(/:\s*([A-Z0-9-]{5,})\/?\s*$/); if (m && /\d/.test(m[1])) r.bien.reference = m[1]; } },
@@ -358,7 +368,7 @@ const PORTAILS = [
   /* Rapport de quarantaine anti-spam : ce n'est pas un lead mais il peut en cacher. */
   { id: "vade", nom: "Rapport anti-spam", test: (d) => /vadesecure\.com$/.test(d), nature: () => "alerte_spam",
     regles: ({ texte, r }) => { r.bloques = (texte.match(/^.{3,40}\|.+\|\s*\d+\s*k\s*\|.+$/gm) || []).map((l) => l.split("|")[0].trim()).filter((x) => /properstar|green|leboncoin|seloger|figaro|bienici|rightmove|french|giraffe|ac3|immo/i.test(x)); } },
-  { id: "bruit", nom: "Service / newsletter", test: (d) => /(immo-facile\.(fr|com)|cessionpme\.com|orisha\.com|gedeon\.im|canva\.com|firebaseapp\.com|toutvendre\.fr|opinionsystem\.fr|notaires\.fr|cci\.fr|tiktok\.com|news\.leboncoin\.fr|gestiviag\.com|communication-snpi\.com|centre-conventions-collectives\.fr|linkedin\.com|facebookmail\.com|google\.com)$/.test(d), nature: () => "non_lead" },
+  { id: "bruit", nom: "Service / newsletter", test: (d) => /(immo-facile\.(fr|com)|orisha\.com|gedeon\.im|canva\.com|firebaseapp\.com|toutvendre\.fr|opinionsystem\.fr|notaires\.fr|cci\.fr|tiktok\.com|news\.leboncoin\.fr|gestiviag\.com|communication-snpi\.com|centre-conventions-collectives\.fr|linkedin\.com|facebookmail\.com|google\.com)$/.test(d), nature: () => "non_lead" },
 ];
 
 /* Signature dans le texte : sert quand l'expéditeur d'origine est perdu

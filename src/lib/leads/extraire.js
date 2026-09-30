@@ -104,10 +104,55 @@ const couper = (L, i, exp, objet, agence = false) => {
 };
 
 /* Un rôle n'est jamais un nom (« Coordonnées de l'acheteur : » suivi du vrai nom) : effacé, jamais écrit dans le CRM. */
-const ROLE = /^(l['’]|le |la |du |de la |un |une |cet |cette |ce |votre |notre )?(acheteurs?|acqu[ée]reurs?|prospects?|contacts?|clients?|internautes?|vendeurs?|demandeurs?|utilisateurs?|visiteurs?|particuliers?|propri[ée]taires?|locataires?|candidats?|buyers?|enquirers?|customers?|users?|madame|monsieur|m\.|mme|mr|mrs)$/i;
+const ROLE = /^(l['’]|le |la |du |de la |un |une |cet |cette |ce |votre |notre )?(acheteurs?|acqu[ée]reurs?|prospects?|contacts?|clients?|internautes?|vendeurs?|demandeurs?|utilisateurs?|visiteurs?|particuliers?|propri[ée]taires?|locataires?|candidats?|buyers?|enquirers?|customers?|users?|madame|monsieur|m\.|mme|mr|mrs|secr[ée]tariat|comptabilit[ée]|accueil|service|services|direction|administration|standard|support|info|infos|message|regards|num[ée]ro de t[ée]l[ée]phone|t[ée]l[ée]phone|e-?mail|adresse)$/i;
+/* Le numéro lu est-il celui du prospect ? Non s'il est connu de l'équipe (réglages, fiches des personnes),
+   s'il est manifestement faux (06 00 00 00 00), ou si, partout où il apparaît dans le mail, il suit le nom
+   d'un membre de l'équipe, d'une agence, d'un site du groupe, ou une mention légale (TVA, SIRET…), ou s'il est
+   suivi de la marque d'un portail (standard du portail en bas de page). */
+const chiffres9 = (x) => String(x || "").replace(/\D/g, "").slice(-9);
+const telephoneDuProspect = (texte, conf = {}) => {
+  const perso = ((conf.routage && conf.routage.personnes) || []);
+  const equipe = new Set([...perso.map((p) => p.telephone), ...(conf.telephones_exclus || [])].map(chiffres9).filter((x) => x.length === 9));
+  const noms = [...perso.map((p) => p.nom), ...(conf.agences || []).map((a) => a.nom), ...(conf.sites || []).flatMap((x) => x.noms || []),
+    ...(conf.domaines_agence || []).map((d) => String(d).split(".")[0].replace(/-/g, " "))].filter((x) => x && String(x).trim().length >= 4).map((x) => cle(String(x)));
+  const T = String(texte || "");
+  return (t) => {
+    const n = chiffres9(t);
+    if (n.length < 8 || equipe.has(n) || /^(\d)\1{7,}$/.test(n.slice(1)) || /^0+$/.test(n)) return false;
+    const places = [];
+    for (const m of T.matchAll(/\+?\(?\d[\d .()\/\u00a0-]{7,}\d/g)) if (chiffres9(m[0]) === n) places.push(m.index);
+    if (!places.length) return true;
+    const compacts = noms.map((x) => x.replace(/\s+/g, ""));
+    return places.some((i) => {
+      const avant = cle(T.slice(Math.max(0, i - 80), i)), apres = cle(T.slice(i, i + 90)).replace(/^[\d\s+().\/-]+/, "");
+      if (/\b(vat|tva|siret|siren|rcs|registered|numero de tva|capital)\b/.test(avant.slice(-50))) return false;
+      if (/^(superimmo|lundi au vendredi|du lundi)/.test(apres) || /^[\d\s+().\/-]*®/.test(T.slice(i, i + 40))) return false;
+      /* nom de l'équipe ou de l'agence juste avant le numéro, sans libellé du prospect entre les deux */
+      const PROSPECT = /\b(client|customer|nom|name|prenom|de|from|contact|acquereur|acheteur|prospect|demandeur|coordonnees|telephone|tel|phone|mobile|rappeler)\b/;
+      for (let k = 0; k < noms.length; k++) {
+        const j = avant.lastIndexOf(noms[k]);
+        if (j >= 0 && !PROSPECT.test(avant.slice(j + noms[k].length))) return false;
+        const av = avant.replace(/\s+/g, ""), jc = av.lastIndexOf(compacts[k]);
+        if (jc >= 0 && av.length - jc - compacts[k].length < 25 && !/(client|customer|nom|name|prenom|contact|acquereur|acheteur|prospect|telephone|phone|mobile|rappeler)/.test(av.slice(jc + compacts[k].length))) return false;
+      }
+      return true;
+    });
+  };
+};
+/* Casse écrite dans le CRM : « FONTAINE » ou « fontaine » → « Fontaine », « jean-pierre » → « Jean-Pierre ».
+   Une casse déjà mêlée (« McLeod », « de La Tour ») est gardée telle quelle. */
+const casse = (v) => {
+  const x = String(v || "").trim();
+  if (!x || (x !== x.toUpperCase() && x !== x.toLowerCase())) return x;
+  return x.toLowerCase().replace(/(^|[\s'’-])(\p{L})/gu, (m, a, b) => a + b.toUpperCase()).replace(/\b(De|Du|Des|La|Le|Van|Von|Der|Den|Da|Di)\b(?=\s)/g, (w, _, i) => (i ? w.toLowerCase() : w));
+};
 const nettoyerNoms = (c = {}) => {
-  for (const k of ["nom", "prenom", "nom_complet"]) if (c[k] && ROLE.test(String(c[k]).trim())) delete c[k];
+  for (const k of ["nom", "prenom", "nom_complet"]) if (c[k] && (ROLE.test(String(c[k]).trim()) || /[\d@]/.test(String(c[k])))) delete c[k];
   if (!c.nom && !c.prenom && c.nom_complet) { const dn = V.decouperNom(c.nom_complet) || {}; if (dn.nom) c.nom = dn.nom; if (dn.prenom) c.prenom = dn.prenom; }
+  /* un seul mot donné, recopié en prénom et en nom : on le range d'un seul côté */
+  if (c.nom && c.prenom && cle(c.nom) === cle(c.prenom)) { if (V.estPrenom(c.prenom)) delete c.nom; else delete c.prenom; }
+  for (const k of ["nom", "prenom"]) if (c[k]) c[k] = casse(c[k]);
+  if (c.nom || c.prenom) c.nom_complet = [c.prenom, c.nom].filter(Boolean).join(" ");
   return c;
 };
 
@@ -217,17 +262,21 @@ const extraire = (mail, conf = {}) => {
 
   /* Nettoyage + validations. */
   const c = r.contact;
-  if (c.email && (RELAIS.test(c.email) || domAgence.some((x) => c.email.endsWith("@" + x)) || GENERIQUES.test(c.email))) {
+  /* une adresse « contact@… » ou « info@… » donnée par le prospect sous un libellé e-mail est la sienne (société) */
+  const sousLibelle = (e) => new RegExp("(e-?mail|adresse e-?mail|email address|courriel)\\s*:?\\s*[\\[<(]?\\s*" + e.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i").test(texte);
+  if (c.email && (RELAIS.test(c.email) || domAgence.some((x) => c.email.endsWith("@" + x)) || (GENERIQUES.test(c.email) && !sousLibelle(c.email)))) {
     if (RELAIS.test(c.email)) c.email_relais = c.email;
     delete c.email; delete r.preuves["contact.email"];
   }
   if (!c.email && r.nature !== "non_lead" && r.nature !== "interne") {
     const tous = (corps.match(new RegExp(V.EMAIL_RE.source, "gi")) || []).map((x) => x.toLowerCase())
-      .filter((x) => !RELAIS.test(x) && !GENERIQUES.test(x) && !domAgence.some((a) => x.endsWith("@" + a)));
-    if (tous.length) poser(r, "contact.email", tous[0], "texte");
+      .filter((x) => !RELAIS.test(x) && (!GENERIQUES.test(x) || sousLibelle(x)) && !domAgence.some((a) => x.endsWith("@" + a)));
+    if (tous.length) poser(r, "contact.email", V.email(tous[0]), "texte");
   }
-  if (c.telephone) { const t = V.telephone(c.telephone); if (t) c.telephone = t; else { delete c.telephone; delete r.preuves["contact.telephone"]; } }
-  if (!c.telephone) { const m = liens.concat(corps.match(/tel:\+?[\d ]{8,}/gi) || []).find((u) => /^tel:/i.test(u)); if (m) poser(r, "contact.telephone", V.telephone(m), "lien tel"); }
+  /* Un numéro de l'équipe, de l'agence ou du portail n'est jamais celui du prospect. */
+  const telOk = telephoneDuProspect(texte, conf);
+  if (c.telephone) { const t = V.telephone(c.telephone); if (t && telOk(t)) c.telephone = t; else { delete c.telephone; delete r.preuves["contact.telephone"]; } }
+  if (!c.telephone) { const m = liens.concat(corps.match(/tel:\+?[\d ]{8,}/gi) || []).filter((u) => /^tel:/i.test(u)).find((u) => V.telephone(u) && telOk(V.telephone(u))); if (m) poser(r, "contact.telephone", V.telephone(m), "lien tel"); }
   /* Pas de nom dans la fiche : la signature à la fin du message (« Cordialement. / Simon Cloquet-Lafollye »). */
   if (!c.nom && !c.prenom && !c.nom_complet && r.message) {
     const lm = r.message.split("\n").map((x) => x.trim()).filter(Boolean);
@@ -249,7 +298,7 @@ const extraire = (mail, conf = {}) => {
   /* Téléphone donné dans le message (« joignable au 6 63 64 21 87 ») */
   if (!c.telephone && r.message) {
     const m = r.message.match(/(?:\+\d{2}\s?\(?0?\)?\s?|\b0|(?<=\s))[1-9](?:[\s.-]?\d{2}){4}\b/);
-    if (m) { const t = V.telephone(/^[1-9]/.test(m[0].trim()) ? "0" + m[0].trim() : m[0]); if (t) { c.telephone = t; r.preuves["contact.telephone"] = "message"; } }
+    if (m) { const t = V.telephone(/^[1-9]/.test(m[0].trim()) ? "0" + m[0].trim() : m[0]); if (t && telOk(t)) { c.telephone = t; r.preuves["contact.telephone"] = "message"; } }
   }
   const b = r.bien;
   for (const k of ["prix", "surface", "pieces", "chambres"]) if (b[k] === null || b[k] === undefined || b[k] === "" || Number.isNaN(b[k])) delete b[k];
@@ -284,4 +333,4 @@ const extraire = (mail, conf = {}) => {
   return r;
 };
 
-module.exports = { nettoyerNoms, extraire, identifierSite, RELAIS };
+module.exports = { nettoyerNoms, extraire, identifierSite, RELAIS, telephoneDuProspect };

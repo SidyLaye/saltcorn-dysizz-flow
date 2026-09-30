@@ -7,9 +7,15 @@ const estPrenom = (w) => PRENOMS.has(cle(w).split(" ")[0]);
 
 const EMAIL_RE = /[a-z0-9._%+'-]+@[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,}/i;
 
+/* Extension collée au mot suivant quand le HTML a perdu une espace (« …@gmail.comdans ») : on coupe à une extension connue. */
+const TLD = new Set("com net org fr de be nl uk ch es it eu info io co us ca au ie lu at dk se no fi pt pl cz gr ma sn ci tn dz re biz me tv pro immo gmx".split(" "));
 const email = (s) => {
   const m = String(s || "").replace(/^mailto:/i, "").match(EMAIL_RE);
-  return m ? m[0].toLowerCase().replace(/^[.'-]+|[.'-]+$/g, "") : "";
+  if (!m) return "";
+  let e = m[0].toLowerCase().replace(/^[.'-]+|[.'-]+$/g, "");
+  const tld = e.split(".").pop();
+  if (!TLD.has(tld) && tld.length > 3) { const k = [...TLD].filter((x) => tld.startsWith(x)).sort((a, b) => b.length - a.length)[0]; if (k) e = e.slice(0, e.length - tld.length + k.length); }
+  return e;
 };
 
 /* Téléphone → E.164 quand c'est possible (défaut France). Renvoie "" si ce n'est pas un numéro. */

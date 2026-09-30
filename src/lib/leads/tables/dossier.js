@@ -82,7 +82,7 @@ const traiterMail = async (mailId, { forcerOmbre = false } = {}) => {
   const tm = Table.findOne({ name: nom("mails") });
   const mail = tm && (await tm.getRow({ id: +mailId }));
   if (!mail) throw new Error("mail introuvable");
-  const { conf, crm } = await charger();
+  const { conf, crm, reglages: R } = await charger();
   const mode = forcerOmbre ? "ombre" : crm.mode;
   const client = await avecCatalogue(api.crmDepuisCoffre(crm.type, crm.reglages, crm.prefixe, mode));
   const m = versMoteur(mail);
@@ -93,7 +93,7 @@ const traiterMail = async (mailId, { forcerOmbre = false } = {}) => {
     if (d.dossier && d.portail)
       d.dossier.portail = d.portail;
 
-    d.execution = { ...(await api.leads.executer(d, client, { mode })), mode };
+    d.execution = { ...(await api.leads.executer(d, client, { mode, ecrireAVerifier: R && R.crm_a_verifier === true })), mode };
     if (client.notees) d.execution.ecritures_notees = client.notees.map(sansCommentaire);
     /* un mail « à trier » ne crée pas de dossier ; il peut en compléter un */
     const garder = d.dossier && !(d.statut === "a_trier" && !d.dossier.existant);

@@ -1,4 +1,4 @@
-/* dysizz-flow 2.13.7 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.13.9 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.13.7" : "dev";
+    var VERSION2 = true ? "2.13.9" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -92245,7 +92245,8 @@ var require_texte = __commonJS({
     var lignes = (t) => String(t).replace(/\r\n?/g, "\n").replace(/(^|\n)[^\n{}]{0,80}\{[^{}]{0,1500}?\}/g, (m, a) => /[;:]\s*[\w#-]/.test(m) && !/[.!?]\s*$/.test(m.split("{")[0]) ? a : m).replace(/[   ]/g, " ").replace(/[​-‍﻿]/g, "").split("\n").map((l) => l.replace(/[ \t\f\v]+/g, " ").trim()).filter(Boolean);
     var texteMail = ({ texte, html } = {}) => {
       const t = String(texte || "");
-      const brut = t.trim() && !/^\s*<(!doctype|html)/i.test(t) && t.replace(/\s/g, "").length > 80;
+      const aTrous = html && (t.match(/(^|\s)#[A-Za-z_]{4,}\b/g) || []).length >= 2;
+      const brut = t.trim() && !aTrous && !/^\s*<(!doctype|html)/i.test(t) && t.replace(/\s/g, "").length > 80;
       const src = brut ? entites(t) : htmlTexte(html || t);
       return lignes(reparer(src).replace(/([a-zà-ÿA-ZÀ-Ÿ)])(E-?mail|T[ée]l[ée]phone|Phone)\s*:/g, "$1\n$2 :").replace(/[\[<(]\s*https?:\/\/[^\s\]>)]*\s*[\]>)]/g, " ").replace(/https?:\/\/\S{70,}/g, " ")).join("\n");
     };
@@ -92290,9 +92291,17 @@ var require_valeurs = __commonJS({
     var PRENOMS = require_prenoms();
     var estPrenom = (w) => PRENOMS.has(cle(w).split(" ")[0]);
     var EMAIL_RE = /[a-z0-9._%+'-]+@[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,}/i;
+    var TLD = new Set("com net org fr de be nl uk ch es it eu info io co us ca au ie lu at dk se no fi pt pl cz gr ma sn ci tn dz re biz me tv pro immo gmx".split(" "));
     var email = (s) => {
       const m = String(s || "").replace(/^mailto:/i, "").match(EMAIL_RE);
-      return m ? m[0].toLowerCase().replace(/^[.'-]+|[.'-]+$/g, "") : "";
+      if (!m) return "";
+      let e = m[0].toLowerCase().replace(/^[.'-]+|[.'-]+$/g, "");
+      const tld = e.split(".").pop();
+      if (!TLD.has(tld) && tld.length > 3) {
+        const k = [...TLD].filter((x) => tld.startsWith(x)).sort((a, b) => b.length - a.length)[0];
+        if (k) e = e.slice(0, e.length - tld.length + k.length);
+      }
+      return e;
     };
     var telephone = (s, pays = "33") => {
       let t = String(s || "").replace(/^tel:/i, "").replace(/\(0\)/g, "").trim();
@@ -92803,10 +92812,10 @@ var require_portails = __commonJS({
         id: "properstar",
         nom: "Properstar",
         test: (d) => /properstar\.com$/.test(d),
-        nature: (o) => /nouveau message|new message|demande/i.test(o) ? "lead" : "non_lead",
+        nature: (o) => /nouveau message|new message|demande|visite|tour request/i.test(o) ? "lead" : "non_lead",
         regles: ({ L, texte, r }) => {
-          const n = texte.match(/=\s*(?:nouveau message de|new message from)\s+(.+?)\s*=/i);
-          if (n) r.contact.nom_complet = n[1];
+          const n = texte.match(/=\s*(?:nouveau message de|new message from|nouvelle demande de visite de|new (?:tour|visit) request from)\s+(.+?)\s*=/i) || texte.match(/de la part de\s+([A-ZÀ-Ÿ][^.\n=]{2,60})\./);
+          if (n) r.contact.nom_complet = n[1].trim();
           const i = L.findIndex((l) => /^=\s*(nouveau message|new message)/i.test(l));
           if (i >= 0) r.message = bloc(L, i + 1);
           const j = L.findIndex((l) => /annonce désirée|desired listing/i.test(l));
@@ -92870,7 +92879,7 @@ var require_portails = __commonJS({
         nom: "Site d'agence (AC3)",
         test: (d) => /ac3-groupe\.com$/.test(d),
         /* création de compte sur le site : un lead seulement si le mail porte le client (e-mail ou téléphone) ET un bien */
-        valider: ({ o, r }) => /cr[ée]ation (de )?compte|account creation|account created/i.test(o) ? (r.contact.email || r.contact.telephone) && (r.bien.reference || r.bien.titre || r.bien.id_crm) ? "lead" : "non_lead" : null,
+        valider: ({ o, r }) => /cr[ée]ation (de )?compte|account creation|account created/i.test(o) ? (r.contact.email || r.contact.telephone) && (r.bien.reference || r.bien.titre || r.bien.id_crm) ? "lead" : r.contact.email || r.contact.telephone ? (r.suspect = "cr\xE9ation de compte sur le site, sans bien : \xE0 traiter \xE0 la main", "lead") : "non_lead" : null,
         nature: (o) => /résolution de votre demande|demande d.assistance|ticket/i.test(o) ? "non_lead" : /demande|request|création compte|account/i.test(o) ? "lead" : "non_lead",
         regles: ({ L, o, texte, r }) => {
           const cl = texte.match(/(?:client|customer)\s*:\s*([^\n]+)/i);
@@ -93067,6 +93076,28 @@ var require_portails = __commonJS({
           }
         }
       },
+      {
+        id: "cessionpme",
+        nom: "CessionPME",
+        test: (d) => /cessionpme\.com$/.test(d),
+        nature: (o) => /prise de contact/i.test(o) ? "lead" : "non_lead",
+        regles: ({ o, texte, r }) => {
+          const ref = (o.match(/référence\s+CessionPME\s+([\w-]+)/i) || texte.match(/référence\s+CessionPME\s+([\w-]+)/i) || [])[1];
+          if (ref) r.bien.reference = ref;
+          const n = texte.match(/Monsieur ou Madame\s+(.+?)\s*\(/i);
+          if (n) r.contact.nom_complet = n[1].trim();
+          const e = texte.match(/Email\s*:\s*(\S+@\S+)/i);
+          if (e) r.contact.email = V.email(e[1]);
+          const t = texte.match(/t[ée]l[ée]phone\s*:\s*(\+?[\d .]{8,})/i);
+          if (t) r.contact.telephone = t[1].trim();
+          const pr = texte.match(/Prix de vente\s+([\d  .]+)\s*€/i);
+          if (pr) r.bien.prix = V.prix(pr[1] + " \u20AC");
+          const sf = texte.match(/Surface\s+([\d  .,]+)\s*m/i);
+          if (sf) r.bien.surface = V.surface(sf[1] + " m\xB2");
+          const lo = texte.match(/Localisation\s+(.+)/i);
+          if (lo) r.bien.ville = lo[1].trim().slice(0, 60);
+        }
+      },
       { id: "huisenaanbod", nom: "HUISenAANBOD.nl", test: (d) => /huisenaanbod\.nl$/.test(d), nature: (o, t) => /#naamaanvrager|#vraag|#adv_details/i.test(t) ? "non_lead" : "lead" },
       {
         id: "kyero",
@@ -93199,7 +93230,7 @@ var require_portails = __commonJS({
           r.bloques = (texte.match(/^.{3,40}\|.+\|\s*\d+\s*k\s*\|.+$/gm) || []).map((l) => l.split("|")[0].trim()).filter((x) => /properstar|green|leboncoin|seloger|figaro|bienici|rightmove|french|giraffe|ac3|immo/i.test(x));
         }
       },
-      { id: "bruit", nom: "Service / newsletter", test: (d) => /(immo-facile\.(fr|com)|cessionpme\.com|orisha\.com|gedeon\.im|canva\.com|firebaseapp\.com|toutvendre\.fr|opinionsystem\.fr|notaires\.fr|cci\.fr|tiktok\.com|news\.leboncoin\.fr|gestiviag\.com|communication-snpi\.com|centre-conventions-collectives\.fr|linkedin\.com|facebookmail\.com|google\.com)$/.test(d), nature: () => "non_lead" }
+      { id: "bruit", nom: "Service / newsletter", test: (d) => /(immo-facile\.(fr|com)|orisha\.com|gedeon\.im|canva\.com|firebaseapp\.com|toutvendre\.fr|opinionsystem\.fr|notaires\.fr|cci\.fr|tiktok\.com|news\.leboncoin\.fr|gestiviag\.com|communication-snpi\.com|centre-conventions-collectives\.fr|linkedin\.com|facebookmail\.com|google\.com)$/.test(d), nature: () => "non_lead" }
     ];
     var SIGNATURES = {
       leboncoin: /l.équipe leboncoin|leboncoin\.fr\/ad\/|vous a contacté sur leboncoin/i,
@@ -93423,14 +93454,58 @@ var require_extraire = __commonJS({
         return { expediteur: exp, objet: o, texte: L.slice(j).join("\n"), html: "", __agence: agence };
       }
     };
-    var ROLE = /^(l['’]|le |la |du |de la |un |une |cet |cette |ce |votre |notre )?(acheteurs?|acqu[ée]reurs?|prospects?|contacts?|clients?|internautes?|vendeurs?|demandeurs?|utilisateurs?|visiteurs?|particuliers?|propri[ée]taires?|locataires?|candidats?|buyers?|enquirers?|customers?|users?|madame|monsieur|m\.|mme|mr|mrs)$/i;
+    var ROLE = /^(l['’]|le |la |du |de la |un |une |cet |cette |ce |votre |notre )?(acheteurs?|acqu[ée]reurs?|prospects?|contacts?|clients?|internautes?|vendeurs?|demandeurs?|utilisateurs?|visiteurs?|particuliers?|propri[ée]taires?|locataires?|candidats?|buyers?|enquirers?|customers?|users?|madame|monsieur|m\.|mme|mr|mrs|secr[ée]tariat|comptabilit[ée]|accueil|service|services|direction|administration|standard|support|info|infos|message|regards|num[ée]ro de t[ée]l[ée]phone|t[ée]l[ée]phone|e-?mail|adresse)$/i;
+    var chiffres9 = (x) => String(x || "").replace(/\D/g, "").slice(-9);
+    var telephoneDuProspect = (texte, conf = {}) => {
+      const perso = conf.routage && conf.routage.personnes || [];
+      const equipe = new Set([...perso.map((p) => p.telephone), ...conf.telephones_exclus || []].map(chiffres9).filter((x) => x.length === 9));
+      const noms = [
+        ...perso.map((p) => p.nom),
+        ...(conf.agences || []).map((a) => a.nom),
+        ...(conf.sites || []).flatMap((x) => x.noms || []),
+        ...(conf.domaines_agence || []).map((d) => String(d).split(".")[0].replace(/-/g, " "))
+      ].filter((x) => x && String(x).trim().length >= 4).map((x) => cle(String(x)));
+      const T = String(texte || "");
+      return (t) => {
+        const n = chiffres9(t);
+        if (n.length < 8 || equipe.has(n) || /^(\d)\1{7,}$/.test(n.slice(1)) || /^0+$/.test(n)) return false;
+        const places = [];
+        for (const m of T.matchAll(/\+?\(?\d[\d .()\/\u00a0-]{7,}\d/g)) if (chiffres9(m[0]) === n) places.push(m.index);
+        if (!places.length) return true;
+        const compacts = noms.map((x) => x.replace(/\s+/g, ""));
+        return places.some((i) => {
+          const avant = cle(T.slice(Math.max(0, i - 80), i)), apres = cle(T.slice(i, i + 90)).replace(/^[\d\s+().\/-]+/, "");
+          if (/\b(vat|tva|siret|siren|rcs|registered|numero de tva|capital)\b/.test(avant.slice(-50))) return false;
+          if (/^(superimmo|lundi au vendredi|du lundi)/.test(apres) || /^[\d\s+().\/-]*®/.test(T.slice(i, i + 40))) return false;
+          const PROSPECT = /\b(client|customer|nom|name|prenom|de|from|contact|acquereur|acheteur|prospect|demandeur|coordonnees|telephone|tel|phone|mobile|rappeler)\b/;
+          for (let k = 0; k < noms.length; k++) {
+            const j = avant.lastIndexOf(noms[k]);
+            if (j >= 0 && !PROSPECT.test(avant.slice(j + noms[k].length))) return false;
+            const av = avant.replace(/\s+/g, ""), jc = av.lastIndexOf(compacts[k]);
+            if (jc >= 0 && av.length - jc - compacts[k].length < 25 && !/(client|customer|nom|name|prenom|contact|acquereur|acheteur|prospect|telephone|phone|mobile|rappeler)/.test(av.slice(jc + compacts[k].length))) return false;
+          }
+          return true;
+        });
+      };
+    };
+    var casse = (v) => {
+      const x = String(v || "").trim();
+      if (!x || x !== x.toUpperCase() && x !== x.toLowerCase()) return x;
+      return x.toLowerCase().replace(new RegExp("(^|[\\s'\u2019-])(\\p{L})", "gu"), (m, a, b) => a + b.toUpperCase()).replace(/\b(De|Du|Des|La|Le|Van|Von|Der|Den|Da|Di)\b(?=\s)/g, (w, _, i) => i ? w.toLowerCase() : w);
+    };
     var nettoyerNoms = (c = {}) => {
-      for (const k of ["nom", "prenom", "nom_complet"]) if (c[k] && ROLE.test(String(c[k]).trim())) delete c[k];
+      for (const k of ["nom", "prenom", "nom_complet"]) if (c[k] && (ROLE.test(String(c[k]).trim()) || /[\d@]/.test(String(c[k])))) delete c[k];
       if (!c.nom && !c.prenom && c.nom_complet) {
         const dn = V.decouperNom(c.nom_complet) || {};
         if (dn.nom) c.nom = dn.nom;
         if (dn.prenom) c.prenom = dn.prenom;
       }
+      if (c.nom && c.prenom && cle(c.nom) === cle(c.prenom)) {
+        if (V.estPrenom(c.prenom)) delete c.nom;
+        else delete c.prenom;
+      }
+      for (const k of ["nom", "prenom"]) if (c[k]) c[k] = casse(c[k]);
+      if (c.nom || c.prenom) c.nom_complet = [c.prenom, c.nom].filter(Boolean).join(" ");
       return c;
     };
     var extraire = (mail, conf = {}) => {
@@ -93566,25 +93641,27 @@ var require_extraire = __commonJS({
       }
       if (!r.contact.email_relais && RELAIS.test(d) && !GENERIQUES.test(V.email(mail.expediteur))) r.contact.email_relais = V.email(mail.expediteur);
       const c = r.contact;
-      if (c.email && (RELAIS.test(c.email) || domAgence.some((x) => c.email.endsWith("@" + x)) || GENERIQUES.test(c.email))) {
+      const sousLibelle = (e) => new RegExp("(e-?mail|adresse e-?mail|email address|courriel)\\s*:?\\s*[\\[<(]?\\s*" + e.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i").test(texte);
+      if (c.email && (RELAIS.test(c.email) || domAgence.some((x) => c.email.endsWith("@" + x)) || GENERIQUES.test(c.email) && !sousLibelle(c.email))) {
         if (RELAIS.test(c.email)) c.email_relais = c.email;
         delete c.email;
         delete r.preuves["contact.email"];
       }
       if (!c.email && r.nature !== "non_lead" && r.nature !== "interne") {
-        const tous = (corps.match(new RegExp(V.EMAIL_RE.source, "gi")) || []).map((x) => x.toLowerCase()).filter((x) => !RELAIS.test(x) && !GENERIQUES.test(x) && !domAgence.some((a) => x.endsWith("@" + a)));
-        if (tous.length) poser(r, "contact.email", tous[0], "texte");
+        const tous = (corps.match(new RegExp(V.EMAIL_RE.source, "gi")) || []).map((x) => x.toLowerCase()).filter((x) => !RELAIS.test(x) && (!GENERIQUES.test(x) || sousLibelle(x)) && !domAgence.some((a) => x.endsWith("@" + a)));
+        if (tous.length) poser(r, "contact.email", V.email(tous[0]), "texte");
       }
+      const telOk = telephoneDuProspect(texte, conf);
       if (c.telephone) {
         const t = V.telephone(c.telephone);
-        if (t) c.telephone = t;
+        if (t && telOk(t)) c.telephone = t;
         else {
           delete c.telephone;
           delete r.preuves["contact.telephone"];
         }
       }
       if (!c.telephone) {
-        const m = liens.concat(corps.match(/tel:\+?[\d ]{8,}/gi) || []).find((u) => /^tel:/i.test(u));
+        const m = liens.concat(corps.match(/tel:\+?[\d ]{8,}/gi) || []).filter((u) => /^tel:/i.test(u)).find((u) => V.telephone(u) && telOk(V.telephone(u)));
         if (m) poser(r, "contact.telephone", V.telephone(m), "lien tel");
       }
       if (!c.nom && !c.prenom && !c.nom_complet && r.message) {
@@ -93621,7 +93698,7 @@ var require_extraire = __commonJS({
         const m = r.message.match(/(?:\+\d{2}\s?\(?0?\)?\s?|\b0|(?<=\s))[1-9](?:[\s.-]?\d{2}){4}\b/);
         if (m) {
           const t = V.telephone(/^[1-9]/.test(m[0].trim()) ? "0" + m[0].trim() : m[0]);
-          if (t) {
+          if (t && telOk(t)) {
             c.telephone = t;
             r.preuves["contact.telephone"] = "message";
           }
@@ -93659,7 +93736,7 @@ var require_extraire = __commonJS({
       r.destinataire = mail.destinataire || "";
       return r;
     };
-    module2.exports = { nettoyerNoms, extraire, identifierSite, RELAIS };
+    module2.exports = { nettoyerNoms, extraire, identifierSite, RELAIS, telephoneDuProspect };
   }
 });
 
@@ -95037,6 +95114,7 @@ var require_traiter = __commonJS({
           else rc.contact = { ...rc.contact, consentement_inconnu: true };
         }
         if (rc.action === "impossible") d.motifs.push("contact impossible : ni e-mail ni t\xE9l\xE9phone");
+        if (rc.action === "creer" && !c.email) d.motifs.push("pas d'e-mail : le CRM ne cr\xE9e pas de contact sans e-mail (\xE0 cr\xE9er \xE0 la main avec le t\xE9l\xE9phone)");
       }
       d.contact = { id: rc.contact ? rc.contact.id : null, action: rc.action, par: rc.par, trace: rc.trace };
       d.interne = { ...d.interne || {}, contact_crm: rc.contact || null };
@@ -95146,11 +95224,15 @@ var require_traiter = __commonJS({
       d.duree_ms = Date.now() - t0;
       return nettoyer(d);
     };
-    var executer = async (dossier, crm, { mode = "ombre" } = {}) => {
+    var executer = async (dossier, crm, { mode = "ombre", ecrireAVerifier = false } = {}) => {
       const res = [];
       let contactId = dossier.contact && dossier.contact.id;
       let rechercheId = dossier.dossier && dossier.dossier.recherche_id;
       let consentement = false;
+      if (dossier.statut && !["pret", "suivi"].includes(dossier.statut) && !ecrireAVerifier) {
+        for (const a of dossier.actions || []) res.push({ op: a.op, fait: false, note: "non automatis\xE9 : rien n'est \xE9crit dans le CRM" });
+        return { contactId, rechercheId, consentement, resultats: res, non_automatise: true };
+      }
       for (const a of dossier.actions) {
         if (mode !== "reel") {
           res.push({ ...a, donnees: a.donnees && a.donnees.comment ? { ...a.donnees, comment: `(${a.donnees.comment.length} caract\xE8res)` } : a.donnees, preuves: a.preuves && a.preuves.map((p) => p.nom), fait: false, mode });
@@ -96487,6 +96569,8 @@ var require_schema = __commonJS({
         ["lien_fiche", "String"],
         ["envoi_a_verifier", "Bool"],
         ["routage_tables", "String"],
+        ["telephones_exclus", "String"],
+        ["crm_a_verifier", "Bool"],
         ["adresse_non_automatise", "String"],
         ["format_envoi", "String"],
         ["origine_defaut", "String"]
@@ -96807,6 +96891,8 @@ var require_conf = __commonJS({
         id_crm_liens: String(R.id_crm_liens || "").split("\n").map((x) => x.trim()).filter(Boolean),
         origines_portail: { ...Object.fromEntries(portails.filter((p) => p.origine).map((p) => ["declare_" + p.id, p.origine])), ...json(R.origines_portail, {}) },
         origine_defaut: R.origine_defaut || null,
+        /* numéros qui ne sont jamais ceux d'un prospect (standard d'agence, portail) ; ceux de l'équipe sont déjà exclus */
+        telephones_exclus: liste(R.telephones_exclus),
         utiliser_relais: R.utiliser_relais !== false,
         /* étapes coupées par le client (tout est actif par défaut) */
         etapes: json(R.etapes, {}),
@@ -96826,6 +96912,7 @@ var require_conf = __commonJS({
             id: idMoteur.get(p.id),
             ligne: p.id,
             nom: p.nom,
+            telephone: p.telephone || null,
             alias: String(p.alias || "").split(/[,;\n]+/).map((x) => x.trim()).filter(Boolean),
             email: p.email,
             role: p.role || "negociateur",
@@ -97428,7 +97515,45 @@ var require_gabarits = __commonJS({
       oublier();
       return n;
     };
-    module2.exports = { optionsLecture, stockage, importerAmbs, appelsDuJour, noter, oublier, versGabarit, lireCommuns };
+    var enregistrerVerification = async (api, R) => {
+      const t = await tables();
+      const A = api.leads.apprentissage;
+      const lignes = await t.gabarits.getRows({});
+      const idAncien = (o) => (String(o || "").match(/^ambs:(\d+)(?::|$)/) || [])[1] || null;
+      const fait = { mis_a_jour: 0, ajoutes: 0, retires: 0, appris: 0 };
+      const gardes = /* @__PURE__ */ new Set();
+      for (const g of R.gardes) {
+        const id = idAncien(g.origine);
+        gardes.add(id);
+        const ex = lignes.filter((l) => idAncien(l.origine) === id);
+        const ligne = versLigne({ ...g, active_le: /* @__PURE__ */ new Date(), vu_le: /* @__PURE__ */ new Date() });
+        if (ex.length) {
+          await t.gabarits.updateRow(ligne, ex[0].id);
+          for (const x of ex.slice(1)) await t.gabarits.updateRow({ statut: "quarantaine" }, x.id);
+          fait.mis_a_jour++;
+        } else {
+          await t.gabarits.insertRow({ ...ligne, cree_le: /* @__PURE__ */ new Date() });
+          fait.ajoutes++;
+        }
+      }
+      for (const d of R.detail.filter((x) => x.verdict === "retir\xE9")) {
+        for (const l of lignes.filter((x) => idAncien(x.origine) === String(d.id) && x.statut !== "quarantaine" && !gardes.has(String(d.id)))) {
+          await t.gabarits.updateRow({ statut: "quarantaine" }, l.id);
+          fait.retires++;
+        }
+      }
+      const formes = new Set(lignes.map((l) => A.cleForme(versGabarit(l)) + l.champs));
+      for (const g of R.nouveaux || []) {
+        const k = A.cleForme(g) + JSON.stringify(g.champs);
+        if (formes.has(k)) continue;
+        formes.add(k);
+        await t.gabarits.insertRow(versLigne({ ...g, cree_le: /* @__PURE__ */ new Date(), vu_le: /* @__PURE__ */ new Date() }));
+        fait.appris++;
+      }
+      oublier();
+      return fait;
+    };
+    module2.exports = { optionsLecture, stockage, importerAmbs, enregistrerVerification, appelsDuJour, noter, oublier, versGabarit, lireCommuns };
   }
 });
 
@@ -97530,7 +97655,7 @@ var require_dossier = __commonJS({
       const tm = Table.findOne({ name: nom("mails") });
       const mail = tm && await tm.getRow({ id: +mailId });
       if (!mail) throw new Error("mail introuvable");
-      const { conf, crm } = await charger();
+      const { conf, crm, reglages: R } = await charger();
       const mode = forcerOmbre ? "ombre" : crm.mode;
       const client = await avecCatalogue(api.crmDepuisCoffre(crm.type, crm.reglages, crm.prefixe, mode));
       const m = versMoteur(mail);
@@ -97539,7 +97664,7 @@ var require_dossier = __commonJS({
         const d = await api.leads.traiter(m, client, conf, { dossiers: { trouver: fil.trouver }, ...lecture });
         if (d.dossier && d.portail)
           d.dossier.portail = d.portail;
-        d.execution = { ...await api.leads.executer(d, client, { mode }), mode };
+        d.execution = { ...await api.leads.executer(d, client, { mode, ecrireAVerifier: R && R.crm_a_verifier === true }), mode };
         if (client.notees) d.execution.ecritures_notees = client.notees.map(sansCommentaire);
         const garder = d.dossier && !(d.statut === "a_trier" && !d.dossier.existant);
         const dossierId = garder ? await fil.enregistrer(api)(d, d.execution, new Date(mail.date_envoi || Date.now()), mail.id) : null;
@@ -97628,7 +97753,8 @@ var require_etapes = __commonJS({
       const mode = d.mode === "reel" && crm.mode === "reel" ? "reel" : "ombre";
       const client = await clientCrm(crm, mode);
       if (d.dossier && d.portail) d.dossier.portail = d.portail;
-      d.execution = { ...await a.leads.executer(d, client, { mode }), mode };
+      const R = await require_conf().reglages();
+      d.execution = { ...await a.leads.executer(d, client, { mode, ecrireAVerifier: R.crm_a_verifier === true }), mode };
       if (client.notees) d.execution.ecritures_notees = client.notees.map((x) => x && x.donnees && x.donnees.comment ? { ...x, donnees: { ...x.donnees, comment: `(${x.donnees.comment.length} caract\xE8res)` } } : x);
       return d;
     };
@@ -98559,6 +98685,387 @@ var require_leads_banc = __commonJS({
           gabarits: R.gabarits,
           ia: R.ia,
           resume: `${R.mails} mails, ${acc.a} accords, ${acc.e} \xE9carts, ${R.erreurs} erreurs, gabarits ${R.gabarits.source} (${R.gabarits.au_depart})${ia} \u2014 Fichiers \u2192 ${nom}`
+        };
+      })
+    }];
+  }
+});
+
+// src/lib/leads/verif_gabarits.js
+var require_verif_gabarits = __commonJS({
+  "src/lib/leads/verif_gabarits.js"(exports2, module2) {
+    "use strict";
+    var A = require_apprentissage();
+    var V = require_valeurs();
+    var { extraire, nettoyerNoms } = require_extraire();
+    var { aCompleter } = require_lecture();
+    var { texteMail, cle } = require_texte();
+    var FIABLE = 3;
+    var LEADS = ["lead", "relance", "recherche", "estimation", "direct"];
+    var DEFINITIVES = ["non_lead", "auto_reponse", "interne", "alerte_spam", "notification", "b2b", "masse", "desabonnement", "test"];
+    var COMPARES = {
+      email: "email",
+      telephone: "telephone",
+      nom: "nom",
+      prenom: "prenom",
+      nom_complet: "identite",
+      reference: "reference",
+      prix: "prix",
+      surface: "surface",
+      nb_pieces: "pieces",
+      ville: "ville",
+      code_postal: "code_postal",
+      type_bien: "type"
+    };
+    var GARDES_SANS_VERIF = ["message"];
+    var mots = (...v) => [...new Set(v.flatMap((x) => cle(String(x || "")).split(/[^a-z]+/).filter((w) => w.length > 1)))].sort();
+    var plat = (ext) => {
+      const c = ext.contact || {}, b = ext.bien || {};
+      return {
+        email: (V.email(c.email) || "").toLowerCase(),
+        telephone: String(c.telephone || "").replace(/\D/g, "").slice(-9),
+        nom: mots(c.nom),
+        prenom: mots(c.prenom),
+        identite: c.nom || c.prenom ? mots(c.prenom, c.nom) : mots(c.nom_complet),
+        reference: String(b.reference || "").toUpperCase().replace(/[^A-Z0-9]/g, ""),
+        prix: +b.prix ? Math.round(+b.prix) : null,
+        surface: +b.surface ? Math.round(+b.surface) : null,
+        pieces: +b.pieces || null,
+        ville: cle(String(b.ville || "")).replace(/[^a-z]/g, ""),
+        code_postal: String(b.code_postal || ""),
+        type: b.type || ""
+      };
+    };
+    var vide = (v) => v === null || v === void 0 || v === "" || Array.isArray(v) && !v.length;
+    var egal = (k, a, b) => {
+      if (["nom", "prenom", "identite"].includes(k)) {
+        const inter = a.filter((w) => b.includes(w)).length;
+        return inter > 0 && inter === Math.min(a.length, b.length);
+      }
+      if (["prix", "surface"].includes(k)) return Math.abs(a - b) <= Math.max(1, b * 5e-3);
+      return a === b;
+    };
+    var blanc = () => ({ contact: {}, bien: {}, recherche: {}, preuves: {} });
+    var lireChamp = (c, texte) => {
+      const brut = A.appliquer({ champs: [c] }, texte)[c.nom];
+      if (brut === void 0) return { brut: null };
+      const e = A.versExtraction(blanc(), { [c.nom]: brut }, "gabarit");
+      nettoyerNoms(e.contact);
+      return { brut, v: plat(e) };
+    };
+    var invalide = (c, lu, domaines) => {
+      const k = COMPARES[c.nom];
+      if (!k) return null;
+      const v = lu.v[k];
+      if (c.nom === "email") {
+        if (!v) return "pas un e-mail";
+        const d = v.split("@")[1];
+        if (domaines.some((x) => d === x || d.endsWith("." + x))) return "adresse de l'agence";
+      }
+      if (c.nom === "telephone" && !v) return "pas un num\xE9ro de t\xE9l\xE9phone";
+      if (["nom", "prenom", "nom_complet"].includes(c.nom) && vide(v)) return "pas un nom (r\xF4le, mot vide ou libell\xE9)";
+      if (c.nom === "reference" && String(v).length < 2) return "r\xE9f\xE9rence vide";
+      return null;
+    };
+    var memeSource = (g, r) => {
+      const s = cle(String(g.source || "")).replace(/[^a-z0-9]/g, "");
+      if (!s || /^(email|inconnue?|autre)$/.test(s)) return null;
+      const p = cle(String(r.portail || "")).replace(/[^a-z0-9]/g, ""), n = cle(String(r.portail_nom || "")).replace(/[^a-z0-9]/g, "");
+      if (!p || p === "inconnu") return null;
+      return [p, n].filter((x) => x && x.length >= 3).some((x) => s.includes(x) || x.includes(s));
+    };
+    var verifier = async ({ lignes, mails, conf = {}, ia = null, iaMax = 150, parGabarit = 40, progres = null, apprendre = true }) => {
+      const P = progres || {};
+      const { borne } = require_arriere_plan();
+      const domaines = (conf.domaines_agence || []).map((d) => String(d).toLowerCase());
+      const actifs = (lignes || []).filter((l) => l.statut === "actif");
+      const G = actifs.map((l) => {
+        const g = A.depuisAmbs([l])[0];
+        let brutes = [];
+        try {
+          brutes = typeof l.champs === "string" ? JSON.parse(l.champs) : l.champs || [];
+          if (typeof brutes === "string") brutes = JSON.parse(brutes);
+        } catch (e) {
+          brutes = [];
+        }
+        return { l, g: { ...g, statut: "actif" }, refuses: Math.max(0, (Array.isArray(brutes) ? brutes.length : 0) - g.champs.length), mails: [] };
+      });
+      P.etape = "lecture des mails par les r\xE8gles";
+      P.total = mails.length;
+      P.fait = 0;
+      const L = /* @__PURE__ */ new Map();
+      const ordre = mails.slice().sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")) || (+b.id || 0) - (+a.id || 0));
+      const sansGabarit = [];
+      for (const m0 of ordre) {
+        P.fait++;
+        let r;
+        try {
+          r = extraire(m0, conf);
+        } catch (e) {
+          continue;
+        }
+        const m = r.mail_deballe ? { ...m0, ...r.mail_deballe, html: "" } : m0;
+        const texte = texteMail({ texte: m.texte, html: m.html });
+        const x = { m, texte, r, complet: LEADS.includes(r.nature) && !aCompleter(r), ref: null };
+        let vu = false;
+        for (const e of G) if (A.reconnait(e.g, m, texte)) {
+          vu = true;
+          if (e.mails.length < parGabarit) {
+            e.mails.push(m0.id);
+            L.set(m0.id, x);
+          }
+        }
+        if (!vu && aCompleter(r) && !DEFINITIVES.includes(r.nature)) sansGabarit.push(x);
+      }
+      const IA = { appels: 0, erreurs: 0, verification: 0, apprentissage: 0 };
+      const lireIA = async (x) => {
+        if (!ia || IA.appels >= iaMax) return null;
+        IA.appels++;
+        try {
+          const lu = await borne(ia.lire(x.m, x.texte), 9e4, "IA");
+          return lu && lu.sortie;
+        } catch (e) {
+          IA.erreurs++;
+          return null;
+        }
+      };
+      for (const x of L.values()) if (x.complet) {
+        x.ref = plat(x.r);
+        x.refPar = "regles";
+      }
+      P.etape = "lecture de r\xE9f\xE9rence par l'IA";
+      P.total = Math.min(iaMax, G.length * FIABLE);
+      P.fait = 0;
+      for (let tour = 0; tour < 10 && IA.appels < iaMax; tour++) {
+        let fait = false;
+        for (const e of G) {
+          const avecRef = e.mails.filter((id2) => L.get(id2).ref).length;
+          if (avecRef >= FIABLE + tour) continue;
+          const id = e.mails.find((i) => !L.get(i).ref && !L.get(i).iaEssaye);
+          if (!id) continue;
+          const x = L.get(id);
+          x.iaEssaye = true;
+          const s = await lireIA(x);
+          P.fait++;
+          fait = true;
+          if (s && ["lead", "reclamation", "recherche", "estimation"].includes(s.nature)) {
+            const e2 = A.versExtraction(blanc(), s, "ia");
+            nettoyerNoms(e2.contact);
+            x.ref = plat(e2);
+            x.refPar = "ia";
+            IA.verification++;
+          }
+          if (IA.appels >= iaMax) break;
+        }
+        if (!fait) break;
+      }
+      const rapport = [];
+      const gardes = [];
+      for (const e of G) {
+        const champs = {};
+        let autreSource = 0, pasLead = 0, utiles = 0, refs = { regles: 0, ia: 0 };
+        for (const id of e.mails) {
+          const x = L.get(id);
+          if (memeSource(e.g, x.r) === false) autreSource++;
+          if (DEFINITIVES.includes(x.r.nature)) pasLead++;
+          if (!x.complet) utiles++;
+          if (x.ref) refs[x.refPar]++;
+          for (const c of e.g.champs) {
+            const T = champs[c.nom] || (champs[c.nom] = { accord: 0, desaccord: 0, invalide: 0, non_lu: 0, sans_reference: 0, raisons: {} });
+            const lu = lireChamp(c, x.texte);
+            if (lu.brut === null) {
+              T.non_lu++;
+              continue;
+            }
+            const pb = invalide(c, lu, domaines);
+            if (pb) {
+              T.invalide++;
+              T.raisons[pb] = (T.raisons[pb] || 0) + 1;
+              continue;
+            }
+            const k = COMPARES[c.nom];
+            if (!k) continue;
+            if (!x.ref || vide(x.ref[k])) {
+              T.sans_reference++;
+              continue;
+            }
+            if (egal(k, lu.v[k], x.ref[k])) T.accord++;
+            else {
+              T.desaccord++;
+              T.raisons["diff\xE9rent de la lecture de r\xE9f\xE9rence (" + x.refPar + ")"] = (T.raisons["diff\xE9rent de la lecture de r\xE9f\xE9rence (" + x.refPar + ")"] || 0) + 1;
+            }
+          }
+        }
+        const statutChamp = (nom, T) => GARDES_SANS_VERIF.includes(nom) ? "gard\xE9 (message)" : T.desaccord || T.invalide ? "faux : retir\xE9" : !COMPARES[nom] ? "inv\xE9rifiable : retir\xE9" : T.accord >= FIABLE ? "fiable" : "pas assez v\xE9rifi\xE9 : retir\xE9";
+        for (const [nom, T] of Object.entries(champs)) T.statut = statutChamp(nom, T);
+        const gardesChamps = e.g.champs.filter((c) => champs[c.nom] && /^(fiable|gardé)/.test(champs[c.nom].statut));
+        const noms = new Set(gardesChamps.map((c) => c.nom));
+        const n = e.mails.length;
+        let verdict, raison = null;
+        if (!n) {
+          verdict = "retir\xE9";
+          raison = "ne reconna\xEEt aucun des mails re\xE7us";
+        } else if (autreSource > n * 0.3) {
+          verdict = "retir\xE9";
+          raison = `reconna\xEEt des mails d'un autre portail (${autreSource} sur ${n})`;
+        } else if (e.g.nature === "lead" && pasLead > n * 0.3) {
+          verdict = "retir\xE9";
+          raison = `reconna\xEEt des mails qui ne sont pas des leads (${pasLead} sur ${n})`;
+        } else if (!A.complet(noms)) {
+          verdict = "retir\xE9";
+          raison = "pas assez de champs fiables pour lire un lead (moyen de joindre + nom ou bien)";
+        } else if (gardesChamps.length < e.g.champs.length || e.refuses) {
+          verdict = "corrig\xE9";
+          raison = "champs retir\xE9s : " + e.g.champs.filter((c) => !noms.has(c.nom)).map((c) => `${c.nom} (${champs[c.nom] ? champs[c.nom].statut : "?"})`).concat(e.refuses ? [`${e.refuses} motif(s) dangereux ou invalides`] : []).join(", ");
+        } else verdict = "fiable";
+        const preuves = gardesChamps.filter((c) => COMPARES[c.nom]).map((c) => champs[c.nom].accord);
+        if (verdict !== "retir\xE9") gardes.push({ ...e.g, champs: gardesChamps, statut: "actif", nb_observations: Math.min(...preuves), nb_echecs: 0, origine: e.g.origine + ":verifie" });
+        rapport.push({
+          id: e.l.id,
+          source: e.l.source,
+          version: e.l.version || null,
+          nature: e.g.nature,
+          mails: n,
+          utiles_en_production: utiles,
+          references: refs,
+          champs: Object.fromEntries(Object.entries(champs).map(([k, T]) => [k, { accord: T.accord, desaccord: T.desaccord, invalide: T.invalide, non_lu: T.non_lu, sans_reference: T.sans_reference, statut: T.statut, ...Object.keys(T.raisons).length ? { raisons: T.raisons } : {} }])),
+          verdict,
+          ...raison ? { raison } : {}
+        });
+      }
+      let appris = [];
+      if (apprendre && ia && IA.appels < iaMax && sansGabarit.length) {
+        P.etape = "apprentissage de nouveaux gabarits par l'IA";
+        P.total = Math.min(iaMax - IA.appels, sansGabarit.length);
+        P.fait = 0;
+        const store = A.memoire([]);
+        const vuesFormes = /* @__PURE__ */ new Map();
+        const file = sansGabarit.slice().sort((a, b) => {
+          const fa = String(a.m.expediteur || "").split("@")[1] || "", fb = String(b.m.expediteur || "").split("@")[1] || "";
+          return fa.localeCompare(fb);
+        });
+        for (const x of file) {
+          if (IA.appels >= iaMax) break;
+          const d = String(x.m.expediteur || "").toLowerCase().split("@")[1] || "?";
+          if ((vuesFormes.get(d) || 0) >= 5) continue;
+          vuesFormes.set(d, (vuesFormes.get(d) || 0) + 1);
+          const s = await lireIA(x);
+          P.fait++;
+          if (!s) continue;
+          IA.apprentissage++;
+          await A.apprendre(store, { mail: x.m, texte: x.texte, ia: s }).catch(() => null);
+        }
+        appris = store.tous().map((g) => ({ ...g, origine: "ia:verification" }));
+      }
+      const compte = (v) => rapport.filter((x) => x.verdict === v).length;
+      return {
+        gabarits: rapport.length,
+        fiables: compte("fiable"),
+        corriges: compte("corrig\xE9"),
+        retires: compte("retir\xE9"),
+        appris: { crees: appris.length, actifs: appris.filter((g) => g.statut === "actif").length },
+        mails: mails.length,
+        mails_sans_lecture: sansGabarit.length,
+        ia: IA,
+        detail: rapport,
+        gardes,
+        nouveaux: appris
+      };
+    };
+    module2.exports = { verifier, FIABLE, plat, egal, lireChamp, invalide };
+  }
+});
+
+// src/blocks/leads_gabarits.js
+var require_leads_gabarits = __commonJS({
+  "src/blocks/leads_gabarits.js"(exports2, module2) {
+    "use strict";
+    var CAT = "Leads immobiliers";
+    var lu = (v, d) => {
+      if (v && typeof v === "object") return v;
+      try {
+        return JSON.parse(v);
+      } catch (e) {
+        return d;
+      }
+    };
+    var MAILS = { table: "email_brut_selection_habitat", expediteur: "expediteur", destinataire: "destinataire", objet: "objet", texte: "corps_texte", html: "corps_html", date: "date_envoi" };
+    module2.exports = [{
+      name: "dzf_leads_gabarits_verifier",
+      label: "Leads : v\xE9rifier et corriger les gabarits d'un ancien syst\xE8me",
+      category: CAT,
+      icon: "fas fa-check-double",
+      output: "gabarits",
+      timeout: 3600,
+      description: "Pour chaque gabarit actif de l'ancien syst\xE8me : cherche les mails qu'il reconna\xEEt, applique chaque motif et compare, champ par champ, avec la lecture des r\xE8gles (quand elles lisent tout) ou de l'IA. Un champ est gard\xE9 s'il a lu juste au moins 3 fois sans aucune erreur ; sinon il est retir\xE9. Le gabarit est gard\xE9 s'il lui reste de quoi joindre le prospect et son nom ou le bien. Les mails que personne ne sait lire sont lus par l'IA, qui apprend de nouveaux gabarits. Simulation par d\xE9faut ; rapport sans donn\xE9e personnelle dans Fichiers.",
+      params: [
+        { name: "etape", label: "\xC9tape", type: "select", options: ["simulation", "\xE9criture"], default: "simulation", help: "simulation : rien n'est \xE9crit ; \xE9criture : le r\xE9sultat remplace les gabarits de l'ancien syst\xE8me dans ld_gabarits" },
+        { name: "table", label: "Table des anciens gabarits", type: "table", default: "gabarit_version" },
+        { name: "mails", label: "Mails (JSON)", type: "json", help: 'Vide = email_brut_selection_habitat. Ex. {"table":"mails","texte":"corps"}' },
+        { name: "domaines_agence", label: "Domaines de l'agence (en plus)", help: "D\xE9j\xE0 pris : ceux des r\xE9glages Leads et des bo\xEEtes des agences" },
+        { name: "par_gabarit", label: "Mails v\xE9rifi\xE9s par gabarit (au plus)", type: "int", default: 40 },
+        { name: "ia_max", label: "IA : nombre d'appels au plus", type: "int", default: 300, help: "Lecture de r\xE9f\xE9rence quand les r\xE8gles ne lisent pas tout le mail, puis apprentissage de nouveaux gabarits" },
+        { name: "apprendre", label: "Apprendre de nouveaux gabarits avec l'IA", type: "bool", default: true },
+        { name: "fichier", label: "Nom du rapport", default: "gabarits-verification.json" },
+        { name: "arriere_plan", label: "En arri\xE8re-plan (le rapport arrive dans Fichiers)", type: "bool", default: true }
+      ],
+      run: async (p, ctx = {}) => require_arriere_plan().enFond(p, ctx, "dzf_leads_gabarits_verifier", String(p.fichier || "gabarits-verification.json").replace(/[^\w.-]/g, "_"), async (suivi = {}) => {
+        const Table = require("@saltcorn/data/models/table");
+        const api = require_api();
+        const { verifier } = require_verif_gabarits();
+        const T = (n) => {
+          const t = Table.findOne({ name: n });
+          if (!t) throw Object.assign(new Error(`table \xAB ${n} \xBB introuvable`), { permanent: true });
+          return t;
+        };
+        const lotParLot = async (t, f) => {
+          for (let depuis = 0; ; ) {
+            const l = await t.getRows({ id: { gt: depuis } }, { orderBy: "id", limit: 1e3 });
+            if (!l.length) break;
+            for (const r of l) f(r);
+            depuis = l[l.length - 1].id;
+          }
+        };
+        const c = { ...MAILS, ...lu(p.mails, {}) || {} };
+        suivi.etape = "lecture des gabarits et des mails";
+        const lignes = [];
+        await lotParLot(T(p.table || "gabarit_version"), (r) => lignes.push(r));
+        const mails = [];
+        await lotParLot(T(c.table), (r) => mails.push({ id: r.id, expediteur: r[c.expediteur], destinataire: r[c.destinataire], objet: r[c.objet], texte: r[c.texte], html: r[c.html], date: r[c.date] }));
+        const conf = {};
+        let domR = [], R0 = {};
+        try {
+          const cd = await require_conf().charger();
+          Object.assign(conf, cd.conf);
+          domR = cd.conf.domaines_agence || [];
+          R0 = cd.reglages || {};
+        } catch (e) {
+        }
+        const boites = [];
+        if (Table.findOne({ name: "agence" })) await lotParLot(T("agence"), (r) => boites.push(...(String(r.boite || "") + " " + String(r.emails || "")).toLowerCase().match(/[\w.+-]+@[\w.-]+/g) || []));
+        conf.domaines_agence = require_banc().domainesAgence(p.domaines_agence, domR, boites);
+        const iaMax = p.ia_max === void 0 || p.ia_max === null || p.ia_max === "" ? 300 : Math.max(0, +p.ia_max || 0);
+        const ia = iaMax ? api.iaDepuisCoffre(R0.ia_fournisseur || "saltcorn", R0.ia_modele || "", "LEADS_IA_CLE", R0.ia_url || void 0) : null;
+        const R = await verifier({ lignes, mails, conf, ia, iaMax, parGabarit: Math.max(3, +p.par_gabarit || 40), progres: suivi, apprendre: p.apprendre !== false });
+        let ecrit = null;
+        if (p.etape === "\xE9criture" || p.etape === "ecriture") {
+          suivi.etape = "\xE9criture dans ld_gabarits";
+          ecrit = await require_gabarits().enregistrerVerification(api, R);
+        }
+        const rapport = { le: (/* @__PURE__ */ new Date()).toISOString(), etape: ecrit ? "\xE9criture" : "simulation", ...R, gardes: void 0, nouveaux: R.nouveaux.map((g) => ({ source: g.source, statut: g.statut, champs: g.champs.map((x) => x.nom), observations: g.nb_observations })), ecrit };
+        const File = require("@saltcorn/data/models/file");
+        const nom = String(p.fichier || "gabarits-verification.json").replace(/[^\w.-]/g, "_");
+        await File.from_contents(nom, "application/json", JSON.stringify(rapport, null, 1), ctx.user && ctx.user.id, 1);
+        return {
+          fichier: nom,
+          gabarits: R.gabarits,
+          fiables: R.fiables,
+          corriges: R.corriges,
+          retires: R.retires,
+          appris: R.appris,
+          ia: R.ia,
+          ecrit,
+          resume: `${R.gabarits} gabarits : ${R.fiables} fiables, ${R.corriges} corrig\xE9s, ${R.retires} retir\xE9s ; ${R.appris.crees} appris par l'IA (${R.appris.actifs} actifs) ; ${R.ia.appels} appels \xE0 l'IA${ecrit ? " \u2014 \xC9CRIT" : " \u2014 simulation, rien n'est \xE9crit"} \u2014 Fichiers \u2192 ${nom}`
         };
       })
     }];
@@ -102431,6 +102938,7 @@ var require_blocks = __commonJS({
       ...require_leads(),
       ...require_leads_solution(),
       ...require_leads_banc(),
+      ...require_leads_gabarits(),
       ...require_leads_controle(),
       ...require_donnees_ext(),
       ...require_connecte(),
