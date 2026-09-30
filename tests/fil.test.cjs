@@ -30,7 +30,7 @@ const LBC = (n, date, corps) => ({ expediteur: '"Paul via leboncoin" <abc123xyz@
   assert.strictEqual(d1.statut, "pret"); assert.strictEqual(d1.dossier.existant, false);
   assert.deepStrictEqual(d1.actions.map((a) => a.op), ["creerContact", "lierBien", "creerRecherche", "ajouterConsentement"]);
   const pr = d1.actions.find((a) => a.op === "creerRecherche").donnees;
-  assert.deepStrictEqual([pr.source, pr.budget_max, pr.surface_min, pr.pieces_min, pr.localisation], ["bien", 275000, 96, 4, "46000 Cahors"], "projet de recherche tiré du bien demandé, avec les marges");
+  assert.deepStrictEqual([pr.source, pr.budget_max, pr.surface_min, pr.pieces_min, pr.localisation], ["bien", 250000, 120, 5, "46000 Cahors"], "projet de recherche tiré du bien demandé, valeurs exactes (pas de marge quand le bien est connu)");
 
   const d2 = await passe(LBC(2, "2026-09-25T09:00:00Z", "Bonjour Martin Durand - Agence Exemple,\nVous avez un nouveau message.\nPaul Lefevre\n« Parfait, 10h me convient. »\nRépondre dans la messagerie\nMessages précédents\nMartin Durand - Agence Exemple\n25 sept. 2026 10:15:00\nBonjour, oui samedi 10h est possible.\nPaul Lefevre\n25 sept. 2026 09:00:00\nBonjour, est-il possible de visiter samedi ?\nMaison 5 pièces 120 m²\n250000 €\nRéférence : 30123"));
   assert.strictEqual(d2.dossier.existant, true, "même relais Leboncoin → même dossier");

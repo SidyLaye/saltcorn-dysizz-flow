@@ -39,7 +39,13 @@ const texteMail = ({ texte, html } = {}) => {
   const aTrous = html && (t.match(/(^|\s)#[A-Za-z_]{4,}\b/g) || []).length >= 2;
   const brut = t.trim() && !aTrous && !/^\s*<(!doctype|html)/i.test(t) && t.replace(/\s/g, "").length > 80;
   const src = brut ? entites(t) : htmlTexte(html || t);
-  return lignes(reparer(src).replace(/([a-zà-ÿA-ZÀ-Ÿ)])(E-?mail|T[ée]l[ée]phone|Phone)\s*:/g, "$1\n$2 :").replace(/[\[<(]\s*https?:\/\/[^\s\]>)]*\s*[\]>)]/g, " ").replace(/https?:\/\/\S{70,}/g, " ")).join("\n");
+  const net = reparer(src)
+    /* espace fine insécable abîmée par l'encodage entre les milliers : « 136���000 € » → « 136 000 € » */
+    .replace(/(\d)\uFFFD+(?=\d{3}(?!\d))/g, "$1 ")
+    /* champs collés par le portail : « VillagePrice: », « (22500)Prix :78500€Surface :1700m² », « 80 m²86460 » */
+    .replace(/([a-zà-ÿ0-9)²€])(Prix|Price|Surface|R[ée]f[ée]rence|Reference|Bedrooms|Status|Ville|Code postal|Message)\s*:/g, "$1\n$2 :")
+    .replace(/(m²)(?=\d)/g, "$1 ");
+  return lignes(net.replace(/([a-zà-ÿA-ZÀ-Ÿ)])(E-?mail|T[ée]l[ée]phone|Phone)\s*:/g, "$1\n$2 :").replace(/[\[<(]\s*https?:\/\/[^\s\]>)]*\s*[\]>)]/g, " ").replace(/https?:\/\/\S{70,}/g, " ")).join("\n");
 };
 
 /* Tous les liens du mail (href du HTML + URL du texte), dédoublonnés. */

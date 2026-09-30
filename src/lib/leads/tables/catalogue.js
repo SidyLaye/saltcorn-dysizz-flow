@@ -85,6 +85,7 @@ const avecCatalogue = async (crm) => {
     bienParId: async (id) => (await local.bienParId(id)) || crm.bienParId(id).catch(() => null),
     biensParReference: async (ref) => { const l = await local.biensParReference(ref); return l.length ? l : crm.biensParReference(ref).catch(() => []); },
     biensParCriteres: (q, o) => local.biensParCriteres(q, o),
+    tousLesBiens: async () => biens,
   };
 };
 

@@ -1,4 +1,4 @@
-/* dysizz-flow 2.13.9 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.14.0 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.13.9" : "dev";
+    var VERSION2 = true ? "2.14.0" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -92248,7 +92248,8 @@ var require_texte = __commonJS({
       const aTrous = html && (t.match(/(^|\s)#[A-Za-z_]{4,}\b/g) || []).length >= 2;
       const brut = t.trim() && !aTrous && !/^\s*<(!doctype|html)/i.test(t) && t.replace(/\s/g, "").length > 80;
       const src = brut ? entites(t) : htmlTexte(html || t);
-      return lignes(reparer(src).replace(/([a-zà-ÿA-ZÀ-Ÿ)])(E-?mail|T[ée]l[ée]phone|Phone)\s*:/g, "$1\n$2 :").replace(/[\[<(]\s*https?:\/\/[^\s\]>)]*\s*[\]>)]/g, " ").replace(/https?:\/\/\S{70,}/g, " ")).join("\n");
+      const net = reparer(src).replace(/(\d)\uFFFD+(?=\d{3}(?!\d))/g, "$1 ").replace(/([a-zà-ÿ0-9)²€])(Prix|Price|Surface|R[ée]f[ée]rence|Reference|Bedrooms|Status|Ville|Code postal|Message)\s*:/g, "$1\n$2 :").replace(/(m²)(?=\d)/g, "$1 ");
+      return lignes(net.replace(/([a-zà-ÿA-ZÀ-Ÿ)])(E-?mail|T[ée]l[ée]phone|Phone)\s*:/g, "$1\n$2 :").replace(/[\[<(]\s*https?:\/\/[^\s\]>)]*\s*[\]>)]/g, " ").replace(/https?:\/\/\S{70,}/g, " ")).join("\n");
     };
     var liens = ({ texte, html } = {}) => {
       const out = /* @__PURE__ */ new Set();
@@ -92310,17 +92311,27 @@ var require_valeurs = __commonJS({
       let d = t.replace(/[^\d]/g, "");
       if (d.length < 8 || d.length > 15) return "";
       if (plus) return "+" + d.replace(/^(33|32|41|44|31|34|49|39)0(?=\d{9}$)/, "$1");
-      if (d.startsWith("00")) return "+" + d.slice(2);
+      if (d.startsWith("00")) return "+" + d.slice(2).replace(/^(33|32|41|44|31|34|49|39)0(?=\d{9}$)/, "$1");
       if (/^0[1-9]\d{8}$/.test(d)) return "+" + pays + d.slice(1);
-      if (/^(33|32|41|44|31|34|49|39|351|352|353|1)\d{7,12}$/.test(d) && d.length >= 10) return "+" + d;
-      if (/^[67]\d{8}$/.test(d) && pays === "33") return "+33" + d;
-      return d.length >= 9 ? "+" + d : "";
+      if (/^0[1237]\d{9}$/.test(d)) return "+44" + d.slice(1);
+      if (/^(33|32|41|44|31|34|49|39|351|352|353|221)\d{7,12}$/.test(d) && d.length >= 11) return "+" + d;
+      if (/^[1-9]\d{8}$/.test(d)) return d;
+      return d.length >= 10 ? "+" + d : "";
+    };
+    var PAYS_INDICATIF = { france: "33", "pays-bas": "31", netherlands: "31", nederland: "31", belgique: "32", belgium: "32", "royaume-uni": "44", "united kingdom": "44", allemagne: "49", germany: "49", suisse: "41", switzerland: "41", espagne: "34", spain: "34", italie: "39", italy: "39", irlande: "353", ireland: "353", "s\xE9n\xE9gal": "221", senegal: "221", portugal: "351" };
+    var TLD_INDICATIF = { fr: "33", nl: "31", be: "32", uk: "44", de: "49", ch: "41", es: "34", it: "39", ie: "353", sn: "221", pt: "351" };
+    var FORME9 = { "33": /^[1-79]\d{8}$/, "31": /^6\d{8}$/, "32": /^4\d{8}$/, "221": /^7\d{8}$/, "34": /^[67]\d{8}$/, "39": /^3\d{8}$/ };
+    var indicatifContexte = (nu, { pays, email: email2, senegal } = {}) => {
+      const d = String(nu || "");
+      if (!/^[1-9]\d{8}$/.test(d)) return null;
+      const k = pays && PAYS_INDICATIF[String(pays).trim().toLowerCase()] || (senegal ? "221" : null) || email2 && TLD_INDICATIF[(String(email2).toLowerCase().match(/\.([a-z]{2})$/) || [])[1]] || null;
+      return k && FORME9[k] && FORME9[k].test(d) ? "+" + k + d : null;
     };
     var prix = (s) => {
       const t = String(s || "").replace(/[\u00A0\u202F]/g, " ");
       const N = "(\\d{1,3}(?:( |\\.|,|\u2019|')\\d{3})(?:\\2\\d{3})*|\\d{4,9})";
       const re1 = new RegExp("(?:\u20AC|\\beur\\b|\\beuros?\\b)\\s*" + N + "(?![\\d/]|[.,]\\d)", "gi");
-      const re2 = new RegExp("(?<![\\d.,])" + N + "(?:[.,]\\d{1,2})?\\s*(?:\u20AC|\\beur\\b|\\beuros?\\b)(?!\\s*\\/)", "gi");
+      const re2 = new RegExp("(?<![\\d.,])" + N + "(?:[.,]\\d{1,2})?\\s*(?:\u20AC|\\beur\\b|\\beuros?\\b)(?!\\s*\\/\\s*(?:m\\b|m\xB2|m2|mois|an\\b|month|sem))", "gi");
       const tous = [...t.matchAll(re1), ...t.matchAll(re2)].filter((x) => !/^\s*\/\s*m/i.test(t.slice(x.index + x[0].length, x.index + x[0].length + 4)) && !/capital\s+(social\s+)?(de\s+)?$/i.test(t.slice(Math.max(0, x.index - 25), x.index))).sort((a, b) => a.index - b.index);
       const m = tous[0];
       if (!m) return null;
@@ -92335,11 +92346,17 @@ var require_valeurs = __commonJS({
       const m = String(s || "").match(/\d+(?:[.,]\d+)?/);
       return m ? +m[0].replace(",", ".") : null;
     };
+    var TERRAIN_AVANT = /(?:(?:terrain|land|plot|parcelle|foncier)\s*(?:de |d'|d’|of |:|=)\s*(?:environ |about |~|±)?|(?:jardin|parc|garden|grounds|hectares?)\s*(?:de |d'|d’|of |:|=)?\s*(?:environ |about |~|±)?|(?:sur|avec|with|on)\s+(?:un |une |a )?(?:beau |grand |joli |large )?(?:terrain|jardin|parc|land|plot)\s*(?:de |d'|d’|of )?\s*(?:environ |about )?)\s*$/i;
+    var TERRAIN_APRES = /^\s*(?:de |d'|d’|of )?(?:terrain|jardin|parc|land|plot|garden|grounds|parcelle)/i;
     var surface = (s) => {
-      const m = String(s || "").replace(/[\u00A0\u202F]/g, " ").match(/(?<![\d.,])(\d{1,3}(?: \d{3})?|\d{1,6})(?:[.,](\d+))?\s*(?:m²|m2|sq\.? ?m)/i);
-      if (!m) return null;
-      const n = +(m[1].replace(/\s/g, "") + (m[2] ? "." + m[2] : ""));
-      return n > 5 && n < 1e5 ? Math.round(n) : null;
+      const t = String(s || "").replace(/[\u00A0\u202F]/g, " ");
+      for (const m of t.matchAll(/(?<![\d.,])(\d{1,3}(?: \d{3})?|\d{1,6})(?:[.,](\d+))?\s*(?:m²|m2|sq\.? ?m)(?![\w²])/gi)) {
+        const avant = t.slice(Math.max(0, m.index - 30), m.index), apres = t.slice(m.index + m[0].length, m.index + m[0].length + 20);
+        if (!/^\s*(terrain|land|plot|parcelle)\b/i.test(t) && (TERRAIN_AVANT.test(avant) || TERRAIN_APRES.test(apres))) continue;
+        const n = +(m[1].replace(/\s/g, "") + (m[2] ? "." + m[2] : ""));
+        if (n > 5 && n < 1e5) return Math.round(n);
+      }
+      return null;
     };
     var pieces = (s) => {
       const m = String(s || "").match(/(\d{1,2})\s*(?:pièces?|pieces?|pi[eè]ce\(s\)|p\b|rooms?)/i);
@@ -92406,7 +92423,7 @@ var require_valeurs = __commonJS({
       if (ordre === "nom_prenom" || tiret.length === 2 && ordre !== "prenom_nom") return b;
       return a;
     };
-    module2.exports = { loyer, estPrenom, EMAIL_RE, email, telephone, prix, nombre, surface, pieces, chambres, typeBien, lieu, faitsTitre, nomPropre, decouperNom };
+    module2.exports = { indicatifContexte, loyer, estPrenom, EMAIL_RE, email, telephone, prix, nombre, surface, pieces, chambres, typeBien, lieu, faitsTitre, nomPropre, decouperNom };
   }
 });
 
@@ -92571,6 +92588,19 @@ var require_portails = __commonJS({
             const pr = V.prix(L[tail - 1]);
             if (pr) r.bien.prix = pr;
           }
+          if (!r.bien.prix) {
+            const lien = L.map((l, k2) => /^lien\s*:/i.test(l) ? k2 : -1).filter((k2) => k2 > 0).pop();
+            const t = m && L.map((l, k2) => l === m[1] ? k2 : -1).filter((k2) => k2 >= 0).pop();
+            const k = t !== void 0 && t >= 0 && L[t + 1] && /^\d[\d\s.\u00a0\u202f]*\s*€$/.test(L[t + 1]) ? t + 1 : lien > 0 && /^\d[\d\s.\u00a0\u202f]*\s*€$/.test(L[lien - 1]) ? lien - 1 : -1;
+            if (k > 0) {
+              const pr = V.prix(L[k]);
+              if (pr) {
+                r.bien.prix = pr;
+                r.preuves["bien.prix"] = "portail:leboncoin:rappel";
+              }
+            }
+          }
+          r.bien.lieu_approche = true;
         }
       },
       {
@@ -92578,9 +92608,16 @@ var require_portails = __commonJS({
         nom: "Green-Acres",
         test: (d) => /green-acres\.(com|fr)$/.test(d),
         nature: (o) => /buyer replied|a répondu|replied/i.test(o) ? "relance" : /demande d.information|nouveau contact|new contact/i.test(o) ? "lead" : "non_lead",
-        regles: ({ L, o, r, texte }) => {
+        regles: ({ L, o, r, texte, conf = {} }) => {
           const ref = texte.match(/\((?:reference|référence)\s*([\w-]+)\)|^(?:reference|référence)\s*:\s*([\w-]+)/im);
           if (ref) r.bien.reference = ref[1] || ref[2];
+          const ga = String(r.bien.reference || "").match(/^\d{6,8}[a-z]-(.+)$/i);
+          if (ga) {
+            r.bien.reference_portail = r.bien.reference;
+            r.bien.reference = ga[1];
+          }
+          const mandat = texte.match(/mandat\s*n[°o]\s*:?\s*([\w-]+)/i);
+          if (mandat && mandat[1] !== r.bien.reference) r.bien.references_autres = [.../* @__PURE__ */ new Set([...r.bien.references_autres || [], mandat[1]])];
           if (!r.bien.reference) {
             const rm = texte.match(/r[ée]f[ée]rence (?:de l.annonce )?(?:est|is)\s*:?\s*([\w-]*\d[\w-]*)/i);
             if (rm) r.bien.reference = rm[1];
@@ -92596,8 +92633,23 @@ var require_portails = __commonJS({
           if (pl) r.bien.prix = V.prix(pl);
           const ty = L.findIndex((l) => /^analyse du profil$/i.test(l));
           if (ty >= 0 && V.typeBien(L[ty + 1])) r.bien.type = r.bien.type || V.typeBien(L[ty + 1]);
+          const tel = L.findIndex((l) => l === "\u260E");
+          const carte = tel > 0 ? L[tel - 1] : "";
+          const carteAgence = /\b(selection|s[ée]lection habitat|hamilton|agence|immobili|immo\b|ariegimmo|toit)/i.test(carte) || (conf.agences || []).some((a) => a.nom && cle(carte) === cle(a.nom));
+          if (tel >= 0 && !carteAgence && V.telephone(L[tel + 1])) {
+            r.contact.telephone = L[tel + 1];
+            r.preuves["contact.telephone"] = "portail:green_acres:carte";
+          }
           const env = L.findIndex((l) => l === "\u2709");
-          if (env >= 0 && !/^agence-/i.test(L[env + 1] || "")) r.contact.email_relais = V.email(L[env + 1]);
+          if (env >= 0 && !carteAgence) {
+            const e = V.email(L[env + 1]);
+            if (e && /@email\.green-acres\.com$/i.test(e)) {
+              if (!/^agence-/i.test(e)) r.contact.email_relais = e;
+            } else if (e) {
+              r.contact.email = e;
+              r.preuves["contact.email"] = "portail:green_acres:carte";
+            }
+          }
           const rep = texte.match(/^(.+?) has replied to you/m) || texte.match(/^(.+?) vous a répondu/m);
           if (rep && !r.contact.nom_complet) r.contact.nom_complet = rep[1];
           const tete = L.findIndex((l) => /^(.+?)\s+-\s+\d{1,2}(\/\d{1,2}\/\d{4}|\s+\w+\s+\d{4})(\s+à\s+\d.*)?$/.test(l));
@@ -92606,8 +92658,6 @@ var require_portails = __commonJS({
             const fin = L.slice(tete + 1).findIndex((l) => /^(vos coordonnées|reply to this|répondez à cet|contact offert|you  ?-|vous  ?-)/i.test(l) || /^(you|vous)\s+-\s+\d/i.test(l));
             r.message = L.slice(tete + 1, fin >= 0 ? tete + 1 + fin : tete + 12).join("\n");
           }
-          const tel = L.findIndex((l) => l === "\u260E");
-          if (tel >= 0 && !r.contact.telephone) r.contact.telephone = L[tel + 1];
           r.bien.lieu_approche = true;
           const lieu = cherche(L, /^([A-Za-zÀ-ÿ' -]+)\s*\((\d{5})\)$/);
           if (lieu) {
@@ -92635,7 +92685,7 @@ var require_portails = __commonJS({
           const titre = p && p[1] || "";
           if (titre) {
             r.bien.titre = titre;
-            const ref = titre.match(/\bREF\.?\s*(\d{3,})/i) || titre.match(/\b(\d{4,6})\b(?!\s*,)/);
+            const ref = titre.match(/\bREF\.?\s*(\d{3,})/i) || titre.match(/^(\d{3,6})_/) || titre.match(/\b(\d{4,6})\b(?!\s*,)/);
             if (ref) r.bien.reference = ref[1];
             const colle = titre.match(/\b([A-Z]{2,6}-?\d{3,6})\b/);
             if (colle) {
@@ -92725,6 +92775,11 @@ var require_portails = __commonJS({
           }
           const a = o.match(/annonce\s+([\w-]+(?:\s+bis)?)/i) || texte.match(/votre annonce\s+([\w-]+)\s+visible/i);
           if (a) r.bien.reference = a[1];
+          const fa = String(r.bien.reference || "").match(/^([\w]{3,})-(\d+)$/);
+          if (fa) {
+            r.bien.reference_portail = r.bien.reference;
+            r.bien.reference = fa[1];
+          }
           const i = L.findIndex((l) => /visible sur/i.test(l));
           if (i >= 0) {
             const fin = L.slice(i + 1).findIndex((l) => /^voir votre annonce|^voici ses coordonnées/i.test(l));
@@ -92788,7 +92843,11 @@ var require_portails = __commonJS({
             const sous = L.slice(i + 1, i + 6);
             const idl = sous.find((l) => /\b6\d{7}\b/.test(l) && !/[€$£]/.test(l));
             if (idl) r.bien.id_crm = idl.match(/\b(6\d{7})\b/)[1];
-            r.bien.titre = sous.find((l) => l !== idl && /[a-zà-ÿ]{3}/i.test(l) && !/^(location|lieu)\s*:/i.test(l)) || L[i + 1];
+            r.bien.titre = sous.find((l) => l !== idl && /[a-zà-ÿ]{3}/i.test(l) && !/^(location|lieu)\s*:/i.test(l) && !/^https?:/i.test(l)) || L[i + 1];
+            if (r.bien.titre) {
+              for (const [k, v] of Object.entries(V.faitsTitre(r.bien.titre) || {})) if (r.bien[k] === void 0 && v !== null && v !== void 0) r.bien[k] = v;
+            }
+            r.bien.lieu_approche = true;
             r.bien.prix = V.prix(sous.filter((l) => l !== idl).join(" "));
             const lo = texte.match(/(?:location|lieu)\s*:\s*(.+)/i);
             if (lo) {
@@ -92859,9 +92918,9 @@ var require_portails = __commonJS({
             r.contact.nom_complet = c[1].trim();
             r.contact.telephone = c[2];
           }
-          const i = L.findIndex((l) => /^rappel de l.annonce/i.test(l));
+          const i = L.findIndex((l) => /rappel de l.annonce/i.test(l));
           if (i >= 0) {
-            const v = L.slice(i + 1, i + 5);
+            const v = [L[i].replace(/^.*rappel de l.annonce\s*/i, ""), ...L.slice(i + 1, i + 5)].filter(Boolean);
             const s = v.join(" ");
             r.bien.type = V.typeBien(v[0]);
             r.bien.pieces = V.pieces(s);
@@ -92955,11 +93014,10 @@ var require_portails = __commonJS({
         nom: "Ma Propri\xE9t\xE9.fr",
         test: (d) => /ma-propriete\.fr$/.test(d),
         nature: (o) => /message|projet/i.test(o) ? "lead" : "non_lead",
-        regles: ({ texte, liens, r }) => {
-          const t = texte.match(/titre de l.annonce\s*\*?\s*:\s*\*?\s*(.+?)\s*\*?$/im);
-          if (t) r.bien.titre = t[1];
-          const u = liens.map((x) => x.match(/ma-propriete\.fr\/fr\/[^?]*\/([a-z-]+)\/[^/?]+\?prix=(\d+)/)).find(Boolean);
-          if (u) r.bien.prix = +u[2];
+        regles: ({ texte, r }) => {
+          const t = texte.match(/titre de l.annonce\s*\*?\s*:\s*\*?\s*([\s\S]+?)\s*\*?\s*\n\s*\*?\s*r[ée]f[ée]rence de l.annonce/i) || texte.match(/titre de l.annonce\s*\*?\s*:\s*\*?\s*(.+?)\s*\*?$/im);
+          if (t) r.bien.titre = t[1].replace(/\s*\*\s*/g, " ").replace(/\s+/g, " ").trim();
+          if (r.preuves && /lien|url/.test(String(r.preuves["bien.prix"] || ""))) delete r.bien.prix;
         }
       },
       {
@@ -92977,8 +93035,17 @@ var require_portails = __commonJS({
           if (b) r.bien.chambres = +b[1];
           const t = texte.match(/^type:\s*(.+)$/im);
           if (t) r.bien.type = V.typeBien(t[1]);
-          const ph = texte.match(/^phone:\s*(\d{10,})/im);
-          if (ph) r.contact.telephone = "+" + ph[1];
+          const ph = texte.match(/^phone\s*:\s*(\+?[\d ()-]{8,})/im);
+          if (ph && V.telephone(ph[1])) r.contact.telephone = V.telephone(ph[1]);
+          const rf = texte.match(/^reference\s*:\s*([\w-]+)/im);
+          if (rf) r.bien.reference = rf[1];
+          const rr = String(r.bien.reference || "").match(/^(\d+)_\1_(.+)$/);
+          if (rr) {
+            r.bien.reference_portail = r.bien.reference;
+            r.bien.reference = rr[2];
+          }
+          r.bien.lieu_approche = true;
+          if (/^\d+$/.test(String(r.bien.reference || "")) && /firm reference no\.?\s*\d/i.test(texte) && !rf) delete r.bien.reference;
         }
       },
       {
@@ -93107,9 +93174,42 @@ var require_portails = __commonJS({
         regles: ({ o, texte, r }) => {
           const m = texte.match(/\*\*\[([A-Z0-9-]{5,})\]\s*\*\*/) || o.match(/:\s*([A-Z0-9-]{5,})\/?\s*$/);
           if (m && /\d/.test(m[1])) r.bien.reference = m[1];
+          const ri = (o + "\n" + texte).match(/r[ée]f\s*\/\s*id\s*:\s*([\w-]+)\s*\/\s*([\w-]*)/i);
+          if (ri) {
+            if (/\d/.test(ri[1])) r.bien.reference = ri[1];
+            if (ri[2]) r.bien.reference_portail = ri[2];
+          }
         }
       },
-      { id: "jamesedition", nom: "JAMES EDITION", test: (d) => /jamesedition\.com$/.test(d), nature: (o) => /enquiry|inquiry|demande|request|message|lead|contact/i.test(o) && !/app is here|newsletter|webinar|report|rapport/i.test(o) ? "lead" : "non_lead" },
+      {
+        id: "jamesedition",
+        nom: "JAMES EDITION",
+        test: (d) => /jamesedition\.com$/.test(d),
+        nature: (o) => /enquiry|inquiry|demande|request|message|lead|contact/i.test(o) && !/app is here|newsletter|webinar|report|rapport/i.test(o) ? "lead" : "non_lead",
+        regles: ({ L, r }) => {
+          const apres = (re2) => {
+            const i = L.findIndex((l) => re2.test(l));
+            return i >= 0 ? (L[i + 1] || "").replace(/\s*\(\s*tel:.*$/i, "").trim() : "";
+          };
+          const n = apres(/^lead name$/i);
+          if (n) {
+            r.contact.nom_complet = n;
+            delete r.contact.nom;
+            delete r.contact.prenom;
+          }
+          const e = V.email(apres(/^lead email$/i));
+          if (e) r.contact.email = e;
+          const t = V.telephone(apres(/^lead phone number$/i));
+          if (t) r.contact.telephone = t;
+          const ref = apres(/^internal reference$/i);
+          if (/^[\w-]*\d[\w-]*$/.test(ref)) r.bien.reference = ref;
+          const ti = L.findIndex((l) => /^listing$/i.test(l));
+          if (ti >= 0 && L[ti + 1]) {
+            r.bien.titre = L[ti + 1].replace(/\s*\(\s*https?:.*$/, "").trim();
+            Object.assign(r.bien, V.faitsTitre(r.bien.titre), r.bien);
+          }
+        }
+      },
       {
         id: "chateauxpourtous",
         nom: "Ch\xE2teaux pour tous",
@@ -93196,7 +93296,9 @@ var require_portails = __commonJS({
         nom: "Adapt immobilier",
         test: (d) => /adaptinformatique\.fr$|adaptimmobilier/.test(d),
         nature: (o) => /recherche/i.test(o) ? "recherche" : "lead",
-        regles: ({ L, o, r }) => {
+        regles: ({ L, o, r, liens }) => {
+          const cle2 = (liens || []).map((u) => u.match(/adaptimmobilier\.com\/[^?]*\?(?:[^#]*&)?cle=(\d{6,})/i)).find(Boolean);
+          if (cle2 && cle2[1] !== r.bien.reference) r.bien.references_autres = [.../* @__PURE__ */ new Set([...r.bien.references_autres || [], cle2[1]])];
           if (!/recherche/i.test(o)) return;
           for (const k of ["ville", "code_postal", "adresse"]) if (r.bien[k]) {
             r.contact[k] = r.bien[k];
@@ -93219,7 +93321,24 @@ var require_portails = __commonJS({
           }
         }
       },
-      { id: "annonces_diverses", nom: "Autres portails", test: (d) => /(stonimmo\.com|lesannoncesducommerce\.fr|annonce-immobilier\.com|lesiteimmo\.com|superimmo(pro)?\.com|contact\.superimmopro\.com|belles-demeures|jetrouvetous\.fr|immobilier\.email)$/.test(d), nature: (o) => /vous avez (un|une) (nouveau |nouvelle )?(contact|demande|message)|nouveau message|nouveau contact|^\W*contact\b|contact .*annonce|internaute|demande d.information|souhaite (plus d.)?information|nouveau contact|a un contact|intéressé par/i.test(o) && !/collaborateurs|profil|page agence|saviez-vous|soyez prêt|tenez vos clients|facture|abonnement|newsletter/i.test(o) ? "lead" : "non_lead" },
+      {
+        id: "annonces_diverses",
+        nom: "Autres portails",
+        test: (d) => /(stonimmo\.com|lesannoncesducommerce\.fr|annonce-immobilier\.com|lesiteimmo\.com|superimmo(pro)?\.com|contact\.superimmopro\.com|belles-demeures|jetrouvetous\.fr|immobilier\.email)$/.test(d),
+        regles: ({ texte, o, r }) => {
+          const a = texte.match(/annonce concern[ée]e\s*:?\s*([\d\s.\u00a0\u202f]+€)?\s*([A-Za-zÀ-ÿ' -]+?)\s*\((\d{5})\)/i);
+          if (a) {
+            if (a[1] && !r.bien.prix) r.bien.prix = V.prix(a[1]);
+            r.bien.ville = r.bien.ville || a[2].trim();
+            r.bien.code_postal = r.bien.code_postal || a[3];
+          }
+          const rf = texte.match(/\br[ée]f\.?\s*:\s*([\w-]*\d[\w-]*)/i);
+          if (rf && !r.bien.reference) r.bien.reference = rf[1];
+          const no = o.match(/annonce\s*n[°o]\s*([\w-]*\d[\w-]*)/i);
+          if (no && !r.bien.reference && !r.bien.reference_portail) r.bien.reference_portail = no[1];
+        },
+        nature: (o) => /vous avez (un|une) (nouveau |nouvelle )?(contact|demande|message)|nouveau message|nouveau contact|^\W*contact\b|contact .*annonce|internaute|demande d.information|souhaite (plus d.)?information|nouveau contact|a un contact|intéressé par/i.test(o) && !/collaborateurs|profil|page agence|saviez-vous|soyez prêt|tenez vos clients|facture|abonnement|newsletter/i.test(o) ? "lead" : "non_lead"
+      },
       /* Rapport de quarantaine anti-spam : ce n'est pas un lead mais il peut en cacher. */
       {
         id: "vade",
@@ -93493,7 +93612,14 @@ var require_extraire = __commonJS({
       if (!x || x !== x.toUpperCase() && x !== x.toLowerCase()) return x;
       return x.toLowerCase().replace(new RegExp("(^|[\\s'\u2019-])(\\p{L})", "gu"), (m, a, b) => a + b.toUpperCase()).replace(/\b(De|Du|Des|La|Le|Van|Von|Der|Den|Da|Di)\b(?=\s)/g, (w, _, i) => i ? w.toLowerCase() : w);
     };
+    var CIVILITE = /^(m\.?|mr\.?|mrs\.?|ms\.?|mme\.?|mlle\.?|madame|monsieur|mademoiselle|miss|mister|dr\.?)\s+(?=\S)/i;
     var nettoyerNoms = (c = {}) => {
+      for (const k of ["nom_complet", "nom", "prenom"]) if (c[k]) {
+        const x = String(c[k]).trim().replace(CIVILITE, "");
+        if (x !== String(c[k]).trim() && x.length >= 2) c[k] = x;
+      }
+      if (c.prenom && /^(m|mr|mme|ms|mrs)\.?$/i.test(String(c.prenom).trim())) delete c.prenom;
+      if (c.prenom && new RegExp("^\\p{L}\\.?$", "u").test(String(c.prenom).trim())) delete c.prenom;
       for (const k of ["nom", "prenom", "nom_complet"]) if (c[k] && (ROLE.test(String(c[k]).trim()) || /[\d@]/.test(String(c[k])))) delete c[k];
       if (!c.nom && !c.prenom && c.nom_complet) {
         const dn = V.decouperNom(c.nom_complet) || {};
@@ -93600,7 +93726,8 @@ var require_extraire = __commonJS({
         for (const [k, v] of Object.entries(V.faitsTitre(objet))) poser(r, "bien." + k, v, "objet");
         poser(r, "contact.email", V.email(mail.expediteur), "expediteur");
         const n = String(mail.expediteur || "").match(/^\s*"?([^"<@]+?)"?\s*</);
-        if (n) poser(r, "contact.nom_complet", V.nomPropre(n[1]), "expediteur");
+        const societe = n && /\b(sarl|sas|sasu|eurl|sci|sa|ste|soci[ée]t[ée]|services?|r[ée]novation|construction|b[aâ]timent|immobili[eè]re?|agence|entreprise|group[e]?|ltd|limited|gmbh|bv|srl|inc|llc|consulting|conseil)\b/i.test(n[1]);
+        if (n && !societe) poser(r, "contact.nom_complet", V.nomPropre(n[1]), "expediteur");
         if (!r.message) {
           r.message = corps.split("\n").slice(0, 40).join("\n");
           r.preuves.message = "corps";
@@ -93610,7 +93737,29 @@ var require_extraire = __commonJS({
         const intention = /(visite|visiter|viewing|intéress|interested|renseignement|information|achat|acheter|buy|purchase|disponible|available|prix|price|offre|offer|à vendre|a vendre|for sale|te koop|recherche|looking for)/i.test(zone);
         const masse = /(se désinscrire|désinscri|unsubscribe|se désabonner|ne plus recevoir|manage (your )?preferences|view in browser|voir la version en ligne)/i.test(texte) || /^\s*\[spam\]|code de (connexion|vérification)|sign in to|verification code|facture|invoice|commande n°|livraison/i.test(objet) || /^(no-?reply|noreply|newsletter|marketing|news|info|contact|support|notification)s?@/i.test(V.email(mail.expediteur) || "");
         const perso = /@(gmail|googlemail|hotmail|outlook|live|msn|yahoo|ymail|aol|icloud|me|mac|orange|wanadoo|free|sfr|neuf|laposte|bbox|club-internet|numericable|gmx|web|t-online|proton|protonmail|pm|btinternet|sky|virgin|ziggo|kpnmail|telenet|skynet|bluewin|libero|tiscali|freenet|mail|zoho)\./i.test(V.email(mail.expediteur) || "");
-        if (masse) r.nature = "inconnu";
+        const nomAffiche = n ? cle(n[1]) : "";
+        const membre = nomAffiche && (conf.routage && conf.routage.personnes || []).find((p2) => {
+          const x = cle(p2.nom || "");
+          if (!x || !x.includes(" ")) return false;
+          const a = x.split(" ").sort().join(" "), b2 = nomAffiche.split(" ").sort().join(" ");
+          return a === b2;
+        });
+        const domExp = (V.email(mail.expediteur) || "").split("@")[1] || "";
+        const etrangers = liens.filter((u) => {
+          const h = (u.match(/^https?:\/\/([^/]+)/i) || [])[1] || "";
+          return h && !h.endsWith(domExp.split(".").slice(-2).join("."));
+        });
+        const partage = /(a partag[ée]r? (un|des) (document|fichier)s?|shared (a|some) (document|file)s?|vous a envoy[ée] (un|des) (document|fichier)s?|expire le|expires? on|voir le document|view (the )?document|acc[ée]der (au|aux) (document|fichier))/i.test(corps.slice(0, 1500));
+        const fausseMarque = n && /(wetransfer|onedrive|sharepoint|docusign|dropbox|microsoft|office ?365)/i.test(n[1]) && !/(wetransfer|microsoft|docusign|dropbox)\./i.test(domExp);
+        const hamecon = (partage || fausseMarque) && etrangers.length > 0;
+        if (membre) {
+          r.nature = "interne";
+          r.interne_nom = membre.nom;
+          r.preuves.nature = "nom affich\xE9 d'un membre de l'\xE9quipe";
+        } else if (hamecon) {
+          r.nature = "hameconnage";
+          r.suspect = "hame\xE7onnage probable : ne pas ouvrir les liens ni les pi\xE8ces jointes";
+        } else if (masse) r.nature = "inconnu";
         else if (!perso && !r.bien.reference) r.nature = "inconnu";
         else if (!r.bien.reference && !(bienMot && intention)) r.nature = "inconnu";
       }
@@ -93667,7 +93816,7 @@ var require_extraire = __commonJS({
       if (!c.nom && !c.prenom && !c.nom_complet && r.message) {
         const lm = r.message.split("\n").map((x) => x.trim()).filter(Boolean);
         const f = lm.findIndex((x) => /^(bien )?(cordialement|sincèrement|salutations|bien à vous|merci|best regards|kind regards|regards|thanks)\b/i.test(x));
-        const cand = f >= 0 ? lm[f + 1] : null;
+        const cand = f >= 0 && lm[f + 1] ? lm[f + 1].replace(/\s+envoy[ée] (de|depuis)\b.*$/i, "").replace(/\s+(tel\.?|tél\.?|mob\.?|port\.?)?\s*:?\s*\+?\d[\d .\/-]{7,}.*$/i, "").trim() : null;
         if (cand && /^[A-ZÀ-Ÿ][a-zà-ÿA-ZÀ-Ÿ'’.-]+(?:\s+[A-ZÀ-Ÿa-zà-ÿ][a-zà-ÿA-ZÀ-Ÿ'’.-]+){0,3}$/.test(cand) && cand.length <= 40 && !/agence|immobili|sélection|selection/i.test(cand)) {
           c.nom_complet = cand;
           r.preuves["contact.nom_complet"] = "signature";
@@ -93704,6 +93853,14 @@ var require_extraire = __commonJS({
           }
         }
       }
+      if (c.telephone && /^[1-9]\d{8}$/.test(c.telephone)) {
+        const senegal = /senegal/i.test(String(mail.destinataire || "")) || /s[ée]n[ée]gal|saly|somone|dakar|mbour|ngaparou/i.test(String(r.bien.ville || "") + " " + String(r.bien.pays || ""));
+        const intl = V.indicatifContexte(c.telephone, { pays: c.pays, email: c.email, senegal });
+        if (intl) {
+          c.telephone = intl;
+          r.preuves["contact.telephone.indicatif"] = "contexte";
+        } else (r.remarques = r.remarques || []).push(`t\xE9l\xE9phone \xAB ${c.telephone} \xBB sans indicatif pays : gard\xE9 tel qu'\xE9crit`);
+      }
       const b = r.bien;
       for (const k of ["prix", "surface", "pieces", "chambres"]) if (b[k] === null || b[k] === void 0 || b[k] === "" || Number.isNaN(b[k])) delete b[k];
       if (b.ville) b.ville = b.ville.replace(/\s+/g, " ").replace(/[,.]+$/, "").trim();
@@ -93721,7 +93878,7 @@ var require_extraire = __commonJS({
         const m = String(r.message || "").slice(0, 1500);
         if (/\b(message )?test\b.{0,20}\b(message )?test\b|^\s*test\s*$/i.test(m)) r.suspect = "message de test";
         else if (/(nous avons|j.ai) (déjà )?trouvé (un bien|une maison|notre bien|ce que)|n.(e )?(sommes|suis) plus (intéressé|à la recherche)|no longer (interested|looking)|already found/i.test(m)) r.suspect = "le prospect dit ne plus chercher (\xE0 noter dans le CRM)";
-        else if (/(photographe|vid[ée]o(graphe)?s? (par )?drone|shooting|home staging|référencement (de|naturel|google)|(création|refonte) de (votre |votre nouveau )?site|visibilité en ligne|nos services|notre agence de communication|partenariat commercial|je vous propose (mes|nos) services|prestataire|devis gratuit|leads? qualifiés|je (réalise|crée|refais) (des|vos|votre)|visite virtuelle 3d|rachat de (votre )?agence|cession (de )?cabinet|résiliation (du|de mon) mandat|résilier (le|mon) mandat)/i.test(m)) r.suspect = "d\xE9marchage ou demande qui n'est pas un achat";
+        else if (/(photographe|vid[ée]o(graphe)?s? (par )?drone|shooting|home staging|référencement (de|naturel|google)|(création|refonte) de (votre |votre nouveau )?site|visibilité en ligne|nos services|notre agence de communication|partenariat commercial|je vous propose (mes|nos) services|prestataire|devis gratuit|leads? qualifiés|je (réalise|crée|refais) (des|vos|votre)|(je réalise|nous réalisons|je propose|nous proposons|création de|réalisation de) (des |vos |de )?visites? virtuelles?|rachat de (votre )?agence|cession (de )?cabinet|résiliation (du|de mon) mandat|résilier (le|mon) mandat|fondat(eur|rice) de|nous (transformons|accompagnons|aidons) (les |vos )?(agences|professionnels|photos|biens)|notre (solution|offre|plateforme) (vous )?(permet|aide)|ça vous permet de|générer (plus de )?(leads|mandats|contacts)|augmenter (vos|le nombre de) (ventes|mandats|contacts))/i.test(m)) r.suspect = "d\xE9marchage ou demande qui n'est pas un achat";
       }
       const vend = texte.match(/a(?:-t-il)? un bien à vendre\s*[:?]?\s*(oui|non)/i);
       if (vend && r.a_un_bien_a_vendre === void 0) r.a_un_bien_a_vendre = /oui/i.test(vend[1]);
@@ -93745,7 +93902,7 @@ var require_rapprochement = __commonJS({
   "src/lib/leads/rapprochement.js"(exports2, module2) {
     "use strict";
     var { cle } = require_texte();
-    var REGLES = { prix_ok: 0.035, prix_ko: 0.1, surface_ok_m2: 3, surface_ok: 0.035, surface_ko: 0.1 };
+    var REGLES = { prix_ok: 0.035, prix_proche: 0.1, prix_ko: 0.1, surface_ok_m2: 3, surface_ok: 0.035, surface_ko: 0.1, surface_ko_m2: 8 };
     var ecart = (a, b) => Math.abs(a - b) / Math.max(Math.abs(a), Math.abs(b), 1);
     var memeVille = (a, b) => {
       const x = cle(a).replace(/\b(saint|st)\b/g, "st").replace(/\s+/g, ""), y = cle(b).replace(/\b(saint|st)\b/g, "st").replace(/\s+/g, "");
@@ -93754,28 +93911,38 @@ var require_rapprochement = __commonJS({
     var comparer = (mail = {}, bien = {}, regles = REGLES) => {
       const out = { accords: [], conflits: [], inconnus: [], legers: [] };
       const note = (nom, ok, ko) => (ok ? out.accords : ko ? out.conflits : out.inconnus).push(nom);
-      if (mail.prix && bien.prix) {
-        const e = ecart(+mail.prix, +bien.prix);
-        note("prix", e <= regles.prix_ok, e > regles.prix_ko);
-        if (+mail.prix === +bien.prix) out.prix_exact = true;
+      const prixMail = mail.prix ? [+mail.prix] : (mail.prix_candidats || []).map(Number).filter((x) => x > 0);
+      if (prixMail.length && +bien.prix > 0) {
+        const e = Math.min(...prixMail.map((p) => ecart(p, +bien.prix)));
+        if (mail.prix || e <= regles.prix_ok) note("prix", e <= regles.prix_ok, e > regles.prix_ko);
+        if (prixMail.some((p) => p === +bien.prix)) out.prix_exact = true;
+        if (e > regles.prix_ok && e <= regles.prix_proche) out.prix_proche = true;
       }
       if (mail.loyer && bien.prix && +bien.prix < 2e4) {
         const e = ecart(+mail.loyer, +bien.prix);
         note("prix", e <= 0.1, e > 0.25);
       }
-      if (mail.surface && bien.surface) {
+      if (mail.surface && +bien.surface > 0) {
         const d = Math.abs(mail.surface - bien.surface), e = ecart(+mail.surface, +bien.surface);
-        note("surface", d <= regles.surface_ok_m2 || e <= regles.surface_ok, e > regles.surface_ko && d > regles.surface_ok_m2);
+        note("surface", d <= regles.surface_ok_m2 || e <= regles.surface_ok, e > regles.surface_ko && d > regles.surface_ko_m2);
       }
-      if (mail.pieces && bien.pieces) note("pieces", +mail.pieces === +bien.pieces, Math.abs(mail.pieces - bien.pieces) >= 2);
-      if (mail.code_postal && bien.code_postal) note("code_postal", mail.code_postal === bien.code_postal, mail.code_postal.slice(0, 2) !== String(bien.code_postal).slice(0, 2));
-      else if (mail.departement && bien.code_postal) note("departement", String(bien.code_postal).startsWith(mail.departement), !String(bien.code_postal).startsWith(mail.departement));
+      if (mail.pieces && +bien.pieces > 0) note("pieces", +mail.pieces === +bien.pieces, Math.abs(mail.pieces - bien.pieces) >= 2);
+      const approx = !!mail.lieu_approche;
+      if (mail.code_postal && bien.code_postal) {
+        const ok = String(mail.code_postal) === String(bien.code_postal), ko = String(mail.code_postal).slice(0, 2) !== String(bien.code_postal).slice(0, 2);
+        if (ok || !approx) note("code_postal", ok, ko && !approx);
+        if (!ok && approx) out.legers.push("code_postal");
+      } else if (mail.departement && bien.code_postal) {
+        const ok = String(bien.code_postal).startsWith(mail.departement);
+        if (ok || !approx) note("departement", ok, !ok && !approx);
+        if (!ok && approx) out.legers.push("departement");
+      }
       if (mail.ville && bien.ville) {
         const ok = memeVille(mail.ville, bien.ville);
-        if (ok || !mail.lieu_approche) {
+        if (ok || !approx) {
           note("ville", ok, false);
           if (!ok) out.legers.push("ville");
-        }
+        } else out.legers.push("ville");
       }
       if (mail.type && bien.type) {
         const ok = mail.type === bien.type;
@@ -93785,52 +93952,83 @@ var require_rapprochement = __commonJS({
       return out;
     };
     var DISTINCTIFS = ["prix", "surface", "code_postal", "ville", "departement"];
-    var verdict = (cmp, minAccords, preuveForte = false) => {
+    var verdict = (cmp, minAccords, force = "faible") => {
+      if (force === true) force = "forte";
       const legers = cmp.legers || [];
       const distinctifs = cmp.accords.filter((a) => DISTINCTIFS.includes(a));
-      const ecart2 = (c) => ({ ok: true, raison: "accords : " + cmp.accords.join(", ") + " \u2014 \xE9cart signal\xE9 : " + c, alerte: c });
-      if (preuveForte) {
+      const ecartSignale = (c) => ({ ok: true, raison: "accords : " + (cmp.accords.join(", ") || "aucun") + " \u2014 \xE9cart signal\xE9 : " + c, alerte: c });
+      if (force === "tres_forte") {
+        if (!cmp.conflits.length) return { ok: true, raison: cmp.accords.length ? "accords : " + cmp.accords.join(", ") : "identifiant exact, rien \xE0 comparer", alerte: legers.length ? legers.join(", ") : void 0 };
+        if (cmp.conflits.length === 1) return ecartSignale(cmp.conflits[0]);
+        return { ok: false, raison: "contradiction : " + cmp.conflits.join(", ") };
+      }
+      if (force === "forte") {
+        if (cmp.conflits.length && cmp.conflits.every((c) => ["code_postal", "departement", "ville"].includes(c))) return ecartSignale(cmp.conflits.join(", "));
         if (!cmp.conflits.length) return { ok: true, raison: cmp.accords.length ? "accords : " + cmp.accords.join(", ") : "r\xE9f\xE9rence exacte, rien \xE0 comparer", alerte: legers.length ? legers.join(", ") : void 0 };
-        if (cmp.conflits.length === 1 && (cmp.accords.length >= 2 || cmp.prix_exact)) return ecart2(cmp.conflits[0]);
+        if (cmp.conflits.length === 1 && (cmp.accords.length >= 2 || cmp.prix_exact)) return ecartSignale(cmp.conflits[0]);
         return { ok: false, raison: "contradiction : " + cmp.conflits.join(", ") };
       }
       if (minAccords <= 0 && !cmp.conflits.length) return { ok: true, raison: cmp.accords.length ? "accords : " + cmp.accords.join(", ") : "rien \xE0 comparer" };
       const solide = distinctifs.length >= 2;
-      if (cmp.conflits.length === 1 && cmp.conflits[0] === "prix" && solide) return ecart2("prix");
+      if (cmp.conflits.length === 1 && cmp.conflits[0] === "prix" && solide) return ecartSignale("prix");
       if (cmp.conflits.length) return { ok: false, raison: "contradiction : " + cmp.conflits.join(", ") };
-      if (legers.length && !solide) return { ok: false, raison: "contradiction : " + legers.join(", ") + " (preuve faible)" };
+      if (legers.filter((l) => l !== "type").length && !solide) return { ok: false, raison: "contradiction : " + legers.join(", ") + " (preuve faible)" };
       if (!distinctifs.length) return { ok: false, raison: "preuves insuffisantes : seulement " + (cmp.accords.join(", ") || "rien") };
       if (cmp.accords.length < minAccords) return { ok: false, raison: `preuves insuffisantes (${cmp.accords.length}/${minAccords} accord)` };
-      return legers.length ? ecart2(legers.join(", ")) : { ok: true, raison: "accords : " + cmp.accords.join(", ") };
+      return legers.length ? ecartSignale(legers.join(", ")) : { ok: true, raison: "accords : " + cmp.accords.join(", ") };
     };
     var variantes = (ref) => {
       const r = String(ref || "").trim();
       if (!r) return [];
       const out = [];
       const add = (valeur, etape, min) => {
-        if (valeur && valeur.length >= 2 && !out.some((x) => x.valeur === valeur)) out.push({ valeur, etape, min });
+        if (valeur && valeur.length >= 2 && !out.some((x) => x.valeur.toLowerCase() === valeur.toLowerCase())) out.push({ valeur, etape, min });
       };
       add(r, "reference_complete", 0);
-      if (r.length > 3) add(r.slice(0, -1), "reference_moins_dernier", 1);
       const seg = r.split(/[_\-/.\s|:]+/).filter(Boolean);
       if (seg.length > 1 && new Set(seg.map((x) => x.toLowerCase())).size === 1) add(seg[0], "reference_complete", 0);
+      if (r.length > 3) add(r.slice(0, -1), "reference_moins_dernier", 1);
       if (seg.length > 1) for (let i = seg.length - 1; i >= 0; i--) add(seg[i], "segment_" + (seg.length - i), 1);
+      if (seg.length > 2) {
+        const sep = r.match(/[_\-/.\s|:]+/g) || [];
+        for (let i = seg.length - 2; i >= 0; i--) add(seg[i] + (sep[i] || "-") + seg[i + 1], "segments_" + (seg.length - i - 1) + "_" + (seg.length - i), 1);
+      }
       const num = r.match(/\d{3,}/g) || [];
       for (let i = num.length - 1; i >= 0; i--) add(num[i], "partie_numerique", 1);
       return out;
     };
-    var CRITERES = ["type", "pieces", "surface", "prix", "lieu"];
+    var forceRef = (valeur, etape) => {
+      const n = String(valeur).replace(/[^A-Za-z0-9]/g, "").length;
+      if (etape !== "reference_complete") return "faible";
+      return n >= 8 ? "tres_forte" : n >= 3 ? "forte" : "faible";
+    };
+    var noter = (faits, b, regles = REGLES, exigeants = false) => {
+      const cmp = comparer(faits, b, regles);
+      const n = { cmp, score: 0 };
+      if (cmp.accords.includes("prix")) n.score += 3;
+      else if (cmp.prix_proche) n.score += 1;
+      if (cmp.accords.includes("surface")) n.score += 2;
+      if (cmp.accords.includes("pieces")) n.score += 1;
+      if (cmp.accords.some((a) => ["code_postal", "ville"].includes(a))) n.score += 2;
+      else if (cmp.accords.includes("departement")) n.score += 0.5;
+      if (cmp.accords.includes("type")) n.score += 0.5;
+      const autres = cmp.accords.filter((a) => ["surface", "pieces", "code_postal", "ville"].includes(a));
+      const besoin = exigeants ? 2 : 1;
+      n.recevable = !cmp.conflits.length && (cmp.accords.includes("prix") && autres.length >= besoin || cmp.prix_proche && cmp.accords.includes("surface") && cmp.accords.includes("pieces"));
+      return n;
+    };
     var rapprocher = async (lead, crm, opts = {}) => {
       const b = lead.bien || {};
-      const faits = { lieu_approche: b.lieu_approche, loyer: b.loyer, prix: b.prix, surface: b.surface, pieces: b.pieces, chambres: b.chambres, type: b.type, ville: b.ville, code_postal: b.code_postal, departement: b.departement };
+      const faits = { lieu_approche: b.lieu_approche, loyer: b.loyer, prix: b.prix, prix_candidats: b.prix ? void 0 : b.prix_candidats, surface: b.surface, pieces: b.pieces, chambres: b.chambres, type: b.type, ville: b.ville, code_postal: b.code_postal, departement: b.departement };
+      const regles = opts.regles || REGLES;
       const etapes = [], alertes = [];
-      const essayer = async (etape, requete, biens, minAccords, forte = false) => {
+      const essayer = async (etape, requete, biens, minAccords, force = "faible") => {
         const vus = /* @__PURE__ */ new Set(), list = (biens || []).filter((x) => x && !vus.has(String(x.id)) && vus.add(String(x.id)));
         const res = { etape, requete, trouves: list.length, candidats: [] };
         etapes.push(res);
         for (const x of list) {
-          const cmp = comparer(faits, x, opts.regles || REGLES);
-          const v = verdict(cmp, minAccords, forte);
+          const cmp = comparer(faits, x, regles);
+          const v = verdict(cmp, minAccords, force);
           res.candidats.push({ id: x.id, reference: x.reference, ok: v.ok, raison: v.raison, alerte: v.alerte });
         }
         const ok = res.candidats.filter((c) => c.ok);
@@ -93842,47 +94040,54 @@ var require_rapprochement = __commonJS({
         if (ok.length > 1) res.ambigu = true;
         return null;
       };
-      const idsCaches = [b.reference, b.reference_portail].flatMap((x) => String(x || "").split(/[_\-/.\s|:]+/)).filter((x) => /^6\d{7}$/.test(x));
-      for (const id of [...new Set([b.id_crm, ...idsCaches].filter(Boolean))]) {
+      const toutesRefs = [b.reference, ...b.references_autres || [], b.reference_portail].filter(Boolean).map(String);
+      const idsCaches = toutesRefs.flatMap((x) => x.split(/[^0-9]+/)).filter((x) => /^6\d{7}$/.test(x));
+      for (const id of [...new Set([b.id_crm, ...idsCaches].filter(Boolean).map(String))]) {
         const x = await crm.bienParId(id).catch(() => null);
-        const hit = await essayer("identifiant_crm", id, x ? [x] : [], 0, true);
+        const hit = await essayer("identifiant_crm", id, x ? [x] : [], 0, "tres_forte");
         if (hit) return { bien: hit, methode: "identifiant_crm", etapes, alertes, confiance: "haute" };
       }
-      const refs = [b.reference, b.reference_portail].filter(Boolean);
-      for (const ref of refs) {
-        for (const v of variantes(ref)) {
-          const biens = await crm.biensParReference(v.valeur).catch(() => []);
-          const exacts = biens.filter((x) => String(x.reference).trim().toLowerCase() === v.valeur.toLowerCase());
-          const forte = v.etape === "reference_complete" && v.valeur.replace(/[^A-Za-z0-9]/g, "").length >= 4;
-          const hit = await essayer(v.etape, v.valeur, exacts, forte ? v.min : Math.max(v.min, 1), forte);
-          if (hit) return { bien: hit, methode: v.etape, etapes, alertes, confiance: forte || v.min ? forte ? "haute" : "moyenne" : "moyenne" };
-        }
+      const refs = [...new Set(toutesRefs)];
+      const essais = [];
+      for (const ref of refs) for (const v of variantes(ref)) essais.push(v);
+      essais.sort((a, c) => (a.etape === "reference_complete" ? 0 : 1) - (c.etape === "reference_complete" ? 0 : 1));
+      const deja = /* @__PURE__ */ new Set();
+      for (const v of essais) {
+        const k = v.valeur.toLowerCase();
+        if (deja.has(k)) continue;
+        deja.add(k);
+        const biens = await crm.biensParReference(v.valeur).catch(() => []);
+        const exacts = biens.filter((x) => String(x.reference).trim().toLowerCase() === k);
+        const force = forceRef(v.valeur, v.etape);
+        const hit = await essayer(v.etape, v.valeur, exacts, force === "faible" ? Math.max(v.min, 1) : v.min, force);
+        if (hit) return { bien: hit, methode: v.etape, etapes, alertes, confiance: force === "faible" ? "moyenne" : "haute" };
       }
-      if (crm.biensParCriteres && !opts.sansCriteres) {
-        const dispo = CRITERES.filter((k) => k === "lieu" ? faits.ville || faits.code_postal : faits[k]);
-        if (dispo.length >= 2) {
-          let retenus = [], dernier = null;
-          for (const k of dispo) {
-            const essai = retenus.concat([k]);
-            const q = Object.fromEntries(essai.map((x) => x === "lieu" ? ["lieu", faits.ville || faits.code_postal] : [x, faits[x]]));
-            const r = await crm.biensParCriteres(q, { max: 2 }).catch(() => []);
-            etapes.push({ etape: "criteres", requete: q, trouves: r.length });
-            if (!r.length) continue;
-            retenus = essai;
-            dernier = r;
-            if (r.length === 1) break;
-          }
-          if (dernier && dernier.length === 1 && retenus.length >= 2) {
-            const hit = await essayer("criteres_verification", retenus.join("+"), dernier, 2);
-            if (hit) return { bien: hit, methode: "criteres:" + retenus.join("+"), etapes, alertes, confiance: retenus.length >= 3 ? "moyenne" : "basse" };
-          }
+      if (!opts.sansCriteres && (faits.prix || (faits.prix_candidats || []).length || faits.loyer)) {
+        let cands = null;
+        if (crm.tousLesBiens) cands = await crm.tousLesBiens().catch(() => null);
+        if (!cands && crm.biensParCriteres) {
+          const p = faits.prix || (faits.prix_candidats || [])[0];
+          cands = await crm.biensParCriteres({ prix_min: Math.floor(p * (1 - regles.prix_proche)), prix_max: Math.ceil(p * (1 + regles.prix_proche)), ...faits.code_postal && !faits.lieu_approche ? { lieu: faits.code_postal } : {} }, { max: 50 }).catch(() => []);
         }
+        const exigeants = refs.length > 0;
+        const notes = (cands || []).map((x) => ({ x, ...noter(faits, x, regles, exigeants) })).filter((n) => n.score > 0).sort((a, c) => c.score - a.score);
+        const recevables = notes.filter((n) => n.recevable);
+        const e = { etape: "criteres", requete: "catalogue not\xE9", trouves: recevables.length, candidats: notes.slice(0, 5).map((n) => ({ id: n.x.id, reference: n.x.reference, score: n.score, ok: n.recevable, raison: (n.cmp.conflits.length ? "contradiction : " + n.cmp.conflits.join(", ") + " ; " : "") + "accords : " + (n.cmp.accords.join(", ") || "aucun") })) };
+        etapes.push(e);
+        const [t, s] = recevables;
+        const autreProche = s && s.score > t.score - 1;
+        if (t && !autreProche) {
+          if (t.cmp.legers.length) alertes.push(t.cmp.legers.join(", ") + " diff\xE9rent entre le mail et le CRM");
+          return { bien: t.x, methode: "criteres:" + t.cmp.accords.join("+"), etapes, alertes, confiance: t.cmp.accords.length >= 3 ? "moyenne" : "basse" };
+        }
+        if (autreProche) e.ambigu = true;
       }
-      const ambigu = etapes.some((e) => e.ambigu);
-      const contredit = etapes.some((e) => (e.candidats || []).some((c) => /contradiction/.test(c.raison)));
-      return { bien: null, methode: null, etapes, motif: ambigu ? "plusieurs biens possibles" : contredit ? "bien trouv\xE9 mais contredit par le mail" : refs.length ? "r\xE9f\xE9rence introuvable" : "pas de r\xE9f\xE9rence ni assez de crit\xE8res" };
+      const ambigu = etapes.some((x) => x.ambigu);
+      const contredit = etapes.some((x) => (x.candidats || []).some((c) => /contradiction/.test(c.raison) && x.etape !== "criteres"));
+      const pistes = etapes.filter((x) => x.etape === "criteres").flatMap((x) => (x.candidats || []).filter((c) => c.ok)).slice(0, 3).map((c) => c.reference);
+      return { bien: null, methode: null, etapes, pistes, motif: ambigu ? "plusieurs biens possibles" + (pistes.length ? " (" + pistes.join(", ") + ")" : "") : contredit ? "bien trouv\xE9 mais contredit par le mail" : refs.length ? "r\xE9f\xE9rence introuvable" : "pas de r\xE9f\xE9rence ni assez de crit\xE8res (le prix est n\xE9cessaire)" };
     };
-    module2.exports = { rapprocher, comparer, verdict, variantes, REGLES };
+    module2.exports = { rapprocher, comparer, verdict, variantes, noter, forceRef, REGLES };
   }
 });
 
@@ -94957,14 +95162,15 @@ var require_traiter = __commonJS({
       if (explicite) return { source: "portail", transaction: r.projet === "location" ? "location" : "vente", type: R.type, localisation: R.localisation, budget_max: R.budget_max, surface_min: R.surface_min, pieces_min: R.pieces_min };
       if (!bien) return null;
       const prix = +bien.prix || +(r.bien && (r.bien.prix || r.bien.loyer)) || 0;
+      const exact = !!bien.id;
       return {
         source: "bien",
         transaction: r.projet === "location" ? "location" : "vente",
         type: bien.type || r.bien && r.bien.type,
         localisation: [bien.code_postal, bien.ville].filter(Boolean).join(" ") || null,
-        budget_max: prix ? Math.round(prix * (1 + m.prix)) : null,
-        surface_min: +bien.surface ? Math.floor(+bien.surface * (1 - m.surface)) : null,
-        pieces_min: +bien.pieces ? Math.max(1, +bien.pieces - m.pieces) : null
+        budget_max: prix ? exact ? Math.round(prix) : Math.round(prix * (1 + m.prix)) : null,
+        surface_min: +bien.surface ? exact ? Math.floor(+bien.surface) : Math.floor(+bien.surface * (1 - m.surface)) : null,
+        pieces_min: +bien.pieces ? exact ? +bien.pieces : Math.max(1, +bien.pieces - m.pieces) : null
       };
     };
     var negociateurCite = (texte, personnes = []) => {
@@ -95032,12 +95238,15 @@ var require_traiter = __commonJS({
         }
       }
       if (!NATURES_LEAD.includes(r.nature)) {
-        d.statut = ["inconnu", "reponse_campagne"].includes(r.nature) ? "a_trier" : r.nature === "alerte_spam" && (r.bloques || []).length ? "alerte" : "ignore";
+        d.statut = ["inconnu", "reponse_campagne"].includes(r.nature) ? "a_trier" : r.nature === "alerte_spam" && (r.bloques || []).length || r.nature === "hameconnage" ? "alerte" : "ignore";
+        if (r.nature === "hameconnage") d.alertes.push("hame\xE7onnage probable (" + (r.expediteur_affiche || "exp\xE9diteur") + ") : ne pas ouvrir les liens ni les pi\xE8ces jointes, ne pas transmettre");
+        if (r.nature === "interne" && r.interne_nom) d.alertes.push("\xE9crit par un membre de l'\xE9quipe (" + r.interne_nom + ") depuis une adresse personnelle : pas un prospect");
         d.motifs.push(`nature : ${r.nature}`);
         if (r.nature === "alerte_spam" && (r.bloques || []).length) d.alertes.push(`${r.bloques.length} mail(s) de portail bloqu\xE9(s) par l'anti-spam : ${r.bloques.join(", ")}`);
         return fin();
       }
       if (r.suspect) d.motifs.push("\xE0 v\xE9rifier : " + r.suspect);
+      for (const x of r.remarques || []) d.alertes.push(x);
       if (r.nature_corrigee) d.alertes.push(`${r.portail_nom || r.portail} : ${r.nature_corrigee}`);
       if (r.a_un_bien_a_vendre) d.alertes.push("le prospect dit avoir aussi un bien \xE0 vendre : vendeur potentiel");
       if (r.portail === "inconnu" || r.lu_par.length > 1) {
@@ -95649,6 +95858,8 @@ var require_immofacile = __commonJS({
           if (q.pieces) c.push({ id: await cleXml("NbPieces", "NbPiece"), operator: "EGAL", value: String(q.pieces) });
           if (q.surface) c.push({ id: await cleXml("Surface"), operator: "EGAL", value: String(q.surface) });
           if (q.prix) c.push({ id: await cleXml("Prix"), operator: "EGAL", value: String(q.prix) });
+          if (q.prix_min) c.push({ id: await cleXml("Prix"), operator: "SUPERIEUR", value: String(q.prix_min) });
+          if (q.prix_max) c.push({ id: await cleXml("Prix"), operator: "INFERIEUR", value: String(q.prix_max) });
           if (q.lieu) c.push({ id: await cleXml("CPVilleweb", "CPVille"), operator: "CONTIENT", value: String(q.lieu) });
           if (!c.length) return [];
           return (await recherche({ criterias: c, count: max })).slice(0, max);
@@ -95906,7 +96117,8 @@ var require_memoire = __commonJS({
         ecritures,
         bienParId: async (id) => B.find((b) => String(b.id) === String(id)) || null,
         biensParReference: async (ref) => B.filter((b) => String(b.reference || "").trim().toLowerCase() === String(ref).trim().toLowerCase()).slice(0, 5),
-        biensParCriteres: async (q, { max = 2 } = {}) => B.filter((b) => (q.type === void 0 || b.type === q.type) && (q.pieces === void 0 || +b.pieces === +q.pieces) && (q.surface === void 0 || Math.round(+b.surface) === Math.round(+q.surface)) && (q.prix === void 0 || +b.prix === +q.prix) && (q.lieu === void 0 || cle(b.ville + " " + b.code_postal).includes(cle(q.lieu)))).slice(0, max),
+        tousLesBiens: async () => B,
+        biensParCriteres: async (q, { max = 2 } = {}) => B.filter((b) => (q.prix_min === void 0 || +b.prix >= q.prix_min) && (q.prix_max === void 0 || +b.prix <= q.prix_max) && (q.type === void 0 || b.type === q.type) && (q.pieces === void 0 || +b.pieces === +q.pieces) && (q.surface === void 0 || Math.round(+b.surface) === Math.round(+q.surface)) && (q.prix === void 0 || +b.prix === +q.prix) && (q.lieu === void 0 || cle(b.ville + " " + b.code_postal).includes(cle(q.lieu)))).slice(0, max),
         contactsParEmail: async (e) => C.filter((c) => (c.emails || [c.email]).map((x) => String(x || "").toLowerCase()).includes(String(e).toLowerCase())),
         contactsParTelephone: async (t) => C.filter((c) => (c.telephones || [c.telephone]).includes(t)),
         creerContact: async (c) => {
@@ -97375,7 +97587,8 @@ var require_catalogue = __commonJS({
           const l = await local.biensParReference(ref);
           return l.length ? l : crm.biensParReference(ref).catch(() => []);
         },
-        biensParCriteres: (q, o) => local.biensParCriteres(q, o)
+        biensParCriteres: (q, o) => local.biensParCriteres(q, o),
+        tousLesBiens: async () => biens
       };
     };
     module2.exports = { synchroniser, evenementBien, avecCatalogue, biensLocaux, enregistrerBiens, oublier };

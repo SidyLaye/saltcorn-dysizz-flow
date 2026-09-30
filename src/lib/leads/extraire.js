@@ -146,7 +146,13 @@ const casse = (v) => {
   if (!x || (x !== x.toUpperCase() && x !== x.toLowerCase())) return x;
   return x.toLowerCase().replace(/(^|[\s'’-])(\p{L})/gu, (m, a, b) => a + b.toUpperCase()).replace(/\b(De|Du|Des|La|Le|Van|Von|Der|Den|Da|Di)\b(?=\s)/g, (w, _, i) => (i ? w.toLowerCase() : w));
 };
+/* Civilité en tête d'un nom (« M Habitat Square », « Mme Busson Sandrine », « Mr Andrew Dimmer ») : retirée. */
+const CIVILITE = /^(m\.?|mr\.?|mrs\.?|ms\.?|mme\.?|mlle\.?|madame|monsieur|mademoiselle|miss|mister|dr\.?)\s+(?=\S)/i;
 const nettoyerNoms = (c = {}) => {
+  for (const k of ["nom_complet", "nom", "prenom"]) if (c[k]) { const x = String(c[k]).trim().replace(CIVILITE, ""); if (x !== String(c[k]).trim() && x.length >= 2) c[k] = x; }
+  if (c.prenom && /^(m|mr|mme|ms|mrs)\.?$/i.test(String(c.prenom).trim())) delete c.prenom;
+  /* une initiale seule (« A ») n'est pas un prénom */
+  if (c.prenom && /^\p{L}\.?$/u.test(String(c.prenom).trim())) delete c.prenom;
   for (const k of ["nom", "prenom", "nom_complet"]) if (c[k] && (ROLE.test(String(c[k]).trim()) || /[\d@]/.test(String(c[k])))) delete c[k];
   if (!c.nom && !c.prenom && c.nom_complet) { const dn = V.decouperNom(c.nom_complet) || {}; if (dn.nom) c.nom = dn.nom; if (dn.prenom) c.prenom = dn.prenom; }
   /* un seul mot donné, recopié en prénom et en nom : on le range d'un seul côté */
@@ -225,7 +231,10 @@ const extraire = (mail, conf = {}) => {
     for (const [k, v] of Object.entries(V.faitsTitre(objet))) poser(r, "bien." + k, v, "objet");
     poser(r, "contact.email", V.email(mail.expediteur), "expediteur");
     const n = String(mail.expediteur || "").match(/^\s*"?([^"<@]+?)"?\s*</);
-    if (n) poser(r, "contact.nom_complet", V.nomPropre(n[1]), "expediteur");
+    /* un nom de société affiché (« A DUPONT RENOVATION SERVICES », « EXEMPLE SARL ») n'est pas le nom du prospect :
+       la signature du message le donnera */
+    const societe = n && /\b(sarl|sas|sasu|eurl|sci|sa|ste|soci[ée]t[ée]|services?|r[ée]novation|construction|b[aâ]timent|immobili[eè]re?|agence|entreprise|group[e]?|ltd|limited|gmbh|bv|srl|inc|llc|consulting|conseil)\b/i.test(n[1]);
+    if (n && !societe) poser(r, "contact.nom_complet", V.nomPropre(n[1]), "expediteur");
     if (!r.message) { r.message = corps.split("\n").slice(0, 40).join("\n"); r.preuves.message = "corps"; }
     const zone = objet + "\n" + corps.slice(0, 1200);
     const bienMot = /(maison|villa|appartement|propriét|house|property|home|huis|woning|annonce|listing|réf|ref\b|reference)/i.test(zone);
@@ -233,7 +242,18 @@ const extraire = (mail, conf = {}) => {
     /* Envoi en nombre (lien de désinscription, [SPAM], code de connexion…) : pas un particulier. */
     const masse = /(se désinscrire|désinscri|unsubscribe|se désabonner|ne plus recevoir|manage (your )?preferences|view in browser|voir la version en ligne)/i.test(texte) || /^\s*\[spam\]|code de (connexion|vérification)|sign in to|verification code|facture|invoice|commande n°|livraison/i.test(objet) || /^(no-?reply|noreply|newsletter|marketing|news|info|contact|support|notification)s?@/i.test(V.email(mail.expediteur) || "");
     const perso = /@(gmail|googlemail|hotmail|outlook|live|msn|yahoo|ymail|aol|icloud|me|mac|orange|wanadoo|free|sfr|neuf|laposte|bbox|club-internet|numericable|gmx|web|t-online|proton|protonmail|pm|btinternet|sky|virgin|ziggo|kpnmail|telenet|skynet|bluewin|libero|tiscali|freenet|mail|zoho)\./i.test(V.email(mail.expediteur) || "");
-    if (masse) r.nature = "inconnu";
+    /* un membre de l'équipe qui écrit depuis une adresse personnelle (nom affiché = une personne des réglages) */
+    const nomAffiche = n ? cle(n[1]) : "";
+    const membre = nomAffiche && ((conf.routage && conf.routage.personnes) || []).find((p) => { const x = cle(p.nom || ""); if (!x || !x.includes(" ")) return false; const a = x.split(" ").sort().join(" "), b = nomAffiche.split(" ").sort().join(" "); return a === b; });
+    /* hameçonnage : « X a partagé un document », « expire le », lien vers un site sans rapport avec l'expéditeur */
+    const domExp = (V.email(mail.expediteur) || "").split("@")[1] || "";
+    const etrangers = liens.filter((u) => { const h = (u.match(/^https?:\/\/([^/]+)/i) || [])[1] || ""; return h && !h.endsWith(domExp.split(".").slice(-2).join(".")); });
+    const partage = /(a partag[ée]r? (un|des) (document|fichier)s?|shared (a|some) (document|file)s?|vous a envoy[ée] (un|des) (document|fichier)s?|expire le|expires? on|voir le document|view (the )?document|acc[ée]der (au|aux) (document|fichier))/i.test(corps.slice(0, 1500));
+    const fausseMarque = n && /(wetransfer|onedrive|sharepoint|docusign|dropbox|microsoft|office ?365)/i.test(n[1]) && !/(wetransfer|microsoft|docusign|dropbox)\./i.test(domExp);
+    const hamecon = (partage || fausseMarque) && etrangers.length > 0;
+    if (membre) { r.nature = "interne"; r.interne_nom = membre.nom; r.preuves.nature = "nom affiché d'un membre de l'équipe"; }
+    else if (hamecon) { r.nature = "hameconnage"; r.suspect = "hameçonnage probable : ne pas ouvrir les liens ni les pièces jointes"; }
+    else if (masse) r.nature = "inconnu";
     else if (!perso && !r.bien.reference) r.nature = "inconnu";
     else if (!r.bien.reference && !(bienMot && intention)) r.nature = "inconnu";
   }
@@ -281,7 +301,8 @@ const extraire = (mail, conf = {}) => {
   if (!c.nom && !c.prenom && !c.nom_complet && r.message) {
     const lm = r.message.split("\n").map((x) => x.trim()).filter(Boolean);
     const f = lm.findIndex((x) => /^(bien )?(cordialement|sincèrement|salutations|bien à vous|merci|best regards|kind regards|regards|thanks)\b/i.test(x));
-    const cand = f >= 0 ? lm[f + 1] : null;
+    /* « Léa MARTIN 06.00.00.00.00 Envoyé depuis l'application Mail Orange » : le nom, sans le numéro ni le pied de page */
+    const cand = f >= 0 && lm[f + 1] ? lm[f + 1].replace(/\s+envoy[ée] (de|depuis)\b.*$/i, "").replace(/\s+(tel\.?|tél\.?|mob\.?|port\.?)?\s*:?\s*\+?\d[\d .\/-]{7,}.*$/i, "").trim() : null;
     if (cand && /^[A-ZÀ-Ÿ][a-zà-ÿA-ZÀ-Ÿ'’.-]+(?:\s+[A-ZÀ-Ÿa-zà-ÿ][a-zà-ÿA-ZÀ-Ÿ'’.-]+){0,3}$/.test(cand) && cand.length <= 40 && !/agence|immobili|sélection|selection/i.test(cand)) { c.nom_complet = cand; r.preuves["contact.nom_complet"] = "signature"; }
   }
   if (c.nom_complet && !c.nom && !c.prenom) {
@@ -300,6 +321,13 @@ const extraire = (mail, conf = {}) => {
     const m = r.message.match(/(?:\+\d{2}\s?\(?0?\)?\s?|\b0|(?<=\s))[1-9](?:[\s.-]?\d{2}){4}\b/);
     if (m) { const t = V.telephone(/^[1-9]/.test(m[0].trim()) ? "0" + m[0].trim() : m[0]); if (t && telOk(t)) { c.telephone = t; r.preuves["contact.telephone"] = "message"; } }
   }
+  /* Numéro sans 0 ni indicatif : le pays vient du contexte (pays indiqué, e-mail, agence), sinon il reste tel qu'écrit. */
+  if (c.telephone && /^[1-9]\d{8}$/.test(c.telephone)) {
+    const senegal = /senegal/i.test(String(mail.destinataire || "")) || /s[ée]n[ée]gal|saly|somone|dakar|mbour|ngaparou/i.test(String(r.bien.ville || "") + " " + String(r.bien.pays || ""));
+    const intl = V.indicatifContexte(c.telephone, { pays: c.pays, email: c.email, senegal });
+    if (intl) { c.telephone = intl; r.preuves["contact.telephone.indicatif"] = "contexte"; }
+    else (r.remarques = r.remarques || []).push(`téléphone « ${c.telephone} » sans indicatif pays : gardé tel qu'écrit`);
+  }
   const b = r.bien;
   for (const k of ["prix", "surface", "pieces", "chambres"]) if (b[k] === null || b[k] === undefined || b[k] === "" || Number.isNaN(b[k])) delete b[k];
   if (b.ville) b.ville = b.ville.replace(/\s+/g, " ").replace(/[,.]+$/, "").trim();
@@ -316,7 +344,7 @@ const extraire = (mail, conf = {}) => {
     const m = String(r.message || "").slice(0, 1500);
     if (/\b(message )?test\b.{0,20}\b(message )?test\b|^\s*test\s*$/i.test(m)) r.suspect = "message de test";
     else if (/(nous avons|j.ai) (déjà )?trouvé (un bien|une maison|notre bien|ce que)|n.(e )?(sommes|suis) plus (intéressé|à la recherche)|no longer (interested|looking)|already found/i.test(m)) r.suspect = "le prospect dit ne plus chercher (à noter dans le CRM)";
-    else if (/(photographe|vid[ée]o(graphe)?s? (par )?drone|shooting|home staging|référencement (de|naturel|google)|(création|refonte) de (votre |votre nouveau )?site|visibilité en ligne|nos services|notre agence de communication|partenariat commercial|je vous propose (mes|nos) services|prestataire|devis gratuit|leads? qualifiés|je (réalise|crée|refais) (des|vos|votre)|visite virtuelle 3d|rachat de (votre )?agence|cession (de )?cabinet|résiliation (du|de mon) mandat|résilier (le|mon) mandat)/i.test(m)) r.suspect = "démarchage ou demande qui n'est pas un achat";
+    else if (/(photographe|vid[ée]o(graphe)?s? (par )?drone|shooting|home staging|référencement (de|naturel|google)|(création|refonte) de (votre |votre nouveau )?site|visibilité en ligne|nos services|notre agence de communication|partenariat commercial|je vous propose (mes|nos) services|prestataire|devis gratuit|leads? qualifiés|je (réalise|crée|refais) (des|vos|votre)|(je réalise|nous réalisons|je propose|nous proposons|création de|réalisation de) (des |vos |de )?visites? virtuelles?|rachat de (votre )?agence|cession (de )?cabinet|résiliation (du|de mon) mandat|résilier (le|mon) mandat|fondat(eur|rice) de|nous (transformons|accompagnons|aidons) (les |vos )?(agences|professionnels|photos|biens)|notre (solution|offre|plateforme) (vous )?(permet|aide)|ça vous permet de|générer (plus de )?(leads|mandats|contacts)|augmenter (vos|le nombre de) (ventes|mandats|contacts))/i.test(m)) r.suspect = "démarchage ou demande qui n'est pas un achat";
   }
   /* Le prospect dit avoir aussi un bien à vendre : c'est un vendeur potentiel. */
   const vend = texte.match(/a(?:-t-il)? un bien à vendre\s*[:?]?\s*(oui|non)/i);

@@ -62,7 +62,8 @@ const choisirDossier = (liste, { bienId, references = [], relais }) => {
   return refs.length ? null : recents[0];
 };
 
-/* Critères du projet de recherche : ceux que le portail donne, sinon ceux du bien demandé, avec des marges. */
+/* Critères du projet de recherche : ceux que le portail donne, sinon ceux du bien demandé, EXACTS
+   (règle d'AMBS : « quand il y a le bien, c'est le bien, pas de marge »). Les marges ne servent que sans bien précis. */
 const criteresProjet = (r, bien, marges = {}) => {
   const R = r.recherche || {};
   const m = { prix: 0.1, surface: 0.2, pieces: 1, ...marges };
@@ -70,16 +71,17 @@ const criteresProjet = (r, bien, marges = {}) => {
   if (explicite) return { source: "portail", transaction: r.projet === "location" ? "location" : "vente", type: R.type, localisation: R.localisation, budget_max: R.budget_max, surface_min: R.surface_min, pieces_min: R.pieces_min };
   if (!bien) return null;
   const prix = +bien.prix || +(r.bien && (r.bien.prix || r.bien.loyer)) || 0;
+  const exact = !!bien.id;
   return {
     source: "bien", transaction: r.projet === "location" ? "location" : "vente", type: bien.type || (r.bien && r.bien.type),
     localisation: [bien.code_postal, bien.ville].filter(Boolean).join(" ") || null,
-    budget_max: prix ? Math.round(prix * (1 + m.prix)) : null,
-    surface_min: +bien.surface ? Math.floor(+bien.surface * (1 - m.surface)) : null,
-    pieces_min: +bien.pieces ? Math.max(1, +bien.pieces - m.pieces) : null,
+    budget_max: prix ? (exact ? Math.round(prix) : Math.round(prix * (1 + m.prix))) : null,
+    surface_min: +bien.surface ? (exact ? Math.floor(+bien.surface) : Math.floor(+bien.surface * (1 - m.surface))) : null,
+    pieces_min: +bien.pieces ? (exact ? +bien.pieces : Math.max(1, +bien.pieces - m.pieces)) : null,
   };
 };
 
-/* Négociateur nommé dans un titre (projet Giraffe « SHRODEZ_CARRIE-Nathalie_maison ») : prénom ET nom présents. */
+/* Négociateur nommé dans un titre (projet Giraffe « AGENCE_DUPONT-Marie_maison ») : prénom ET nom présents. */
 const negociateurCite = (texte, personnes = []) => {
   const t = " " + String(texte || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ") + " ";
   const ok = personnes.filter((p) => p.role !== "assistante" && p.actif !== false && p.nom).filter((p) => {
@@ -148,12 +150,15 @@ const etapeLire = async (mail, conf = {}, opts = {}) => {
   }
 
   if (!NATURES_LEAD.includes(r.nature)) {
-    d.statut = ["inconnu", "reponse_campagne"].includes(r.nature) ? "a_trier" : r.nature === "alerte_spam" && (r.bloques || []).length ? "alerte" : "ignore";
+    d.statut = ["inconnu", "reponse_campagne"].includes(r.nature) ? "a_trier" : (r.nature === "alerte_spam" && (r.bloques || []).length) || r.nature === "hameconnage" ? "alerte" : "ignore";
+    if (r.nature === "hameconnage") d.alertes.push("hameçonnage probable (" + (r.expediteur_affiche || "expéditeur") + ") : ne pas ouvrir les liens ni les pièces jointes, ne pas transmettre");
+    if (r.nature === "interne" && r.interne_nom) d.alertes.push("écrit par un membre de l'équipe (" + r.interne_nom + ") depuis une adresse personnelle : pas un prospect");
     d.motifs.push(`nature : ${r.nature}`);
     if (r.nature === "alerte_spam" && (r.bloques || []).length) d.alertes.push(`${r.bloques.length} mail(s) de portail bloqué(s) par l'anti-spam : ${r.bloques.join(", ")}`);
     return fin();
   }
   if (r.suspect) d.motifs.push("à vérifier : " + r.suspect);
+  for (const x of r.remarques || []) d.alertes.push(x);
   if (r.nature_corrigee) d.alertes.push(`${r.portail_nom || r.portail} : ${r.nature_corrigee}`);
   if (r.a_un_bien_a_vendre) d.alertes.push("le prospect dit avoir aussi un bien à vendre : vendeur potentiel");
   if (r.portail === "inconnu" || r.lu_par.length > 1) {

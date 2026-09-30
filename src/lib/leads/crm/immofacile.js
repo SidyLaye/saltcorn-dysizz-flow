@@ -220,6 +220,8 @@ const creer = (cfg = {}) => {
       if (q.pieces) c.push({ id: await cleXml("NbPieces", "NbPiece"), operator: "EGAL", value: String(q.pieces) });
       if (q.surface) c.push({ id: await cleXml("Surface"), operator: "EGAL", value: String(q.surface) });
       if (q.prix) c.push({ id: await cleXml("Prix"), operator: "EGAL", value: String(q.prix) });
+      if (q.prix_min) c.push({ id: await cleXml("Prix"), operator: "SUPERIEUR", value: String(q.prix_min) });
+      if (q.prix_max) c.push({ id: await cleXml("Prix"), operator: "INFERIEUR", value: String(q.prix_max) });
       if (q.lieu) c.push({ id: await cleXml("CPVilleweb", "CPVille"), operator: "CONTIENT", value: String(q.lieu) });
       if (!c.length) return [];
       return (await recherche({ criterias: c, count: max })).slice(0, max);
