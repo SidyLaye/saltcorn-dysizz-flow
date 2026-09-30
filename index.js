@@ -1,4 +1,4 @@
-/* dysizz-flow 2.13.5 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.13.6 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.13.5" : "dev";
+    var VERSION2 = true ? "2.13.6" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -43,6 +43,65 @@ var require_core = __commonJS({
     };
     var safeUrl = (u) => /^https?:\/\//i.test(String(u || "")) ? String(u).slice(0, 1e3) : "";
     module2.exports = { PLUGIN: PLUGIN2, VERSION: VERSION2, isAdmin, esc, denied, hash, stable, plain, safeUrl };
+  }
+});
+
+// src/lib/rafraichir.js
+var require_rafraichir = __commonJS({
+  "src/lib/rafraichir.js"(exports2, module2) {
+    "use strict";
+    var rafraichir = async (quoi = ["tables"]) => {
+      let st = null, db = null;
+      try {
+        db = require("@saltcorn/data/db");
+        st = require("@saltcorn/data/db/state").getState;
+      } catch (e) {
+        return;
+      }
+      for (const q of quoi) {
+        try {
+          await st()["refresh_" + q](true);
+        } catch (e) {
+        }
+      }
+      let schema = null;
+      try {
+        schema = db.getTenantSchema();
+      } catch (e) {
+        schema = null;
+      }
+      if (!schema || typeof db.runWithTenant !== "function") return;
+      for (const ms of [1500, 1e4]) {
+        const t = setTimeout(() => {
+          Promise.resolve(db.runWithTenant(schema, async () => {
+            for (const q of quoi) {
+              try {
+                await st()["refresh_" + q]();
+              } catch (e) {
+              }
+            }
+          })).catch(() => {
+          });
+        }, ms);
+        if (t && t.unref) t.unref();
+      }
+    };
+    var trouverTable = async (nom) => {
+      const Table = require("@saltcorn/data/models/table");
+      let t = Table.findOne({ name: nom });
+      if (t) return t;
+      try {
+        const db = require("@saltcorn/data/db");
+        const r = await db.selectMaybeOne("_sc_tables", { name: nom });
+        if (!r) return null;
+        await require("@saltcorn/data/db/state").getState().refresh_tables(true);
+        t = Table.findOne({ name: nom });
+      } catch (e) {
+        return null;
+      }
+      return t || null;
+    };
+    module2.exports = { rafraichir, trouverTable };
   }
 });
 
@@ -101,24 +160,18 @@ var require_store = __commonJS({
       const Field = require("@saltcorn/data/models/field");
       const out = {};
       for (const [k, d] of Object.entries(DEFS)) {
-        let t = Table.findOne({ name: d.name });
+        let t = await require_rafraichir().trouverTable(d.name);
         if (!t) {
           t = await Table.create(d.name, { min_role_read: 1, min_role_write: 1, description: "dysizz-flow" });
           for (const [name, type, o] of d.fields) await Field.create({ table: t, name, label: name, type, ...o || {} });
-          try {
-            await require("@saltcorn/data/db/state").getState().refresh_tables(true);
-          } catch (e) {
-          }
+          await require_rafraichir().rafraichir();
           t = Table.findOne({ name: d.name });
         }
         const have = new Set(t.getFields().map((f) => f.name));
         const missing = d.fields.filter(([name]) => !have.has(name));
         for (const [name, type, o] of missing) await Field.create({ table: t, name, label: name, type, ...o || {}, required: false, is_unique: false });
         if (missing.length) {
-          try {
-            await require("@saltcorn/data/db/state").getState().refresh_tables(true);
-          } catch (e) {
-          }
+          await require_rafraichir().rafraichir();
           t = Table.findOne({ name: d.name });
         }
         out[k] = t;
@@ -96010,7 +96063,6 @@ var require_structure = __commonJS({
     var versChamp = (c) => Array.isArray(c) ? { nom: c[0], type: c[1], ...c[2] || {} } : c;
     var assurer = async (def) => {
       const Table = require("@saltcorn/data/models/table"), Field = require("@saltcorn/data/models/field");
-      const st = require("@saltcorn/data/db/state").getState();
       const db = require("@saltcorn/data/db");
       const nom = String(def.nom || "").trim();
       if (!NOM.test(nom)) throw perm(`nom de table invalide \xAB ${nom} \xBB (minuscules, chiffres, _)`);
@@ -96020,7 +96072,7 @@ var require_structure = __commonJS({
         if (!c.lien && !TYPES2.includes(c.type)) throw perm(`type inconnu pour \xAB ${c.nom} \xBB : ${c.type} (${TYPES2.join(", ")}, ou un lien)`);
       }
       const out = { table: nom, creee: false, champs_ajoutes: [] };
-      let t = Table.findOne({ name: nom });
+      let t = await require_rafraichir().trouverTable(nom);
       if (!t) {
         t = await Table.create(nom, { min_role_read: +def.lecture || 1, min_role_write: +def.ecriture || 1, description: def.description || "" });
         out.creee = true;
@@ -96033,7 +96085,7 @@ var require_structure = __commonJS({
         else await Field.create({ ...base, type: c.type, attributes: { ...c.options ? { options: c.options } : {}, ...c.attributes || {} } });
         out.champs_ajoutes.push(c.nom);
       }
-      if (out.creee || out.champs_ajoutes.length) await st.refresh_tables(true);
+      if (out.creee || out.champs_ajoutes.length) await require_rafraichir().rafraichir();
       if (!db.isSQLite) {
         for (const f of def.index || []) if (NOM.test(f)) await db.query(`create index if not exists "${nom}_${f}_idx" on "${db.getTenantSchema()}"."${nom}" ("${f}")`);
       }
@@ -96175,7 +96227,7 @@ var require_ecouteurs = __commonJS({
     };
     var tableDest = async (nom) => {
       const Table = require("@saltcorn/data/models/table"), Field = require("@saltcorn/data/models/field");
-      let t = Table.findOne({ name: nom });
+      let t = await require_rafraichir().trouverTable(nom);
       if (!t) {
         t = await Table.create(nom, { min_role_read: 1, min_role_write: 1, description: "Mails re\xE7us (\xE9couteur dysizz-flow)" });
       }
@@ -96186,10 +96238,7 @@ var require_ecouteurs = __commonJS({
         ajout = true;
       }
       if (ajout) {
-        try {
-          await require("@saltcorn/data/db/state").getState().refresh_tables(true);
-        } catch (e) {
-        }
+        await require_rafraichir().rafraichir();
         t = Table.findOne({ name: nom });
       }
       return t;
@@ -96627,10 +96676,9 @@ var require_schema = __commonJS({
     var pret = /* @__PURE__ */ new Map();
     var ouvrir = async (creer) => {
       const { assurer } = require_structure();
-      const Table = require("@saltcorn/data/models/table");
       const out = {}, manquantes = [];
       for (const d of definitions()) {
-        if (!creer && !Table.findOne({ name: d.nom })) {
+        if (!creer && !await require_rafraichir().trouverTable(d.nom)) {
           manquantes.push(d.nom);
           continue;
         }
@@ -103015,10 +103063,7 @@ var require_install = __commonJS({
       const Field = require("@saltcorn/data/models/field");
       const t = await Table.create(name, { min_role_read: 1, min_role_write: 1 });
       for (const [n, type, o] of fields) await Field.create({ table: t, name: n, label: n.charAt(0).toUpperCase() + n.slice(1).replace(/_/g, " "), type, ...o });
-      try {
-        await require("@saltcorn/data/db/state").getState().refresh_tables(true);
-      } catch (e) {
-      }
+      await require_rafraichir().rafraichir();
     };
     var uniqueName = (base) => {
       const Trigger = require("@saltcorn/data/models/trigger");
@@ -103059,10 +103104,7 @@ var require_install = __commonJS({
         const s = steps[i];
         await WorkflowStep.create({ trigger_id, name: s.name, action_name: s.action_name, configuration: s.configuration, next_step: s.next_step || "", only_if: s.only_if || "", initial_step: i === 0 });
       }
-      try {
-        await require("@saltcorn/data/db/state").getState().refresh_triggers(true);
-      } catch (e) {
-      }
+      await require_rafraichir().rafraichir(["tables", "triggers"]);
       let point = null;
       if (t.point) {
         const { ensureTables } = require_store();
@@ -103876,14 +103918,7 @@ var require_editor = __commonJS({
         if (ex) await ex.update(row);
         else await WorkflowStep.create({ trigger_id: trig.id, ...row });
       }
-      try {
-        await st().refresh_triggers(true);
-      } catch (e) {
-      }
-      try {
-        st().processSend({ refresh: "triggers", tenant: require("@saltcorn/data/db").getTenantSchema() });
-      } catch (e) {
-      }
+      await require_rafraichir().rafraichir(["triggers"]);
       return loadWorkflow(trig.id);
     };
     var listPage = async (req, res) => {

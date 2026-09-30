@@ -1,5 +1,12 @@
 # Journal des versions
 
+## 2.13.6
+
+- Serveur à plusieurs processus : une table ou un workflow créé par dysizz-flow est vu partout, sans redémarrage.
+  - Avant, seul le processus qui l'avait créé le voyait. Les autres disaient « table absente », ou « relation … already exists » quand on relançait la création.
+  - Le modèle du Catalogue, le bloc « Leads : préparer les tables », l'éditeur et les écouteurs préviennent maintenant tous les processus, une fois la requête terminée.
+  - Une table déjà créée par un autre processus est retrouvée en base au lieu d'être recréée.
+
 ## 2.13.5
 
 Corrections venues du contrôle du CRM sur 50 vrais leads (lecture seule).

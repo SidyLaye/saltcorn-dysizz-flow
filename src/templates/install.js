@@ -25,7 +25,7 @@ const createTable = async (name, fields) => {
   const Field = require("@saltcorn/data/models/field");
   const t = await Table.create(name, { min_role_read: 1, min_role_write: 1 });
   for (const [n, type, o] of fields) await Field.create({ table: t, name: n, label: n.charAt(0).toUpperCase() + n.slice(1).replace(/_/g, " "), type, ...o });
-  try { await require("@saltcorn/data/db/state").getState().refresh_tables(true); } catch (e) { /* rien */ }
+  await require("../lib/rafraichir").rafraichir();
 };
 
 const uniqueName = (base) => {
@@ -68,7 +68,7 @@ const installTemplate = async (key, input = {}) => {
     const s = steps[i];
     await WorkflowStep.create({ trigger_id, name: s.name, action_name: s.action_name, configuration: s.configuration, next_step: s.next_step || "", only_if: s.only_if || "", initial_step: i === 0 });
   }
-  try { await require("@saltcorn/data/db/state").getState().refresh_triggers(true); } catch (e) { /* rien */ }
+  await require("../lib/rafraichir").rafraichir(["tables", "triggers"]);
   /* modèle appelé depuis une page (widget) : on crée aussi son point d'API */
   let point = null;
   if (t.point) {

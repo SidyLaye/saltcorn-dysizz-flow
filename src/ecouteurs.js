@@ -23,12 +23,12 @@ const log = (m) => { try { require("@saltcorn/data/db/state").getState().log(4, 
 /* Crée la table de destination si besoin (ou ajoute les champs manquants). */
 const tableDest = async (nom) => {
   const Table = require("@saltcorn/data/models/table"), Field = require("@saltcorn/data/models/field");
-  let t = Table.findOne({ name: nom });
+  let t = await require("./lib/rafraichir").trouverTable(nom);
   if (!t) { t = await Table.create(nom, { min_role_read: 1, min_role_write: 1, description: "Mails reçus (écouteur dysizz-flow)" }); }
   const have = new Set(t.getFields().map((f) => f.name));
   let ajout = false;
   for (const [n, type] of CHAMPS) if (!have.has(n)) { await Field.create({ table: t, name: n, label: n, type }); ajout = true; }
-  if (ajout) { try { await require("@saltcorn/data/db/state").getState().refresh_tables(true); } catch (e) { /* rien */ } t = Table.findOne({ name: nom }); }
+  if (ajout) { await require("./lib/rafraichir").rafraichir(); t = Table.findOne({ name: nom }); }
   return t;
 };
 

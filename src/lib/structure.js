@@ -17,7 +17,6 @@ const versChamp = (c) => (Array.isArray(c) ? { nom: c[0], type: c[1], ...(c[2] |
 
 const assurer = async (def) => {
   const Table = require("@saltcorn/data/models/table"), Field = require("@saltcorn/data/models/field");
-  const st = require("@saltcorn/data/db/state").getState();
   const db = require("@saltcorn/data/db");
   const nom = String(def.nom || "").trim();
   if (!NOM.test(nom)) throw perm(`nom de table invalide « ${nom} » (minuscules, chiffres, _)`);
@@ -27,7 +26,7 @@ const assurer = async (def) => {
     if (!c.lien && !TYPES.includes(c.type)) throw perm(`type inconnu pour « ${c.nom} » : ${c.type} (${TYPES.join(", ")}, ou un lien)`);
   }
   const out = { table: nom, creee: false, champs_ajoutes: [] };
-  let t = Table.findOne({ name: nom });
+  let t = await require("./rafraichir").trouverTable(nom);
   if (!t) {
     t = await Table.create(nom, { min_role_read: +def.lecture || 1, min_role_write: +def.ecriture || 1, description: def.description || "" });
     out.creee = true;
@@ -40,7 +39,7 @@ const assurer = async (def) => {
     else await Field.create({ ...base, type: c.type, attributes: { ...(c.options ? { options: c.options } : {}), ...(c.attributes || {}) } });
     out.champs_ajoutes.push(c.nom);
   }
-  if (out.creee || out.champs_ajoutes.length) await st.refresh_tables(true);
+  if (out.creee || out.champs_ajoutes.length) await require("./rafraichir").rafraichir();
   /* « if not exists » : une requête en erreur annulerait la transaction en cours */
   if (!db.isSQLite) for (const f of def.index || []) if (NOM.test(f)) await db.query(`create index if not exists "${nom}_${f}_idx" on "${db.getTenantSchema()}"."${nom}" ("${f}")`);
   return { ...out, t: Table.findOne({ name: nom }) };
