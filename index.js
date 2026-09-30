@@ -1,4 +1,4 @@
-/* dysizz-flow 2.13.8 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.13.9 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.13.8" : "dev";
+    var VERSION2 = true ? "2.13.9" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -92245,7 +92245,8 @@ var require_texte = __commonJS({
     var lignes = (t) => String(t).replace(/\r\n?/g, "\n").replace(/(^|\n)[^\n{}]{0,80}\{[^{}]{0,1500}?\}/g, (m, a) => /[;:]\s*[\w#-]/.test(m) && !/[.!?]\s*$/.test(m.split("{")[0]) ? a : m).replace(/[   ]/g, " ").replace(/[​-‍﻿]/g, "").split("\n").map((l) => l.replace(/[ \t\f\v]+/g, " ").trim()).filter(Boolean);
     var texteMail = ({ texte, html } = {}) => {
       const t = String(texte || "");
-      const brut = t.trim() && !/^\s*<(!doctype|html)/i.test(t) && t.replace(/\s/g, "").length > 80;
+      const aTrous = html && (t.match(/(^|\s)#[A-Za-z_]{4,}\b/g) || []).length >= 2;
+      const brut = t.trim() && !aTrous && !/^\s*<(!doctype|html)/i.test(t) && t.replace(/\s/g, "").length > 80;
       const src = brut ? entites(t) : htmlTexte(html || t);
       return lignes(reparer(src).replace(/([a-zà-ÿA-ZÀ-Ÿ)])(E-?mail|T[ée]l[ée]phone|Phone)\s*:/g, "$1\n$2 :").replace(/[\[<(]\s*https?:\/\/[^\s\]>)]*\s*[\]>)]/g, " ").replace(/https?:\/\/\S{70,}/g, " ")).join("\n");
     };
@@ -92290,9 +92291,17 @@ var require_valeurs = __commonJS({
     var PRENOMS = require_prenoms();
     var estPrenom = (w) => PRENOMS.has(cle(w).split(" ")[0]);
     var EMAIL_RE = /[a-z0-9._%+'-]+@[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,}/i;
+    var TLD = new Set("com net org fr de be nl uk ch es it eu info io co us ca au ie lu at dk se no fi pt pl cz gr ma sn ci tn dz re biz me tv pro immo gmx".split(" "));
     var email = (s) => {
       const m = String(s || "").replace(/^mailto:/i, "").match(EMAIL_RE);
-      return m ? m[0].toLowerCase().replace(/^[.'-]+|[.'-]+$/g, "") : "";
+      if (!m) return "";
+      let e = m[0].toLowerCase().replace(/^[.'-]+|[.'-]+$/g, "");
+      const tld = e.split(".").pop();
+      if (!TLD.has(tld) && tld.length > 3) {
+        const k = [...TLD].filter((x) => tld.startsWith(x)).sort((a, b) => b.length - a.length)[0];
+        if (k) e = e.slice(0, e.length - tld.length + k.length);
+      }
+      return e;
     };
     var telephone = (s, pays = "33") => {
       let t = String(s || "").replace(/^tel:/i, "").replace(/\(0\)/g, "").trim();
@@ -92803,10 +92812,10 @@ var require_portails = __commonJS({
         id: "properstar",
         nom: "Properstar",
         test: (d) => /properstar\.com$/.test(d),
-        nature: (o) => /nouveau message|new message|demande/i.test(o) ? "lead" : "non_lead",
+        nature: (o) => /nouveau message|new message|demande|visite|tour request/i.test(o) ? "lead" : "non_lead",
         regles: ({ L, texte, r }) => {
-          const n = texte.match(/=\s*(?:nouveau message de|new message from)\s+(.+?)\s*=/i);
-          if (n) r.contact.nom_complet = n[1];
+          const n = texte.match(/=\s*(?:nouveau message de|new message from|nouvelle demande de visite de|new (?:tour|visit) request from)\s+(.+?)\s*=/i) || texte.match(/de la part de\s+([A-ZÀ-Ÿ][^.\n=]{2,60})\./);
+          if (n) r.contact.nom_complet = n[1].trim();
           const i = L.findIndex((l) => /^=\s*(nouveau message|new message)/i.test(l));
           if (i >= 0) r.message = bloc(L, i + 1);
           const j = L.findIndex((l) => /annonce désirée|desired listing/i.test(l));
@@ -92870,7 +92879,7 @@ var require_portails = __commonJS({
         nom: "Site d'agence (AC3)",
         test: (d) => /ac3-groupe\.com$/.test(d),
         /* création de compte sur le site : un lead seulement si le mail porte le client (e-mail ou téléphone) ET un bien */
-        valider: ({ o, r }) => /cr[ée]ation (de )?compte|account creation|account created/i.test(o) ? (r.contact.email || r.contact.telephone) && (r.bien.reference || r.bien.titre || r.bien.id_crm) ? "lead" : "non_lead" : null,
+        valider: ({ o, r }) => /cr[ée]ation (de )?compte|account creation|account created/i.test(o) ? (r.contact.email || r.contact.telephone) && (r.bien.reference || r.bien.titre || r.bien.id_crm) ? "lead" : r.contact.email || r.contact.telephone ? (r.suspect = "cr\xE9ation de compte sur le site, sans bien : \xE0 traiter \xE0 la main", "lead") : "non_lead" : null,
         nature: (o) => /résolution de votre demande|demande d.assistance|ticket/i.test(o) ? "non_lead" : /demande|request|création compte|account/i.test(o) ? "lead" : "non_lead",
         regles: ({ L, o, texte, r }) => {
           const cl = texte.match(/(?:client|customer)\s*:\s*([^\n]+)/i);
@@ -93067,6 +93076,28 @@ var require_portails = __commonJS({
           }
         }
       },
+      {
+        id: "cessionpme",
+        nom: "CessionPME",
+        test: (d) => /cessionpme\.com$/.test(d),
+        nature: (o) => /prise de contact/i.test(o) ? "lead" : "non_lead",
+        regles: ({ o, texte, r }) => {
+          const ref = (o.match(/référence\s+CessionPME\s+([\w-]+)/i) || texte.match(/référence\s+CessionPME\s+([\w-]+)/i) || [])[1];
+          if (ref) r.bien.reference = ref;
+          const n = texte.match(/Monsieur ou Madame\s+(.+?)\s*\(/i);
+          if (n) r.contact.nom_complet = n[1].trim();
+          const e = texte.match(/Email\s*:\s*(\S+@\S+)/i);
+          if (e) r.contact.email = V.email(e[1]);
+          const t = texte.match(/t[ée]l[ée]phone\s*:\s*(\+?[\d .]{8,})/i);
+          if (t) r.contact.telephone = t[1].trim();
+          const pr = texte.match(/Prix de vente\s+([\d  .]+)\s*€/i);
+          if (pr) r.bien.prix = V.prix(pr[1] + " \u20AC");
+          const sf = texte.match(/Surface\s+([\d  .,]+)\s*m/i);
+          if (sf) r.bien.surface = V.surface(sf[1] + " m\xB2");
+          const lo = texte.match(/Localisation\s+(.+)/i);
+          if (lo) r.bien.ville = lo[1].trim().slice(0, 60);
+        }
+      },
       { id: "huisenaanbod", nom: "HUISenAANBOD.nl", test: (d) => /huisenaanbod\.nl$/.test(d), nature: (o, t) => /#naamaanvrager|#vraag|#adv_details/i.test(t) ? "non_lead" : "lead" },
       {
         id: "kyero",
@@ -93199,7 +93230,7 @@ var require_portails = __commonJS({
           r.bloques = (texte.match(/^.{3,40}\|.+\|\s*\d+\s*k\s*\|.+$/gm) || []).map((l) => l.split("|")[0].trim()).filter((x) => /properstar|green|leboncoin|seloger|figaro|bienici|rightmove|french|giraffe|ac3|immo/i.test(x));
         }
       },
-      { id: "bruit", nom: "Service / newsletter", test: (d) => /(immo-facile\.(fr|com)|cessionpme\.com|orisha\.com|gedeon\.im|canva\.com|firebaseapp\.com|toutvendre\.fr|opinionsystem\.fr|notaires\.fr|cci\.fr|tiktok\.com|news\.leboncoin\.fr|gestiviag\.com|communication-snpi\.com|centre-conventions-collectives\.fr|linkedin\.com|facebookmail\.com|google\.com)$/.test(d), nature: () => "non_lead" }
+      { id: "bruit", nom: "Service / newsletter", test: (d) => /(immo-facile\.(fr|com)|orisha\.com|gedeon\.im|canva\.com|firebaseapp\.com|toutvendre\.fr|opinionsystem\.fr|notaires\.fr|cci\.fr|tiktok\.com|news\.leboncoin\.fr|gestiviag\.com|communication-snpi\.com|centre-conventions-collectives\.fr|linkedin\.com|facebookmail\.com|google\.com)$/.test(d), nature: () => "non_lead" }
     ];
     var SIGNATURES = {
       leboncoin: /l.équipe leboncoin|leboncoin\.fr\/ad\/|vous a contacté sur leboncoin/i,
@@ -93423,14 +93454,58 @@ var require_extraire = __commonJS({
         return { expediteur: exp, objet: o, texte: L.slice(j).join("\n"), html: "", __agence: agence };
       }
     };
-    var ROLE = /^(l['’]|le |la |du |de la |un |une |cet |cette |ce |votre |notre )?(acheteurs?|acqu[ée]reurs?|prospects?|contacts?|clients?|internautes?|vendeurs?|demandeurs?|utilisateurs?|visiteurs?|particuliers?|propri[ée]taires?|locataires?|candidats?|buyers?|enquirers?|customers?|users?|madame|monsieur|m\.|mme|mr|mrs)$/i;
+    var ROLE = /^(l['’]|le |la |du |de la |un |une |cet |cette |ce |votre |notre )?(acheteurs?|acqu[ée]reurs?|prospects?|contacts?|clients?|internautes?|vendeurs?|demandeurs?|utilisateurs?|visiteurs?|particuliers?|propri[ée]taires?|locataires?|candidats?|buyers?|enquirers?|customers?|users?|madame|monsieur|m\.|mme|mr|mrs|secr[ée]tariat|comptabilit[ée]|accueil|service|services|direction|administration|standard|support|info|infos|message|regards|num[ée]ro de t[ée]l[ée]phone|t[ée]l[ée]phone|e-?mail|adresse)$/i;
+    var chiffres9 = (x) => String(x || "").replace(/\D/g, "").slice(-9);
+    var telephoneDuProspect = (texte, conf = {}) => {
+      const perso = conf.routage && conf.routage.personnes || [];
+      const equipe = new Set([...perso.map((p) => p.telephone), ...conf.telephones_exclus || []].map(chiffres9).filter((x) => x.length === 9));
+      const noms = [
+        ...perso.map((p) => p.nom),
+        ...(conf.agences || []).map((a) => a.nom),
+        ...(conf.sites || []).flatMap((x) => x.noms || []),
+        ...(conf.domaines_agence || []).map((d) => String(d).split(".")[0].replace(/-/g, " "))
+      ].filter((x) => x && String(x).trim().length >= 4).map((x) => cle(String(x)));
+      const T = String(texte || "");
+      return (t) => {
+        const n = chiffres9(t);
+        if (n.length < 8 || equipe.has(n) || /^(\d)\1{7,}$/.test(n.slice(1)) || /^0+$/.test(n)) return false;
+        const places = [];
+        for (const m of T.matchAll(/\+?\(?\d[\d .()\/\u00a0-]{7,}\d/g)) if (chiffres9(m[0]) === n) places.push(m.index);
+        if (!places.length) return true;
+        const compacts = noms.map((x) => x.replace(/\s+/g, ""));
+        return places.some((i) => {
+          const avant = cle(T.slice(Math.max(0, i - 80), i)), apres = cle(T.slice(i, i + 90)).replace(/^[\d\s+().\/-]+/, "");
+          if (/\b(vat|tva|siret|siren|rcs|registered|numero de tva|capital)\b/.test(avant.slice(-50))) return false;
+          if (/^(superimmo|lundi au vendredi|du lundi)/.test(apres) || /^[\d\s+().\/-]*®/.test(T.slice(i, i + 40))) return false;
+          const PROSPECT = /\b(client|customer|nom|name|prenom|de|from|contact|acquereur|acheteur|prospect|demandeur|coordonnees|telephone|tel|phone|mobile|rappeler)\b/;
+          for (let k = 0; k < noms.length; k++) {
+            const j = avant.lastIndexOf(noms[k]);
+            if (j >= 0 && !PROSPECT.test(avant.slice(j + noms[k].length))) return false;
+            const av = avant.replace(/\s+/g, ""), jc = av.lastIndexOf(compacts[k]);
+            if (jc >= 0 && av.length - jc - compacts[k].length < 25 && !/(client|customer|nom|name|prenom|contact|acquereur|acheteur|prospect|telephone|phone|mobile|rappeler)/.test(av.slice(jc + compacts[k].length))) return false;
+          }
+          return true;
+        });
+      };
+    };
+    var casse = (v) => {
+      const x = String(v || "").trim();
+      if (!x || x !== x.toUpperCase() && x !== x.toLowerCase()) return x;
+      return x.toLowerCase().replace(new RegExp("(^|[\\s'\u2019-])(\\p{L})", "gu"), (m, a, b) => a + b.toUpperCase()).replace(/\b(De|Du|Des|La|Le|Van|Von|Der|Den|Da|Di)\b(?=\s)/g, (w, _, i) => i ? w.toLowerCase() : w);
+    };
     var nettoyerNoms = (c = {}) => {
-      for (const k of ["nom", "prenom", "nom_complet"]) if (c[k] && ROLE.test(String(c[k]).trim())) delete c[k];
+      for (const k of ["nom", "prenom", "nom_complet"]) if (c[k] && (ROLE.test(String(c[k]).trim()) || /[\d@]/.test(String(c[k])))) delete c[k];
       if (!c.nom && !c.prenom && c.nom_complet) {
         const dn = V.decouperNom(c.nom_complet) || {};
         if (dn.nom) c.nom = dn.nom;
         if (dn.prenom) c.prenom = dn.prenom;
       }
+      if (c.nom && c.prenom && cle(c.nom) === cle(c.prenom)) {
+        if (V.estPrenom(c.prenom)) delete c.nom;
+        else delete c.prenom;
+      }
+      for (const k of ["nom", "prenom"]) if (c[k]) c[k] = casse(c[k]);
+      if (c.nom || c.prenom) c.nom_complet = [c.prenom, c.nom].filter(Boolean).join(" ");
       return c;
     };
     var extraire = (mail, conf = {}) => {
@@ -93566,25 +93641,27 @@ var require_extraire = __commonJS({
       }
       if (!r.contact.email_relais && RELAIS.test(d) && !GENERIQUES.test(V.email(mail.expediteur))) r.contact.email_relais = V.email(mail.expediteur);
       const c = r.contact;
-      if (c.email && (RELAIS.test(c.email) || domAgence.some((x) => c.email.endsWith("@" + x)) || GENERIQUES.test(c.email))) {
+      const sousLibelle = (e) => new RegExp("(e-?mail|adresse e-?mail|email address|courriel)\\s*:?\\s*[\\[<(]?\\s*" + e.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i").test(texte);
+      if (c.email && (RELAIS.test(c.email) || domAgence.some((x) => c.email.endsWith("@" + x)) || GENERIQUES.test(c.email) && !sousLibelle(c.email))) {
         if (RELAIS.test(c.email)) c.email_relais = c.email;
         delete c.email;
         delete r.preuves["contact.email"];
       }
       if (!c.email && r.nature !== "non_lead" && r.nature !== "interne") {
-        const tous = (corps.match(new RegExp(V.EMAIL_RE.source, "gi")) || []).map((x) => x.toLowerCase()).filter((x) => !RELAIS.test(x) && !GENERIQUES.test(x) && !domAgence.some((a) => x.endsWith("@" + a)));
-        if (tous.length) poser(r, "contact.email", tous[0], "texte");
+        const tous = (corps.match(new RegExp(V.EMAIL_RE.source, "gi")) || []).map((x) => x.toLowerCase()).filter((x) => !RELAIS.test(x) && (!GENERIQUES.test(x) || sousLibelle(x)) && !domAgence.some((a) => x.endsWith("@" + a)));
+        if (tous.length) poser(r, "contact.email", V.email(tous[0]), "texte");
       }
+      const telOk = telephoneDuProspect(texte, conf);
       if (c.telephone) {
         const t = V.telephone(c.telephone);
-        if (t) c.telephone = t;
+        if (t && telOk(t)) c.telephone = t;
         else {
           delete c.telephone;
           delete r.preuves["contact.telephone"];
         }
       }
       if (!c.telephone) {
-        const m = liens.concat(corps.match(/tel:\+?[\d ]{8,}/gi) || []).find((u) => /^tel:/i.test(u));
+        const m = liens.concat(corps.match(/tel:\+?[\d ]{8,}/gi) || []).filter((u) => /^tel:/i.test(u)).find((u) => V.telephone(u) && telOk(V.telephone(u)));
         if (m) poser(r, "contact.telephone", V.telephone(m), "lien tel");
       }
       if (!c.nom && !c.prenom && !c.nom_complet && r.message) {
@@ -93621,7 +93698,7 @@ var require_extraire = __commonJS({
         const m = r.message.match(/(?:\+\d{2}\s?\(?0?\)?\s?|\b0|(?<=\s))[1-9](?:[\s.-]?\d{2}){4}\b/);
         if (m) {
           const t = V.telephone(/^[1-9]/.test(m[0].trim()) ? "0" + m[0].trim() : m[0]);
-          if (t) {
+          if (t && telOk(t)) {
             c.telephone = t;
             r.preuves["contact.telephone"] = "message";
           }
@@ -93659,7 +93736,7 @@ var require_extraire = __commonJS({
       r.destinataire = mail.destinataire || "";
       return r;
     };
-    module2.exports = { nettoyerNoms, extraire, identifierSite, RELAIS };
+    module2.exports = { nettoyerNoms, extraire, identifierSite, RELAIS, telephoneDuProspect };
   }
 });
 
@@ -95037,6 +95114,7 @@ var require_traiter = __commonJS({
           else rc.contact = { ...rc.contact, consentement_inconnu: true };
         }
         if (rc.action === "impossible") d.motifs.push("contact impossible : ni e-mail ni t\xE9l\xE9phone");
+        if (rc.action === "creer" && !c.email) d.motifs.push("pas d'e-mail : le CRM ne cr\xE9e pas de contact sans e-mail (\xE0 cr\xE9er \xE0 la main avec le t\xE9l\xE9phone)");
       }
       d.contact = { id: rc.contact ? rc.contact.id : null, action: rc.action, par: rc.par, trace: rc.trace };
       d.interne = { ...d.interne || {}, contact_crm: rc.contact || null };
@@ -95146,11 +95224,15 @@ var require_traiter = __commonJS({
       d.duree_ms = Date.now() - t0;
       return nettoyer(d);
     };
-    var executer = async (dossier, crm, { mode = "ombre" } = {}) => {
+    var executer = async (dossier, crm, { mode = "ombre", ecrireAVerifier = false } = {}) => {
       const res = [];
       let contactId = dossier.contact && dossier.contact.id;
       let rechercheId = dossier.dossier && dossier.dossier.recherche_id;
       let consentement = false;
+      if (dossier.statut && !["pret", "suivi"].includes(dossier.statut) && !ecrireAVerifier) {
+        for (const a of dossier.actions || []) res.push({ op: a.op, fait: false, note: "non automatis\xE9 : rien n'est \xE9crit dans le CRM" });
+        return { contactId, rechercheId, consentement, resultats: res, non_automatise: true };
+      }
       for (const a of dossier.actions) {
         if (mode !== "reel") {
           res.push({ ...a, donnees: a.donnees && a.donnees.comment ? { ...a.donnees, comment: `(${a.donnees.comment.length} caract\xE8res)` } : a.donnees, preuves: a.preuves && a.preuves.map((p) => p.nom), fait: false, mode });
@@ -96487,6 +96569,8 @@ var require_schema = __commonJS({
         ["lien_fiche", "String"],
         ["envoi_a_verifier", "Bool"],
         ["routage_tables", "String"],
+        ["telephones_exclus", "String"],
+        ["crm_a_verifier", "Bool"],
         ["adresse_non_automatise", "String"],
         ["format_envoi", "String"],
         ["origine_defaut", "String"]
@@ -96807,6 +96891,8 @@ var require_conf = __commonJS({
         id_crm_liens: String(R.id_crm_liens || "").split("\n").map((x) => x.trim()).filter(Boolean),
         origines_portail: { ...Object.fromEntries(portails.filter((p) => p.origine).map((p) => ["declare_" + p.id, p.origine])), ...json(R.origines_portail, {}) },
         origine_defaut: R.origine_defaut || null,
+        /* numéros qui ne sont jamais ceux d'un prospect (standard d'agence, portail) ; ceux de l'équipe sont déjà exclus */
+        telephones_exclus: liste(R.telephones_exclus),
         utiliser_relais: R.utiliser_relais !== false,
         /* étapes coupées par le client (tout est actif par défaut) */
         etapes: json(R.etapes, {}),
@@ -96826,6 +96912,7 @@ var require_conf = __commonJS({
             id: idMoteur.get(p.id),
             ligne: p.id,
             nom: p.nom,
+            telephone: p.telephone || null,
             alias: String(p.alias || "").split(/[,;\n]+/).map((x) => x.trim()).filter(Boolean),
             email: p.email,
             role: p.role || "negociateur",
@@ -97568,7 +97655,7 @@ var require_dossier = __commonJS({
       const tm = Table.findOne({ name: nom("mails") });
       const mail = tm && await tm.getRow({ id: +mailId });
       if (!mail) throw new Error("mail introuvable");
-      const { conf, crm } = await charger();
+      const { conf, crm, reglages: R } = await charger();
       const mode = forcerOmbre ? "ombre" : crm.mode;
       const client = await avecCatalogue(api.crmDepuisCoffre(crm.type, crm.reglages, crm.prefixe, mode));
       const m = versMoteur(mail);
@@ -97577,7 +97664,7 @@ var require_dossier = __commonJS({
         const d = await api.leads.traiter(m, client, conf, { dossiers: { trouver: fil.trouver }, ...lecture });
         if (d.dossier && d.portail)
           d.dossier.portail = d.portail;
-        d.execution = { ...await api.leads.executer(d, client, { mode }), mode };
+        d.execution = { ...await api.leads.executer(d, client, { mode, ecrireAVerifier: R && R.crm_a_verifier === true }), mode };
         if (client.notees) d.execution.ecritures_notees = client.notees.map(sansCommentaire);
         const garder = d.dossier && !(d.statut === "a_trier" && !d.dossier.existant);
         const dossierId = garder ? await fil.enregistrer(api)(d, d.execution, new Date(mail.date_envoi || Date.now()), mail.id) : null;
@@ -97666,7 +97753,8 @@ var require_etapes = __commonJS({
       const mode = d.mode === "reel" && crm.mode === "reel" ? "reel" : "ombre";
       const client = await clientCrm(crm, mode);
       if (d.dossier && d.portail) d.dossier.portail = d.portail;
-      d.execution = { ...await a.leads.executer(d, client, { mode }), mode };
+      const R = await require_conf().reglages();
+      d.execution = { ...await a.leads.executer(d, client, { mode, ecrireAVerifier: R.crm_a_verifier === true }), mode };
       if (client.notees) d.execution.ecritures_notees = client.notees.map((x) => x && x.donnees && x.donnees.comment ? { ...x, donnees: { ...x.donnees, comment: `(${x.donnees.comment.length} caract\xE8res)` } } : x);
       return d;
     };

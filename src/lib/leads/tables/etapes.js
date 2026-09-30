@@ -77,7 +77,8 @@ const ecrireCrm = async (dossier) => {
   const mode = d.mode === "reel" && crm.mode === "reel" ? "reel" : "ombre";
   const client = await clientCrm(crm, mode);
   if (d.dossier && d.portail) d.dossier.portail = d.portail;
-  d.execution = { ...(await a.leads.executer(d, client, { mode })), mode };
+  const R = await require("./conf").reglages();
+  d.execution = { ...(await a.leads.executer(d, client, { mode, ecrireAVerifier: R.crm_a_verifier === true })), mode };
   if (client.notees) d.execution.ecritures_notees = client.notees.map((x) => (x && x.donnees && x.donnees.comment ? { ...x, donnees: { ...x.donnees, comment: `(${x.donnees.comment.length} caractères)` } } : x));
   return d;
 };

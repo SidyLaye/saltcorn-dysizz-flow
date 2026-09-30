@@ -1,5 +1,31 @@
 # Journal des versions
 
+## 2.13.9
+
+Corrections venues de l'audit complet des 8 675 mails reçus par AMBS. Pour chaque mail, on a comparé trois choses : le contenu du mail, ce que l'ancien système a extrait et écrit dans Immofacile, et ce que le moteur écrirait.
+- Téléphone : un numéro de l'équipe ou de l'agence n'est plus jamais pris pour celui du prospect. C'était le cas pour :
+  - la signature d'une négociatrice citée dans une relance ;
+  - le numéro de l'agence dans l'accusé de réception Green-Acres ;
+  - le standard d'un portail en bas de page ;
+  - un numéro de TVA ;
+  - les numéros bidon (06 00 00 00 00).
+  - Les numéros de l'équipe sont lus dans les fiches des personnes. Un réglage « téléphones exclus » permet d'en ajouter d'autres.
+- E-mail :
+  - une adresse collée au mot suivant (« …@gmail.comdans ») est coupée à la bonne extension ;
+  - une adresse « contact@ » ou « info@ » donnée par le prospect sous un libellé e-mail est gardée.
+- Noms :
+  - la casse est corrigée avant l'écriture dans le CRM (« FONTAINE », « nicolas » deviennent « Fontaine », « Nicolas ») ;
+  - un pseudo avec des chiffres n'est jamais un nom ;
+  - un seul mot recopié en prénom et en nom n'est rangé qu'une fois ;
+  - les mots de service (« secrétariat », « comptabilité ») ne sont jamais des noms.
+- Contact sans e-mail : Immofacile ne crée pas de contact sans e-mail, donc le lead passe « à vérifier » au lieu d'échouer.
+- Lead non automatisé (à vérifier, à trier) : rien n'est écrit dans le CRM, comme dans l'ancien système. Le réglage « écrire aussi les leads à vérifier » permet de changer ce comportement.
+- Sources :
+  - CessionPME : une « prise de contact sur l'annonce » est un lead ;
+  - Huisenaanbod : le mail est lu dans sa version HTML quand le texte brut n'est qu'un gabarit vide ;
+  - création de compte sur un site d'agence, avec le client mais sans bien : transmise à la main au lieu d'être ignorée ;
+  - Properstar : le nom est lu dans les demandes de visite.
+
 ## 2.13.8
 
 - Nouveau bloc « Leads : vérifier et corriger les gabarits d'un ancien système ». Il vérifie chaque gabarit sur les vrais mails reçus, champ par champ.

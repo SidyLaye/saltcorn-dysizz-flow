@@ -296,7 +296,7 @@ const { CONF, MAILS } = require("./fixtures-leads.cjs");
     assert.strictEqual(extraire({ expediteur: "<email@huisenaanbod.nl>", objet: "Nouvelle demande d'information via HUISenAANBOD.nl !", texte: "Nom: #Naamaanvrager\nMessage du demandeur: #Vraag" }, C2).nature, "non_lead");
     const lux = extraire({ expediteur: "<contact@lead.seloger.com>", objet: "Un acquéreur est intéressé par un de vos biens",
       texte: "Identifiant client : RC-1\nNouveau contact sur votre annonce 32129\nMaison\n• 6 pièces\n• 202 m²\nCARCASSONNE, 11000\n599 000 €\nRef. de l'annonce : 32129\nMessage du contact\nBonjour\nNom : Jean TESTEUR\nEmail : jean@example.org\nCet email vous est adressé par X, S.A.S au capital de 642 609 233 €" }, C2);
-    assert.strictEqual(lux.bien.ville, "CARCASSONNE"); assert.strictEqual(lux.bien.code_postal, "11000"); assert.strictEqual(lux.bien.prix, 599000); assert.strictEqual(lux.contact.nom, "TESTEUR"); assert.strictEqual(lux.contact.prenom, "Jean");
+    assert.strictEqual(lux.bien.ville, "CARCASSONNE"); assert.strictEqual(lux.bien.code_postal, "11000"); assert.strictEqual(lux.bien.prix, 599000); assert.strictEqual(lux.contact.nom, "Testeur"); assert.strictEqual(lux.contact.prenom, "Jean");
     const b2b = await traiter({ expediteur: "Léa <lea@salon-exemple.com>", objet: "Rencontrez des maires au salon", texte: "Bonjour, nous vous proposons un stand, intéressé ? prix spécial." }, M.creer({}), C2);
     assert.notStrictEqual(b2b.statut, "pret");
     /* preuve faible : « 2162 » moins le dernier caractère = « 216 », bien d'une autre ville sans prix → rejeté */
@@ -349,7 +349,8 @@ const { CONF, MAILS } = require("./fixtures-leads.cjs");
     const avec = extraire({ ...MAILS.ac3, objet: "Création compte sur AGENCE EXEMPLE" }, CONF);
     assert.strictEqual(avec.nature, "lead", "client + bien : lead");
     const sansBien = extraire({ ...MAILS.ac3, objet: "Création compte sur AGENCE EXEMPLE", texte: MAILS.ac3.texte.replace(/Biens maison.*\n/, ""), html: "" }, CONF);
-    assert.strictEqual(sansBien.nature, "non_lead", "sans bien : pas un lead");
+    assert.strictEqual(sansBien.nature, "lead", "sans bien mais avec le client : transmis à la main (non automatisé)");
+    assert.match(sansBien.suspect || "", /création de compte/);
     const sansClient = extraire({ ...MAILS.ac3, objet: "Création compte sur AGENCE EXEMPLE", texte: MAILS.ac3.texte.replace(/Client :.*?\n/, "\n") }, CONF);
     assert.strictEqual(sansClient.nature, "non_lead", "sans client : pas un lead");
     assert.strictEqual(extraire(MAILS.ac3, CONF).nature, "lead", "une demande reste un lead");

@@ -35,7 +35,9 @@ const lignes = (t) => String(t)
 /* Texte exploitable d'un mail : le texte brut s'il est vraiment du texte, sinon le HTML converti. */
 const texteMail = ({ texte, html } = {}) => {
   const t = String(texte || "");
-  const brut = t.trim() && !/^\s*<(!doctype|html)/i.test(t) && t.replace(/\s/g, "").length > 80;
+  /* texte brut resté en gabarit (« Nom: #Naamaanvrager ») : le portail n'a rempli que la version HTML */
+  const aTrous = html && (t.match(/(^|\s)#[A-Za-z_]{4,}\b/g) || []).length >= 2;
+  const brut = t.trim() && !aTrous && !/^\s*<(!doctype|html)/i.test(t) && t.replace(/\s/g, "").length > 80;
   const src = brut ? entites(t) : htmlTexte(html || t);
   return lignes(reparer(src).replace(/([a-zà-ÿA-ZÀ-Ÿ)])(E-?mail|T[ée]l[ée]phone|Phone)\s*:/g, "$1\n$2 :").replace(/[\[<(]\s*https?:\/\/[^\s\]>)]*\s*[\]>)]/g, " ").replace(/https?:\/\/\S{70,}/g, " ")).join("\n");
 };
