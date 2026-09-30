@@ -329,7 +329,7 @@ const PORTAILS = [
   { id: "idealista", nom: "Idealista", test: (d) => /idealista\.(fr|com)$/.test(d), nature: (o) => (/contact|message|demande|intéress/i.test(o) && !/compte|mot de passe|bienvenue/i.test(o) ? "lead" : "non_lead"),
     regles: ({ L, o, r }) => {
       const n = o.match(/message de (.+?) concernant/i); if (n) { r.contact.nom_complet = n[1]; delete r.contact.nom; delete r.contact.prenom; }
-      const e = L.findIndex((l) => V.email(l) && !/idealista/.test(l)); if (e >= 0) { r.contact.email = V.email(L[e]); const f = L.slice(e + 1).findIndex((l) => /^(réponse depuis|réf\.|code de l)/i.test(l)); r.message = L.slice(e + 1, f >= 0 ? e + 1 + f : e + 8).join("\n"); }
+      const e = L.findIndex((l) => { const m = V.email(l); return m && !/idealista\./i.test(m.split("@")[1] || ""); }); if (e >= 0) { r.contact.email = V.email(L[e]); const f = L.slice(e + 1).findIndex((l) => /^(réponse depuis|réf\.|code de l)/i.test(l)); r.message = L.slice(e + 1, f >= 0 ? e + 1 + f : e + 8).join("\n"); }
       const t = L.find((l) => /^\+?[\d ]{9,}/.test(l)); if (t) r.contact.telephone = t.replace(/\[.*$/, "");
       const pr = L.find((l) => /^[\d.  ]+\s*€$/.test(l)); if (pr) r.bien.prix = V.prix(pr);
       const a = o.match(/réf\.\s*:\s*(\w+),\s*([^,]+?)\s*-\s*.*,\s*([^,]+)$/i); if (a) { r.bien.reference = a[1]; r.bien.type = V.typeBien(a[2]); r.bien.ville = a[3].trim(); }

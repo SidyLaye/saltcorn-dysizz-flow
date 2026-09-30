@@ -223,6 +223,13 @@ const etapeContact = async (d, crm, conf = {}) => {
       const ex = crm.contact ? await crm.contact(dos.contact_id).catch(() => null) : null;
       rc = { contact: ex || { id: dos.contact_id }, action: "mettre_a_jour", par: "dossier", trace: rc.trace.concat("contact repris du dossier") };
     }
+    /* La recherche Immofacile ne renvoie pas le consentement : on relit la fiche trouvée,
+       sinon un consentement déjà posé serait remplacé (Immofacile n'en garde qu'un). */
+    if (rc.action === "mettre_a_jour" && rc.par !== "dossier" && rc.contact && rc.contact.id != null && crm.contact) {
+      const ex = await crm.contact(rc.contact.id).catch(() => null);
+      if (ex) rc.contact = { ...rc.contact, ...ex };
+      else rc.contact = { ...rc.contact, consentement_inconnu: true };
+    }
     if (rc.action === "impossible") d.motifs.push("contact impossible : ni e-mail ni téléphone");
   }
   d.contact = { id: rc.contact ? rc.contact.id : null, action: rc.action, par: rc.par, trace: rc.trace };
@@ -292,9 +299,14 @@ const etapeConsentement = (d, mail, conf = {}) => {
   const r = d.extraction, dos = (d.interne && d.interne.dos) || null, rcc = (d.interne && d.interne.contact_crm) || null, connus = (d.interne && d.interne.connus) || [];
   const ok = actifs(conf).contact && d.contact && d.contact.action !== "impossible";
   const dejaConsenti = (dos && dos.consentement) || (rcc && rcc.consentement) || connus.some((x) => x.consentement && rcc && String(x.contact_id) === String(rcc.id));
-  if (ok && actifs(conf).consentement && conf.consentement && conf.consentement.actif && !dejaConsenti) {
+  if (ok && rcc && rcc.consentement_inconnu && !dejaConsenti && conf.consentement && conf.consentement.actif) d.motifs.push("fiche du contact illisible : consentement déjà posé ou non ? à vérifier");
+  if (ok && actifs(conf).consentement && conf.consentement && conf.consentement.actif && !dejaConsenti && !(rcc && rcc.consentement_inconnu)) {
     const date = dateDuMail(mail) || d.date_mail || new Date();
-    const motif = gabarit(conf.consentement.libelle || "Demande de contact via {portail} du {date}", { portail: d.portail || r.site_libelle || r.portail_nom || r.portail, date: dateFr(date) });
+    const libelle = conf.consentement.libelle || "Demande de contact via {portail} du {date}", portail = String(d.portail || r.site_libelle || r.portail_nom || r.portail || "");
+    let motif = gabarit(libelle, { portail, date: dateFr(date) });
+    /* Immofacile ne garde que 64 caractères : on raccourcit le nom du portail, pas la date */
+    const court = (lib) => { const place = 64 - (gabarit(lib, { portail: "", date: dateFr(date) }).length); return place >= 4 ? gabarit(lib, { portail: portail.length <= place ? portail : portail.slice(0, place - 1).trim() + "…", date: dateFr(date) }) : null; };
+    if (motif.length > 64) motif = court(libelle) || court("Contact via {portail} le {date}") || motif;
     d.actions.push({ op: "ajouterConsentement", date: new Date(date).toISOString(), motif, hors_horaires: r.hors_horaires, preuves: [preuveEml(mail)] });
     if (motif.length > 64) d.alertes.push(`motif du consentement trop long (${motif.length} caractères) : Immofacile n'en garde que 64`);
   }
