@@ -20,6 +20,7 @@ const BLOCKS = [
   ...require("./leads"),
   ...require("./leads_solution"),
   ...require("./leads_banc"),
+  ...require("./leads_gabarits"),
   ...require("./leads_controle"),
   ...require("./donnees_ext"),
   ...require("./connecte"),

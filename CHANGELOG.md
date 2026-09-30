@@ -1,5 +1,17 @@
 # Journal des versions
 
+## 2.13.8
+
+- Nouveau bloc « Leads : vérifier et corriger les gabarits d'un ancien système ». Il vérifie chaque gabarit sur les vrais mails reçus, champ par champ.
+  - Pour chaque gabarit actif, il cherche les mails qu'il reconnaît et applique chacun de ses motifs.
+  - Il compare avec une lecture de référence du même mail : celle des règles quand elles lisent tout le mail, sinon celle de l'IA (nombre d'appels plafonné).
+  - Il contrôle aussi chaque valeur : e-mail valide et hors agence, téléphone valide, nom qui n'est ni un rôle ni un mot vide, référence non vide.
+  - Un champ est gardé s'il a lu juste au moins 3 fois, sans aucune erreur. Sinon il est retiré, de même qu'un champ impossible à vérifier (sauf le message du prospect).
+  - Le gabarit est retiré s'il ne reconnaît aucun mail, s'il reconnaît les mails d'un autre portail ou des mails qui ne sont pas des leads, ou s'il ne lui reste pas de quoi joindre le prospect avec son nom ou le bien.
+  - Les mails que ni les règles ni les gabarits ne savent lire sont lus par l'IA, qui en apprend de nouveaux gabarits.
+  - Simulation par défaut. En écriture, les gabarits vérifiés lisent seuls, les gabarits retirés passent en quarantaine (rien n'est effacé) et les gabarits appris sont ajoutés.
+  - Le rapport, sans donnée personnelle, arrive dans Fichiers.
+
 ## 2.13.7
 
 - Une table Postgres qui porte le nom d'une table à créer, mais que Saltcorn ne connaît pas (reste d'un essai, d'un ancien plugin ou d'un script), bloquait toute l'installation avec « relation "ld_mails" already exists ».
