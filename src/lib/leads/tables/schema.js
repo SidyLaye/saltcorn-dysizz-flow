@@ -79,10 +79,9 @@ const pret = new Map();
    erreur claire, sauf si « creer » (modèle du Catalogue, bloc « Leads : préparer les tables »). */
 const ouvrir = async (creer) => {
   const { assurer } = require("../../structure");
-  const Table = require("@saltcorn/data/models/table");
   const out = {}, manquantes = [];
   for (const d of definitions()) {
-    if (!creer && !Table.findOne({ name: d.nom })) { manquantes.push(d.nom); continue; }
+    if (!creer && !(await require("../../rafraichir").trouverTable(d.nom))) { manquantes.push(d.nom); continue; }
     out[d.k] = (await assurer(d)).t;
   }
   if (manquantes.length && ["reglages", "leads", "dossiers"].some((k) => manquantes.includes(nom(k))))

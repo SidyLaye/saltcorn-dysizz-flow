@@ -39,18 +39,18 @@ const ensureTables = async () => {
   const Field = require("@saltcorn/data/models/field");
   const out = {};
   for (const [k, d] of Object.entries(DEFS)) {
-    let t = Table.findOne({ name: d.name });
+    let t = await require("./lib/rafraichir").trouverTable(d.name);
     if (!t) {
       t = await Table.create(d.name, { min_role_read: 1, min_role_write: 1, description: "dysizz-flow" });
       for (const [name, type, o] of d.fields) await Field.create({ table: t, name, label: name, type, ...(o || {}) });
-      try { await require("@saltcorn/data/db/state").getState().refresh_tables(true); } catch (e) { /* rien */ }
+      await require("./lib/rafraichir").rafraichir();
       t = Table.findOne({ name: d.name });
     }
     /* migration douce : les champs ajoutés dans une version plus récente */
     const have = new Set(t.getFields().map((f) => f.name));
     const missing = d.fields.filter(([name]) => !have.has(name));
     for (const [name, type, o] of missing) await Field.create({ table: t, name, label: name, type, ...(o || {}), required: false, is_unique: false });
-    if (missing.length) { try { await require("@saltcorn/data/db/state").getState().refresh_tables(true); } catch (e) { /* rien */ } t = Table.findOne({ name: d.name }); }
+    if (missing.length) { await require("./lib/rafraichir").rafraichir(); t = Table.findOne({ name: d.name }); }
     out[k] = t;
   }
   return out;

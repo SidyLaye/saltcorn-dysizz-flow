@@ -212,8 +212,7 @@ const saveWorkflow = async (body) => {
     const ex = s.id && existing.find((e) => e.id === +s.id);
     if (ex) await ex.update(row); else await WorkflowStep.create({ trigger_id: trig.id, ...row });
   }
-  try { await st().refresh_triggers(true); } catch (e) { /* rien */ }
-  try { st().processSend({ refresh: "triggers", tenant: require("@saltcorn/data/db").getTenantSchema() }); } catch (e) { /* un seul processus */ }
+  await require("./lib/rafraichir").rafraichir(["triggers"]);
   return loadWorkflow(trig.id);
 };
 
