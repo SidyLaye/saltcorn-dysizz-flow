@@ -1,4 +1,4 @@
-/* dysizz-flow 2.14.0 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.14.1 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.14.0" : "dev";
+    var VERSION2 = true ? "2.14.1" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -94355,6 +94355,50 @@ var require_apprentissage = __commonJS({
       if (tel.length >= 6 && /\d{6,}/.test(motif)) return "contient un num\xE9ro";
       return null;
     };
+    var MOTS_VIDES = /^(bonjour|bonsoir|hello|madame|monsieur|mme|mr|m\.?|contact|client|prospect|internaute|acqu[ée]reur|acheteur|nom|pr[ée]nom|num[ée]ro( de t[ée]l[ée]phone)?|t[ée]l[ée]phone|e-?mail|adresse|message|ville|merci|cordialement|n\.?c\.?|non communiqu[ée]|inconnu|null|undefined|-)$/i;
+    var valeurValide = (nom, v) => {
+      const x = String(v || "").trim();
+      if (!x || MOTS_VIDES.test(x)) return false;
+      switch (nom) {
+        case "email":
+          return !!V.email(x) && !/(no-?reply|ne-pas-repondre|support@|contact@|info@)/i.test(x);
+        case "telephone":
+          return !!V.telephone(x) && x.replace(/\D/g, "").length <= 15;
+        case "nom":
+        case "prenom":
+        case "nom_complet":
+          return x.length <= 40 && !/[\d@:?!]/.test(x) && x.split(/\s+/).length <= 4 && !/(agence|immobili|s[ée]lection|portail|leboncoin|seloger)/i.test(x);
+        case "ville":
+          return x.length <= 45 && !/\d{3,}|[@?!]/.test(x) && x.split(/\s+/).length <= 5;
+        case "code_postal":
+          return /^\d{5}$/.test(x);
+        case "type_bien":
+          return x.length <= 40 && !!V.typeBien(x);
+        case "prix": {
+          const n = V.prix(x) || +x.replace(/\D/g, "");
+          return n >= 1e3 && n < 1e8;
+        }
+        case "surface": {
+          const n = +String(x).replace(",", ".").replace(/[^\d.]/g, "");
+          return n > 5 && n < 1e5;
+        }
+        case "nb_pieces":
+        case "pieces": {
+          const n = +x.replace(/\D/g, "");
+          return n >= 1 && n <= 50;
+        }
+        case "reference":
+          return x.length <= 40 && /\d/.test(x) && !/\s{2,}/.test(x);
+        case "message":
+          return x.length >= 2;
+        default:
+          return x.length <= 200;
+      }
+    };
+    var ancreSurLibelle = (motif) => {
+      const avant = String(motif).split(/\((?!\?)/)[0].replace(/\\[sSdDwWbB]|[\^$.*+?{}\[\]|\\]/g, " ");
+      return /[a-zà-ÿ]{3}/i.test(avant);
+    };
     var capturer = (motif, flags, texte) => {
       let m;
       try {
@@ -94400,7 +94444,7 @@ var require_apprentissage = __commonJS({
       for (const c of g.champs || []) {
         if (!c || !c.nom || !c.motif || out[c.nom]) continue;
         const v = capturer(c.motif, c.flags, t);
-        if (v) out[c.nom] = v;
+        if (v && valeurValide(c.nom, v)) out[c.nom] = v;
       }
       return out;
     };
@@ -94498,9 +94542,17 @@ var require_apprentissage = __commonJS({
           rejets.push(`${nom} : ${pb}`);
           continue;
         }
+        if (!ancreSurLibelle(motif)) {
+          rejets.push(`${nom} : motif sans libell\xE9 (prendrait n'importe quoi)`);
+          continue;
+        }
         const v = capturer(motif, "im", t);
         if (!v) {
           rejets.push(`${nom} : ne retrouve rien dans le mail`);
+          continue;
+        }
+        if (!valeurValide(nom, v)) {
+          rejets.push(`${nom} : \xAB ${v.slice(0, 40)} \xBB n'a pas la forme d'un ${nom}`);
           continue;
         }
         if ((nom === "nom" || nom === "prenom") && ia.nom && ia.prenom && estNomComplet(v, ia)) {
@@ -94605,7 +94657,7 @@ var require_apprentissage = __commonJS({
         origine: "ambs:" + g.id + (g.version ? ":" + g.version : "")
       };
     });
-    module2.exports = { choisir, candidats, appliquer, reconnait, versExtraction, apprendre, echec, reussite, candidat, evaluer, motifSur, cleForme, memoire, depuisAmbs, complet, memeValeur, SEUIL_DIRECT, SEUIL_FORME, SEUIL_ECHECS };
+    module2.exports = { valeurValide, ancreSurLibelle, choisir, candidats, appliquer, reconnait, versExtraction, apprendre, echec, reussite, candidat, evaluer, motifSur, cleForme, memoire, depuisAmbs, complet, memeValeur, SEUIL_DIRECT, SEUIL_FORME, SEUIL_ECHECS };
   }
 });
 
@@ -94617,11 +94669,30 @@ var require_lecture = __commonJS({
     var { texteMail } = require_texte();
     var A = require_apprentissage();
     var LEADS = ["lead", "relance", "recherche", "estimation", "direct"];
-    var DEFINITIVES = ["non_lead", "auto_reponse", "interne", "alerte_spam", "notification", "b2b", "masse", "desabonnement", "test"];
+    var DEFINITIVES = ["non_lead", "auto_reponse", "interne", "alerte_spam", "hameconnage", "notification", "b2b", "masse", "desabonnement", "test"];
     var manquantsImportants = (r) => (r.manquants || []).filter((m) => ["coordonnees", "nom", "reference"].includes(m));
-    var recalculer = (r) => {
+    var recalculer = (r, ctx = {}) => {
       const c = r.contact || {}, b = r.bien || {};
-      require_extraire().nettoyerNoms(c);
+      const X = require_extraire(), V = require_valeurs();
+      if (ctx.texte !== void 0) {
+        if (c.telephone) {
+          const t = V.telephone(c.telephone);
+          if (!t || !X.telephoneDuProspect(ctx.texte, ctx.conf || {})(t)) delete c.telephone;
+          else c.telephone = t;
+        }
+        const domA = ((ctx.conf || {}).domaines_agence || []).map((x) => String(x).toLowerCase());
+        if (c.email) {
+          const e = V.email(c.email);
+          if (!e || domA.some((x) => e.endsWith("@" + x))) delete c.email;
+          else if (X.RELAIS.test(e)) {
+            c.email_relais = c.email_relais || e;
+            delete c.email;
+          } else c.email = e;
+        }
+        for (const k of ["nom", "prenom", "nom_complet"]) if (c[k] && !A.valeurValide(k, c[k])) delete c[k];
+        for (const [k, n] of [["ville", "ville"], ["code_postal", "code_postal"], ["reference", "reference"]]) if (b[k] && !A.valeurValide(n, b[k])) delete b[k];
+      }
+      X.nettoyerNoms(c);
       r.manquants = [];
       if (LEADS.includes(r.nature) || r.nature === "reponse_campagne") {
         if (!c.email && !c.telephone) r.manquants.push("coordonnees");
@@ -94655,7 +94726,7 @@ var require_lecture = __commonJS({
           const copie = JSON.parse(JSON.stringify(r));
           A.versExtraction(copie, A.appliquer(x, texte), "gabarit:" + x.id);
           if (["inconnu", "reponse_campagne"].includes(copie.nature) && ["lead", "recherche", "estimation"].includes(x.nature)) copie.nature = x.nature;
-          recalculer(copie);
+          recalculer(copie, { texte, conf });
           if (!meilleur) meilleur = { g: x, r: copie };
           if (!aCompleter(copie)) {
             meilleur = { g: x, r: copie };
@@ -94706,7 +94777,7 @@ var require_lecture = __commonJS({
       if (s.nature === "reclamation") r.reclamation = true;
       if ((r.portail === "inconnu" || !r.portail) && s.source) r.portail_nom = r.portail_nom && r.portail_nom !== r.portail_inconnu ? r.portail_nom : s.source;
       A.versExtraction(r, s, "ia");
-      recalculer(r);
+      recalculer(r, { texte, conf });
       if (opts.gabarits) {
         if (g) r.lecture.gabarit.echec = await A.echec(opts.gabarits, g).catch(() => null);
         r.lecture.apprentissage = await A.apprendre(opts.gabarits, { mail: m, texte, ia: s }).catch((e) => ({ fait: "erreur", raison: String(e.message || e) }));
@@ -105664,6 +105735,86 @@ var require_assets = __commonJS({
   }
 });
 
+// src/lib/leads/suivi.js
+var require_suivi = __commonJS({
+  "src/lib/leads/suivi.js"(exports2, module2) {
+    "use strict";
+    var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+    var COULEUR = { erreur: "#b91c1c", echec: "#b91c1c", alerte: "#b45309", a_verifier: "#b45309", a_trier: "#b45309", non_automatise: "#b45309", pret: "#15803d", envoye: "#15803d", ecrit: "#15803d", ignore: "#6b7280" };
+    var quand = (d) => {
+      try {
+        return new Date(d).toLocaleString("fr-FR", { timeZone: "Europe/Paris", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+      } catch (e) {
+        return "";
+      }
+    };
+    var admin3 = (req, res) => {
+      if (!req.user || req.user.role_id !== 1) {
+        res.status(403).send("r\xE9serv\xE9 \xE0 l'administrateur");
+        return false;
+      }
+      return true;
+    };
+    var CSS = `<style>.dzs{font:14px/1.45 system-ui,sans-serif}.dzs table{width:100%;border-collapse:collapse}.dzs td,.dzs th{padding:.35rem .5rem;border-bottom:1px solid #e5e7eb;vertical-align:top;text-align:left}.dzs .st{font-weight:600}.dzs .k{display:inline-block;margin:0 .5rem .5rem 0;padding:.45rem .7rem;border:1px solid #e5e7eb;border-radius:10px}.dzs .k b{font-size:1.2rem;display:block}.dzs small{color:#6b7280}.dzs form{margin:.5rem 0 1rem}.dzs input,.dzs select{padding:.3rem .5rem}</style>`;
+    var page = async (req, res) => {
+      if (!admin3(req, res)) return;
+      const { tables } = require_schema();
+      const t = await tables();
+      const h = Math.min(24 * 30, Math.max(1, +req.query.h || 24));
+      const depuis = Date.now() - h * 36e5;
+      const q = String(req.query.q || "").trim().toLowerCase(), st = String(req.query.statut || "");
+      const tous = await t.leads.getRows({}, { orderBy: "id", orderDesc: true, limit: 3e3 });
+      const recents = tous.filter((l) => new Date(l.traite_le || l.recu_le || 0).getTime() >= depuis);
+      const parStatut = {};
+      for (const l of recents) parStatut[l.statut || "?"] = (parStatut[l.statut || "?"] || 0) + 1;
+      let iaKo = 0;
+      try {
+        iaKo = (await t.ia.getRows({ ok: false }, { orderBy: "id", orderDesc: true, limit: 500 })).filter((x) => new Date(x.quand).getTime() >= depuis).length;
+      } catch (e) {
+      }
+      let envoisKo = null;
+      try {
+        if (t.envois) envoisKo = (await t.envois.getRows({}, { orderBy: "id", orderDesc: true, limit: 1e3 })).filter((x) => /echec|erreur|abandon/i.test(String(x.statut || "")) && new Date(x.maj_le || x.cree_le || x.quand || 0).getTime() >= depuis).length;
+      } catch (e) {
+      }
+      const grave = (l) => /erreur|echec/i.test(l.statut) ? 0 : /alerte|a_verifier|a_trier|non_auto/i.test(l.statut) ? 1 : 2;
+      const liste = recents.filter((l) => (!st || l.statut === st) && (!q || [l.contact_email, l.contact_nom, l.reference, l.objet, l.expediteur, l.bien_ref_crm, l.contact_tel].some((x) => String(x || "").toLowerCase().includes(q)))).sort((a, b) => grave(a) - grave(b) || b.id - a.id).slice(0, 300);
+      const cartes = Object.entries(parStatut).sort((a, b) => b[1] - a[1]).map(([k, n]) => `<a class="k" href="?h=${h}&statut=${encodeURIComponent(k)}" style="color:${COULEUR[k] || "#111"}"><b>${n}</b>${esc(k)}</a>`).join("") + `<span class="k" style="color:${iaKo ? "#b91c1c" : "#111"}"><b>${iaKo}</b>erreurs d'IA</span>` + (envoisKo === null ? "" : `<span class="k" style="color:${envoisKo ? "#b91c1c" : "#111"}"><b>${envoisKo}</b>envois en \xE9chec</span>`);
+      const lignes = liste.map((l) => `<tr><td><small>${quand(l.traite_le || l.recu_le)}</small><br><a href="/dysizz-flow/leads/suivi/${l.id}">#${l.id}</a></td>
+<td class="st" style="color:${COULEUR[l.statut] || "#111"}">${esc(l.statut)}<br><small>${esc(l.portail || "")} ${esc(l.mode || "")}</small></td>
+<td>${esc(l.contact_nom || "")}<br><small>${esc(l.contact_email || "")} ${esc(l.contact_tel || "")}</small></td>
+<td>${esc(l.reference || "")}${l.bien_crm ? `<br><small>bien ${esc(l.bien_ref_crm || l.bien_crm)} (${esc(l.bien_methode || "")})</small>` : ""}</td>
+<td><small>${esc(String(l.motifs || "").slice(0, 300))}${l.alertes ? `<br><span style="color:#b45309">${esc(String(l.alertes).slice(0, 200))}</span>` : ""}</small></td>
+<td><small>${esc(l.negociateur || "")}<br>${l.duree_ms ? l.duree_ms + " ms" : ""}</small></td></tr>`).join("");
+      const html = `${CSS}<meta http-equiv="refresh" content="30"><div class="dzs"><h1>Leads : suivi en direct</h1>
+<p><small>${recents.length} lead(s) sur ${h} h. Les erreurs et les leads \xE0 reprendre sont en t\xEAte. Mise \xE0 jour toutes les 30 s.</small></p>
+<div>${cartes}</div>
+<form><input name="q" value="${esc(req.query.q || "")}" placeholder="e-mail, nom, r\xE9f\xE9rence, objet\u2026"> <select name="h">${[1, 6, 24, 72, 168, 720].map((x) => `<option value="${x}"${x === h ? " selected" : ""}>${x < 48 ? x + " h" : x / 24 + " j"}</option>`).join("")}</select>
+<input type="hidden" name="statut" value="${esc(st)}"> <button>Chercher</button> ${st ? `<a href="?h=${h}">tous les statuts</a>` : ""}</form>
+<table><thead><tr><th>Re\xE7u</th><th>Statut</th><th>Prospect</th><th>Bien</th><th>Motifs / alertes</th><th>N\xE9gociateur</th></tr></thead><tbody>${lignes || '<tr><td colspan="6">Rien sur cette p\xE9riode.</td></tr>'}</tbody></table></div>`;
+      res.sendWrap("Leads : suivi", html);
+    };
+    var detail = async (req, res) => {
+      if (!admin3(req, res)) return;
+      const { tables } = require_schema();
+      const t = await tables();
+      const l = await t.leads.getRow({ id: +req.params.id });
+      if (!l) return res.status(404).send("lead introuvable");
+      let champs = [];
+      try {
+        champs = await t.champs.getRows({ lead: l.id });
+      } catch (e) {
+      }
+      const lignes = Object.entries(l).filter(([k, v]) => v !== null && v !== "" && k !== "id").map(([k, v]) => `<tr><th>${esc(k)}</th><td><pre style="white-space:pre-wrap;margin:0">${esc(typeof v === "object" && !(v instanceof Date) ? JSON.stringify(v, null, 1) : v instanceof Date ? quand(v) : v)}</pre></td></tr>`).join("");
+      const prov = champs.map((c) => `<tr><td>${esc(c.champ)}</td><td>${esc(c.valeur)}</td><td><small>${esc(c.provenance)}</small></td></tr>`).join("");
+      res.sendWrap(`Lead #${l.id}`, `${CSS}<div class="dzs"><p><a href="/dysizz-flow/leads/suivi">\u2190 suivi</a></p><h1>Lead #${l.id} \u2014 <span style="color:${COULEUR[l.statut] || "#111"}">${esc(l.statut)}</span></h1>
+${prov ? `<h2>Valeurs lues et leur origine</h2><table><tr><th>Champ</th><th>Valeur</th><th>Lu par</th></tr>${prov}</table>` : ""}
+<h2>Tout le lead</h2><table>${lignes}</table></div>`);
+    };
+    module2.exports = { page, detail };
+  }
+});
+
 // src/index.js
 var { PLUGIN, VERSION } = require_core();
 var { toAction } = require_engine();
@@ -105759,6 +105910,8 @@ module.exports = {
     { url: "/dysizz-flow/api", method: "get", callback: withAssets(admin2.apiPage) },
     { url: "/dysizz-flow/api/save", method: "post", callback: admin2.apiSave },
     { url: "/dysizz-flow/api/delete", method: "post", callback: admin2.apiDelete },
+    { url: "/dysizz-flow/leads/suivi", method: "get", callback: (req, res) => require_suivi().page(req, res).catch((e) => res.status(500).send("suivi : " + e.message)) },
+    { url: "/dysizz-flow/leads/suivi/:id", method: "get", callback: (req, res) => require_suivi().detail(req, res).catch((e) => res.status(500).send("suivi : " + e.message)) },
     { url: "/dysizz-flow/ecouteurs", method: "get", callback: withAssets(admin2.ecoutePage) },
     { url: "/dysizz-flow/ecouteurs/save", method: "post", callback: admin2.ecouteSave },
     { url: "/dysizz-flow/ecouteurs/delete", method: "post", callback: admin2.ecouteDelete },

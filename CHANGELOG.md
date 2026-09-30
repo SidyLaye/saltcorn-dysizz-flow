@@ -1,5 +1,19 @@
 # Journal des versions
 
+## 2.14.1
+
+- Gabarits et lecture par l'IA :
+  - chaque valeur doit avoir la forme de son champ (e-mail, téléphone, nom, ville, code postal, type, prix, surface, pièces, référence) ;
+  - un motif doit s'appuyer sur un libellé du mail ;
+  - une valeur invalide est refusée à l'apprentissage et à la lecture. Cela évite les erreurs vues dans les anciens gabarits : « Bonjour » lu comme ville, « contact » comme nom, numéro d'assistance du portail comme téléphone.
+- Valeurs lues par un gabarit ou par l'IA : mêmes contrôles que les règles (numéros de l'équipe, de l'agence ou du portail ; adresses de l'agence ; relais).
+- Nouvelle page « Leads : suivi en direct » (/dysizz-flow/leads/suivi, administrateur) :
+  - chiffres par statut ;
+  - erreurs d'IA et envois en échec ;
+  - erreurs en tête, recherche par e-mail, nom ou référence ;
+  - détail de chaque lead avec l'origine de chaque valeur ;
+  - rechargement toutes les 30 s.
+
 ## 2.14.0
 
 Vérité des mails : chaque mail d'AMBS (8 675) a été lu et comparé au moteur, portail par portail, champ par champ.
