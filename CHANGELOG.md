@@ -1,5 +1,18 @@
 # Journal des versions
 
+## 2.13.5
+
+Corrections venues du contrôle du CRM sur 50 vrais leads (lecture seule).
+- Consentement : un consentement déjà posé sur la fiche n'est plus remplacé.
+  - La recherche de contacts d'Immofacile ne renvoie pas le consentement. Le moteur relit donc la fiche trouvée avant de décider.
+  - Si la fiche ne peut pas être relue, aucun consentement n'est posé et le lead passe « à vérifier ».
+- Motif du consentement : 64 caractères au plus (limite d'Immofacile). Le nom du portail est raccourci, la date est toujours gardée.
+- Idealista : l'e-mail du prospect est lu même quand sa ligne contient aussi un lien vers Idealista.
+- Contrôle du CRM, plus précis :
+  - « autre fiche » dit si c'est un doublon dans le CRM (même e-mail ou même téléphone) ou une vraie différence, et comment le moteur l'a trouvée ;
+  - un e-mail ou un téléphone présent dans le mail mais non lu par le moteur est signalé à part ;
+  - un consentement que le moteur remplacerait est signalé.
+
 ## 2.13.4
 
 - Réponse de l'équipe (« Re : ») à un prospect que le système ne connaît pas : elle n'est plus perdue.

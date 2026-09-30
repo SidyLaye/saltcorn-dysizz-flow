@@ -21,7 +21,7 @@ const { CONF, MAILS } = require("./fixtures-leads.cjs");
   const C = R.controles;
   assert.strictEqual(R.lus_dans_le_crm, 2); assert.strictEqual(R.introuvables_dans_le_crm, 1);
   assert.strictEqual(C["e-mail"].accord, 1); assert.strictEqual(C["e-mail"]["même domaine, adresse différente"], 1, "e-mail de la fiche ≠ mail");
-  assert.strictEqual(C["recherche du contact"]["le moteur choisit une autre fiche"], 1, "l'ancien a écrit dans une autre fiche que celle du prospect");
+  assert.strictEqual(C["recherche du contact"]["le moteur choisit une autre fiche (trouvée par email)"], 1, "l'ancien a écrit dans une autre fiche que celle du prospect");
   assert.strictEqual(C["consentement"]["présent sur la fiche"], 1);
   assert.strictEqual(C["prénom et nom"].accord, 1); assert(C["prénom et nom"]["en partie"] || C["prénom et nom"]["différent"], "nom de la fiche ≠ mail");
   assert.strictEqual(C["groupe Demandeur"].accord, 1); assert.strictEqual(C["groupe Demandeur"]["absent de la fiche"], 1);
@@ -39,5 +39,17 @@ const { CONF, MAILS } = require("./fixtures-leads.cjs");
   assert.strictEqual((R2.controles["écriture : telephone"] || {})["le moteur l'écrirait, absent de la fiche"], 1, JSON.stringify(R2.controles));
   assert(!R2.controles["écriture : format"], "valeurs écrites au bon format : " + JSON.stringify(R2.controles["écriture : format"]));
   assert.strictEqual((R2.controles["téléphone"] || {})["dans le mail, absent de la fiche"], 1);
+  /* la recherche Immofacile ne renvoie pas le consentement : le moteur relit la fiche et ne remplace pas celui qui existe */
+  const sansConsent = { ...base, suivis: async () => [], contactsParEmail: async (e) => (await base.contactsParEmail(e)).map((x) => ({ ...x, consentement: false, consentement_detail: null })) };
+  const R3 = await controler({ lignes: [{ mail: mail(5), contact_id: 900, bien: 501 }], crm: sansConsent, crmMoteur: sansConsent, biens, conf, groupeDemandeur: 1, origines: conf.origines });
+  assert(!(R3.controles["écriture : consentement"] || {})["remplacerait le consentement déjà posé sur la fiche"], JSON.stringify(R3.controles["écriture : consentement"]));
+  const illisible = { ...sansConsent, contact: async (id) => (String(id) === "900" && illisible.lu++ ? base.contact(id) : null), lu: 0 };
+  const { traiter } = require("../src/lib/leads/traiter");
+  const d3 = await traiter(mail(6), illisible, conf);
+  assert(!d3.actions.some((a) => a.op === "ajouterConsentement") && d3.motifs.some((m) => /consentement déjà posé ou non/.test(m)), "fiche illisible : pas de consentement, à vérifier");
+  /* motif de consentement : 64 caractères au plus, la date est gardée */
+  const long = await traiter({ ...mail(7), texte: MAILS.leboncoin.texte }, M.creer({ biens }), { ...conf, consentement: { actif: true, libelle: "Demande de contact envoyée depuis le site {portail} le {date}" } });
+  const cw = long.actions.find((a) => a.op === "ajouterConsentement");
+  assert(cw && cw.motif.length <= 64 && /^Demande de contact envoyée depuis le site Lebon.*…/.test(cw.motif) && /10\/09\/2026$/.test(cw.motif), cw && cw.motif);
   console.log(`contrôle CRM OK : ${Object.keys(C).length} contrôles (lecture, recherche, écriture), ${R.cas.length} cas anonymisés`);
 })().catch((e) => { console.error(e); process.exit(1); });

@@ -58,12 +58,24 @@ const controler = async ({ lignes, crm, crmMoteur = null, biens = [], conf = {},
     if (!k) { if (!errC) noter("fiche du contact", "introuvable dans le CRM"); continue; }
     const e = (d && d.extraction) || {}, c = e.contact || {};
     /* 0. RECHERCHE : le moteur retrouve-t-il la même fiche que celle où l'ancien a écrit ? */
-    if (crmMoteur && d && d.contact) noter("recherche du contact", d.contact.id == null ? (d.contact.action === "creer" ? "le moteur créerait une nouvelle fiche" : "aucune fiche : " + String(d.contact.action || "?")) : String(d.contact.id) === String(l.contact_id) ? "accord" : "le moteur choisit une autre fiche");
+    if (crmMoteur && d && d.contact) {
+      if (d.contact.id == null) noter("recherche du contact", d.contact.action === "creer" ? "le moteur créerait une nouvelle fiche" : "aucune fiche : " + String(d.contact.action || "?"));
+      else if (String(d.contact.id) === String(l.contact_id)) noter("recherche du contact", "accord");
+      else {
+        /* autre fiche : doublon (la fiche de l'ancien porte aussi l'e-mail ou le téléphone du mail) ou vraie différence */
+        const emA = (k.emails || [k.email]).map(norm.email).filter(Boolean), tA = (k.telephones || []).map(neuf).filter(Boolean);
+        const memeEmail = !!(c.email || c.email_relais) && emA.includes(norm.email(c.email || c.email_relais)), memeTel = !!c.telephone && tA.includes(neuf(c.telephone));
+        noter("recherche du contact", memeEmail || memeTel ? `doublon dans le CRM (même ${memeEmail ? "e-mail" : "téléphone"}) : le moteur prend la fiche la plus récente` : `le moteur choisit une autre fiche (trouvée par ${d.contact.par || "?"})`,
+          { par: d.contact.par || null, meme_email: memeEmail, meme_telephone: memeTel, email_lu: !!(c.email || c.email_relais), telephone_lu: !!c.telephone });
+      }
+    }
     /* 1. e-mail et téléphone du mail retrouvés sur la fiche */
     const em = norm.email(c.email || c.email_relais), emK = (k.emails || [k.email]).map(norm.email).filter(Boolean);
-    noter("e-mail", !em && !emK.length ? "rien à contrôler" : !em ? "sur la fiche, absent du mail" : !emK.length ? "dans le mail, absent de la fiche" : emK.includes(em) ? "accord" : emK.some((x) => x.split("@")[1] === em.split("@")[1]) ? "même domaine, adresse différente" : "adresse différente");
+    const domA = (conf.domaines_agence || []).map((x) => String(x).toLowerCase());
+    const autresEmails = [...new Set((t.match(/[\w.+-]+@[\w-]+(\.[\w-]+)+/g) || []).map((x) => x.toLowerCase()))].filter((x) => !domA.some((a) => x.endsWith("@" + a) || x.endsWith("." + a)));
+    noter("e-mail", !em && !emK.length ? "rien à contrôler" : !em ? (autresEmails.some((x) => emK.includes(x)) ? "dans le mail mais non lu par le moteur" : "sur la fiche, absent du mail") : !emK.length ? "dans le mail, absent de la fiche" : emK.includes(em) ? "accord" : emK.some((x) => x.split("@")[1] === em.split("@")[1]) ? "même domaine, adresse différente" : "adresse différente");
     const tm = neuf(c.telephone), tK = (k.telephones || []).map(neuf).filter(Boolean);
-    noter("téléphone", !tm && !tK.length ? "rien à contrôler" : !tm ? "sur la fiche, absent du mail" : !tK.length ? "dans le mail, absent de la fiche" : tK.includes(tm) ? "accord" : "numéro différent");
+    noter("téléphone", !tm && !tK.length ? "rien à contrôler" : !tm ? ((t.match(/\+?\d[\d .-]{7,}\d/g) || []).map(neuf).some((x) => x.length === 9 && tK.includes(x)) ? "dans le mail mais non lu par le moteur" : "sur la fiche, absent du mail") : !tK.length ? "dans le mail, absent de la fiche" : tK.includes(tm) ? "accord" : "numéro différent");
     /* 2. prénom et nom */
     const dn = V.decouperNom(c.nom_complet || "") || {};
     const idM = mots2(c.prenom || dn.prenom, c.nom || dn.nom), idK = mots2(k.prenom, k.nom);
@@ -110,6 +122,7 @@ const controler = async ({ lignes, crm, crmMoteur = null, biens = [], conf = {},
     const cw = ecr.find((x) => x.op === "ajouterConsentement");
     if (cw) {
       if (String(cw.motif || "").length > 64) noter("écriture : consentement", "motif de plus de 64 caractères");
+      if (k.consentement) noter("écriture : consentement", "remplacerait le consentement déjà posé sur la fiche");
       if (!(cw.preuves || []).length) noter("écriture : consentement", "sans preuve");
       if (l.mail.date && cw.date && Math.abs(new Date(cw.date) - new Date(l.mail.date)) > 86400000) noter("écriture : consentement", "date différente de celle du mail");
       else noter("écriture : consentement", "accord");

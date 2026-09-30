@@ -1,4 +1,4 @@
-/* dysizz-flow 2.13.4 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.13.5 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.13.4" : "dev";
+    var VERSION2 = true ? "2.13.5" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -93048,7 +93048,10 @@ var require_portails = __commonJS({
             delete r.contact.nom;
             delete r.contact.prenom;
           }
-          const e = L.findIndex((l) => V.email(l) && !/idealista/.test(l));
+          const e = L.findIndex((l) => {
+            const m = V.email(l);
+            return m && !/idealista\./i.test(m.split("@")[1] || "");
+          });
           if (e >= 0) {
             r.contact.email = V.email(L[e]);
             const f = L.slice(e + 1).findIndex((l) => /^(réponse depuis|réf\.|code de l)/i.test(l));
@@ -94953,6 +94956,11 @@ var require_traiter = __commonJS({
           const ex = crm.contact ? await crm.contact(dos.contact_id).catch(() => null) : null;
           rc = { contact: ex || { id: dos.contact_id }, action: "mettre_a_jour", par: "dossier", trace: rc.trace.concat("contact repris du dossier") };
         }
+        if (rc.action === "mettre_a_jour" && rc.par !== "dossier" && rc.contact && rc.contact.id != null && crm.contact) {
+          const ex = await crm.contact(rc.contact.id).catch(() => null);
+          if (ex) rc.contact = { ...rc.contact, ...ex };
+          else rc.contact = { ...rc.contact, consentement_inconnu: true };
+        }
         if (rc.action === "impossible") d.motifs.push("contact impossible : ni e-mail ni t\xE9l\xE9phone");
       }
       d.contact = { id: rc.contact ? rc.contact.id : null, action: rc.action, par: rc.par, trace: rc.trace };
@@ -95006,9 +95014,16 @@ var require_traiter = __commonJS({
       const r = d.extraction, dos = d.interne && d.interne.dos || null, rcc = d.interne && d.interne.contact_crm || null, connus = d.interne && d.interne.connus || [];
       const ok = actifs(conf).contact && d.contact && d.contact.action !== "impossible";
       const dejaConsenti = dos && dos.consentement || rcc && rcc.consentement || connus.some((x) => x.consentement && rcc && String(x.contact_id) === String(rcc.id));
-      if (ok && actifs(conf).consentement && conf.consentement && conf.consentement.actif && !dejaConsenti) {
+      if (ok && rcc && rcc.consentement_inconnu && !dejaConsenti && conf.consentement && conf.consentement.actif) d.motifs.push("fiche du contact illisible : consentement d\xE9j\xE0 pos\xE9 ou non ? \xE0 v\xE9rifier");
+      if (ok && actifs(conf).consentement && conf.consentement && conf.consentement.actif && !dejaConsenti && !(rcc && rcc.consentement_inconnu)) {
         const date = dateDuMail(mail) || d.date_mail || /* @__PURE__ */ new Date();
-        const motif = gabarit(conf.consentement.libelle || "Demande de contact via {portail} du {date}", { portail: d.portail || r.site_libelle || r.portail_nom || r.portail, date: dateFr(date) });
+        const libelle = conf.consentement.libelle || "Demande de contact via {portail} du {date}", portail = String(d.portail || r.site_libelle || r.portail_nom || r.portail || "");
+        let motif = gabarit(libelle, { portail, date: dateFr(date) });
+        const court = (lib) => {
+          const place = 64 - gabarit(lib, { portail: "", date: dateFr(date) }).length;
+          return place >= 4 ? gabarit(lib, { portail: portail.length <= place ? portail : portail.slice(0, place - 1).trim() + "\u2026", date: dateFr(date) }) : null;
+        };
+        if (motif.length > 64) motif = court(libelle) || court("Contact via {portail} le {date}") || motif;
         d.actions.push({ op: "ajouterConsentement", date: new Date(date).toISOString(), motif, hors_horaires: r.hors_horaires, preuves: [preuveEml(mail)] });
         if (motif.length > 64) d.alertes.push(`motif du consentement trop long (${motif.length} caract\xE8res) : Immofacile n'en garde que 64`);
       }
@@ -98548,11 +98563,25 @@ var require_controle = __commonJS({
           continue;
         }
         const e = d && d.extraction || {}, c = e.contact || {};
-        if (crmMoteur && d && d.contact) noter("recherche du contact", d.contact.id == null ? d.contact.action === "creer" ? "le moteur cr\xE9erait une nouvelle fiche" : "aucune fiche : " + String(d.contact.action || "?") : String(d.contact.id) === String(l.contact_id) ? "accord" : "le moteur choisit une autre fiche");
+        if (crmMoteur && d && d.contact) {
+          if (d.contact.id == null) noter("recherche du contact", d.contact.action === "creer" ? "le moteur cr\xE9erait une nouvelle fiche" : "aucune fiche : " + String(d.contact.action || "?"));
+          else if (String(d.contact.id) === String(l.contact_id)) noter("recherche du contact", "accord");
+          else {
+            const emA = (k.emails || [k.email]).map(norm.email).filter(Boolean), tA = (k.telephones || []).map(neuf).filter(Boolean);
+            const memeEmail = !!(c.email || c.email_relais) && emA.includes(norm.email(c.email || c.email_relais)), memeTel = !!c.telephone && tA.includes(neuf(c.telephone));
+            noter(
+              "recherche du contact",
+              memeEmail || memeTel ? `doublon dans le CRM (m\xEAme ${memeEmail ? "e-mail" : "t\xE9l\xE9phone"}) : le moteur prend la fiche la plus r\xE9cente` : `le moteur choisit une autre fiche (trouv\xE9e par ${d.contact.par || "?"})`,
+              { par: d.contact.par || null, meme_email: memeEmail, meme_telephone: memeTel, email_lu: !!(c.email || c.email_relais), telephone_lu: !!c.telephone }
+            );
+          }
+        }
         const em = norm.email(c.email || c.email_relais), emK = (k.emails || [k.email]).map(norm.email).filter(Boolean);
-        noter("e-mail", !em && !emK.length ? "rien \xE0 contr\xF4ler" : !em ? "sur la fiche, absent du mail" : !emK.length ? "dans le mail, absent de la fiche" : emK.includes(em) ? "accord" : emK.some((x) => x.split("@")[1] === em.split("@")[1]) ? "m\xEAme domaine, adresse diff\xE9rente" : "adresse diff\xE9rente");
+        const domA = (conf.domaines_agence || []).map((x) => String(x).toLowerCase());
+        const autresEmails = [...new Set((t.match(/[\w.+-]+@[\w-]+(\.[\w-]+)+/g) || []).map((x) => x.toLowerCase()))].filter((x) => !domA.some((a) => x.endsWith("@" + a) || x.endsWith("." + a)));
+        noter("e-mail", !em && !emK.length ? "rien \xE0 contr\xF4ler" : !em ? autresEmails.some((x) => emK.includes(x)) ? "dans le mail mais non lu par le moteur" : "sur la fiche, absent du mail" : !emK.length ? "dans le mail, absent de la fiche" : emK.includes(em) ? "accord" : emK.some((x) => x.split("@")[1] === em.split("@")[1]) ? "m\xEAme domaine, adresse diff\xE9rente" : "adresse diff\xE9rente");
         const tm = neuf(c.telephone), tK = (k.telephones || []).map(neuf).filter(Boolean);
-        noter("t\xE9l\xE9phone", !tm && !tK.length ? "rien \xE0 contr\xF4ler" : !tm ? "sur la fiche, absent du mail" : !tK.length ? "dans le mail, absent de la fiche" : tK.includes(tm) ? "accord" : "num\xE9ro diff\xE9rent");
+        noter("t\xE9l\xE9phone", !tm && !tK.length ? "rien \xE0 contr\xF4ler" : !tm ? (t.match(/\+?\d[\d .-]{7,}\d/g) || []).map(neuf).some((x) => x.length === 9 && tK.includes(x)) ? "dans le mail mais non lu par le moteur" : "sur la fiche, absent du mail" : !tK.length ? "dans le mail, absent de la fiche" : tK.includes(tm) ? "accord" : "num\xE9ro diff\xE9rent");
         const dn = V.decouperNom(c.nom_complet || "") || {};
         const idM = mots2(c.prenom || dn.prenom, c.nom || dn.nom), idK = mots2(k.prenom, k.nom);
         const ei = identite(idK, idM);
@@ -98603,6 +98632,7 @@ var require_controle = __commonJS({
         const cw = ecr.find((x) => x.op === "ajouterConsentement");
         if (cw) {
           if (String(cw.motif || "").length > 64) noter("\xE9criture : consentement", "motif de plus de 64 caract\xE8res");
+          if (k.consentement) noter("\xE9criture : consentement", "remplacerait le consentement d\xE9j\xE0 pos\xE9 sur la fiche");
           if (!(cw.preuves || []).length) noter("\xE9criture : consentement", "sans preuve");
           if (l.mail.date && cw.date && Math.abs(new Date(cw.date) - new Date(l.mail.date)) > 864e5) noter("\xE9criture : consentement", "date diff\xE9rente de celle du mail");
           else noter("\xE9criture : consentement", "accord");
