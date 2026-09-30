@@ -28,6 +28,8 @@ const assurer = async (def) => {
   const out = { table: nom, creee: false, champs_ajoutes: [] };
   let t = await require("./rafraichir").trouverTable(nom);
   if (!t) {
+    const note = await require("./rafraichir").libererNom(nom);
+    if (note) out.note = note;
     t = await Table.create(nom, { min_role_read: +def.lecture || 1, min_role_write: +def.ecriture || 1, description: def.description || "" });
     out.creee = true;
   }

@@ -18,7 +18,11 @@ module.exports = [
     name: "dzf_leads_tables", label: "Leads : préparer les tables", category: CAT, icon: "fas fa-table", output: "tables", timeout: 120,
     description: "Crée ou complète les tables des leads (réglages, agences, équipe, groupes, règles d'envoi, absences, copies, mails reçus, leads, valeurs lues, conversations, biens, gabarits, demandes). Ne supprime ni ne modifie rien : à relancer après une mise à jour.",
     params: [P_PREFIXE],
-    run: async (p) => dans(p, async () => ({ tables: await S.preparer() })),
+    run: async (p) => dans(p, async () => {
+      const R = require("../lib/rafraichir"), n0 = R.mises_de_cote.length;
+      const tables = await S.preparer();
+      return { tables, ...(R.mises_de_cote.length > n0 ? { mises_de_cote: R.mises_de_cote.slice(n0) } : {}) };
+    }),
   },
   {
     name: "dzf_leads_preparer", label: "Leads : préparer le mail reçu", category: CAT, icon: "fas fa-inbox", output: "lead",

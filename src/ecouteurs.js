@@ -24,7 +24,7 @@ const log = (m) => { try { require("@saltcorn/data/db/state").getState().log(4, 
 const tableDest = async (nom) => {
   const Table = require("@saltcorn/data/models/table"), Field = require("@saltcorn/data/models/field");
   let t = await require("./lib/rafraichir").trouverTable(nom);
-  if (!t) { t = await Table.create(nom, { min_role_read: 1, min_role_write: 1, description: "Mails reçus (écouteur dysizz-flow)" }); }
+  if (!t) { await require("./lib/rafraichir").libererNom(nom); t = await Table.create(nom, { min_role_read: 1, min_role_write: 1, description: "Mails reçus (écouteur dysizz-flow)" }); }
   const have = new Set(t.getFields().map((f) => f.name));
   let ajout = false;
   for (const [n, type] of CHAMPS) if (!have.has(n)) { await Field.create({ table: t, name: n, label: n, type }); ajout = true; }

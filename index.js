@@ -1,4 +1,4 @@
-/* dysizz-flow 2.13.6 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.13.7 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.13.6" : "dev";
+    var VERSION2 = true ? "2.13.7" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -101,7 +101,28 @@ var require_rafraichir = __commonJS({
       }
       return t || null;
     };
-    module2.exports = { rafraichir, trouverTable };
+    var mises_de_cote = [];
+    var libererNom = async (nom) => {
+      try {
+        const db = require("@saltcorn/data/db");
+        if (db.isSQLite) return null;
+        if (await db.selectMaybeOne("_sc_tables", { name: nom })) return null;
+        const schema = db.getTenantSchema();
+        const r = await db.query("select 1 from information_schema.tables where table_schema = $1 and table_name = $2", [schema, nom]);
+        if (!r.rows.length) return null;
+        const d = (/* @__PURE__ */ new Date()).toISOString().replace(/\D/g, "").slice(0, 14);
+        const pris = new Set((await db.query("select table_name from information_schema.tables where table_schema = $1 and table_name like $2", [schema, `${nom}_ancienne_%`])).rows.map((x) => x.table_name));
+        let nouveau = `${nom}_ancienne_${d}`.slice(0, 60);
+        for (let i = 2; pris.has(nouveau); i++) nouveau = `${nom}_ancienne_${d}`.slice(0, 57) + "_" + i;
+        await db.query(`alter table "${schema}"."${nom}" rename to "${nouveau}"`);
+        const note = `table \xAB ${nom} \xBB inconnue de Saltcorn trouv\xE9e dans la base : renomm\xE9e \xAB ${nouveau} \xBB (rien n'est effac\xE9)`;
+        mises_de_cote.push(note);
+        return note;
+      } catch (e) {
+        return null;
+      }
+    };
+    module2.exports = { rafraichir, trouverTable, libererNom, mises_de_cote };
   }
 });
 
@@ -162,6 +183,7 @@ var require_store = __commonJS({
       for (const [k, d] of Object.entries(DEFS)) {
         let t = await require_rafraichir().trouverTable(d.name);
         if (!t) {
+          await require_rafraichir().libererNom(d.name);
           t = await Table.create(d.name, { min_role_read: 1, min_role_write: 1, description: "dysizz-flow" });
           for (const [name, type, o] of d.fields) await Field.create({ table: t, name, label: name, type, ...o || {} });
           await require_rafraichir().rafraichir();
@@ -96074,6 +96096,8 @@ var require_structure = __commonJS({
       const out = { table: nom, creee: false, champs_ajoutes: [] };
       let t = await require_rafraichir().trouverTable(nom);
       if (!t) {
+        const note = await require_rafraichir().libererNom(nom);
+        if (note) out.note = note;
         t = await Table.create(nom, { min_role_read: +def.lecture || 1, min_role_write: +def.ecriture || 1, description: def.description || "" });
         out.creee = true;
       }
@@ -96229,6 +96253,7 @@ var require_ecouteurs = __commonJS({
       const Table = require("@saltcorn/data/models/table"), Field = require("@saltcorn/data/models/field");
       let t = await require_rafraichir().trouverTable(nom);
       if (!t) {
+        await require_rafraichir().libererNom(nom);
         t = await Table.create(nom, { min_role_read: 1, min_role_write: 1, description: "Mails re\xE7us (\xE9couteur dysizz-flow)" });
       }
       const have = new Set(t.getFields().map((f) => f.name));
@@ -97798,7 +97823,11 @@ var require_leads_solution = __commonJS({
         timeout: 120,
         description: "Cr\xE9e ou compl\xE8te les tables des leads (r\xE9glages, agences, \xE9quipe, groupes, r\xE8gles d'envoi, absences, copies, mails re\xE7us, leads, valeurs lues, conversations, biens, gabarits, demandes). Ne supprime ni ne modifie rien : \xE0 relancer apr\xE8s une mise \xE0 jour.",
         params: [P_PREFIXE],
-        run: async (p) => dans(p, async () => ({ tables: await S.preparer() }))
+        run: async (p) => dans(p, async () => {
+          const R = require_rafraichir(), n0 = R.mises_de_cote.length;
+          const tables = await S.preparer();
+          return { tables, ...R.mises_de_cote.length > n0 ? { mises_de_cote: R.mises_de_cote.slice(n0) } : {} };
+        })
       },
       {
         name: "dzf_leads_preparer",
@@ -103061,6 +103090,7 @@ var require_install = __commonJS({
     var createTable = async (name, fields) => {
       const Table = require("@saltcorn/data/models/table");
       const Field = require("@saltcorn/data/models/field");
+      await require_rafraichir().libererNom(name);
       const t = await Table.create(name, { min_role_read: 1, min_role_write: 1 });
       for (const [n, type, o] of fields) await Field.create({ table: t, name: n, label: n.charAt(0).toUpperCase() + n.slice(1).replace(/_/g, " "), type, ...o });
       await require_rafraichir().rafraichir();
