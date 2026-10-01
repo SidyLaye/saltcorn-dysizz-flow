@@ -1,4 +1,4 @@
-/* dysizz-flow 2.14.3 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.14.4 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.14.3" : "dev";
+    var VERSION2 = true ? "2.14.4" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -98227,6 +98227,132 @@ ${a}<div style="padding:18px 24px"><div style="font-size:13px;color:#6b7280;marg
   }
 });
 
+// src/lib/arriere_plan.js
+var require_arriere_plan = __commonJS({
+  "src/lib/arriere_plan.js"(exports2, module2) {
+    "use strict";
+    var EN_COURS = globalThis[Symbol.for("dysizz-flow.arriere-plan")] || (globalThis[Symbol.for("dysizz-flow.arriere-plan")] = /* @__PURE__ */ new Map());
+    var tenant = () => {
+      try {
+        return require("@saltcorn/data/db").getTenantSchema();
+      } catch (e) {
+        return "public";
+      }
+    };
+    var DUREE_MAX = 2 * 3600 * 1e3;
+    var etatTexte = (s) => `${s.etape || "d\xE9marrage"}${s.total ? ` : ${s.fait || 0} / ${s.total}` : ""}`;
+    var enFond = async (p, ctx, bloc, fichier, travail, { dureeMax = DUREE_MAX } = {}) => {
+      const suivi = { etape: "d\xE9marrage", fait: 0, total: 0, debut: Date.now() };
+      if (p.arriere_plan === false || p.arriere_plan === "false") return travail(suivi);
+      const cle = tenant() + ":" + bloc;
+      const deja = EN_COURS.get(cle);
+      if (deja && Date.now() - deja.debut < dureeMax)
+        return { lance: false, deja_en_cours: true, depuis: deja.debut, etat: etatTexte(deja), resume: `D\xE9j\xE0 en cours depuis ${Math.round((Date.now() - deja.debut) / 6e4)} min (${etatTexte(deja)}) : le rapport arrivera dans Fichiers \u2192 ${fichier}` };
+      EN_COURS.set(cle, suivi);
+      let db = null, schema = null;
+      try {
+        db = require("@saltcorn/data/db");
+        schema = db.getTenantSchema();
+      } catch (e) {
+        db = null;
+      }
+      const propre = (fn) => db && db.runWithTenant && schema ? db.runWithTenant(schema, fn) : fn();
+      let minuterie = null;
+      const limite = new Promise((_, ko) => {
+        minuterie = setTimeout(() => ko(new Error(`arr\xEAt\xE9 apr\xE8s ${Math.round(dureeMax / 6e4)} min (derni\xE8re \xE9tape : ${etatTexte(suivi)})`)), dureeMax);
+      });
+      new Promise((ok) => setImmediate(ok)).then(() => Promise.race([propre(() => travail(suivi)), limite])).catch((e) => propre(async () => {
+        try {
+          const File = require("@saltcorn/data/models/file");
+          await File.from_contents(
+            String(fichier).replace(/\.json$/, "") + "-erreur.json",
+            "application/json",
+            JSON.stringify({ erreur: String(e && e.message || e).slice(0, 500), derniere_etape: etatTexte(suivi), le: (/* @__PURE__ */ new Date()).toISOString(), apres_secondes: Math.round((Date.now() - suivi.debut) / 1e3) }, null, 1),
+            ctx && ctx.user && ctx.user.id,
+            1
+          );
+        } catch (x) {
+        }
+      })).finally(() => {
+        clearTimeout(minuterie);
+        if (EN_COURS.get(cle) === suivi) EN_COURS.delete(cle);
+      });
+      return { lance: true, fichier, resume: `Lanc\xE9 en arri\xE8re-plan : le rapport arrivera dans Fichiers \u2192 ${fichier} (quelques minutes). Recliquer montre o\xF9 il en est. En cas de probl\xE8me : ${String(fichier).replace(/\.json$/, "")}-erreur.json` };
+    };
+    var borne = (promesse, ms, quoi) => {
+      let t;
+      return Promise.race([promesse, new Promise((_, ko) => {
+        t = setTimeout(() => ko(new Error(`${quoi} : pas de r\xE9ponse apr\xE8s ${Math.round(ms / 1e3)} s`)), ms);
+      })]).finally(() => clearTimeout(t));
+    };
+    module2.exports = { enFond, borne, EN_COURS };
+  }
+});
+
+// src/lib/leads/tables/reprise_crm.js
+var require_reprise_crm = __commonJS({
+  "src/lib/leads/tables/reprise_crm.js"(exports2, module2) {
+    "use strict";
+    var { tables } = require_schema();
+    var { charger } = require_conf();
+    var { traiterMail } = require_dossier();
+    var ERREURS_CRM = /* @__PURE__ */ new Set([
+      "creerContact",
+      "majContact",
+      "lierBien",
+      "creerRecherche",
+      "majRecherche",
+      "ajouterAction",
+      "ajouterConsentement"
+    ]);
+    var lire = (v) => {
+      try {
+        return typeof v === "string" ? JSON.parse(v) : v || {};
+      } catch (_) {
+        return {};
+      }
+    };
+    var echecsCrm = (row) => ((lire(row && row.dossier).execution || {}).resultats || []).filter((x) => x && ERREURS_CRM.has(x.op) && x.fait === false && x.erreur).map((x) => ({ op: x.op, erreur: String(x.erreur).slice(0, 220) }));
+    var candidatsCrm = (rows, debut, fin) => rows.filter((l) => l.mail_id && l.mode === "reel" && Number.isFinite(Date.parse(l.recu_le)) && Date.parse(l.recu_le) >= debut.getTime() && Date.parse(l.recu_le) < fin.getTime() && echecsCrm(l).length).sort((a, b) => Date.parse(a.recu_le) - Date.parse(b.recu_le) || Number(a.id) - Number(b.id));
+    var rattraperCrm = async ({ debut, fin, suivi = {} } = {}) => {
+      const d = new Date(debut), f = fin ? new Date(fin) : /* @__PURE__ */ new Date();
+      if (!Number.isFinite(d.getTime()) || !Number.isFinite(f.getTime()) || f <= d)
+        throw new Error("Fen\xEAtre de reprise CRM invalide");
+      const { crm } = await charger();
+      if (crm.mode !== "reel") throw new Error("Le mode CRM r\xE9el doit \xEAtre activ\xE9 avant la reprise");
+      const t = await tables();
+      const choisis = candidatsCrm(await t.leads.getRows({}), d, f);
+      const rapport = {
+        debut: d.toISOString(),
+        fin: f.toISOString(),
+        candidats: choisis.length,
+        traites: 0,
+        corriges: 0,
+        encore_en_echec: [],
+        erreurs: [],
+        emails_envoyes_par_ce_bloc: 0
+      };
+      suivi.etape = "reprise CRM sans e-mail";
+      suivi.total = choisis.length;
+      for (const row of choisis) {
+        try {
+          await traiterMail(row.mail_id, { forcerOmbre: false });
+          rapport.traites++;
+          const actuel = await t.leads.getRow({ mail_id: row.mail_id });
+          const restants = echecsCrm(actuel);
+          if (restants.length) rapport.encore_en_echec.push({ lead_id: row.id, mail_id: row.mail_id, erreurs: restants });
+          else rapport.corriges++;
+        } catch (e) {
+          rapport.erreurs.push({ lead_id: row.id, mail_id: row.mail_id, erreur: String(e.message || e).slice(0, 220) });
+        }
+        suivi.fait++;
+      }
+      return rapport;
+    };
+    module2.exports = { echecsCrm, candidatsCrm, rattraperCrm };
+  }
+});
+
 // src/lib/leads/tables/taches.js
 var require_taches = __commonJS({
   "src/lib/leads/tables/taches.js"(exports2, module2) {
@@ -98443,6 +98569,30 @@ var require_leads_solution = __commonJS({
         })
       },
       {
+        name: "dzf_leads_rattraper_crm",
+        label: "Leads : reprendre les \xE9critures CRM en \xE9chec",
+        category: CAT,
+        icon: "fas fa-redo",
+        output: "reprise",
+        timeout: 60,
+        description: "Retraite en arri\xE8re-plan les mails d'une p\xE9riode dont la derni\xE8re ex\xE9cution garde une erreur CRM. R\xE9utilise la pipeline Leads et les m\xEAmes lignes ; n'envoie aucun e-mail. Rapport dans Fichiers.",
+        params: [
+          P_PREFIXE,
+          { name: "debut", label: "D\xE9but ISO inclus (avec fuseau)", type: "String", required: true },
+          { name: "fin", label: "Fin ISO exclue (vide = maintenant)", type: "String" },
+          { name: "fichier", label: "Rapport", default: "rattrapage-crm.json" }
+        ],
+        run: async (p, ctx = {}) => dans(p, async () => {
+          const nom = String(p.fichier || "rattrapage-crm.json").replace(/[^\w.-]/g, "_");
+          return require_arriere_plan().enFond(p, ctx, "dzf_leads_rattraper_crm", nom, async (suivi) => {
+            const rapport = await require_reprise_crm().rattraperCrm({ debut: p.debut, fin: p.fin, suivi });
+            const File = require("@saltcorn/data/models/file");
+            await File.from_contents(nom, "application/json", JSON.stringify(rapport, null, 1), ctx.user && ctx.user.id, 1);
+            return { fichier: nom, ...rapport };
+          });
+        })
+      },
+      {
         name: "dzf_leads_entretien",
         label: "Leads : reprises et entretien",
         category: CAT,
@@ -98457,68 +98607,6 @@ var require_leads_solution = __commonJS({
         })
       }
     ];
-  }
-});
-
-// src/lib/arriere_plan.js
-var require_arriere_plan = __commonJS({
-  "src/lib/arriere_plan.js"(exports2, module2) {
-    "use strict";
-    var EN_COURS = globalThis[Symbol.for("dysizz-flow.arriere-plan")] || (globalThis[Symbol.for("dysizz-flow.arriere-plan")] = /* @__PURE__ */ new Map());
-    var tenant = () => {
-      try {
-        return require("@saltcorn/data/db").getTenantSchema();
-      } catch (e) {
-        return "public";
-      }
-    };
-    var DUREE_MAX = 2 * 3600 * 1e3;
-    var etatTexte = (s) => `${s.etape || "d\xE9marrage"}${s.total ? ` : ${s.fait || 0} / ${s.total}` : ""}`;
-    var enFond = async (p, ctx, bloc, fichier, travail, { dureeMax = DUREE_MAX } = {}) => {
-      const suivi = { etape: "d\xE9marrage", fait: 0, total: 0, debut: Date.now() };
-      if (p.arriere_plan === false || p.arriere_plan === "false") return travail(suivi);
-      const cle = tenant() + ":" + bloc;
-      const deja = EN_COURS.get(cle);
-      if (deja && Date.now() - deja.debut < dureeMax)
-        return { lance: false, deja_en_cours: true, depuis: deja.debut, etat: etatTexte(deja), resume: `D\xE9j\xE0 en cours depuis ${Math.round((Date.now() - deja.debut) / 6e4)} min (${etatTexte(deja)}) : le rapport arrivera dans Fichiers \u2192 ${fichier}` };
-      EN_COURS.set(cle, suivi);
-      let db = null, schema = null;
-      try {
-        db = require("@saltcorn/data/db");
-        schema = db.getTenantSchema();
-      } catch (e) {
-        db = null;
-      }
-      const propre = (fn) => db && db.runWithTenant && schema ? db.runWithTenant(schema, fn) : fn();
-      let minuterie = null;
-      const limite = new Promise((_, ko) => {
-        minuterie = setTimeout(() => ko(new Error(`arr\xEAt\xE9 apr\xE8s ${Math.round(dureeMax / 6e4)} min (derni\xE8re \xE9tape : ${etatTexte(suivi)})`)), dureeMax);
-      });
-      new Promise((ok) => setImmediate(ok)).then(() => Promise.race([propre(() => travail(suivi)), limite])).catch((e) => propre(async () => {
-        try {
-          const File = require("@saltcorn/data/models/file");
-          await File.from_contents(
-            String(fichier).replace(/\.json$/, "") + "-erreur.json",
-            "application/json",
-            JSON.stringify({ erreur: String(e && e.message || e).slice(0, 500), derniere_etape: etatTexte(suivi), le: (/* @__PURE__ */ new Date()).toISOString(), apres_secondes: Math.round((Date.now() - suivi.debut) / 1e3) }, null, 1),
-            ctx && ctx.user && ctx.user.id,
-            1
-          );
-        } catch (x) {
-        }
-      })).finally(() => {
-        clearTimeout(minuterie);
-        if (EN_COURS.get(cle) === suivi) EN_COURS.delete(cle);
-      });
-      return { lance: true, fichier, resume: `Lanc\xE9 en arri\xE8re-plan : le rapport arrivera dans Fichiers \u2192 ${fichier} (quelques minutes). Recliquer montre o\xF9 il en est. En cas de probl\xE8me : ${String(fichier).replace(/\.json$/, "")}-erreur.json` };
-    };
-    var borne = (promesse, ms, quoi) => {
-      let t;
-      return Promise.race([promesse, new Promise((_, ko) => {
-        t = setTimeout(() => ko(new Error(`${quoi} : pas de r\xE9ponse apr\xE8s ${Math.round(ms / 1e3)} s`)), ms);
-      })]).finally(() => clearTimeout(t));
-    };
-    module2.exports = { enFond, borne, EN_COURS };
   }
 });
 

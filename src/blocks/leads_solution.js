@@ -102,6 +102,24 @@ module.exports = [
     }),
   },
   {
+    name: "dzf_leads_rattraper_crm", label: "Leads : reprendre les écritures CRM en échec", category: CAT,
+    icon: "fas fa-redo", output: "reprise", timeout: 60,
+    description: "Retraite en arrière-plan les mails d'une période dont la dernière exécution garde une erreur CRM. Réutilise la pipeline Leads et les mêmes lignes ; n'envoie aucun e-mail. Rapport dans Fichiers.",
+    params: [P_PREFIXE,
+      { name: "debut", label: "Début ISO inclus (avec fuseau)", type: "String", required: true },
+      { name: "fin", label: "Fin ISO exclue (vide = maintenant)", type: "String" },
+      { name: "fichier", label: "Rapport", default: "rattrapage-crm.json" }],
+    run: async (p, ctx = {}) => dans(p, async () => {
+      const nom = String(p.fichier || "rattrapage-crm.json").replace(/[^\w.-]/g, "_");
+      return require("../lib/arriere_plan").enFond(p, ctx, "dzf_leads_rattraper_crm", nom, async (suivi) => {
+        const rapport = await require("../lib/leads/tables/reprise_crm").rattraperCrm({ debut: p.debut, fin: p.fin, suivi });
+        const File = require("@saltcorn/data/models/file");
+        await File.from_contents(nom, "application/json", JSON.stringify(rapport, null, 1), ctx.user && ctx.user.id, 1);
+        return { fichier: nom, ...rapport };
+      });
+    }),
+  },
+  {
     name: "dzf_leads_entretien", label: "Leads : reprises et entretien", category: CAT, icon: "fas fa-broom", output: "entretien", timeout: 600,
     description: "Retraite les mails restés sans lead (panne, redémarrage), relit ceux laissés de côté faute de budget d'IA, efface le texte des vieux mails (durée de conservation réglée). À mettre dans un workflow horaire.",
     params: [P_PREFIXE],
