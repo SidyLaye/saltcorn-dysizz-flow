@@ -46,7 +46,7 @@ const ia = { lire: async (m, t) => {
   assert.strictEqual(v(1).verdict, "fiable", JSON.stringify(v(1)));
   assert.strictEqual(v(1).champs.email.accord, 6); assert.strictEqual(v(1).champs.message.statut, "gardé (message)");
   assert.strictEqual(v(2).verdict, "corrigé", JSON.stringify(v(2)));
-  assert.strictEqual(v(2).champs.nom_complet.statut, "faux : retiré"); assert.strictEqual(v(2).champs.email.statut, "fiable");
+  assert.match(v(2).champs.nom_complet.statut, /retiré/, "le mauvais nom est retiré (refusé dès la lecture ou compté faux)"); assert.strictEqual(v(2).champs.email.statut, "fiable");
   assert.strictEqual(v(3).verdict, "retiré", JSON.stringify(v(3)));
   assert.ok(v(3).champs.email.raisons["adresse de l'agence"], "l'adresse de l'agence n'est jamais celle du prospect");
   assert.strictEqual(v(4).verdict, "retiré"); assert.match(v(4).raison, /aucun des mails/);

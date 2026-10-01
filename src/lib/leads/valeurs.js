@@ -27,11 +27,26 @@ const telephone = (s, pays = "33") => {
   if (d.length < 8 || d.length > 15) return "";
   /* « +33 0783101855 » : le 0 national en trop après l'indicatif */
   if (plus) return "+" + d.replace(/^(33|32|41|44|31|34|49|39)0(?=\d{9}$)/, "$1");
-  if (d.startsWith("00")) return "+" + d.slice(2);
+  if (d.startsWith("00")) return "+" + d.slice(2).replace(/^(33|32|41|44|31|34|49|39)0(?=\d{9}$)/, "$1");
   if (/^0[1-9]\d{8}$/.test(d)) return "+" + pays + d.slice(1);
-  if (/^(33|32|41|44|31|34|49|39|351|352|353|1)\d{7,12}$/.test(d) && d.length >= 10) return "+" + d;
-  if (/^[67]\d{8}$/.test(d) && pays === "33") return "+33" + d;
-  return d.length >= 9 ? "+" + d : "";
+  /* 11 chiffres commençant par 0 (« 07956288684 ») : format britannique, jamais français */
+  if (/^0[1237]\d{9}$/.test(d)) return "+44" + d.slice(1);
+  if (/^(33|32|41|44|31|34|49|39|351|352|353|221)\d{7,12}$/.test(d) && d.length >= 11) return "+" + d;
+  /* 9 chiffres sans 0 ni indicatif : le pays n'est pas écrit. On ne l'invente pas : le numéro reste tel quel,
+     et extraire() décide avec le contexte (pays du prospect, e-mail, agence) — voir indicatifContexte(). */
+  if (/^[1-9]\d{8}$/.test(d)) return d;
+  return d.length >= 10 ? "+" + d : "";
+};
+/* Indicatif pour un numéro à 9 chiffres sans 0 : seulement si le contexte le dit, et si le numéro a la forme
+   d'un numéro de ce pays. Sinon null : le numéro est gardé tel qu'écrit. */
+const PAYS_INDICATIF = { france: "33", "pays-bas": "31", netherlands: "31", nederland: "31", belgique: "32", belgium: "32", "royaume-uni": "44", "united kingdom": "44", allemagne: "49", germany: "49", suisse: "41", switzerland: "41", espagne: "34", spain: "34", italie: "39", italy: "39", irlande: "353", ireland: "353", "sénégal": "221", senegal: "221", portugal: "351" };
+const TLD_INDICATIF = { fr: "33", nl: "31", be: "32", uk: "44", de: "49", ch: "41", es: "34", it: "39", ie: "353", sn: "221", pt: "351" };
+const FORME9 = { "33": /^[1-79]\d{8}$/, "31": /^6\d{8}$/, "32": /^4\d{8}$/, "221": /^7\d{8}$/, "34": /^[67]\d{8}$/, "39": /^3\d{8}$/ };
+const indicatifContexte = (nu, { pays, email, senegal } = {}) => {
+  const d = String(nu || "");
+  if (!/^[1-9]\d{8}$/.test(d)) return null;
+  const k = (pays && PAYS_INDICATIF[String(pays).trim().toLowerCase()]) || (senegal ? "221" : null) || (email && TLD_INDICATIF[(String(email).toLowerCase().match(/\.([a-z]{2})$/) || [])[1]]) || null;
+  return k && FORME9[k] && FORME9[k].test(d) ? "+" + k + d : null;
 };
 
 /* Montant en euros : « 240 000 € », « €379,000 », « EUR 118 000 », « 230,000 € », « 199 000€ 1411.35€/m² ». */
@@ -40,7 +55,8 @@ const prix = (s) => {
   /* Groupes de milliers avec un séparateur unique (« 693 115,000 » n'est pas un nombre). */
   const N = "(\\d{1,3}(?:( |\\.|,|’|')\\d{3})(?:\\2\\d{3})*|\\d{4,9})";
   const re1 = new RegExp("(?:€|\\beur\\b|\\beuros?\\b)\\s*" + N + "(?![\\d/]|[.,]\\d)", "gi");
-  const re2 = new RegExp("(?<![\\d.,])" + N + "(?:[.,]\\d{1,2})?\\s*(?:€|\\beur\\b|\\beuros?\\b)(?!\\s*\\/)", "gi");
+  /* « 259000€/La Canourgue » est un prix ; « 1411.35€/m² » ou « 600 €/mois » n'en sont pas */
+  const re2 = new RegExp("(?<![\\d.,])" + N + "(?:[.,]\\d{1,2})?\\s*(?:€|\\beur\\b|\\beuros?\\b)(?!\\s*\\/\\s*(?:m\\b|m²|m2|mois|an\\b|month|sem))", "gi");
   const tous = [...t.matchAll(re1), ...t.matchAll(re2)].filter((x) => !/^\s*\/\s*m/i.test(t.slice(x.index + x[0].length, x.index + x[0].length + 4)) && !/capital\s+(social\s+)?(de\s+)?$/i.test(t.slice(Math.max(0, x.index - 25), x.index))).sort((a, b) => a.index - b.index);
   const m = tous[0];
   if (!m) return null;
@@ -51,7 +67,20 @@ const prix = (s) => {
 const loyer = (s) => { const m = String(s || "").replace(/[\u00A0\u202F]/g, " ").match(/(\d[\d .]{0,6})\s*€\s*(?:\/|par)\s*mois/i); return m ? +m[1].replace(/[ .]/g, "") || null : null; };
 
 const nombre = (s) => { const m = String(s || "").match(/\d+(?:[.,]\d+)?/); return m ? +m[0].replace(",", ".") : null; };
-const surface = (s) => { const m = String(s || "").replace(/[\u00A0\u202F]/g, " ").match(/(?<![\d.,])(\d{1,3}(?: \d{3})?|\d{1,6})(?:[.,](\d+))?\s*(?:m²|m2|sq\.? ?m)/i); if (!m) return null; const n = +(m[1].replace(/\s/g, "") + (m[2] ? "." + m[2] : "")); return n > 5 && n < 100000 ? Math.round(n) : null; };
+/* Surface habitable : jamais celle du terrain, du jardin ou du parc (« JARDIN 2000 M2 », « terrain de 1 390 m² »). */
+const TERRAIN_AVANT = /(?:(?:terrain|land|plot|parcelle|foncier)\s*(?:de |d'|d’|of |:|=)\s*(?:environ |about |~|±)?|(?:jardin|parc|garden|grounds|hectares?)\s*(?:de |d'|d’|of |:|=)?\s*(?:environ |about |~|±)?|(?:sur|avec|with|on)\s+(?:un |une |a )?(?:beau |grand |joli |large )?(?:terrain|jardin|parc|land|plot)\s*(?:de |d'|d’|of )?\s*(?:environ |about )?)\s*$/i;
+const TERRAIN_APRES = /^\s*(?:de |d'|d’|of )?(?:terrain|jardin|parc|land|plot|garden|grounds|parcelle)/i;
+const surface = (s) => {
+  const t = String(s || "").replace(/[\u00A0\u202F]/g, " ");
+  for (const m of t.matchAll(/(?<![\d.,])(\d{1,3}(?: \d{3})?|\d{1,6})(?:[.,](\d+))?\s*(?:m²|m2|sq\.? ?m)(?![\w²])/gi)) {
+    const avant = t.slice(Math.max(0, m.index - 30), m.index), apres = t.slice(m.index + m[0].length, m.index + m[0].length + 20);
+    /* le bien EST un terrain (« Terrain 2244 m² NASSIET ») : sa surface est celle du terrain */
+    if (!/^\s*(terrain|land|plot|parcelle)\b/i.test(t) && (TERRAIN_AVANT.test(avant) || TERRAIN_APRES.test(apres))) continue;
+    const n = +(m[1].replace(/\s/g, "") + (m[2] ? "." + m[2] : ""));
+    if (n > 5 && n < 100000) return Math.round(n);
+  }
+  return null;
+};
 const pieces = (s) => { const m = String(s || "").match(/(\d{1,2})\s*(?:pièces?|pieces?|pi[eè]ce\(s\)|p\b|rooms?)/i); return m ? +m[1] : null; };
 const chambres = (s) => { const m = String(s || "").match(/(\d{1,2})\s*(?:chambres?|ch\b|bedrooms?|beds?)/i); return m ? +m[1] : null; };
 
@@ -115,4 +144,4 @@ const decouperNom = (s, ordre = "auto") => {
   return a;
 };
 
-module.exports = { loyer, estPrenom, EMAIL_RE, email, telephone, prix, nombre, surface, pieces, chambres, typeBien, lieu, faitsTitre, nomPropre, decouperNom };
+module.exports = { indicatifContexte, loyer, estPrenom, EMAIL_RE, email, telephone, prix, nombre, surface, pieces, chambres, typeBien, lieu, faitsTitre, nomPropre, decouperNom };

@@ -13,7 +13,9 @@ const creer = ({ biens = [], contacts = [] } = {}) => {
     ecritures,
     bienParId: async (id) => B.find((b) => String(b.id) === String(id)) || null,
     biensParReference: async (ref) => B.filter((b) => String(b.reference || "").trim().toLowerCase() === String(ref).trim().toLowerCase()).slice(0, 5),
+    tousLesBiens: async () => B,
     biensParCriteres: async (q, { max = 2 } = {}) => B.filter((b) =>
+      (q.prix_min === undefined || +b.prix >= q.prix_min) && (q.prix_max === undefined || +b.prix <= q.prix_max) &&
       (q.type === undefined || b.type === q.type) && (q.pieces === undefined || +b.pieces === +q.pieces) &&
       (q.surface === undefined || Math.round(+b.surface) === Math.round(+q.surface)) && (q.prix === undefined || +b.prix === +q.prix) &&
       (q.lieu === undefined || cle(b.ville + " " + b.code_postal).includes(cle(q.lieu)))).slice(0, max),

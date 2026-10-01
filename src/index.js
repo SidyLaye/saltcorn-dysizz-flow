@@ -85,6 +85,8 @@ module.exports = {
     { url: "/dysizz-flow/api", method: "get", callback: withAssets(admin2.apiPage) },
     { url: "/dysizz-flow/api/save", method: "post", callback: admin2.apiSave },
     { url: "/dysizz-flow/api/delete", method: "post", callback: admin2.apiDelete },
+    { url: "/dysizz-flow/leads/suivi", method: "get", callback: (req, res) => require("./lib/leads/suivi").page(req, res).catch((e) => res.status(500).send("suivi : " + e.message)) },
+    { url: "/dysizz-flow/leads/suivi/:id", method: "get", callback: (req, res) => require("./lib/leads/suivi").detail(req, res).catch((e) => res.status(500).send("suivi : " + e.message)) },
     { url: "/dysizz-flow/ecouteurs", method: "get", callback: withAssets(admin2.ecoutePage) },
     { url: "/dysizz-flow/ecouteurs/save", method: "post", callback: admin2.ecouteSave },
     { url: "/dysizz-flow/ecouteurs/delete", method: "post", callback: admin2.ecouteDelete },

@@ -52,6 +52,32 @@ const motifSur = (motif, valeurs = {}) => {
   return null;
 };
 
+/* Une valeur capturée doit avoir la forme du champ. Sinon elle est refusée, à l'apprentissage comme à la lecture.
+   (Erreurs vues dans les anciens gabarits d'AMBS : numéro d'assistance du portail pris pour le téléphone,
+   « Bonjour » pour la ville, « contact » pour le nom, une phrase pour le type, une référence pour le code postal.) */
+const MOTS_VIDES = /^(bonjour|bonsoir|hello|madame|monsieur|mme|mr|m\.?|contact|client|prospect|internaute|acqu[ée]reur|acheteur|nom|pr[ée]nom|num[ée]ro( de t[ée]l[ée]phone)?|t[ée]l[ée]phone|e-?mail|adresse|message|ville|merci|cordialement|n\.?c\.?|non communiqu[ée]|inconnu|null|undefined|-)$/i;
+const valeurValide = (nom, v) => {
+  const x = String(v || "").trim();
+  if (!x || MOTS_VIDES.test(x)) return false;
+  switch (nom) {
+    case "email": return !!V.email(x) && !/(no-?reply|ne-pas-repondre|support@|contact@|info@)/i.test(x);
+    case "telephone": return !!V.telephone(x) && x.replace(/\D/g, "").length <= 15;
+    case "nom": case "prenom": case "nom_complet": return x.length <= 40 && !/[\d@:?!]/.test(x) && x.split(/\s+/).length <= 4 && !/(agence|immobili|s[ée]lection|portail|leboncoin|seloger)/i.test(x);
+    case "ville": return x.length <= 45 && !/\d{3,}|[@?!]/.test(x) && x.split(/\s+/).length <= 5;
+    case "code_postal": return /^\d{5}$/.test(x);
+    case "type_bien": return x.length <= 40 && !!V.typeBien(x);
+    case "prix": { const n = V.prix(x) || +x.replace(/\D/g, ""); return n >= 1000 && n < 1e8; }
+    case "surface": { const n = +String(x).replace(",", ".").replace(/[^\d.]/g, ""); return n > 5 && n < 100000; }
+    case "nb_pieces": case "pieces": { const n = +x.replace(/\D/g, ""); return n >= 1 && n <= 50; }
+    case "reference": return x.length <= 40 && /\d/.test(x) && !/\s{2,}/.test(x);
+    case "message": return x.length >= 2;
+    default: return x.length <= 200;
+  }
+};
+/* Le motif doit s'appuyer sur un libellé du mail (au moins 3 lettres écrites avant la capture) : un motif nu
+   (« (\d+) », « ^(.+)$ ») prend n'importe quoi. */
+const ancreSurLibelle = (motif) => { const avant = String(motif).split(/\((?!\?)/)[0].replace(/\\[sSdDwWbB]|[\^$.*+?{}\[\]|\\]/g, " "); return /[a-zà-ÿ]{3}/i.test(avant); };
+
 const capturer = (motif, flags, texte) => {
   let m;
   try { m = new RegExp(motif, flags || "im").exec(texte); } catch (e) { return null; }
@@ -91,7 +117,7 @@ const appliquer = (g, texte) => {
   for (const c of g.champs || []) {
     if (!c || !c.nom || !c.motif || out[c.nom]) continue;
     const v = capturer(c.motif, c.flags, t);
-    if (v) out[c.nom] = v;
+    if (v && valeurValide(c.nom, v)) out[c.nom] = v;
   }
   return out;
 };
@@ -171,8 +197,10 @@ const candidat = (ia, mail, texte) => {
     if (!motif) continue;
     const pb = motifSur(motif, ia);
     if (pb) { rejets.push(`${nom} : ${pb}`); continue; }
+    if (!ancreSurLibelle(motif)) { rejets.push(`${nom} : motif sans libellé (prendrait n'importe quoi)`); continue; }
     const v = capturer(motif, "im", t);
     if (!v) { rejets.push(`${nom} : ne retrouve rien dans le mail`); continue; }
+    if (!valeurValide(nom, v)) { rejets.push(`${nom} : « ${v.slice(0, 40)} » n'a pas la forme d'un ${nom}`); continue; }
     if ((nom === "nom" || nom === "prenom") && ia.nom && ia.prenom && estNomComplet(v, ia)) { if (!champs.some((c) => c.nom === "nom_complet")) champs.push({ nom: "nom_complet", motif, flags: "im" }); continue; }
     if (ia[nom] !== null && ia[nom] !== undefined && ia[nom] !== "" && !memeValeur(nom, v, ia[nom])) { rejets.push(`${nom} : trouve « ${v.slice(0, 40)} » au lieu de la valeur lue`); continue; }
     champs.push({ nom, motif, flags: "im" });
@@ -252,4 +280,4 @@ const depuisAmbs = (lignes) => lignes.filter((g) => g.statut === "actif").map((g
   };
 });
 
-module.exports = { choisir, candidats, appliquer, reconnait, versExtraction, apprendre, echec, reussite, candidat, evaluer, motifSur, cleForme, memoire, depuisAmbs, complet, memeValeur, SEUIL_DIRECT, SEUIL_FORME, SEUIL_ECHECS };
+module.exports = { valeurValide, ancreSurLibelle, choisir, candidats, appliquer, reconnait, versExtraction, apprendre, echec, reussite, candidat, evaluer, motifSur, cleForme, memoire, depuisAmbs, complet, memeValeur, SEUIL_DIRECT, SEUIL_FORME, SEUIL_ECHECS };

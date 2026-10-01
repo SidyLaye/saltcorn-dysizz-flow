@@ -17,12 +17,22 @@ const A = require("./apprentissage");
 
 const LEADS = ["lead", "relance", "recherche", "estimation", "direct"];
 /* Natures décidées par les règles, qu'aucun étage suivant ne doit contredire. */
-const DEFINITIVES = ["non_lead", "auto_reponse", "interne", "alerte_spam", "notification", "b2b", "masse", "desabonnement", "test"];
+const DEFINITIVES = ["non_lead", "auto_reponse", "interne", "alerte_spam", "hameconnage", "notification", "b2b", "masse", "desabonnement", "test"];
 
 const manquantsImportants = (r) => (r.manquants || []).filter((m) => ["coordonnees", "nom", "reference"].includes(m));
-const recalculer = (r) => {
+/* Valeurs venues d'un gabarit ou de l'IA : mêmes contrôles que la lecture par règles (numéro de l'équipe, de l'agence
+   ou du portail ; adresse de l'agence ou relais ; forme de chaque champ). */
+const recalculer = (r, ctx = {}) => {
   const c = r.contact || {}, b = r.bien || {};
-  require("./extraire").nettoyerNoms(c);
+  const X = require("./extraire"), V = require("./valeurs");
+  if (ctx.texte !== undefined) {
+    if (c.telephone) { const t = V.telephone(c.telephone); if (!t || !X.telephoneDuProspect(ctx.texte, ctx.conf || {})(t)) delete c.telephone; else c.telephone = t; }
+    const domA = ((ctx.conf || {}).domaines_agence || []).map((x) => String(x).toLowerCase());
+    if (c.email) { const e = V.email(c.email); if (!e || domA.some((x) => e.endsWith("@" + x))) delete c.email; else if (X.RELAIS.test(e)) { c.email_relais = c.email_relais || e; delete c.email; } else c.email = e; }
+    for (const k of ["nom", "prenom", "nom_complet"]) if (c[k] && !A.valeurValide(k, c[k])) delete c[k];
+    for (const [k, n] of [["ville", "ville"], ["code_postal", "code_postal"], ["reference", "reference"]]) if (b[k] && !A.valeurValide(n, b[k])) delete b[k];
+  }
+  X.nettoyerNoms(c);
   r.manquants = [];
   if (LEADS.includes(r.nature) || r.nature === "reponse_campagne") {
     if (!c.email && !c.telephone) r.manquants.push("coordonnees");
@@ -66,7 +76,7 @@ const lire = async (mail, conf = {}, opts = {}) => {
       const copie = JSON.parse(JSON.stringify(r));
       A.versExtraction(copie, A.appliquer(x, texte), "gabarit:" + x.id);
       if (["inconnu", "reponse_campagne"].includes(copie.nature) && ["lead", "recherche", "estimation"].includes(x.nature)) copie.nature = x.nature;
-      recalculer(copie);
+      recalculer(copie, { texte, conf });
       if (!meilleur) meilleur = { g: x, r: copie };
       if (!aCompleter(copie)) { meilleur = { g: x, r: copie }; break; }
     }
@@ -108,7 +118,7 @@ const lire = async (mail, conf = {}, opts = {}) => {
 
   /* Les valeurs des règles et du gabarit restent prioritaires ; l'IA comble les trous. */
   A.versExtraction(r, s, "ia");
-  recalculer(r);
+  recalculer(r, { texte, conf });
 
   /* Apprentissage : la lecture de l'IA devient un gabarit pour les prochains mails de cette forme. */
   if (opts.gabarits) {

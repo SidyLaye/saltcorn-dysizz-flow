@@ -1,5 +1,86 @@
 # Journal des versions
 
+## 2.14.2
+
+### Corrigé
+- « Qui reçoit un lead » (`dzf_lead_qui_recoit`, table `vue_routage`) : une personne inactive sans remplaçant n'est plus
+  marquée « remplacé » ; elle est marquée `inactif` (colonne écrite si elle existe). « Remplacé » = quelqu'un reçoit
+  à sa place (congé, mi-temps, départ avec remplaçant), ou personne active qui ne reçoit pas elle-même.
+
+## 2.14.1
+
+- Gabarits et lecture par l'IA :
+  - chaque valeur doit avoir la forme de son champ (e-mail, téléphone, nom, ville, code postal, type, prix, surface, pièces, référence) ;
+  - un motif doit s'appuyer sur un libellé du mail ;
+  - une valeur invalide est refusée à l'apprentissage et à la lecture. Cela évite les erreurs vues dans les anciens gabarits : « Bonjour » lu comme ville, « contact » comme nom, numéro d'assistance du portail comme téléphone.
+- Valeurs lues par un gabarit ou par l'IA : mêmes contrôles que les règles (numéros de l'équipe, de l'agence ou du portail ; adresses de l'agence ; relais).
+- Nouvelle page « Leads : suivi en direct » (/dysizz-flow/leads/suivi, administrateur) :
+  - chiffres par statut ;
+  - erreurs d'IA et envois en échec ;
+  - erreurs en tête, recherche par e-mail, nom ou référence ;
+  - détail de chaque lead avec l'origine de chaque valeur ;
+  - rechargement toutes les 30 s.
+
+## 2.14.0
+
+Vérité des mails : chaque mail d'AMBS (8 675) a été lu et comparé au moteur, portail par portail, champ par champ.
+Le vrai bien de chaque mail est établi indépendamment du moteur, par la référence présente dans le mail, confirmée par le catalogue Immofacile.
+
+### Bien : trouver le BON bien
+- Recherche par critères refaite. Chaque bien du catalogue est noté :
+  - le prix est obligatoire, avec au moins un autre fait concordant (surface, pièces, commune ou code postal) ;
+  - le type ne filtre plus : « Propriété » sur Leboncoin est une « Maison » dans le CRM ;
+  - le bien doit être seul en tête, sinon le lead part en non automatisé avec les biens possibles indiqués.
+- Référence donnée mais absente du catalogue (annonce retirée, bien vendu) : il faut deux faits concordants en plus du prix. Le département seul ne suffit jamais. Un prospect était sinon rattaché à un autre bien au même prix.
+- Toutes les références du mail sont essayées : celle de l'agence, le mandat, celle du portail, la clé du lien Adapt, l'identifiant Immofacile. L'ordre reste celui de la procédure décrite au client (complète, sans le dernier caractère, segments de droite à gauche), puis les paires de segments.
+- Force de la preuve selon la source :
+  - identifiant de diffusion (8 caractères ou plus) : un écart toléré et signalé ;
+  - référence de l'agence : forte, même courte ;
+  - pour une référence exacte de l'agence, un lieu différent (commune voisine affichée) est signalé, pas rejeté.
+- Lieu approximatif (Leboncoin, Green-Acres, Rightmove, French-Property, Propriétés le Figaro) : un désaccord de ville ou de code postal n'est jamais une contradiction.
+- Surface : jamais celle du terrain, du jardin ou du parc (« JARDIN 2000 M2 », « sur un terrain de 1 390 m² ») ; sauf si le bien est un terrain.
+- Projet de recherche tiré du bien : valeurs exactes du bien, sans marge (règle d'AMBS).
+
+### Lecture des portails
+- Leboncoin : prix lu dans les réponses sans ligne « Référence » ; ville de l'annonce marquée approximative.
+- Green-Acres :
+  - la carte ☎/✉ de l'acheteur passe avant un numéro de négociateur cité dans le fil ;
+  - la carte de l'agence n'est jamais prise ;
+  - « 1234567a-1551 » donne la référence 1551 ;
+  - le numéro de mandat est essayé aussi.
+- Rightmove : la mention légale « Firm Reference No. » n'est plus prise pour la référence ; « 12345_12345_1234 » donne 1234.
+- Figaro : « Annonce 1234-56789 » donne la référence 1234.
+- Giraffe : « 1234_Nom » donne 1234.
+- Kyero : « réf/id : A/B » est lu.
+- Superimmo : prix, ville et code postal lus.
+- JamesEdition : nom, e-mail et téléphone du prospect lus.
+- Bien'ici : bloc « Rappel de l'annonce » collé au message.
+- Ma-Propriété : plus jamais de prix pris dans une adresse web.
+- Texte : espace des milliers abîmé par l'encodage (« 136���000 € ») et champs collés (« VillePrice: », « m²86460 ») réparés avant lecture.
+
+### Contact
+- Téléphone : aucun indicatif inventé.
+  - « 07956288684 » donne +44 ;
+  - un numéro à 9 chiffres sans indicatif prend celui du contexte (pays indiqué, e-mail, agence du Sénégal), sinon il reste tel qu'écrit, avec une remarque.
+- Civilité retirée du nom (« M Habitat Square », « Mr Andrew ») ; une initiale seule n'est pas un prénom.
+- Nom de société affiché (« A DUPONT RENOVATION SERVICES ») : le nom vient de la signature (« Léa MARTIN 06… Envoyé depuis… »).
+
+### Tri
+- Un membre de l'équipe qui écrit depuis une adresse personnelle (nom affiché = une personne des réglages) : interne, jamais un prospect.
+- Hameçonnage (« a partagé un document », « Expire le », fausse marque WeTransfer, lien vers un autre site) : alerte, jamais transmis.
+- Démarchage mieux reconnu (« fondateur de », « nous transformons vos photos… ») ; un acheteur qui parle de la visite virtuelle n'est plus pris pour un démarcheur.
+
+### Mesures (8 675 mails, avant → après)
+- Bon bien : 4 531 → 4 570.
+- Bien présent dans le mail mais non trouvé : 57 → 7. Les 7 restants sont ambigus pour de bon : même bien sous deux mandats, ou fil de réponses sans le bien.
+- Mauvais bien : 2 → 0. Le cas restant compté par l'outil est un faux écart de la vérité, relu à la main.
+- Leads complets (contact + bon bien) : 4 507 prêts. Les 18 autres sont non automatisés pour une raison vérifiée :
+  - pas d'e-mail ;
+  - démarchage ;
+  - message de test ;
+  - nouvel expéditeur ;
+  - agence sans négociateur par défaut.
+
 ## 2.13.9
 
 Corrections venues de l'audit complet des 8 675 mails reçus par AMBS. Pour chaque mail, on a comparé trois choses : le contenu du mail, ce que l'ancien système a extrait et écrit dans Immofacile, et ce que le moteur écrirait.

@@ -43,7 +43,7 @@ const { CONF, MAILS } = require("./fixtures-leads.cjs");
   assert.strictEqual(sl.contact.telephone, "+33611223344"); assert.strictEqual(sl.bien.prix, 240000);
 
   const fg = extraire(MAILS.figaro, CONF);
-  assert.strictEqual(fg.bien.reference, "2025-32831"); assert.strictEqual(fg.bien.surface, 141); assert.strictEqual(fg.bien.prix, 199000);
+  assert.strictEqual(fg.bien.reference, "2025"); assert.strictEqual(fg.bien.reference_portail, "2025-32831"); assert.strictEqual(fg.bien.surface, 141); assert.strictEqual(fg.bien.prix, 199000);
   assert.strictEqual(fg.contact.telephone, "+33624470241"); assert.strictEqual(fg.recherche.budget_max, 219000);
 
   const fp = extraire(MAILS.french, CONF);
@@ -146,7 +146,7 @@ const { CONF, MAILS } = require("./fixtures-leads.cjs");
   assert.strictEqual(tr.contact.email, "anna@example.se"); assert.strictEqual(tr.bien.id_crm, "61355003"); assert.strictEqual(tr.bien.type, "appartement");
 
   /* ---- rapprochement ---- */
-  assert.deepStrictEqual(variantes("985_985_60945370").map((v) => v.valeur), ["985_985_60945370", "985_985_6094537", "60945370", "985"]);
+  assert.deepStrictEqual(variantes("985_985_60945370").map((v) => v.valeur), ["985_985_60945370", "985_985_6094537", "60945370", "985", "985_60945370", "985_985"]);
   const biens = [
     { id: 1, reference: "30123", prix: 245000, surface: 120, pieces: 5, type: "maison", ville: "Cahors", code_postal: "46000", negociateur_id: "n1", agence_id: "a1" },
     { id: 2, reference: "3012", prix: 90000, surface: 60, pieces: 3, type: "maison", ville: "Figeac", code_postal: "46100", negociateur_id: "n2" },
