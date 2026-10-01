@@ -1,5 +1,12 @@
 # Journal des versions
 
+## 2.14.2
+
+### Corrigé
+- « Qui reçoit un lead » (`dzf_lead_qui_recoit`, table `vue_routage`) : une personne inactive sans remplaçant n'est plus
+  marquée « remplacé » ; elle est marquée `inactif` (colonne écrite si elle existe). « Remplacé » = quelqu'un reçoit
+  à sa place (congé, mi-temps, départ avec remplaçant), ou personne active qui ne reçoit pas elle-même.
+
 ## 2.14.1
 
 - Gabarits et lecture par l'IA :

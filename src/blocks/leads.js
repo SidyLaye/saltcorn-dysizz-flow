@@ -76,7 +76,7 @@ module.exports = [
   {
     name: "dzf_lead_qui_recoit", label: "Leads : tenir à jour « qui reçoit aujourd'hui »", category: "Leads immobiliers", icon: "fas fa-people-arrows", output: "qui_recoit", timeout: 60,
     description: "Pour chaque négociateur, écrit dans une table qui recevrait un lead aujourd'hui, et pourquoi (congés, mi-temps, départ, remplaçant, règle). À lancer quand l'équipe change et chaque nuit : la fin d'un congé se voit d'elle-même.",
-    params: [P_ROUTAGE, P_TABLES, { name: "table", label: "Table écrite", type: "table", default: "vue_routage", help: "Colonnes : personne, nom, destinataires, detail, remplace, maj_le (les autres sont ignorées)" },
+    params: [P_ROUTAGE, P_TABLES, { name: "table", label: "Table écrite", type: "table", default: "vue_routage", help: "Colonnes : personne, nom, destinataires, detail, remplace (remplacé alors qu'actif), inactif, maj_le (les autres sont ignorées)" },
       { name: "roles", label: "Rôles concernés", default: "negociateur" }],
     run: async (p, ctx, api) => {
       const conf = await routageDe(p);
@@ -90,7 +90,7 @@ module.exports = [
         const liste = r.liste || [];
         const perso = liste.find((d) => d.email === String(x.email || "").toLowerCase());
         return { personne: x.id, nom: x.nom, destinataires: liste.map((d) => `${d.email} (${d.roles.join(", ")})`).join(" · "),
-          detail: (r.trace || []).join(" · "), remplace: !perso || liste.some((d) => /^remplace/.test(d.raison || "")), maj_le: maintenant };
+          detail: (r.trace || []).join(" · "), remplace: liste.some((d) => /^remplace/.test(d.raison || "")) || (x.actif !== false && !perso), inactif: x.actif === false, maj_le: maintenant };
       });
       const garder = (o) => Object.fromEntries(Object.entries(o).filter(([k]) => champs.has(k)));
       /* petite table (une ligne par personne) : on remplace tout, d'un coup */

@@ -1,4 +1,4 @@
-/* dysizz-flow 2.14.1 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.14.2 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.14.1" : "dev";
+    var VERSION2 = true ? "2.14.2" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -96378,7 +96378,7 @@ var require_leads = __commonJS({
         params: [
           P_ROUTAGE,
           P_TABLES,
-          { name: "table", label: "Table \xE9crite", type: "table", default: "vue_routage", help: "Colonnes : personne, nom, destinataires, detail, remplace, maj_le (les autres sont ignor\xE9es)" },
+          { name: "table", label: "Table \xE9crite", type: "table", default: "vue_routage", help: "Colonnes : personne, nom, destinataires, detail, remplace (remplac\xE9 alors qu'actif), inactif, maj_le (les autres sont ignor\xE9es)" },
           { name: "roles", label: "R\xF4les concern\xE9s", default: "negociateur" }
         ],
         run: async (p, ctx, api) => {
@@ -96397,7 +96397,8 @@ var require_leads = __commonJS({
               nom: x.nom,
               destinataires: liste.map((d) => `${d.email} (${d.roles.join(", ")})`).join(" \xB7 "),
               detail: (r.trace || []).join(" \xB7 "),
-              remplace: !perso || liste.some((d) => /^remplace/.test(d.raison || "")),
+              remplace: liste.some((d) => /^remplace/.test(d.raison || "")) || x.actif !== false && !perso,
+              inactif: x.actif === false,
               maj_le: maintenant
             };
           });
