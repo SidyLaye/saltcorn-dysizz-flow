@@ -1,4 +1,4 @@
-/* dysizz-flow 2.14.5 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.14.6 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.14.5" : "dev";
+    var VERSION2 = true ? "2.14.6" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -99623,7 +99623,7 @@ var require_leads_solution = __commonJS({
           { name: "fichier", label: "Rapport", default: "recalcul-vues.json" }
         ],
         run: async (p, ctx = {}, api) => {
-          if (!ctx.user || ctx.user.role_id !== 1) throw new Error("r\xE9serv\xE9 aux administrateurs");
+          if (!api || !api.user || api.user.role_id !== 1) throw new Error("r\xE9serv\xE9 aux administrateurs");
           const nom = String(p.fichier || "recalcul-vues.json").replace(/[^\w.-]/g, "_");
           return require_arriere_plan().enFond(p, ctx, "dzf_leads_rafraichir_vues", nom, async (suivi) => {
             const rapport = await require_reprise_vues().rafraichirVues({
@@ -99633,7 +99633,7 @@ var require_leads_solution = __commonJS({
               api
             });
             const File = require("@saltcorn/data/models/file");
-            await File.from_contents(nom, "application/json", JSON.stringify(rapport, null, 1), ctx.user.id, 1);
+            await File.from_contents(nom, "application/json", JSON.stringify(rapport, null, 1), api.user.id, 1);
             return { fichier: nom, ...rapport };
           });
         }

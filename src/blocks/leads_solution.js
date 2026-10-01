@@ -129,14 +129,14 @@ module.exports = [
       { name: "fichier", label: "Rapport", default: "recalcul-vues.json" },
     ],
     run: async (p, ctx = {}, api) => {
-      if (!ctx.user || ctx.user.role_id !== 1) throw new Error("réservé aux administrateurs");
+      if (!api || !api.user || api.user.role_id !== 1) throw new Error("réservé aux administrateurs");
       const nom = String(p.fichier || "recalcul-vues.json").replace(/[^\w.-]/g, "_");
       return require("../lib/arriere_plan").enFond(p, ctx, "dzf_leads_rafraichir_vues", nom, async (suivi) => {
         const rapport = await require("../lib/leads/tables/reprise_vues").rafraichirVues({
           workflow: p.workflow, etapes: p.etapes, suivi, api,
         });
         const File = require("@saltcorn/data/models/file");
-        await File.from_contents(nom, "application/json", JSON.stringify(rapport, null, 1), ctx.user.id, 1);
+        await File.from_contents(nom, "application/json", JSON.stringify(rapport, null, 1), api.user.id, 1);
         return { fichier: nom, ...rapport };
       });
     },
