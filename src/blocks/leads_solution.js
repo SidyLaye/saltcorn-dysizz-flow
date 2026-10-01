@@ -120,6 +120,28 @@ module.exports = [
     }),
   },
   {
+    name: "dzf_leads_rafraichir_vues", label: "Leads : recalculer les vues de lecture", category: CAT,
+    icon: "fas fa-layer-group", output: "reprise", timeout: 60,
+    description: "Recalcule en arrière-plan, dans l'ordre, les tables de lecture d'un workflow déjà configuré. Ne traite aucun mail et n'envoie rien. Rapport dans Fichiers.",
+    params: [
+      { name: "workflow", label: "Nom du déclencheur de lecture", default: "ambs_lecture", required: true },
+      { name: "etapes", label: "Étapes dans l'ordre, séparées par des virgules", default: "vue_lead,vue_bien,vue_agence,vue_nego", required: true },
+      { name: "fichier", label: "Rapport", default: "recalcul-vues.json" },
+    ],
+    run: async (p, ctx = {}, api) => {
+      if (!ctx.user || ctx.user.role_id !== 1) throw new Error("réservé aux administrateurs");
+      const nom = String(p.fichier || "recalcul-vues.json").replace(/[^\w.-]/g, "_");
+      return require("../lib/arriere_plan").enFond(p, ctx, "dzf_leads_rafraichir_vues", nom, async (suivi) => {
+        const rapport = await require("../lib/leads/tables/reprise_vues").rafraichirVues({
+          workflow: p.workflow, etapes: p.etapes, suivi, api,
+        });
+        const File = require("@saltcorn/data/models/file");
+        await File.from_contents(nom, "application/json", JSON.stringify(rapport, null, 1), ctx.user.id, 1);
+        return { fichier: nom, ...rapport };
+      });
+    },
+  },
+  {
     name: "dzf_leads_entretien", label: "Leads : reprises et entretien", category: CAT, icon: "fas fa-broom", output: "entretien", timeout: 600,
     description: "Retraite les mails restés sans lead (panne, redémarrage), relit ceux laissés de côté faute de budget d'IA, efface le texte des vieux mails (durée de conservation réglée). À mettre dans un workflow horaire.",
     params: [P_PREFIXE],

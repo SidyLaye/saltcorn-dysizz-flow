@@ -1,4 +1,4 @@
-/* dysizz-flow 2.14.4 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.14.5 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.14.4" : "dev";
+    var VERSION2 = true ? "2.14.5" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -98353,6 +98353,1023 @@ var require_reprise_crm = __commonJS({
   }
 });
 
+// src/lib/redis.js
+var require_redis = __commonJS({
+  "src/lib/redis.js"(exports2, module2) {
+    "use strict";
+    var net = require("net");
+    var conn = null;
+    var encode = (args) => `*${args.length}\r
+` + args.map((a) => {
+      const s = String(a);
+      return `$${Buffer.byteLength(s)}\r
+${s}\r
+`;
+    }).join("");
+    var parse = (buf, i = 0) => {
+      if (i >= buf.length) return null;
+      const type = String.fromCharCode(buf[i]);
+      const end = buf.indexOf("\r\n", i);
+      if (end < 0) return null;
+      const line = buf.toString("utf8", i + 1, end);
+      const next = end + 2;
+      if (type === "+") return [line, next];
+      if (type === "-") return [new Error(line), next];
+      if (type === ":") return [Number(line), next];
+      if (type === "$") {
+        const n = Number(line);
+        if (n < 0) return [null, next];
+        if (buf.length < next + n + 2) return null;
+        return [buf.toString("utf8", next, next + n), next + n + 2];
+      }
+      if (type === "*") {
+        const n = Number(line);
+        if (n < 0) return [null, next];
+        const out = [];
+        let j = next;
+        for (let k = 0; k < n; k++) {
+          const r = parse(buf, j);
+          if (!r) return null;
+          out.push(r[0]);
+          j = r[1];
+        }
+        return [out, j];
+      }
+      throw new Error("r\xE9ponse Redis inattendue");
+    };
+    var connect = (url) => new Promise((resolve, reject) => {
+      const u = new URL(url || process.env.REDIS_URL || "redis://redis:6379");
+      const sock = net.createConnection({ host: u.hostname, port: +u.port || 6379 });
+      const c = { sock, queue: [], buf: Buffer.alloc(0), url };
+      sock.setKeepAlive(true);
+      sock.setTimeout(0);
+      sock.on("data", (d) => {
+        c.buf = Buffer.concat([c.buf, d]);
+        for (; ; ) {
+          const r = parse(c.buf);
+          if (!r) break;
+          c.buf = c.buf.subarray(r[1]);
+          const q = c.queue.shift();
+          if (q) r[0] instanceof Error ? q.reject(r[0]) : q.resolve(r[0]);
+        }
+      });
+      const fail = (e) => {
+        for (const q of c.queue.splice(0)) q.reject(e);
+        if (conn === c) conn = null;
+      };
+      sock.on("error", (e) => {
+        fail(e);
+        reject(e);
+      });
+      sock.on("close", () => fail(new Error("connexion Redis ferm\xE9e")));
+      sock.on("connect", async () => {
+        try {
+          if (u.password) await send(c, u.username ? ["AUTH", decodeURIComponent(u.username), decodeURIComponent(u.password)] : ["AUTH", decodeURIComponent(u.password)]);
+          const db = u.pathname && u.pathname.slice(1);
+          if (db) await send(c, ["SELECT", db]);
+          resolve(c);
+        } catch (e) {
+          reject(e);
+        }
+      });
+    });
+    var send = (c, args) => new Promise((resolve, reject) => {
+      c.queue.push({ resolve, reject });
+      c.sock.write(encode(args));
+    });
+    var pending = null;
+    var cmd = async (args, url) => {
+      const want = url || process.env.REDIS_URL || "redis://redis:6379";
+      if (!conn || conn.url !== want) {
+        if (!pending || pending.url !== want) {
+          pending = connect(want).then((c) => {
+            c.url = want;
+            conn = c;
+            return c;
+          }).finally(() => {
+            pending = null;
+          });
+          pending.url = want;
+        }
+        await pending;
+      }
+      return send(conn, args);
+    };
+    var available = () => !!process.env.REDIS_URL;
+    module2.exports = { cmd, available, encode, parse };
+  }
+});
+
+// src/blocks/controle.js
+var require_controle = __commonJS({
+  "src/blocks/controle.js"(exports2, module2) {
+    "use strict";
+    var redis = require_redis();
+    var { ensureTables } = require_store();
+    var ttlDate = (s) => new Date(Date.now() + Math.max(1, +s || 60) * 1e3);
+    var kv = {
+      async get(k) {
+        if (redis.available()) {
+          const v = await redis.cmd(["GET", k]);
+          return v === null ? null : JSON.parse(v);
+        }
+        const { cache } = await ensureTables();
+        const r = await cache.getRow({ cle: k });
+        if (!r || r.expire && new Date(r.expire) < /* @__PURE__ */ new Date()) return null;
+        return JSON.parse(r.valeur);
+      },
+      async set(k, v, ttl) {
+        const s = JSON.stringify(v);
+        if (redis.available()) return redis.cmd(ttl ? ["SET", k, s, "EX", String(+ttl)] : ["SET", k, s]);
+        const { cache } = await ensureTables();
+        const r = await cache.getRow({ cle: k });
+        const row = { cle: k, valeur: s, expire: ttl ? ttlDate(ttl) : null };
+        if (r) await cache.updateRow(row, r.id);
+        else await cache.insertRow(row);
+      },
+      async del(k) {
+        if (redis.available()) return redis.cmd(["DEL", k]);
+        const { cache } = await ensureTables();
+        await cache.deleteRows({ cle: k });
+      },
+      async incr(k, ttl) {
+        if (redis.available()) {
+          const n = await redis.cmd(["INCR", k]);
+          if (n === 1 && ttl) await redis.cmd(["EXPIRE", k, String(+ttl)]);
+          return n;
+        }
+        const cur = await kv.get(k) || 0;
+        await kv.set(k, cur + 1, ttl);
+        return cur + 1;
+      }
+    };
+    module2.exports = [
+      {
+        name: "dzf_pause",
+        label: "Pause",
+        category: "Contr\xF4le",
+        icon: "fas fa-hourglass-half",
+        output: "pause",
+        description: "Attend quelques secondes (ex. pour respecter la limite d'une API). Pour attendre des heures, utilise l'\xE9tape native \xAB WaitUntil \xBB.",
+        params: [{ name: "secondes", label: "Secondes", type: "number", default: 1 }],
+        run: async (p) => {
+          const s = Math.min(Math.max(0, +p.secondes || 0), 25);
+          await new Promise((r) => setTimeout(r, s * 1e3));
+          return s;
+        }
+      },
+      {
+        name: "dzf_verifier",
+        label: "V\xE9rifier une condition",
+        category: "Contr\xF4le",
+        icon: "fas fa-check-double",
+        output: "verifie",
+        description: "Calcule une condition. Soit le workflow s'arr\xEAte en erreur si elle est fausse, soit tu r\xE9cup\xE8res vrai/faux pour choisir l'\xE9tape suivante.",
+        params: [
+          { name: "condition", label: "Condition (JavaScript sur le contexte)", required: true, raw: true, help: "Ex. ctx.lignes.length > 0 && ctx.total < 100" },
+          { name: "si_faux", label: "Si c'est faux", type: "select", options: ["renvoyer faux", "arr\xEAter en erreur"], default: "renvoyer faux" },
+          { name: "message", label: "Message d'erreur", default: "Condition non remplie" }
+        ],
+        run: async (p, ctx) => {
+          let ok;
+          try {
+            ok = !!require_garde().compiler(p.condition, ["ctx"])(ctx);
+          } catch (e) {
+            throw new Error(`condition invalide : ${e.message}`);
+          }
+          if (!ok && p.si_faux === "arr\xEAter en erreur") throw new Error(p.message || "Condition non remplie");
+          return ok;
+        }
+      },
+      {
+        name: "dzf_verrou",
+        label: "Verrou (une ex\xE9cution \xE0 la fois)",
+        category: "Contr\xF4le",
+        icon: "fas fa-lock",
+        output: "verrou",
+        description: "Emp\xEAche deux ex\xE9cutions du m\xEAme travail en m\xEAme temps, m\xEAme avec plusieurs serveurs. \xAB prendre \xBB renvoie vrai si tu as le verrou ; pense \xE0 \xAB lib\xE9rer \xBB \xE0 la fin (il expire seul sinon).",
+        params: [
+          { name: "action", label: "Action", type: "select", options: ["prendre", "lib\xE9rer"], default: "prendre" },
+          { name: "nom", label: "Nom du verrou", required: true, help: "Ex. releve-mails" },
+          { name: "duree", label: "Expire apr\xE8s (secondes)", type: "int", default: 600 },
+          { name: "attente", label: "Si le verrou est pris : attendre jusqu'\xE0 (secondes)", type: "int", default: 0, showIf: { action: "prendre" }, help: "0 = r\xE9pondre tout de suite (vrai / faux). Plus de 0 : attendre qu'il se lib\xE8re, puis s'arr\xEAter en erreur si le temps est d\xE9pass\xE9 (le travail pourra \xEAtre repris)." }
+        ],
+        run: async (p) => {
+          if (p.action !== "lib\xE9rer" && +p.attente > 0) {
+            const fin = Date.now() + Math.min(+p.attente, 300) * 1e3;
+            const un = { ...p, attente: 0 };
+            for (; ; ) {
+              if (await module2.exports.find((b) => b.name === "dzf_verrou").run(un)) return true;
+              if (Date.now() > fin) throw Object.assign(new Error(`verrou \xAB ${p.nom} \xBB toujours pris apr\xE8s ${p.attente} s`), { temporaire: true });
+              await new Promise((r) => setTimeout(r, 150 + Math.random() * 250));
+            }
+          }
+          const key = `dzf:verrou:${p.nom}`;
+          if (redis.available()) {
+            if (p.action === "lib\xE9rer") {
+              await redis.cmd(["DEL", key]);
+              return true;
+            }
+            return await redis.cmd(["SET", key, String(process.pid), "NX", "EX", String(+p.duree || 600)]) === "OK";
+          }
+          const { verrous } = await ensureTables();
+          if (p.action === "lib\xE9rer") {
+            await verrous.deleteRows({ nom: p.nom });
+            return true;
+          }
+          const now = /* @__PURE__ */ new Date();
+          await verrous.deleteRows({ nom: p.nom, jusqu_a: { lt: now } });
+          const db = require("@saltcorn/data/db");
+          const par = `${require("os").hostname()}:${process.pid}:${Math.random().toString(36).slice(2, 10)}`;
+          const sch = db.isSQLite ? "" : `"${db.getTenantSchema()}".`;
+          await db.query(`insert ${db.isSQLite ? "or ignore " : ""}into ${sch}dzf_verrous (nom, jusqu_a, par) values ($1, $2, $3)${db.isSQLite ? "" : " on conflict (nom) do nothing"}`, [p.nom, db.isSQLite ? ttlDate(p.duree || 600).toISOString() : ttlDate(p.duree || 600), par]);
+          const mine = await verrous.getRow({ nom: p.nom });
+          return !!(mine && mine.par === par);
+        }
+      },
+      {
+        name: "dzf_cache",
+        label: "Cache : lire / \xE9crire",
+        category: "Contr\xF4le",
+        icon: "fas fa-database",
+        output: "cache",
+        description: "Garde une valeur un moment pour \xE9viter de rappeler une API ou de refaire un calcul. Utilise Redis si REDIS_URL est d\xE9fini, sinon une table.",
+        params: [
+          { name: "action", label: "Action", type: "select", options: ["lire", "\xE9crire", "supprimer"], default: "lire" },
+          { name: "cle", label: "Cl\xE9", required: true },
+          { name: "valeur", label: "Valeur (pour \xE9crire)", help: "Ex. {{http.data}}" },
+          { name: "ttl", label: "Dur\xE9e (secondes)", type: "int", default: 3600 }
+        ],
+        run: async (p) => {
+          const k = `dzf:cache:${p.cle}`;
+          if (p.action === "\xE9crire") {
+            await kv.set(k, p.valeur ?? null, p.ttl);
+            return p.valeur ?? null;
+          }
+          if (p.action === "supprimer") {
+            await kv.del(k);
+            return null;
+          }
+          return kv.get(k);
+        }
+      },
+      {
+        name: "dzf_limiter",
+        label: "Limiter le d\xE9bit",
+        category: "Contr\xF4le",
+        icon: "fas fa-tachometer-alt",
+        output: "limite",
+        description: "Compte les passages sur une fen\xEAtre de temps. Renvoie {autorise, compte}. Ex. pas plus de 50 messages WhatsApp par heure.",
+        params: [
+          { name: "cle", label: "Cl\xE9", required: true, help: "Ex. whatsapp-{{user.id}}" },
+          { name: "max", label: "Max par fen\xEAtre", type: "int", default: 60 },
+          { name: "fenetre", label: "Fen\xEAtre (secondes)", type: "int", default: 3600 },
+          { name: "bloquer", label: "Arr\xEAter en erreur si d\xE9pass\xE9", type: "bool" }
+        ],
+        run: async (p) => {
+          const n = await kv.incr(`dzf:rl:${p.cle}:${Math.floor(Date.now() / 1e3 / (+p.fenetre || 3600))}`, +p.fenetre || 3600);
+          const ok = n <= (+p.max || 60);
+          if (!ok && p.bloquer) throw new Error(`limite atteinte (${n}/${p.max})`);
+          return { autorise: ok, compte: n };
+        }
+      },
+      {
+        name: "dzf_redis",
+        label: "Redis : commande",
+        category: "Contr\xF4le",
+        icon: "fas fa-server",
+        output: "redis",
+        description: "Parle directement \xE0 ton Redis (REDIS_URL) : GET, SET, INCR, LPUSH/RPOP pour faire une file d'attente, PUBLISH\u2026",
+        params: [
+          { name: "commande", label: "Commande", type: "select", options: ["GET", "SET", "DEL", "INCR", "EXPIRE", "LPUSH", "RPOP", "LLEN", "PUBLISH"], default: "GET" },
+          { name: "cle", label: "Cl\xE9 (ou canal)", required: true },
+          { name: "valeur", label: "Valeur" },
+          { name: "ttl", label: "Expiration (secondes, pour SET)", type: "int" }
+        ],
+        run: async (p) => {
+          if (!redis.available()) throw new Error("REDIS_URL n'est pas d\xE9fini sur le serveur");
+          const v = p.valeur === void 0 ? "" : typeof p.valeur === "string" ? p.valeur : JSON.stringify(p.valeur);
+          const args = { GET: [p.cle], DEL: [p.cle], INCR: [p.cle], LLEN: [p.cle], RPOP: [p.cle], EXPIRE: [p.cle, String(+p.ttl || 60)], LPUSH: [p.cle, v], PUBLISH: [p.cle, v], SET: p.ttl ? [p.cle, v, "EX", String(+p.ttl)] : [p.cle, v] }[p.commande];
+          const r = await redis.cmd([p.commande, ...args]);
+          if (typeof r === "string") {
+            try {
+              return JSON.parse(r);
+            } catch (e) {
+              return r;
+            }
+          }
+          return r;
+        }
+      },
+      {
+        name: "dzf_journal",
+        label: "\xC9crire dans le journal",
+        category: "Contr\xF4le",
+        icon: "fas fa-clipboard-list",
+        output: "journal",
+        description: "Laisse une trace lisible dans le journal de dysizz-flow (page Journal).",
+        params: [{ name: "message", label: "Message", type: "text", required: true }, { name: "erreur", label: "C'est une erreur", type: "bool" }],
+        run: async (p) => {
+          const { journal } = await ensureTables();
+          await journal.insertRow({ quand: /* @__PURE__ */ new Date(), bloc: "journal", ok: !p.erreur, duree_ms: 0, message: String(p.message).slice(0, 1e3) });
+          return true;
+        }
+      },
+      {
+        name: "dzf_code",
+        label: "Code JavaScript",
+        category: "Contr\xF4le",
+        icon: "fas fa-terminal",
+        output: "code",
+        timeout: 60,
+        description: "Ton propre code, ex\xE9cut\xE9 dans le bac \xE0 sable de Saltcorn (Table, fetch, User, Notification\u2026 disponibles). Le contexte est dans \xAB row \xBB ; ce que tu renvoies va dans la sortie.",
+        params: [{ name: "code", label: "Code", type: "code", required: true, raw: true, default: "// row = le contexte du workflow\nconst n = (row.lignes || []).length;\nreturn { nombre: n };" }],
+        run: async (p, ctx, api) => {
+          const { getState } = require("@saltcorn/data/db/state");
+          const js = getState().actions.run_js_code;
+          return js.run({ configuration: { code: p.code, run_where: "Server" }, row: ctx, user: api.user, req: api.req, mode: "workflow" });
+        }
+      }
+    ];
+    module2.exports.kv = kv;
+  }
+});
+
+// src/blocks/extras.js
+var require_extras = __commonJS({
+  "src/blocks/extras.js"(exports2, module2) {
+    "use strict";
+    var crypto = require("crypto");
+    var { asList, getPath, sanitize } = require_engine();
+    var { plain, safeUrl } = require_core();
+    var need = async (api, name) => {
+      const v = await api.secret(name);
+      if (!v) throw Object.assign(new Error(`secret ${name} introuvable (variable d'environnement ou coffre)`), { permanent: true });
+      return v;
+    };
+    var post = async (url, body, headers = {}) => {
+      const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json", ...headers }, body: JSON.stringify(body) });
+      const t = await r.text();
+      if (!r.ok) throw new Error(`HTTP ${r.status} ${t.slice(0, 200)}`);
+      try {
+        return JSON.parse(t);
+      } catch (e) {
+        return t;
+      }
+    };
+    var kv = () => require_controle().kv;
+    var donnees = [
+      {
+        name: "dzf_table_obtenir",
+        label: "Table : obtenir une ligne",
+        category: "Donn\xE9es",
+        icon: "fas fa-crosshairs",
+        output: "ligne",
+        description: "Lit une seule ligne par son id ou par un filtre (la premi\xE8re trouv\xE9e). Renvoie null si rien.",
+        params: [{ name: "table", label: "Table", type: "table", required: true }, { name: "id", label: "Id (sinon filtre)" }, { name: "filtre", label: "Filtre (JSON)", type: "json" }],
+        run: async (p, ctx, api) => {
+          const t = api.Table.findOne({ name: p.table });
+          if (!t) throw Object.assign(new Error(`table \xAB ${p.table} \xBB introuvable`), { permanent: true });
+          if (api.user && api.user.role_id > t.min_role_read) throw new Error("lecture refus\xE9e pour ton r\xF4le");
+          return sanitize(await t.getRow(p.id ? { id: +p.id } : p.filtre || {}) || null);
+        }
+      },
+      {
+        name: "dzf_table_grouper",
+        label: "Table : regrouper (statistiques)",
+        category: "Donn\xE9es",
+        icon: "fas fa-table",
+        output: "groupes",
+        description: "Compte ou additionne par groupe directement dans la base (rapide m\xEAme sur des millions de lignes) : ex. d\xE9penses par cat\xE9gorie, mails par exp\xE9diteur.",
+        params: [
+          { name: "table", label: "Table", type: "table", required: true },
+          { name: "par", label: "Regrouper par (champ)", required: true },
+          { name: "stat", label: "Calcul", type: "select", options: ["compter", "somme", "moyenne", "min", "max"], default: "compter" },
+          { name: "champ", label: "Champ calcul\xE9 (sauf compter)" },
+          { name: "filtre", label: "Filtre (JSON)", type: "json" }
+        ],
+        run: async (p, ctx, api) => {
+          const t = api.Table.findOne({ name: p.table });
+          if (!t) throw Object.assign(new Error(`table \xAB ${p.table} \xBB introuvable`), { permanent: true });
+          if (api.user && api.user.role_id > t.min_role_read) throw new Error("lecture refus\xE9e pour ton r\xF4le");
+          const agg = { compter: "Count", somme: "Sum", moyenne: "Avg", min: "Min", max: "Max" }[p.stat || "compter"];
+          const rows = await t.aggregationQuery({ valeur: { field: p.stat === "compter" || !p.champ ? "id" : p.champ, aggregate: agg } }, { where: p.filtre || {}, groupBy: p.par });
+          return (rows || []).map((r) => ({ groupe: r[p.par], valeur: Number(r.valeur) })).sort((a, b) => b.valeur - a.valeur);
+        }
+      },
+      {
+        name: "dzf_sql_lecture",
+        label: "SQL : requ\xEAte en lecture seule",
+        category: "Donn\xE9es",
+        icon: "fas fa-terminal",
+        output: "lignes",
+        timeout: 60,
+        description: "Ex\xE9cute une requ\xEAte SELECT sur la base du tenant (jointures, fen\xEAtres, CTE\u2026). Refuse tout ce qui \xE9crit, limite le temps d'ex\xE9cution. R\xE9serv\xE9 aux admins. Param\xE8tres : $1, $2\u2026",
+        params: [
+          { name: "requete", label: "Requ\xEAte SQL", type: "code", required: true, raw: true, default: "select statut, count(*) as n from taches group by statut" },
+          { name: "parametres", label: "Param\xE8tres (JSON liste)", type: "json", help: '["{{id}}"] pour $1' },
+          { name: "limite", label: "Lignes max", type: "int", default: 1e3 },
+          { name: "delai_s", label: "Temps max (secondes)", type: "int", default: 15 }
+        ],
+        run: async (p, ctx, api) => {
+          if (api.user && api.user.role_id !== 1) throw Object.assign(new Error("r\xE9serv\xE9 aux administrateurs"), { permanent: true });
+          const sql = String(p.requete).trim().replace(/;\s*$/, "");
+          if (!/^(select|with)\b/i.test(sql) || /;/.test(sql) || /\b(insert|update|delete|drop|alter|create|truncate|grant|revoke|copy|vacuum|call|do)\b/i.test(sql.replace(/'[^']*'/g, ""))) throw Object.assign(new Error("seulement une requ\xEAte SELECT (ou WITH \u2026 SELECT), sans point-virgule"), { permanent: true });
+          const refus = await require_garde().refusSql(sql);
+          if (refus) throw Object.assign(new Error(refus), { permanent: true });
+          const db = require("@saltcorn/data/db");
+          const params = Array.isArray(p.parametres) ? p.parametres : [];
+          if (db.isSQLite) return sanitize((await db.query(`${sql} limit ${+p.limite || 1e3}`, params)).rows);
+          const client = await db.getClient();
+          try {
+            await client.query("begin read only");
+            await client.query(`set local statement_timeout = ${Math.max(1, Math.min(120, +p.delai_s || 15)) * 1e3}`);
+            await client.query(`set local search_path to "${db.getTenantSchema()}"`);
+            const r = await client.query(`select * from (${sql}) as q limit ${Math.max(1, Math.min(1e5, +p.limite || 1e3))}`, params);
+            await client.query("commit");
+            return sanitize(r.rows);
+          } catch (e) {
+            await client.query("rollback").catch(() => {
+            });
+            throw e;
+          } finally {
+            client.release();
+          }
+        }
+      },
+      {
+        name: "dzf_ecriture_controler",
+        label: "Table : contr\xF4ler une \xE9criture (\xE9v\xE9nement Validate)",
+        category: "Donn\xE9es",
+        icon: "fas fa-user-shield",
+        description: "\xC0 brancher sur l'\xE9v\xE9nement \xAB Validate \xBB d'une table : refuse l'\xE9criture si une condition est vraie (ex. \xE9crire sur le ticket d'un autre) et recopie des valeurs d'une ligne li\xE9e (ex. le demandeur du ticket sur le message). V\xE9rifi\xE9 par le serveur, quel que soit le formulaire ou l'API.",
+        params: [
+          { name: "lien", label: "Ligne li\xE9e (facultatif)", type: "json", default: "{}", raw: true, help: `{"champ":"ticket","table":"ticket"} : la ligne de \xAB ticket \xBB dont l'id est dans le champ ticket, lue sous le nom liee` },
+          { name: "refuser_si", label: "Refuser si (expression)", raw: true, help: "Ex. user.role_id > 1 && (!liee || liee.demandeur !== user.id). Variables : row (la ligne \xE9crite), liee, user." },
+          { name: "message", label: "Message de refus", default: "\xC9criture refus\xE9e" },
+          { name: "recopier", label: "Recopier (JSON)", type: "json", default: "{}", raw: true, help: '{"demandeur":"demandeur"} : champ de la ligne \u2190 champ de la ligne li\xE9e' }
+        ],
+        run: async (p, ctx, api) => {
+          const { compiler } = require_garde();
+          const row = { ...ctx };
+          delete row.user;
+          const user = ctx.user || api.user || { role_id: 100 };
+          let liee = null;
+          const lien = typeof p.lien === "string" ? JSON.parse(p.lien || "{}") : p.lien || {};
+          if (lien.table && lien.champ) {
+            const t = api.Table.findOne({ name: lien.table });
+            if (!t) throw Object.assign(new Error(`table \xAB ${lien.table} \xBB introuvable`), { permanent: true });
+            const id = row[lien.champ];
+            liee = id === void 0 || id === null || id === "" ? null : await t.getRow({ [lien.cle || "id"]: typeof id === "object" ? id.id : id }) || null;
+          }
+          if (p.refuser_si && compiler(p.refuser_si, ["row", "liee", "user"])(row, liee, { id: user.id, role_id: user.role_id, email: user.email }))
+            return { __saltcorn: true, error: String(p.message || "\xC9criture refus\xE9e") };
+          const rec = typeof p.recopier === "string" ? JSON.parse(p.recopier || "{}") : p.recopier || {};
+          const set_fields = {};
+          if (liee) for (const [a, b] of Object.entries(rec)) set_fields[a] = liee[b];
+          return Object.keys(set_fields).length ? { __saltcorn: true, set_fields } : { __saltcorn: true };
+        }
+      },
+      {
+        name: "dzf_table_structure",
+        label: "Table : cr\xE9er ou compl\xE9ter",
+        category: "Donn\xE9es",
+        icon: "fas fa-table",
+        output: "structure",
+        timeout: 60,
+        description: "Cr\xE9e une table si elle n'existe pas, et ajoute les champs qui manquent (texte, nombre, date, oui/non, JSON, lien vers une autre table, liste de choix), avec les droits et des index. Ne supprime ni ne modifie jamais rien : on peut le relancer sans risque. Pour qu'une solution installe ses propres tables.",
+        params: [
+          { name: "table", label: "Nom de la table", required: true, help: "minuscules, chiffres et _ (ex. demandes_clients)" },
+          { name: "description", label: "Description" },
+          { name: "lecture", label: "Lisible \xE0 partir du r\xF4le", type: "select", options: ["1", "40", "80", "100"], default: "40", help: "1 admin, 40 staff, 80 utilisateur, 100 public" },
+          { name: "ecriture", label: "Modifiable \xE0 partir du r\xF4le", type: "select", options: ["1", "40", "80", "100"], default: "40" },
+          { name: "champs", label: "Champs (JSON)", type: "json", required: true, help: '[{"nom":"titre","type":"String","obligatoire":true},{"nom":"montant","type":"Float"},{"nom":"client","lien":"clients"},{"nom":"etat","type":"String","options":"ouvert,ferm\xE9"}]' },
+          { name: "index", label: "Champs \xE0 indexer", help: "ex. client, cree_le" }
+        ],
+        run: async (p) => {
+          const champs = typeof p.champs === "string" ? JSON.parse(p.champs) : p.champs;
+          if (!Array.isArray(champs)) throw Object.assign(new Error("Champs : il faut une liste JSON"), { permanent: true });
+          const r = await require_structure().assurer({ nom: p.table, description: p.description, lecture: +p.lecture || 40, ecriture: +p.ecriture || 40, champs, index: String(p.index || "").split(/[\s,;]+/).filter(Boolean) });
+          return { table: r.table, creee: r.creee, champs_ajoutes: r.champs_ajoutes };
+        }
+      },
+      {
+        name: "dzf_table_lecture",
+        label: "Table : tenir \xE0 jour une table de lecture",
+        category: "Donn\xE9es",
+        icon: "fas fa-layer-group",
+        output: "lecture",
+        timeout: 120,
+        description: "Recalcule une table \xE0 partir d'une requ\xEAte SELECT (jointures, derni\xE8res valeurs, regroupements) et n'\xE9crit que les lignes qui ont chang\xE9. Les pages lisent ensuite cette table, vite et sans calcul dans le navigateur. R\xE9serv\xE9 aux admins.",
+        params: [
+          { name: "table", label: "Table \xE0 tenir \xE0 jour", type: "table", required: true },
+          { name: "cle", label: "Colonne cl\xE9 (unique)", default: "id" },
+          { name: "requete", label: "Requ\xEAte SELECT", type: "code", required: true, raw: true, help: "Ses colonnes portent les noms des champs de la table ; les autres sont ignor\xE9es." },
+          { name: "cles", label: "Seulement ces cl\xE9s (facultatif)", help: "Liste ou texte s\xE9par\xE9 par des virgules. Vide = tout recalculer. Si la requ\xEAte contient $1, elle re\xE7oit cette liste (ou null = tout) pour ne lire que ce qui est utile : gros volumes." },
+          { name: "supprimer", label: "Retirer les lignes absentes du r\xE9sultat (calcul complet)", type: "bool", default: true },
+          { name: "delai_s", label: "Temps max (secondes)", type: "int", default: 30 }
+        ],
+        run: async (p, ctx, api) => {
+          if (api.user && api.user.role_id !== 1) throw Object.assign(new Error("r\xE9serv\xE9 aux administrateurs"), { permanent: true });
+          const db = require("@saltcorn/data/db");
+          if (db.isSQLite) throw Object.assign(new Error("PostgreSQL requis"), { permanent: true });
+          if (Array.isArray(p.cles) && !p.cles.length) return { lignes: 0, ecrites: 0, retirees: 0, rien: true };
+          const job = preparerLecture(p, api);
+          const refus = await require_garde().refusSql(job.sql);
+          if (refus) throw Object.assign(new Error(refus), { permanent: true });
+          return tenirLecture(job);
+        }
+      }
+    ];
+    var IDENT = /^[a-z_][a-z0-9_]{0,62}$/i;
+    var preparerLecture = (p, api) => {
+      const sql = String(p.requete || "").trim().replace(/;\s*$/, "");
+      const nu = sql.replace(/--[^\n]*/g, " ").replace(/\/\*[\s\S]*?\*\//g, " ").trim();
+      if (!/^(select|with)\b/i.test(nu) || /;/.test(nu.replace(/'[^']*'/g, "")) || /\b(insert|update|delete|drop|alter|create|truncate|grant|revoke|copy|vacuum|call|do)\b/i.test(nu.replace(/'[^']*'/g, ""))) throw Object.assign(new Error("seulement une requ\xEAte SELECT (ou WITH \u2026 SELECT), sans point-virgule"), { permanent: true });
+      const t = api.Table.findOne({ name: p.table });
+      if (!t || t.external || t.provider_name) throw Object.assign(new Error(`table \xAB ${p.table} \xBB introuvable`), { permanent: true });
+      const champs = t.getFields().map((f) => f.name).filter((c) => IDENT.test(c));
+      const cle = String(p.cle || "id");
+      if (!champs.includes(cle)) throw Object.assign(new Error(`colonne cl\xE9 \xAB ${cle} \xBB absente de la table`), { permanent: true });
+      let cles = p.cles;
+      if (typeof cles === "string") cles = cles.split(",").map((s) => s.trim()).filter(Boolean);
+      if (cles != null && !Array.isArray(cles)) cles = [cles];
+      cles = cles && cles.length ? cles.slice(0, 5e3).map(String) : null;
+      return { sql, table: t.name, champs, cle, cles, parametre: /\$1\b/.test(sql), supprimer: p.supprimer !== false && !cles, delai: Math.max(1, Math.min(300, +p.delai_s || 30)) };
+    };
+    var tenirLecture = async (job) => {
+      const db = require("@saltcorn/data/db");
+      const schema = db.getTenantSchema();
+      const q = (s) => `"${s}"`;
+      const T = `${q(schema)}.${q(job.table)}`;
+      const t0 = Date.now();
+      const client = await db.getClient();
+      try {
+        await client.query("begin read only");
+        await client.query(`set local statement_timeout = ${job.delai * 1e3}`);
+        await client.query(`set local search_path to ${q(schema)}`);
+        const r = job.parametre ? await client.query(`select * from (${job.sql}) as q`, [job.cles]) : await client.query(`select * from (${job.sql}) as q${job.cles ? ` where q.${q(job.cle)}::text = any($1)` : ""}`, job.cles ? [job.cles] : []);
+        await client.query("commit");
+        const cols = job.champs.filter((c) => r.fields.some((f) => f.name === c));
+        if (!cols.includes(job.cle)) throw Object.assign(new Error(`la requ\xEAte doit renvoyer la colonne \xAB ${job.cle} \xBB`), { permanent: true });
+        const autres = cols.filter((c) => c !== job.cle && c !== "id");
+        const lignes = r.rows.map((x) => Object.fromEntries(cols.map((c) => [c, x[c] === void 0 ? null : x[c]])));
+        await client.query("begin");
+        await client.query(`set local statement_timeout = ${job.delai * 1e3}`);
+        const ins = cols.filter((c) => c !== "id" || job.cle === "id");
+        const up = await client.query(`insert into ${T} (${ins.map(q).join(",")}) select ${ins.map(q).join(",")} from json_populate_recordset(null::${T}, $1::json)
+      on conflict (${q(job.cle)}) do update set ${autres.map((c) => `${q(c)} = excluded.${q(c)}`).join(",") || `${q(job.cle)} = excluded.${q(job.cle)}`}
+      where (${autres.map((c) => `${T}.${q(c)}`).join(",") || "1"}) is distinct from (${autres.map((c) => `excluded.${q(c)}`).join(",") || "1"})`, [JSON.stringify(lignes)]);
+        let retirees = 0;
+        if (job.supprimer) retirees = (await client.query(`delete from ${T} where not (${q(job.cle)}::text = any($1))`, [lignes.map((x) => String(x[job.cle]))])).rowCount;
+        await client.query("commit");
+        return { lignes: lignes.length, ecrites: up.rowCount, retirees, ms: Date.now() - t0 };
+      } catch (e) {
+        await client.query("rollback").catch(() => {
+        });
+        if (/no unique or exclusion constraint/i.test(e.message)) throw Object.assign(new Error(`la colonne \xAB ${job.cle} \xBB doit \xEAtre unique (case \xAB Unique \xBB du champ dans Saltcorn)`), { permanent: true });
+        throw e;
+      } finally {
+        client.release();
+      }
+    };
+    var reseau = [
+      {
+        name: "dzf_graphql",
+        label: "API : requ\xEAte GraphQL",
+        category: "R\xE9seau",
+        icon: "fas fa-project-diagram",
+        output: "graphql",
+        timeout: 60,
+        description: "Envoie une requ\xEAte GraphQL (GitHub, Shopify, Hasura, Strapi\u2026) avec ses variables et un jeton lu dans les secrets.",
+        params: [
+          { name: "url", label: "Adresse", required: true },
+          { name: "requete", label: "Requ\xEAte", type: "code", required: true, raw: true },
+          { name: "variables", label: "Variables (JSON)", type: "json" },
+          { name: "secret_jeton", label: "Nom du secret du jeton (Bearer)" }
+        ],
+        run: async (p, ctx, api) => {
+          const j = await post(p.url, { query: p.requete, variables: p.variables || {} }, p.secret_jeton ? { Authorization: `Bearer ${await need(api, p.secret_jeton)}` } : {});
+          if (j.errors && j.errors.length) throw new Error(j.errors.map((e) => e.message).join(" \xB7 ").slice(0, 400));
+          return j.data;
+        }
+      },
+      {
+        name: "dzf_telecharger",
+        label: "API : t\xE9l\xE9charger un fichier",
+        category: "R\xE9seau",
+        icon: "fas fa-cloud-download-alt",
+        output: "fichier",
+        timeout: 180,
+        description: "T\xE9l\xE9charge un fichier (PDF, image, export\u2026) depuis une adresse et l'enregistre dans les fichiers Saltcorn (local ou S3). Taille limit\xE9e.",
+        params: [
+          { name: "url", label: "Adresse", required: true },
+          { name: "nom", label: "Nom du fichier (facultatif)" },
+          { name: "dossier", label: "Dossier", default: "/telechargements" },
+          { name: "max_mo", label: "Taille max (Mo)", type: "int", default: 25 },
+          { name: "secret_jeton", label: "Nom du secret du jeton (facultatif)" }
+        ],
+        run: async (p, ctx, api) => {
+          const r = await fetch(p.url, { headers: p.secret_jeton ? { Authorization: `Bearer ${await need(api, p.secret_jeton)}` } : {} });
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          const len = +r.headers.get("content-length") || 0;
+          const max = (+p.max_mo || 25) * 1048576;
+          if (len > max) throw Object.assign(new Error(`fichier trop gros (${Math.round(len / 1048576)} Mo)`), { permanent: true });
+          const buf = Buffer.from(await r.arrayBuffer());
+          if (buf.length > max) throw Object.assign(new Error("fichier trop gros"), { permanent: true });
+          const name = String(p.nom || decodeURIComponent(new URL(r.url).pathname.split("/").pop() || "fichier")).replace(/[^\w.\-]+/g, "_").slice(0, 120);
+          const File = require("@saltcorn/data/models/file");
+          const f = await File.from_contents(name, (r.headers.get("content-type") || "application/octet-stream").split(";")[0], buf, api.user ? api.user.id : null, 1, p.dossier || "/");
+          return { chemin: f.path_to_serve || f.location, nom: name, octets: buf.length, type: r.headers.get("content-type") };
+        }
+      },
+      {
+        name: "dzf_webhook_verifier",
+        label: "API : v\xE9rifier la signature d'un webhook",
+        category: "R\xE9seau",
+        icon: "fas fa-stamp",
+        output: "signature",
+        description: "V\xE9rifie qu'un webhook vient bien de l'exp\xE9diteur (GitHub, Stripe, Meta/WhatsApp, Shopify\u2026) gr\xE2ce \xE0 sa signature HMAC, en temps constant.",
+        params: [
+          { name: "corps", label: "Corps brut re\xE7u", required: true, help: "Ex. {{corps_brut}} (fourni par les points d'API dysizz-flow)" },
+          { name: "signature", label: "Signature re\xE7ue", required: true, help: "Ex. {{entetes.x-hub-signature-256}}" },
+          { name: "secret", label: "Nom du secret partag\xE9", required: true },
+          { name: "algo", label: "Algorithme", type: "select", options: ["sha256", "sha1", "sha512"], default: "sha256" },
+          { name: "format", label: "Format", type: "select", options: ["hex (avec ou sans \xAB sha256= \xBB)", "base64", "stripe (t=\u2026,v1=\u2026)"], default: "hex (avec ou sans \xAB sha256= \xBB)" }
+        ],
+        run: async (p, ctx, api) => {
+          const key = await need(api, p.secret);
+          const body = typeof p.corps === "string" ? p.corps : JSON.stringify(p.corps);
+          let expected, got = String(p.signature || "");
+          if (p.format.startsWith("stripe")) {
+            const parts = Object.fromEntries(got.split(",").map((x) => x.split("=")));
+            expected = crypto.createHmac("sha256", key).update(`${parts.t}.${body}`).digest("hex");
+            got = parts.v1 || "";
+            if (Math.abs(Date.now() / 1e3 - +parts.t) > 300) return { valide: false, raison: "trop ancien" };
+          } else {
+            expected = crypto.createHmac(p.algo, key).update(body).digest(p.format === "base64" ? "base64" : "hex");
+            got = got.replace(/^sha\d+=/, "");
+          }
+          const ok = expected.length === got.length && crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(got));
+          return { valide: ok, raison: ok ? "" : "signature diff\xE9rente" };
+        }
+      },
+      {
+        name: "dzf_page_web",
+        label: "Web : lire une page",
+        category: "R\xE9seau",
+        icon: "fas fa-file-alt",
+        output: "page",
+        timeout: 60,
+        description: "R\xE9cup\xE8re une page web et en extrait le titre, la description, le texte, les liens, les images et les m\xE9ta Open Graph. Respecte les sites : un seul appel, pas d'exploration.",
+        params: [{ name: "url", label: "Adresse", required: true }, { name: "max_texte", label: "Longueur max du texte", type: "int", default: 2e4 }, { name: "liens", label: "Garder les liens", type: "bool", default: true }],
+        run: async (p) => {
+          const r = await fetch(p.url, { headers: { "User-Agent": "Mozilla/5.0 (compatible; dysizz-flow)", Accept: "text/html" }, redirect: "follow" });
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          const html = (await r.text()).slice(0, 3e6);
+          const meta = (n) => {
+            const m = new RegExp(`<meta[^>]+(?:name|property)=["']${n}["'][^>]*content=["']([^"']*)["']`, "i").exec(html) || new RegExp(`<meta[^>]+content=["']([^"']*)["'][^>]*(?:name|property)=["']${n}["']`, "i").exec(html);
+            return m ? plain(m[1]) : "";
+          };
+          const base = r.url;
+          const abs = (u) => {
+            try {
+              return new URL(u, base).href;
+            } catch (e) {
+              return "";
+            }
+          };
+          const links = p.liens === false ? [] : [...html.matchAll(/<a[^>]+href=["']([^"'#]+)["'][^>]*>([\s\S]*?)<\/a>/gi)].slice(0, 500).map((m) => ({ url: safeUrl(abs(m[1])), texte: plain(m[2], 120) })).filter((l) => l.url);
+          return {
+            url: base,
+            statut: r.status,
+            titre: plain((/<title[^>]*>([\s\S]*?)<\/title>/i.exec(html) || [])[1] || "", 300),
+            description: meta("description") || meta("og:description"),
+            image: safeUrl(abs(meta("og:image"))),
+            langue: (/<html[^>]+lang=["']([^"']+)/i.exec(html) || [])[1] || "",
+            texte: plain(html.replace(/<(nav|footer|header|aside)[\s\S]*?<\/\1>/gi, " "), +p.max_texte || 2e4),
+            liens: links
+          };
+        }
+      }
+    ];
+    var messagerie = [
+      {
+        name: "dzf_slack",
+        label: "Slack : envoyer un message",
+        category: "Messagerie",
+        icon: "fab fa-slack",
+        output: "slack",
+        description: "Envoie un message dans un canal Slack via un webhook entrant (l'adresse du webhook est un secret).",
+        params: [{ name: "secret_webhook", label: "Nom du secret du webhook", default: "SLACK_WEBHOOK_URL" }, { name: "texte", label: "Texte (Markdown Slack)", type: "text", required: true }],
+        run: async (p, ctx, api) => {
+          await post(await need(api, p.secret_webhook), { text: String(p.texte).slice(0, 39e3) });
+          return true;
+        }
+      },
+      {
+        name: "dzf_discord",
+        label: "Discord : envoyer un message",
+        category: "Messagerie",
+        icon: "fab fa-discord",
+        output: "discord",
+        description: "Envoie un message dans un salon Discord via un webhook.",
+        params: [{ name: "secret_webhook", label: "Nom du secret du webhook", default: "DISCORD_WEBHOOK_URL" }, { name: "texte", label: "Texte", type: "text", required: true }, { name: "nom", label: "Nom affich\xE9", default: "dysizz" }],
+        run: async (p, ctx, api) => {
+          await post(await need(api, p.secret_webhook), { content: String(p.texte).slice(0, 2e3), username: p.nom || "dysizz" });
+          return true;
+        }
+      },
+      {
+        name: "dzf_teams",
+        label: "Teams : envoyer un message",
+        category: "Messagerie",
+        icon: "fab fa-microsoft",
+        output: "teams",
+        description: "Envoie un message dans un canal Microsoft Teams (workflow \xAB Post to a channel when a webhook request is received \xBB).",
+        params: [{ name: "secret_webhook", label: "Nom du secret du webhook", default: "TEAMS_WEBHOOK_URL" }, { name: "titre", label: "Titre" }, { name: "texte", label: "Texte", type: "text", required: true }],
+        run: async (p, ctx, api) => {
+          await post(await need(api, p.secret_webhook), { type: "message", attachments: [{ contentType: "application/vnd.microsoft.card.adaptive", content: { type: "AdaptiveCard", version: "1.4", body: [...p.titre ? [{ type: "TextBlock", size: "Medium", weight: "Bolder", text: p.titre }] : [], { type: "TextBlock", text: String(p.texte), wrap: true }] } }] });
+          return true;
+        }
+      },
+      {
+        name: "dzf_ntfy",
+        label: "Push mobile (ntfy)",
+        category: "Messagerie",
+        icon: "fas fa-mobile-alt",
+        output: "push",
+        description: "Notification instantan\xE9e sur ton t\xE9l\xE9phone avec ntfy (appli gratuite Android/iOS, serveur public ou auto-h\xE9berg\xE9). Priorit\xE9, \xE9tiquettes et lien au clic.",
+        params: [
+          { name: "serveur", label: "Serveur", default: "https://ntfy.sh" },
+          { name: "sujet", label: "Sujet (topic)", required: true, help: "Choisis un nom long et difficile \xE0 deviner" },
+          { name: "titre", label: "Titre" },
+          { name: "texte", label: "Texte", type: "text", required: true },
+          { name: "priorite", label: "Priorit\xE9", type: "select", options: ["min", "low", "default", "high", "urgent"], default: "default" },
+          { name: "etiquettes", label: "\xC9tiquettes (emoji ntfy)", help: "Ex. warning,computer" },
+          { name: "lien", label: "Lien au clic" },
+          { name: "secret_jeton", label: "Nom du secret du jeton (serveur priv\xE9)" }
+        ],
+        run: async (p, ctx, api) => {
+          const h = { Priority: p.priorite || "default" };
+          if (p.titre) h.Title = encodeURIComponent(p.titre).length === p.titre.length ? p.titre : `=?UTF-8?B?${Buffer.from(p.titre).toString("base64")}?=`;
+          if (p.etiquettes) h.Tags = p.etiquettes;
+          if (p.lien) h.Click = p.lien;
+          if (p.secret_jeton) h.Authorization = `Bearer ${await need(api, p.secret_jeton)}`;
+          const r = await fetch(`${String(p.serveur).replace(/\/$/, "")}/${encodeURIComponent(p.sujet)}`, { method: "POST", headers: h, body: String(p.texte).slice(0, 4e3) });
+          if (!r.ok) throw new Error(`ntfy : HTTP ${r.status}`);
+          return (await r.json().catch(() => ({}))).id || true;
+        }
+      },
+      {
+        name: "dzf_sms",
+        label: "SMS : envoyer (Twilio)",
+        category: "Messagerie",
+        icon: "fas fa-sms",
+        output: "sms",
+        description: "Envoie un SMS avec Twilio (compte et num\xE9ro d'envoi \xE0 cr\xE9er chez Twilio).",
+        params: [
+          { name: "secret_sid", label: "Nom du secret du Account SID", default: "TWILIO_SID" },
+          { name: "secret_jeton", label: "Nom du secret de l'Auth Token", default: "TWILIO_TOKEN" },
+          { name: "de", label: "Num\xE9ro d'envoi (Twilio)", required: true },
+          { name: "a", label: "Destinataire (+33\u2026)", required: true },
+          { name: "texte", label: "Texte", type: "text", required: true }
+        ],
+        run: async (p, ctx, api) => {
+          const sid = await need(api, p.secret_sid), tok = await need(api, p.secret_jeton);
+          const r = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, { method: "POST", headers: { Authorization: `Basic ${Buffer.from(`${sid}:${tok}`).toString("base64")}`, "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ From: p.de, To: p.a, Body: String(p.texte).slice(0, 1600) }) });
+          const j = await r.json();
+          if (!r.ok) throw new Error(j.message || `HTTP ${r.status}`);
+          return j.sid;
+        }
+      }
+    ];
+    var CONN = [
+      { name: "url_base", label: "Adresse de l'API (compatible OpenAI)", default: "http://ollama:11434/v1" },
+      { name: "modele", label: "Mod\xE8le", default: "llama3.1", required: true },
+      { name: "variable_cle", label: "Nom du secret de la cl\xE9 (si besoin)" }
+    ];
+    var chat = async (p, api, messages, json) => {
+      const headers = { "Content-Type": "application/json" };
+      if (p.variable_cle) headers.Authorization = `Bearer ${await need(api, p.variable_cle)}`;
+      const j = await post(`${String(p.url_base).replace(/\/$/, "")}/chat/completions`, { model: p.modele, messages, temperature: 0, ...json ? { response_format: { type: "json_object" } } : {} }, headers);
+      const txt = (((j.choices || [])[0] || {}).message || {}).content || "";
+      if (!json) return txt.trim();
+      try {
+        return JSON.parse(txt.replace(/^```(json)?|```$/g, "").trim());
+      } catch (e) {
+        throw new Error("le mod\xE8le n'a pas renvoy\xE9 du JSON valide");
+      }
+    };
+    var ia = [
+      {
+        name: "dzf_ia_extraire",
+        label: "IA : extraire des informations",
+        category: "IA",
+        icon: "fas fa-highlighter",
+        output: "extrait",
+        timeout: 180,
+        description: "Transforme un texte libre (mail, facture, CV, annonce) en donn\xE9es structur\xE9es : tu donnes les champs voulus, l'IA les remplit (null si absent).",
+        params: [
+          ...CONN,
+          { name: "texte", label: "Texte", required: true, type: "text" },
+          { name: "champs", label: "Champs \xE0 extraire", required: true, help: "Ex. montant (nombre), date (AAAA-MM-JJ), fournisseur, numero_facture" }
+        ],
+        run: async (p, ctx, api) => chat(p, api, [{ role: "system", content: `Extrais du texte ces champs et r\xE9ponds uniquement en JSON avec exactement ces cl\xE9s : ${p.champs}. Mets null si l'information n'est pas dans le texte. N'invente rien.` }, { role: "user", content: String(p.texte).slice(0, 24e3) }], true)
+      },
+      {
+        name: "dzf_ia_traduire",
+        label: "IA : traduire",
+        category: "IA",
+        icon: "fas fa-language",
+        output: "traduction",
+        timeout: 180,
+        description: "Traduit un texte dans la langue voulue en gardant la mise en forme.",
+        params: [...CONN, { name: "texte", label: "Texte", required: true, type: "text" }, { name: "langue", label: "Vers la langue", default: "fran\xE7ais" }],
+        run: async (p, ctx, api) => chat(p, api, [{ role: "system", content: `Traduis en ${p.langue}. Garde la mise en forme. R\xE9ponds seulement avec la traduction.` }, { role: "user", content: String(p.texte).slice(0, 24e3) }], false)
+      },
+      {
+        name: "dzf_ia_vecteur",
+        label: "IA : vecteur (embedding)",
+        category: "IA",
+        icon: "fas fa-vector-square",
+        output: "vecteur",
+        timeout: 120,
+        description: "Calcule le vecteur d'un texte (ou d'une liste de textes) pour la recherche par le sens. Ex. nomic-embed-text avec Ollama.",
+        params: [
+          { name: "url_base", label: "Adresse de l'API", default: "http://ollama:11434/v1" },
+          { name: "modele", label: "Mod\xE8le", default: "nomic-embed-text" },
+          { name: "variable_cle", label: "Nom du secret de la cl\xE9 (si besoin)" },
+          { name: "texte", label: "Texte ou liste", required: true }
+        ],
+        run: async (p, ctx, api) => {
+          const headers = p.variable_cle ? { Authorization: `Bearer ${await need(api, p.variable_cle)}` } : {};
+          const input = Array.isArray(p.texte) ? p.texte.map(String) : String(p.texte);
+          const j = await post(`${String(p.url_base).replace(/\/$/, "")}/embeddings`, { model: p.modele, input }, headers);
+          const v = (j.data || []).map((d) => d.embedding);
+          return Array.isArray(p.texte) ? v : v[0];
+        }
+      },
+      {
+        name: "dzf_similarite",
+        label: "IA : plus proches par le sens",
+        category: "IA",
+        icon: "fas fa-compass",
+        output: "proches",
+        description: "Compare un vecteur \xE0 une liste d'\xE9l\xE9ments qui ont chacun un vecteur (similarit\xE9 cosinus) et renvoie les N plus proches. Base d'une recherche intelligente.",
+        params: [
+          { name: "vecteur", label: "Vecteur cherch\xE9", required: true },
+          { name: "liste", label: "\xC9l\xE9ments", required: true },
+          { name: "champ_vecteur", label: "Champ du vecteur", default: "vecteur" },
+          { name: "n", label: "Combien", type: "int", default: 5 },
+          { name: "seuil", label: "Score minimum (0 \xE0 1)", type: "number", default: 0 }
+        ],
+        run: async (p) => {
+          const q = typeof p.vecteur === "string" ? JSON.parse(p.vecteur) : p.vecteur;
+          const cos = (a, b) => {
+            let d = 0, x = 0, y = 0;
+            for (let i = 0; i < a.length; i++) {
+              d += a[i] * b[i];
+              x += a[i] * a[i];
+              y += b[i] * b[i];
+            }
+            return d / (Math.sqrt(x) * Math.sqrt(y) || 1);
+          };
+          return asList(p.liste).map((it) => {
+            let v = getPath(it, p.champ_vecteur);
+            if (typeof v === "string") v = JSON.parse(v);
+            return { ...it, score: v ? +cos(q, v).toFixed(4) : 0 };
+          }).filter((x) => x.score >= (+p.seuil || 0)).sort((a, b) => b.score - a.score).slice(0, +p.n || 5).map(({ [p.champ_vecteur]: _v, ...rest }) => rest);
+        }
+      }
+    ];
+    var controle = [
+      {
+        name: "dzf_aiguiller",
+        label: "Aiguiller (choisir un chemin)",
+        category: "Contr\xF4le",
+        icon: "fas fa-code-branch",
+        output: "chemin",
+        description: "Renvoie le nom du chemin selon la valeur d'un champ (ex. priorit\xE9 urgente \u2192 \xAB alerte \xBB, normale \u2192 \xAB liste \xBB). \xC0 utiliser dans \xAB \xE9tape suivante \xBB : chemin.",
+        params: [
+          { name: "valeur", label: "Valeur test\xE9e", required: true, help: "Ex. {{priorite}}" },
+          { name: "cas", label: "Cas (JSON)", type: "json", required: true, default: '{"urgente":"alerte","haute":"alerte"}' },
+          { name: "defaut", label: "Sinon", default: "suite" }
+        ],
+        run: async (p) => p.cas && Object.prototype.hasOwnProperty.call(p.cas, String(p.valeur)) ? p.cas[String(p.valeur)] : p.defaut || ""
+      },
+      {
+        name: "dzf_idempotence",
+        label: "D\xE9j\xE0 trait\xE9 ?",
+        category: "Contr\xF4le",
+        icon: "fas fa-redo-alt",
+        output: "deja_traite",
+        description: "Dit si une cl\xE9 a d\xE9j\xE0 \xE9t\xE9 vue r\xE9cemment, puis la note. Pour ne jamais traiter deux fois le m\xEAme \xE9v\xE9nement (webhook re\xE7u en double, relance\u2026).",
+        params: [{ name: "cle", label: "Cl\xE9", required: true, help: "Ex. {{id_evenement}}" }, { name: "duree_h", label: "M\xE9moire (heures)", type: "int", default: 72 }],
+        run: async (p) => {
+          const k = `dzf:vu:${crypto.createHash("sha1").update(String(p.cle)).digest("hex")}`;
+          const seen = await kv().get(k);
+          if (!seen) await kv().set(k, Date.now(), (+p.duree_h || 72) * 3600);
+          return !!seen;
+        }
+      },
+      {
+        name: "dzf_disjoncteur",
+        label: "Disjoncteur",
+        category: "Contr\xF4le",
+        icon: "fas fa-power-off",
+        output: "circuit",
+        description: "Prot\xE8ge un service fragile : apr\xE8s N \xE9checs, on arr\xEAte de l'appeler pendant un moment au lieu d'insister. \xAB v\xE9rifier \xBB avant l'appel (sortie .passe = on peut appeler, .coupe = on attend), \xAB signaler \xBB apr\xE8s.",
+        params: [
+          { name: "action", label: "Action", type: "select", options: ["v\xE9rifier", "signaler un \xE9chec", "signaler un succ\xE8s"], default: "v\xE9rifier" },
+          { name: "nom", label: "Service", required: true, help: "Ex. api-france-travail" },
+          { name: "seuil", label: "\xC9checs avant coupure", type: "int", default: 5 },
+          { name: "pause_min", label: "Coupure (minutes)", type: "int", default: 15 }
+        ],
+        run: async (p) => {
+          const k = `dzf:disj:${p.nom}`;
+          const st = await kv().get(k) || { echecs: 0, jusqu_a: 0 };
+          if (p.action === "signaler un succ\xE8s") {
+            await kv().set(k, { echecs: 0, jusqu_a: 0 }, 86400);
+            return { passe: true, coupe: false };
+          }
+          if (p.action === "signaler un \xE9chec") {
+            st.echecs++;
+            if (st.echecs >= (+p.seuil || 5)) {
+              st.jusqu_a = Date.now() + (+p.pause_min || 15) * 6e4;
+              st.echecs = 0;
+            }
+            await kv().set(k, st, 86400);
+            const passe2 = Date.now() >= st.jusqu_a;
+            return { passe: passe2, coupe: !passe2, echecs: st.echecs };
+          }
+          const passe = Date.now() >= (st.jusqu_a || 0);
+          return { passe, coupe: !passe, reprise: passe ? null : new Date(st.jusqu_a).toISOString() };
+        }
+      }
+    ];
+    module2.exports = [...donnees, ...reseau, ...messagerie, ...ia, ...controle];
+  }
+});
+
+// src/lib/leads/tables/reprise_vues.js
+var require_reprise_vues = __commonJS({
+  "src/lib/leads/tables/reprise_vues.js"(exports2, module2) {
+    "use strict";
+    var NOM = /^[a-z_][a-z0-9_]{0,62}$/i;
+    var etapesValides = (texte) => {
+      const a = String(texte || "").split(",").map((s) => s.trim()).filter(Boolean);
+      if (!a.length || a.length > 12 || a.some((s) => !NOM.test(s)) || new Set(a).size !== a.length)
+        throw new Error("Liste d'\xE9tapes invalide");
+      return a;
+    };
+    var lire = (v) => typeof v === "string" ? JSON.parse(v) : v;
+    var rafraichirVues = async ({ workflow, etapes, suivi = {}, api }) => {
+      const nom = String(workflow || "").trim();
+      if (!NOM.test(nom)) throw new Error("Nom du workflow invalide");
+      const noms = etapesValides(etapes);
+      const db = require("@saltcorn/data/db");
+      const rows = (await db.query(
+        "select s.name,s.configuration from _sc_workflow_steps s join _sc_triggers t on t.id=s.trigger_id where t.name=$1 and s.name=any($2::text[])",
+        [nom, noms]
+      )).rows;
+      if (rows.length !== noms.length) throw new Error("\xC9tapes de lecture manquantes ou multiples");
+      const parNom = Object.fromEntries(rows.map((r) => [r.name, lire(r.configuration)]));
+      for (const n of noms) {
+        const c = parNom[n];
+        if (!c || c.table !== n || c.cle == null || !String(c.requete || "").trim())
+          throw new Error(`Configuration de ${n} incompl\xE8te ou table inattendue`);
+      }
+      const bloc = require_extras().find((b) => b.name === "dzf_table_lecture");
+      if (!bloc) throw new Error("Bloc de lecture indisponible");
+      const rapport = { workflow: nom, etapes: [], terminees: 0, erreur: null, emails_envoyes: 0 };
+      suivi.total = noms.length;
+      for (const n of noms) {
+        suivi.etape = `recalcul ${n}`;
+        const c = parNom[n];
+        try {
+          const resultat = await bloc.run({
+            table: c.table,
+            cle: c.cle,
+            requete: c.requete,
+            cles: null,
+            supprimer: true,
+            delai_s: 300
+          }, {}, api);
+          rapport.etapes.push({ nom: n, resultat });
+          rapport.terminees++;
+          suivi.fait++;
+        } catch (e) {
+          rapport.erreur = `${n} : ${String(e.message || e).slice(0, 300)}`;
+          break;
+        }
+      }
+      return rapport;
+    };
+    module2.exports = { etapesValides, rafraichirVues };
+  }
+});
+
 // src/lib/leads/tables/taches.js
 var require_taches = __commonJS({
   "src/lib/leads/tables/taches.js"(exports2, module2) {
@@ -98591,6 +99608,35 @@ var require_leads_solution = __commonJS({
             return { fichier: nom, ...rapport };
           });
         })
+      },
+      {
+        name: "dzf_leads_rafraichir_vues",
+        label: "Leads : recalculer les vues de lecture",
+        category: CAT,
+        icon: "fas fa-layer-group",
+        output: "reprise",
+        timeout: 60,
+        description: "Recalcule en arri\xE8re-plan, dans l'ordre, les tables de lecture d'un workflow d\xE9j\xE0 configur\xE9. Ne traite aucun mail et n'envoie rien. Rapport dans Fichiers.",
+        params: [
+          { name: "workflow", label: "Nom du d\xE9clencheur de lecture", default: "ambs_lecture", required: true },
+          { name: "etapes", label: "\xC9tapes dans l'ordre, s\xE9par\xE9es par des virgules", default: "vue_lead,vue_bien,vue_agence,vue_nego", required: true },
+          { name: "fichier", label: "Rapport", default: "recalcul-vues.json" }
+        ],
+        run: async (p, ctx = {}, api) => {
+          if (!ctx.user || ctx.user.role_id !== 1) throw new Error("r\xE9serv\xE9 aux administrateurs");
+          const nom = String(p.fichier || "recalcul-vues.json").replace(/[^\w.-]/g, "_");
+          return require_arriere_plan().enFond(p, ctx, "dzf_leads_rafraichir_vues", nom, async (suivi) => {
+            const rapport = await require_reprise_vues().rafraichirVues({
+              workflow: p.workflow,
+              etapes: p.etapes,
+              suivi,
+              api
+            });
+            const File = require("@saltcorn/data/models/file");
+            await File.from_contents(nom, "application/json", JSON.stringify(rapport, null, 1), ctx.user.id, 1);
+            return { fichier: nom, ...rapport };
+          });
+        }
       },
       {
         name: "dzf_leads_entretien",
@@ -99516,7 +100562,7 @@ var require_leads_gabarits = __commonJS({
 });
 
 // src/lib/leads/controle.js
-var require_controle = __commonJS({
+var require_controle2 = __commonJS({
   "src/lib/leads/controle.js"(exports2, module2) {
     "use strict";
     var V = require_valeurs();
@@ -99740,7 +100786,7 @@ var require_leads_controle = __commonJS({
       run: async (p, ctx = {}) => require_arriere_plan().enFond(p, ctx, "dzf_leads_controle_crm", String(p.fichier || "controle-crm.json").replace(/[^\w.-]/g, "_"), async (suivi = {}) => {
         const Table = require("@saltcorn/data/models/table");
         const api = require_api();
-        const { controler } = require_controle();
+        const { controler } = require_controle2();
         const K = lu(p.correspondances, {}) || {};
         const c = Object.fromEntries(Object.entries(DEFAUT).map(([k, v]) => [k, { ...v, ...K[k] || {} }]));
         const T = (n) => {
@@ -101466,348 +102512,6 @@ var require_surveillance = __commonJS({
   }
 });
 
-// src/lib/redis.js
-var require_redis = __commonJS({
-  "src/lib/redis.js"(exports2, module2) {
-    "use strict";
-    var net = require("net");
-    var conn = null;
-    var encode = (args) => `*${args.length}\r
-` + args.map((a) => {
-      const s = String(a);
-      return `$${Buffer.byteLength(s)}\r
-${s}\r
-`;
-    }).join("");
-    var parse = (buf, i = 0) => {
-      if (i >= buf.length) return null;
-      const type = String.fromCharCode(buf[i]);
-      const end = buf.indexOf("\r\n", i);
-      if (end < 0) return null;
-      const line = buf.toString("utf8", i + 1, end);
-      const next = end + 2;
-      if (type === "+") return [line, next];
-      if (type === "-") return [new Error(line), next];
-      if (type === ":") return [Number(line), next];
-      if (type === "$") {
-        const n = Number(line);
-        if (n < 0) return [null, next];
-        if (buf.length < next + n + 2) return null;
-        return [buf.toString("utf8", next, next + n), next + n + 2];
-      }
-      if (type === "*") {
-        const n = Number(line);
-        if (n < 0) return [null, next];
-        const out = [];
-        let j = next;
-        for (let k = 0; k < n; k++) {
-          const r = parse(buf, j);
-          if (!r) return null;
-          out.push(r[0]);
-          j = r[1];
-        }
-        return [out, j];
-      }
-      throw new Error("r\xE9ponse Redis inattendue");
-    };
-    var connect = (url) => new Promise((resolve, reject) => {
-      const u = new URL(url || process.env.REDIS_URL || "redis://redis:6379");
-      const sock = net.createConnection({ host: u.hostname, port: +u.port || 6379 });
-      const c = { sock, queue: [], buf: Buffer.alloc(0), url };
-      sock.setKeepAlive(true);
-      sock.setTimeout(0);
-      sock.on("data", (d) => {
-        c.buf = Buffer.concat([c.buf, d]);
-        for (; ; ) {
-          const r = parse(c.buf);
-          if (!r) break;
-          c.buf = c.buf.subarray(r[1]);
-          const q = c.queue.shift();
-          if (q) r[0] instanceof Error ? q.reject(r[0]) : q.resolve(r[0]);
-        }
-      });
-      const fail = (e) => {
-        for (const q of c.queue.splice(0)) q.reject(e);
-        if (conn === c) conn = null;
-      };
-      sock.on("error", (e) => {
-        fail(e);
-        reject(e);
-      });
-      sock.on("close", () => fail(new Error("connexion Redis ferm\xE9e")));
-      sock.on("connect", async () => {
-        try {
-          if (u.password) await send(c, u.username ? ["AUTH", decodeURIComponent(u.username), decodeURIComponent(u.password)] : ["AUTH", decodeURIComponent(u.password)]);
-          const db = u.pathname && u.pathname.slice(1);
-          if (db) await send(c, ["SELECT", db]);
-          resolve(c);
-        } catch (e) {
-          reject(e);
-        }
-      });
-    });
-    var send = (c, args) => new Promise((resolve, reject) => {
-      c.queue.push({ resolve, reject });
-      c.sock.write(encode(args));
-    });
-    var pending = null;
-    var cmd = async (args, url) => {
-      const want = url || process.env.REDIS_URL || "redis://redis:6379";
-      if (!conn || conn.url !== want) {
-        if (!pending || pending.url !== want) {
-          pending = connect(want).then((c) => {
-            c.url = want;
-            conn = c;
-            return c;
-          }).finally(() => {
-            pending = null;
-          });
-          pending.url = want;
-        }
-        await pending;
-      }
-      return send(conn, args);
-    };
-    var available = () => !!process.env.REDIS_URL;
-    module2.exports = { cmd, available, encode, parse };
-  }
-});
-
-// src/blocks/controle.js
-var require_controle2 = __commonJS({
-  "src/blocks/controle.js"(exports2, module2) {
-    "use strict";
-    var redis = require_redis();
-    var { ensureTables } = require_store();
-    var ttlDate = (s) => new Date(Date.now() + Math.max(1, +s || 60) * 1e3);
-    var kv = {
-      async get(k) {
-        if (redis.available()) {
-          const v = await redis.cmd(["GET", k]);
-          return v === null ? null : JSON.parse(v);
-        }
-        const { cache } = await ensureTables();
-        const r = await cache.getRow({ cle: k });
-        if (!r || r.expire && new Date(r.expire) < /* @__PURE__ */ new Date()) return null;
-        return JSON.parse(r.valeur);
-      },
-      async set(k, v, ttl) {
-        const s = JSON.stringify(v);
-        if (redis.available()) return redis.cmd(ttl ? ["SET", k, s, "EX", String(+ttl)] : ["SET", k, s]);
-        const { cache } = await ensureTables();
-        const r = await cache.getRow({ cle: k });
-        const row = { cle: k, valeur: s, expire: ttl ? ttlDate(ttl) : null };
-        if (r) await cache.updateRow(row, r.id);
-        else await cache.insertRow(row);
-      },
-      async del(k) {
-        if (redis.available()) return redis.cmd(["DEL", k]);
-        const { cache } = await ensureTables();
-        await cache.deleteRows({ cle: k });
-      },
-      async incr(k, ttl) {
-        if (redis.available()) {
-          const n = await redis.cmd(["INCR", k]);
-          if (n === 1 && ttl) await redis.cmd(["EXPIRE", k, String(+ttl)]);
-          return n;
-        }
-        const cur = await kv.get(k) || 0;
-        await kv.set(k, cur + 1, ttl);
-        return cur + 1;
-      }
-    };
-    module2.exports = [
-      {
-        name: "dzf_pause",
-        label: "Pause",
-        category: "Contr\xF4le",
-        icon: "fas fa-hourglass-half",
-        output: "pause",
-        description: "Attend quelques secondes (ex. pour respecter la limite d'une API). Pour attendre des heures, utilise l'\xE9tape native \xAB WaitUntil \xBB.",
-        params: [{ name: "secondes", label: "Secondes", type: "number", default: 1 }],
-        run: async (p) => {
-          const s = Math.min(Math.max(0, +p.secondes || 0), 25);
-          await new Promise((r) => setTimeout(r, s * 1e3));
-          return s;
-        }
-      },
-      {
-        name: "dzf_verifier",
-        label: "V\xE9rifier une condition",
-        category: "Contr\xF4le",
-        icon: "fas fa-check-double",
-        output: "verifie",
-        description: "Calcule une condition. Soit le workflow s'arr\xEAte en erreur si elle est fausse, soit tu r\xE9cup\xE8res vrai/faux pour choisir l'\xE9tape suivante.",
-        params: [
-          { name: "condition", label: "Condition (JavaScript sur le contexte)", required: true, raw: true, help: "Ex. ctx.lignes.length > 0 && ctx.total < 100" },
-          { name: "si_faux", label: "Si c'est faux", type: "select", options: ["renvoyer faux", "arr\xEAter en erreur"], default: "renvoyer faux" },
-          { name: "message", label: "Message d'erreur", default: "Condition non remplie" }
-        ],
-        run: async (p, ctx) => {
-          let ok;
-          try {
-            ok = !!require_garde().compiler(p.condition, ["ctx"])(ctx);
-          } catch (e) {
-            throw new Error(`condition invalide : ${e.message}`);
-          }
-          if (!ok && p.si_faux === "arr\xEAter en erreur") throw new Error(p.message || "Condition non remplie");
-          return ok;
-        }
-      },
-      {
-        name: "dzf_verrou",
-        label: "Verrou (une ex\xE9cution \xE0 la fois)",
-        category: "Contr\xF4le",
-        icon: "fas fa-lock",
-        output: "verrou",
-        description: "Emp\xEAche deux ex\xE9cutions du m\xEAme travail en m\xEAme temps, m\xEAme avec plusieurs serveurs. \xAB prendre \xBB renvoie vrai si tu as le verrou ; pense \xE0 \xAB lib\xE9rer \xBB \xE0 la fin (il expire seul sinon).",
-        params: [
-          { name: "action", label: "Action", type: "select", options: ["prendre", "lib\xE9rer"], default: "prendre" },
-          { name: "nom", label: "Nom du verrou", required: true, help: "Ex. releve-mails" },
-          { name: "duree", label: "Expire apr\xE8s (secondes)", type: "int", default: 600 },
-          { name: "attente", label: "Si le verrou est pris : attendre jusqu'\xE0 (secondes)", type: "int", default: 0, showIf: { action: "prendre" }, help: "0 = r\xE9pondre tout de suite (vrai / faux). Plus de 0 : attendre qu'il se lib\xE8re, puis s'arr\xEAter en erreur si le temps est d\xE9pass\xE9 (le travail pourra \xEAtre repris)." }
-        ],
-        run: async (p) => {
-          if (p.action !== "lib\xE9rer" && +p.attente > 0) {
-            const fin = Date.now() + Math.min(+p.attente, 300) * 1e3;
-            const un = { ...p, attente: 0 };
-            for (; ; ) {
-              if (await module2.exports.find((b) => b.name === "dzf_verrou").run(un)) return true;
-              if (Date.now() > fin) throw Object.assign(new Error(`verrou \xAB ${p.nom} \xBB toujours pris apr\xE8s ${p.attente} s`), { temporaire: true });
-              await new Promise((r) => setTimeout(r, 150 + Math.random() * 250));
-            }
-          }
-          const key = `dzf:verrou:${p.nom}`;
-          if (redis.available()) {
-            if (p.action === "lib\xE9rer") {
-              await redis.cmd(["DEL", key]);
-              return true;
-            }
-            return await redis.cmd(["SET", key, String(process.pid), "NX", "EX", String(+p.duree || 600)]) === "OK";
-          }
-          const { verrous } = await ensureTables();
-          if (p.action === "lib\xE9rer") {
-            await verrous.deleteRows({ nom: p.nom });
-            return true;
-          }
-          const now = /* @__PURE__ */ new Date();
-          await verrous.deleteRows({ nom: p.nom, jusqu_a: { lt: now } });
-          const db = require("@saltcorn/data/db");
-          const par = `${require("os").hostname()}:${process.pid}:${Math.random().toString(36).slice(2, 10)}`;
-          const sch = db.isSQLite ? "" : `"${db.getTenantSchema()}".`;
-          await db.query(`insert ${db.isSQLite ? "or ignore " : ""}into ${sch}dzf_verrous (nom, jusqu_a, par) values ($1, $2, $3)${db.isSQLite ? "" : " on conflict (nom) do nothing"}`, [p.nom, db.isSQLite ? ttlDate(p.duree || 600).toISOString() : ttlDate(p.duree || 600), par]);
-          const mine = await verrous.getRow({ nom: p.nom });
-          return !!(mine && mine.par === par);
-        }
-      },
-      {
-        name: "dzf_cache",
-        label: "Cache : lire / \xE9crire",
-        category: "Contr\xF4le",
-        icon: "fas fa-database",
-        output: "cache",
-        description: "Garde une valeur un moment pour \xE9viter de rappeler une API ou de refaire un calcul. Utilise Redis si REDIS_URL est d\xE9fini, sinon une table.",
-        params: [
-          { name: "action", label: "Action", type: "select", options: ["lire", "\xE9crire", "supprimer"], default: "lire" },
-          { name: "cle", label: "Cl\xE9", required: true },
-          { name: "valeur", label: "Valeur (pour \xE9crire)", help: "Ex. {{http.data}}" },
-          { name: "ttl", label: "Dur\xE9e (secondes)", type: "int", default: 3600 }
-        ],
-        run: async (p) => {
-          const k = `dzf:cache:${p.cle}`;
-          if (p.action === "\xE9crire") {
-            await kv.set(k, p.valeur ?? null, p.ttl);
-            return p.valeur ?? null;
-          }
-          if (p.action === "supprimer") {
-            await kv.del(k);
-            return null;
-          }
-          return kv.get(k);
-        }
-      },
-      {
-        name: "dzf_limiter",
-        label: "Limiter le d\xE9bit",
-        category: "Contr\xF4le",
-        icon: "fas fa-tachometer-alt",
-        output: "limite",
-        description: "Compte les passages sur une fen\xEAtre de temps. Renvoie {autorise, compte}. Ex. pas plus de 50 messages WhatsApp par heure.",
-        params: [
-          { name: "cle", label: "Cl\xE9", required: true, help: "Ex. whatsapp-{{user.id}}" },
-          { name: "max", label: "Max par fen\xEAtre", type: "int", default: 60 },
-          { name: "fenetre", label: "Fen\xEAtre (secondes)", type: "int", default: 3600 },
-          { name: "bloquer", label: "Arr\xEAter en erreur si d\xE9pass\xE9", type: "bool" }
-        ],
-        run: async (p) => {
-          const n = await kv.incr(`dzf:rl:${p.cle}:${Math.floor(Date.now() / 1e3 / (+p.fenetre || 3600))}`, +p.fenetre || 3600);
-          const ok = n <= (+p.max || 60);
-          if (!ok && p.bloquer) throw new Error(`limite atteinte (${n}/${p.max})`);
-          return { autorise: ok, compte: n };
-        }
-      },
-      {
-        name: "dzf_redis",
-        label: "Redis : commande",
-        category: "Contr\xF4le",
-        icon: "fas fa-server",
-        output: "redis",
-        description: "Parle directement \xE0 ton Redis (REDIS_URL) : GET, SET, INCR, LPUSH/RPOP pour faire une file d'attente, PUBLISH\u2026",
-        params: [
-          { name: "commande", label: "Commande", type: "select", options: ["GET", "SET", "DEL", "INCR", "EXPIRE", "LPUSH", "RPOP", "LLEN", "PUBLISH"], default: "GET" },
-          { name: "cle", label: "Cl\xE9 (ou canal)", required: true },
-          { name: "valeur", label: "Valeur" },
-          { name: "ttl", label: "Expiration (secondes, pour SET)", type: "int" }
-        ],
-        run: async (p) => {
-          if (!redis.available()) throw new Error("REDIS_URL n'est pas d\xE9fini sur le serveur");
-          const v = p.valeur === void 0 ? "" : typeof p.valeur === "string" ? p.valeur : JSON.stringify(p.valeur);
-          const args = { GET: [p.cle], DEL: [p.cle], INCR: [p.cle], LLEN: [p.cle], RPOP: [p.cle], EXPIRE: [p.cle, String(+p.ttl || 60)], LPUSH: [p.cle, v], PUBLISH: [p.cle, v], SET: p.ttl ? [p.cle, v, "EX", String(+p.ttl)] : [p.cle, v] }[p.commande];
-          const r = await redis.cmd([p.commande, ...args]);
-          if (typeof r === "string") {
-            try {
-              return JSON.parse(r);
-            } catch (e) {
-              return r;
-            }
-          }
-          return r;
-        }
-      },
-      {
-        name: "dzf_journal",
-        label: "\xC9crire dans le journal",
-        category: "Contr\xF4le",
-        icon: "fas fa-clipboard-list",
-        output: "journal",
-        description: "Laisse une trace lisible dans le journal de dysizz-flow (page Journal).",
-        params: [{ name: "message", label: "Message", type: "text", required: true }, { name: "erreur", label: "C'est une erreur", type: "bool" }],
-        run: async (p) => {
-          const { journal } = await ensureTables();
-          await journal.insertRow({ quand: /* @__PURE__ */ new Date(), bloc: "journal", ok: !p.erreur, duree_ms: 0, message: String(p.message).slice(0, 1e3) });
-          return true;
-        }
-      },
-      {
-        name: "dzf_code",
-        label: "Code JavaScript",
-        category: "Contr\xF4le",
-        icon: "fas fa-terminal",
-        output: "code",
-        timeout: 60,
-        description: "Ton propre code, ex\xE9cut\xE9 dans le bac \xE0 sable de Saltcorn (Table, fetch, User, Notification\u2026 disponibles). Le contexte est dans \xAB row \xBB ; ce que tu renvoies va dans la sortie.",
-        params: [{ name: "code", label: "Code", type: "code", required: true, raw: true, default: "// row = le contexte du workflow\nconst n = (row.lignes || []).length;\nreturn { nombre: n };" }],
-        run: async (p, ctx, api) => {
-          const { getState } = require("@saltcorn/data/db/state");
-          const js = getState().actions.run_js_code;
-          return js.run({ configuration: { code: p.code, run_where: "Server" }, row: ctx, user: api.user, req: api.req, mode: "workflow" });
-        }
-      }
-    ];
-    module2.exports.kv = kv;
-  }
-});
-
 // src/blocks/surveillance_plus.js
 var require_surveillance_plus = __commonJS({
   "src/blocks/surveillance_plus.js"(exports2, module2) {
@@ -101817,7 +102521,7 @@ var require_surveillance_plus = __commonJS({
     var { getPath, deep } = require_engine();
     var { plain } = require_core();
     var now = () => Number(process.hrtime.bigint() / 1000000n);
-    var kv = () => require_controle2().kv;
+    var kv = () => require_controle().kv;
     var fetchT = async (url, opt = {}, ms = 15e3) => {
       const ctl = new AbortController();
       const t = setTimeout(() => ctl.abort(), ms);
@@ -102157,7 +102861,7 @@ var require_observabilite = __commonJS({
           { name: "silence_min", label: "Ne pas r\xE9p\xE9ter avant (minutes)", type: "int", default: 30 }
         ],
         run: async (p) => {
-          const { kv } = require_controle2();
+          const { kv } = require_controle();
           const k = `dzf:alerte:${p.cle}`;
           const prev = await kv.get(k);
           const now = Date.now();
@@ -102607,623 +103311,6 @@ var require_taches2 = __commonJS({
   }
 });
 
-// src/blocks/extras.js
-var require_extras = __commonJS({
-  "src/blocks/extras.js"(exports2, module2) {
-    "use strict";
-    var crypto = require("crypto");
-    var { asList, getPath, sanitize } = require_engine();
-    var { plain, safeUrl } = require_core();
-    var need = async (api, name) => {
-      const v = await api.secret(name);
-      if (!v) throw Object.assign(new Error(`secret ${name} introuvable (variable d'environnement ou coffre)`), { permanent: true });
-      return v;
-    };
-    var post = async (url, body, headers = {}) => {
-      const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json", ...headers }, body: JSON.stringify(body) });
-      const t = await r.text();
-      if (!r.ok) throw new Error(`HTTP ${r.status} ${t.slice(0, 200)}`);
-      try {
-        return JSON.parse(t);
-      } catch (e) {
-        return t;
-      }
-    };
-    var kv = () => require_controle2().kv;
-    var donnees = [
-      {
-        name: "dzf_table_obtenir",
-        label: "Table : obtenir une ligne",
-        category: "Donn\xE9es",
-        icon: "fas fa-crosshairs",
-        output: "ligne",
-        description: "Lit une seule ligne par son id ou par un filtre (la premi\xE8re trouv\xE9e). Renvoie null si rien.",
-        params: [{ name: "table", label: "Table", type: "table", required: true }, { name: "id", label: "Id (sinon filtre)" }, { name: "filtre", label: "Filtre (JSON)", type: "json" }],
-        run: async (p, ctx, api) => {
-          const t = api.Table.findOne({ name: p.table });
-          if (!t) throw Object.assign(new Error(`table \xAB ${p.table} \xBB introuvable`), { permanent: true });
-          if (api.user && api.user.role_id > t.min_role_read) throw new Error("lecture refus\xE9e pour ton r\xF4le");
-          return sanitize(await t.getRow(p.id ? { id: +p.id } : p.filtre || {}) || null);
-        }
-      },
-      {
-        name: "dzf_table_grouper",
-        label: "Table : regrouper (statistiques)",
-        category: "Donn\xE9es",
-        icon: "fas fa-table",
-        output: "groupes",
-        description: "Compte ou additionne par groupe directement dans la base (rapide m\xEAme sur des millions de lignes) : ex. d\xE9penses par cat\xE9gorie, mails par exp\xE9diteur.",
-        params: [
-          { name: "table", label: "Table", type: "table", required: true },
-          { name: "par", label: "Regrouper par (champ)", required: true },
-          { name: "stat", label: "Calcul", type: "select", options: ["compter", "somme", "moyenne", "min", "max"], default: "compter" },
-          { name: "champ", label: "Champ calcul\xE9 (sauf compter)" },
-          { name: "filtre", label: "Filtre (JSON)", type: "json" }
-        ],
-        run: async (p, ctx, api) => {
-          const t = api.Table.findOne({ name: p.table });
-          if (!t) throw Object.assign(new Error(`table \xAB ${p.table} \xBB introuvable`), { permanent: true });
-          if (api.user && api.user.role_id > t.min_role_read) throw new Error("lecture refus\xE9e pour ton r\xF4le");
-          const agg = { compter: "Count", somme: "Sum", moyenne: "Avg", min: "Min", max: "Max" }[p.stat || "compter"];
-          const rows = await t.aggregationQuery({ valeur: { field: p.stat === "compter" || !p.champ ? "id" : p.champ, aggregate: agg } }, { where: p.filtre || {}, groupBy: p.par });
-          return (rows || []).map((r) => ({ groupe: r[p.par], valeur: Number(r.valeur) })).sort((a, b) => b.valeur - a.valeur);
-        }
-      },
-      {
-        name: "dzf_sql_lecture",
-        label: "SQL : requ\xEAte en lecture seule",
-        category: "Donn\xE9es",
-        icon: "fas fa-terminal",
-        output: "lignes",
-        timeout: 60,
-        description: "Ex\xE9cute une requ\xEAte SELECT sur la base du tenant (jointures, fen\xEAtres, CTE\u2026). Refuse tout ce qui \xE9crit, limite le temps d'ex\xE9cution. R\xE9serv\xE9 aux admins. Param\xE8tres : $1, $2\u2026",
-        params: [
-          { name: "requete", label: "Requ\xEAte SQL", type: "code", required: true, raw: true, default: "select statut, count(*) as n from taches group by statut" },
-          { name: "parametres", label: "Param\xE8tres (JSON liste)", type: "json", help: '["{{id}}"] pour $1' },
-          { name: "limite", label: "Lignes max", type: "int", default: 1e3 },
-          { name: "delai_s", label: "Temps max (secondes)", type: "int", default: 15 }
-        ],
-        run: async (p, ctx, api) => {
-          if (api.user && api.user.role_id !== 1) throw Object.assign(new Error("r\xE9serv\xE9 aux administrateurs"), { permanent: true });
-          const sql = String(p.requete).trim().replace(/;\s*$/, "");
-          if (!/^(select|with)\b/i.test(sql) || /;/.test(sql) || /\b(insert|update|delete|drop|alter|create|truncate|grant|revoke|copy|vacuum|call|do)\b/i.test(sql.replace(/'[^']*'/g, ""))) throw Object.assign(new Error("seulement une requ\xEAte SELECT (ou WITH \u2026 SELECT), sans point-virgule"), { permanent: true });
-          const refus = await require_garde().refusSql(sql);
-          if (refus) throw Object.assign(new Error(refus), { permanent: true });
-          const db = require("@saltcorn/data/db");
-          const params = Array.isArray(p.parametres) ? p.parametres : [];
-          if (db.isSQLite) return sanitize((await db.query(`${sql} limit ${+p.limite || 1e3}`, params)).rows);
-          const client = await db.getClient();
-          try {
-            await client.query("begin read only");
-            await client.query(`set local statement_timeout = ${Math.max(1, Math.min(120, +p.delai_s || 15)) * 1e3}`);
-            await client.query(`set local search_path to "${db.getTenantSchema()}"`);
-            const r = await client.query(`select * from (${sql}) as q limit ${Math.max(1, Math.min(1e5, +p.limite || 1e3))}`, params);
-            await client.query("commit");
-            return sanitize(r.rows);
-          } catch (e) {
-            await client.query("rollback").catch(() => {
-            });
-            throw e;
-          } finally {
-            client.release();
-          }
-        }
-      },
-      {
-        name: "dzf_ecriture_controler",
-        label: "Table : contr\xF4ler une \xE9criture (\xE9v\xE9nement Validate)",
-        category: "Donn\xE9es",
-        icon: "fas fa-user-shield",
-        description: "\xC0 brancher sur l'\xE9v\xE9nement \xAB Validate \xBB d'une table : refuse l'\xE9criture si une condition est vraie (ex. \xE9crire sur le ticket d'un autre) et recopie des valeurs d'une ligne li\xE9e (ex. le demandeur du ticket sur le message). V\xE9rifi\xE9 par le serveur, quel que soit le formulaire ou l'API.",
-        params: [
-          { name: "lien", label: "Ligne li\xE9e (facultatif)", type: "json", default: "{}", raw: true, help: `{"champ":"ticket","table":"ticket"} : la ligne de \xAB ticket \xBB dont l'id est dans le champ ticket, lue sous le nom liee` },
-          { name: "refuser_si", label: "Refuser si (expression)", raw: true, help: "Ex. user.role_id > 1 && (!liee || liee.demandeur !== user.id). Variables : row (la ligne \xE9crite), liee, user." },
-          { name: "message", label: "Message de refus", default: "\xC9criture refus\xE9e" },
-          { name: "recopier", label: "Recopier (JSON)", type: "json", default: "{}", raw: true, help: '{"demandeur":"demandeur"} : champ de la ligne \u2190 champ de la ligne li\xE9e' }
-        ],
-        run: async (p, ctx, api) => {
-          const { compiler } = require_garde();
-          const row = { ...ctx };
-          delete row.user;
-          const user = ctx.user || api.user || { role_id: 100 };
-          let liee = null;
-          const lien = typeof p.lien === "string" ? JSON.parse(p.lien || "{}") : p.lien || {};
-          if (lien.table && lien.champ) {
-            const t = api.Table.findOne({ name: lien.table });
-            if (!t) throw Object.assign(new Error(`table \xAB ${lien.table} \xBB introuvable`), { permanent: true });
-            const id = row[lien.champ];
-            liee = id === void 0 || id === null || id === "" ? null : await t.getRow({ [lien.cle || "id"]: typeof id === "object" ? id.id : id }) || null;
-          }
-          if (p.refuser_si && compiler(p.refuser_si, ["row", "liee", "user"])(row, liee, { id: user.id, role_id: user.role_id, email: user.email }))
-            return { __saltcorn: true, error: String(p.message || "\xC9criture refus\xE9e") };
-          const rec = typeof p.recopier === "string" ? JSON.parse(p.recopier || "{}") : p.recopier || {};
-          const set_fields = {};
-          if (liee) for (const [a, b] of Object.entries(rec)) set_fields[a] = liee[b];
-          return Object.keys(set_fields).length ? { __saltcorn: true, set_fields } : { __saltcorn: true };
-        }
-      },
-      {
-        name: "dzf_table_structure",
-        label: "Table : cr\xE9er ou compl\xE9ter",
-        category: "Donn\xE9es",
-        icon: "fas fa-table",
-        output: "structure",
-        timeout: 60,
-        description: "Cr\xE9e une table si elle n'existe pas, et ajoute les champs qui manquent (texte, nombre, date, oui/non, JSON, lien vers une autre table, liste de choix), avec les droits et des index. Ne supprime ni ne modifie jamais rien : on peut le relancer sans risque. Pour qu'une solution installe ses propres tables.",
-        params: [
-          { name: "table", label: "Nom de la table", required: true, help: "minuscules, chiffres et _ (ex. demandes_clients)" },
-          { name: "description", label: "Description" },
-          { name: "lecture", label: "Lisible \xE0 partir du r\xF4le", type: "select", options: ["1", "40", "80", "100"], default: "40", help: "1 admin, 40 staff, 80 utilisateur, 100 public" },
-          { name: "ecriture", label: "Modifiable \xE0 partir du r\xF4le", type: "select", options: ["1", "40", "80", "100"], default: "40" },
-          { name: "champs", label: "Champs (JSON)", type: "json", required: true, help: '[{"nom":"titre","type":"String","obligatoire":true},{"nom":"montant","type":"Float"},{"nom":"client","lien":"clients"},{"nom":"etat","type":"String","options":"ouvert,ferm\xE9"}]' },
-          { name: "index", label: "Champs \xE0 indexer", help: "ex. client, cree_le" }
-        ],
-        run: async (p) => {
-          const champs = typeof p.champs === "string" ? JSON.parse(p.champs) : p.champs;
-          if (!Array.isArray(champs)) throw Object.assign(new Error("Champs : il faut une liste JSON"), { permanent: true });
-          const r = await require_structure().assurer({ nom: p.table, description: p.description, lecture: +p.lecture || 40, ecriture: +p.ecriture || 40, champs, index: String(p.index || "").split(/[\s,;]+/).filter(Boolean) });
-          return { table: r.table, creee: r.creee, champs_ajoutes: r.champs_ajoutes };
-        }
-      },
-      {
-        name: "dzf_table_lecture",
-        label: "Table : tenir \xE0 jour une table de lecture",
-        category: "Donn\xE9es",
-        icon: "fas fa-layer-group",
-        output: "lecture",
-        timeout: 120,
-        description: "Recalcule une table \xE0 partir d'une requ\xEAte SELECT (jointures, derni\xE8res valeurs, regroupements) et n'\xE9crit que les lignes qui ont chang\xE9. Les pages lisent ensuite cette table, vite et sans calcul dans le navigateur. R\xE9serv\xE9 aux admins.",
-        params: [
-          { name: "table", label: "Table \xE0 tenir \xE0 jour", type: "table", required: true },
-          { name: "cle", label: "Colonne cl\xE9 (unique)", default: "id" },
-          { name: "requete", label: "Requ\xEAte SELECT", type: "code", required: true, raw: true, help: "Ses colonnes portent les noms des champs de la table ; les autres sont ignor\xE9es." },
-          { name: "cles", label: "Seulement ces cl\xE9s (facultatif)", help: "Liste ou texte s\xE9par\xE9 par des virgules. Vide = tout recalculer. Si la requ\xEAte contient $1, elle re\xE7oit cette liste (ou null = tout) pour ne lire que ce qui est utile : gros volumes." },
-          { name: "supprimer", label: "Retirer les lignes absentes du r\xE9sultat (calcul complet)", type: "bool", default: true },
-          { name: "delai_s", label: "Temps max (secondes)", type: "int", default: 30 }
-        ],
-        run: async (p, ctx, api) => {
-          if (api.user && api.user.role_id !== 1) throw Object.assign(new Error("r\xE9serv\xE9 aux administrateurs"), { permanent: true });
-          const db = require("@saltcorn/data/db");
-          if (db.isSQLite) throw Object.assign(new Error("PostgreSQL requis"), { permanent: true });
-          if (Array.isArray(p.cles) && !p.cles.length) return { lignes: 0, ecrites: 0, retirees: 0, rien: true };
-          const job = preparerLecture(p, api);
-          const refus = await require_garde().refusSql(job.sql);
-          if (refus) throw Object.assign(new Error(refus), { permanent: true });
-          return tenirLecture(job);
-        }
-      }
-    ];
-    var IDENT = /^[a-z_][a-z0-9_]{0,62}$/i;
-    var preparerLecture = (p, api) => {
-      const sql = String(p.requete || "").trim().replace(/;\s*$/, "");
-      const nu = sql.replace(/--[^\n]*/g, " ").replace(/\/\*[\s\S]*?\*\//g, " ").trim();
-      if (!/^(select|with)\b/i.test(nu) || /;/.test(nu.replace(/'[^']*'/g, "")) || /\b(insert|update|delete|drop|alter|create|truncate|grant|revoke|copy|vacuum|call|do)\b/i.test(nu.replace(/'[^']*'/g, ""))) throw Object.assign(new Error("seulement une requ\xEAte SELECT (ou WITH \u2026 SELECT), sans point-virgule"), { permanent: true });
-      const t = api.Table.findOne({ name: p.table });
-      if (!t || t.external || t.provider_name) throw Object.assign(new Error(`table \xAB ${p.table} \xBB introuvable`), { permanent: true });
-      const champs = t.getFields().map((f) => f.name).filter((c) => IDENT.test(c));
-      const cle = String(p.cle || "id");
-      if (!champs.includes(cle)) throw Object.assign(new Error(`colonne cl\xE9 \xAB ${cle} \xBB absente de la table`), { permanent: true });
-      let cles = p.cles;
-      if (typeof cles === "string") cles = cles.split(",").map((s) => s.trim()).filter(Boolean);
-      if (cles != null && !Array.isArray(cles)) cles = [cles];
-      cles = cles && cles.length ? cles.slice(0, 5e3).map(String) : null;
-      return { sql, table: t.name, champs, cle, cles, parametre: /\$1\b/.test(sql), supprimer: p.supprimer !== false && !cles, delai: Math.max(1, Math.min(300, +p.delai_s || 30)) };
-    };
-    var tenirLecture = async (job) => {
-      const db = require("@saltcorn/data/db");
-      const schema = db.getTenantSchema();
-      const q = (s) => `"${s}"`;
-      const T = `${q(schema)}.${q(job.table)}`;
-      const t0 = Date.now();
-      const client = await db.getClient();
-      try {
-        await client.query("begin read only");
-        await client.query(`set local statement_timeout = ${job.delai * 1e3}`);
-        await client.query(`set local search_path to ${q(schema)}`);
-        const r = job.parametre ? await client.query(`select * from (${job.sql}) as q`, [job.cles]) : await client.query(`select * from (${job.sql}) as q${job.cles ? ` where q.${q(job.cle)}::text = any($1)` : ""}`, job.cles ? [job.cles] : []);
-        await client.query("commit");
-        const cols = job.champs.filter((c) => r.fields.some((f) => f.name === c));
-        if (!cols.includes(job.cle)) throw Object.assign(new Error(`la requ\xEAte doit renvoyer la colonne \xAB ${job.cle} \xBB`), { permanent: true });
-        const autres = cols.filter((c) => c !== job.cle && c !== "id");
-        const lignes = r.rows.map((x) => Object.fromEntries(cols.map((c) => [c, x[c] === void 0 ? null : x[c]])));
-        await client.query("begin");
-        await client.query(`set local statement_timeout = ${job.delai * 1e3}`);
-        const ins = cols.filter((c) => c !== "id" || job.cle === "id");
-        const up = await client.query(`insert into ${T} (${ins.map(q).join(",")}) select ${ins.map(q).join(",")} from json_populate_recordset(null::${T}, $1::json)
-      on conflict (${q(job.cle)}) do update set ${autres.map((c) => `${q(c)} = excluded.${q(c)}`).join(",") || `${q(job.cle)} = excluded.${q(job.cle)}`}
-      where (${autres.map((c) => `${T}.${q(c)}`).join(",") || "1"}) is distinct from (${autres.map((c) => `excluded.${q(c)}`).join(",") || "1"})`, [JSON.stringify(lignes)]);
-        let retirees = 0;
-        if (job.supprimer) retirees = (await client.query(`delete from ${T} where not (${q(job.cle)}::text = any($1))`, [lignes.map((x) => String(x[job.cle]))])).rowCount;
-        await client.query("commit");
-        return { lignes: lignes.length, ecrites: up.rowCount, retirees, ms: Date.now() - t0 };
-      } catch (e) {
-        await client.query("rollback").catch(() => {
-        });
-        if (/no unique or exclusion constraint/i.test(e.message)) throw Object.assign(new Error(`la colonne \xAB ${job.cle} \xBB doit \xEAtre unique (case \xAB Unique \xBB du champ dans Saltcorn)`), { permanent: true });
-        throw e;
-      } finally {
-        client.release();
-      }
-    };
-    var reseau = [
-      {
-        name: "dzf_graphql",
-        label: "API : requ\xEAte GraphQL",
-        category: "R\xE9seau",
-        icon: "fas fa-project-diagram",
-        output: "graphql",
-        timeout: 60,
-        description: "Envoie une requ\xEAte GraphQL (GitHub, Shopify, Hasura, Strapi\u2026) avec ses variables et un jeton lu dans les secrets.",
-        params: [
-          { name: "url", label: "Adresse", required: true },
-          { name: "requete", label: "Requ\xEAte", type: "code", required: true, raw: true },
-          { name: "variables", label: "Variables (JSON)", type: "json" },
-          { name: "secret_jeton", label: "Nom du secret du jeton (Bearer)" }
-        ],
-        run: async (p, ctx, api) => {
-          const j = await post(p.url, { query: p.requete, variables: p.variables || {} }, p.secret_jeton ? { Authorization: `Bearer ${await need(api, p.secret_jeton)}` } : {});
-          if (j.errors && j.errors.length) throw new Error(j.errors.map((e) => e.message).join(" \xB7 ").slice(0, 400));
-          return j.data;
-        }
-      },
-      {
-        name: "dzf_telecharger",
-        label: "API : t\xE9l\xE9charger un fichier",
-        category: "R\xE9seau",
-        icon: "fas fa-cloud-download-alt",
-        output: "fichier",
-        timeout: 180,
-        description: "T\xE9l\xE9charge un fichier (PDF, image, export\u2026) depuis une adresse et l'enregistre dans les fichiers Saltcorn (local ou S3). Taille limit\xE9e.",
-        params: [
-          { name: "url", label: "Adresse", required: true },
-          { name: "nom", label: "Nom du fichier (facultatif)" },
-          { name: "dossier", label: "Dossier", default: "/telechargements" },
-          { name: "max_mo", label: "Taille max (Mo)", type: "int", default: 25 },
-          { name: "secret_jeton", label: "Nom du secret du jeton (facultatif)" }
-        ],
-        run: async (p, ctx, api) => {
-          const r = await fetch(p.url, { headers: p.secret_jeton ? { Authorization: `Bearer ${await need(api, p.secret_jeton)}` } : {} });
-          if (!r.ok) throw new Error(`HTTP ${r.status}`);
-          const len = +r.headers.get("content-length") || 0;
-          const max = (+p.max_mo || 25) * 1048576;
-          if (len > max) throw Object.assign(new Error(`fichier trop gros (${Math.round(len / 1048576)} Mo)`), { permanent: true });
-          const buf = Buffer.from(await r.arrayBuffer());
-          if (buf.length > max) throw Object.assign(new Error("fichier trop gros"), { permanent: true });
-          const name = String(p.nom || decodeURIComponent(new URL(r.url).pathname.split("/").pop() || "fichier")).replace(/[^\w.\-]+/g, "_").slice(0, 120);
-          const File = require("@saltcorn/data/models/file");
-          const f = await File.from_contents(name, (r.headers.get("content-type") || "application/octet-stream").split(";")[0], buf, api.user ? api.user.id : null, 1, p.dossier || "/");
-          return { chemin: f.path_to_serve || f.location, nom: name, octets: buf.length, type: r.headers.get("content-type") };
-        }
-      },
-      {
-        name: "dzf_webhook_verifier",
-        label: "API : v\xE9rifier la signature d'un webhook",
-        category: "R\xE9seau",
-        icon: "fas fa-stamp",
-        output: "signature",
-        description: "V\xE9rifie qu'un webhook vient bien de l'exp\xE9diteur (GitHub, Stripe, Meta/WhatsApp, Shopify\u2026) gr\xE2ce \xE0 sa signature HMAC, en temps constant.",
-        params: [
-          { name: "corps", label: "Corps brut re\xE7u", required: true, help: "Ex. {{corps_brut}} (fourni par les points d'API dysizz-flow)" },
-          { name: "signature", label: "Signature re\xE7ue", required: true, help: "Ex. {{entetes.x-hub-signature-256}}" },
-          { name: "secret", label: "Nom du secret partag\xE9", required: true },
-          { name: "algo", label: "Algorithme", type: "select", options: ["sha256", "sha1", "sha512"], default: "sha256" },
-          { name: "format", label: "Format", type: "select", options: ["hex (avec ou sans \xAB sha256= \xBB)", "base64", "stripe (t=\u2026,v1=\u2026)"], default: "hex (avec ou sans \xAB sha256= \xBB)" }
-        ],
-        run: async (p, ctx, api) => {
-          const key = await need(api, p.secret);
-          const body = typeof p.corps === "string" ? p.corps : JSON.stringify(p.corps);
-          let expected, got = String(p.signature || "");
-          if (p.format.startsWith("stripe")) {
-            const parts = Object.fromEntries(got.split(",").map((x) => x.split("=")));
-            expected = crypto.createHmac("sha256", key).update(`${parts.t}.${body}`).digest("hex");
-            got = parts.v1 || "";
-            if (Math.abs(Date.now() / 1e3 - +parts.t) > 300) return { valide: false, raison: "trop ancien" };
-          } else {
-            expected = crypto.createHmac(p.algo, key).update(body).digest(p.format === "base64" ? "base64" : "hex");
-            got = got.replace(/^sha\d+=/, "");
-          }
-          const ok = expected.length === got.length && crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(got));
-          return { valide: ok, raison: ok ? "" : "signature diff\xE9rente" };
-        }
-      },
-      {
-        name: "dzf_page_web",
-        label: "Web : lire une page",
-        category: "R\xE9seau",
-        icon: "fas fa-file-alt",
-        output: "page",
-        timeout: 60,
-        description: "R\xE9cup\xE8re une page web et en extrait le titre, la description, le texte, les liens, les images et les m\xE9ta Open Graph. Respecte les sites : un seul appel, pas d'exploration.",
-        params: [{ name: "url", label: "Adresse", required: true }, { name: "max_texte", label: "Longueur max du texte", type: "int", default: 2e4 }, { name: "liens", label: "Garder les liens", type: "bool", default: true }],
-        run: async (p) => {
-          const r = await fetch(p.url, { headers: { "User-Agent": "Mozilla/5.0 (compatible; dysizz-flow)", Accept: "text/html" }, redirect: "follow" });
-          if (!r.ok) throw new Error(`HTTP ${r.status}`);
-          const html = (await r.text()).slice(0, 3e6);
-          const meta = (n) => {
-            const m = new RegExp(`<meta[^>]+(?:name|property)=["']${n}["'][^>]*content=["']([^"']*)["']`, "i").exec(html) || new RegExp(`<meta[^>]+content=["']([^"']*)["'][^>]*(?:name|property)=["']${n}["']`, "i").exec(html);
-            return m ? plain(m[1]) : "";
-          };
-          const base = r.url;
-          const abs = (u) => {
-            try {
-              return new URL(u, base).href;
-            } catch (e) {
-              return "";
-            }
-          };
-          const links = p.liens === false ? [] : [...html.matchAll(/<a[^>]+href=["']([^"'#]+)["'][^>]*>([\s\S]*?)<\/a>/gi)].slice(0, 500).map((m) => ({ url: safeUrl(abs(m[1])), texte: plain(m[2], 120) })).filter((l) => l.url);
-          return {
-            url: base,
-            statut: r.status,
-            titre: plain((/<title[^>]*>([\s\S]*?)<\/title>/i.exec(html) || [])[1] || "", 300),
-            description: meta("description") || meta("og:description"),
-            image: safeUrl(abs(meta("og:image"))),
-            langue: (/<html[^>]+lang=["']([^"']+)/i.exec(html) || [])[1] || "",
-            texte: plain(html.replace(/<(nav|footer|header|aside)[\s\S]*?<\/\1>/gi, " "), +p.max_texte || 2e4),
-            liens: links
-          };
-        }
-      }
-    ];
-    var messagerie = [
-      {
-        name: "dzf_slack",
-        label: "Slack : envoyer un message",
-        category: "Messagerie",
-        icon: "fab fa-slack",
-        output: "slack",
-        description: "Envoie un message dans un canal Slack via un webhook entrant (l'adresse du webhook est un secret).",
-        params: [{ name: "secret_webhook", label: "Nom du secret du webhook", default: "SLACK_WEBHOOK_URL" }, { name: "texte", label: "Texte (Markdown Slack)", type: "text", required: true }],
-        run: async (p, ctx, api) => {
-          await post(await need(api, p.secret_webhook), { text: String(p.texte).slice(0, 39e3) });
-          return true;
-        }
-      },
-      {
-        name: "dzf_discord",
-        label: "Discord : envoyer un message",
-        category: "Messagerie",
-        icon: "fab fa-discord",
-        output: "discord",
-        description: "Envoie un message dans un salon Discord via un webhook.",
-        params: [{ name: "secret_webhook", label: "Nom du secret du webhook", default: "DISCORD_WEBHOOK_URL" }, { name: "texte", label: "Texte", type: "text", required: true }, { name: "nom", label: "Nom affich\xE9", default: "dysizz" }],
-        run: async (p, ctx, api) => {
-          await post(await need(api, p.secret_webhook), { content: String(p.texte).slice(0, 2e3), username: p.nom || "dysizz" });
-          return true;
-        }
-      },
-      {
-        name: "dzf_teams",
-        label: "Teams : envoyer un message",
-        category: "Messagerie",
-        icon: "fab fa-microsoft",
-        output: "teams",
-        description: "Envoie un message dans un canal Microsoft Teams (workflow \xAB Post to a channel when a webhook request is received \xBB).",
-        params: [{ name: "secret_webhook", label: "Nom du secret du webhook", default: "TEAMS_WEBHOOK_URL" }, { name: "titre", label: "Titre" }, { name: "texte", label: "Texte", type: "text", required: true }],
-        run: async (p, ctx, api) => {
-          await post(await need(api, p.secret_webhook), { type: "message", attachments: [{ contentType: "application/vnd.microsoft.card.adaptive", content: { type: "AdaptiveCard", version: "1.4", body: [...p.titre ? [{ type: "TextBlock", size: "Medium", weight: "Bolder", text: p.titre }] : [], { type: "TextBlock", text: String(p.texte), wrap: true }] } }] });
-          return true;
-        }
-      },
-      {
-        name: "dzf_ntfy",
-        label: "Push mobile (ntfy)",
-        category: "Messagerie",
-        icon: "fas fa-mobile-alt",
-        output: "push",
-        description: "Notification instantan\xE9e sur ton t\xE9l\xE9phone avec ntfy (appli gratuite Android/iOS, serveur public ou auto-h\xE9berg\xE9). Priorit\xE9, \xE9tiquettes et lien au clic.",
-        params: [
-          { name: "serveur", label: "Serveur", default: "https://ntfy.sh" },
-          { name: "sujet", label: "Sujet (topic)", required: true, help: "Choisis un nom long et difficile \xE0 deviner" },
-          { name: "titre", label: "Titre" },
-          { name: "texte", label: "Texte", type: "text", required: true },
-          { name: "priorite", label: "Priorit\xE9", type: "select", options: ["min", "low", "default", "high", "urgent"], default: "default" },
-          { name: "etiquettes", label: "\xC9tiquettes (emoji ntfy)", help: "Ex. warning,computer" },
-          { name: "lien", label: "Lien au clic" },
-          { name: "secret_jeton", label: "Nom du secret du jeton (serveur priv\xE9)" }
-        ],
-        run: async (p, ctx, api) => {
-          const h = { Priority: p.priorite || "default" };
-          if (p.titre) h.Title = encodeURIComponent(p.titre).length === p.titre.length ? p.titre : `=?UTF-8?B?${Buffer.from(p.titre).toString("base64")}?=`;
-          if (p.etiquettes) h.Tags = p.etiquettes;
-          if (p.lien) h.Click = p.lien;
-          if (p.secret_jeton) h.Authorization = `Bearer ${await need(api, p.secret_jeton)}`;
-          const r = await fetch(`${String(p.serveur).replace(/\/$/, "")}/${encodeURIComponent(p.sujet)}`, { method: "POST", headers: h, body: String(p.texte).slice(0, 4e3) });
-          if (!r.ok) throw new Error(`ntfy : HTTP ${r.status}`);
-          return (await r.json().catch(() => ({}))).id || true;
-        }
-      },
-      {
-        name: "dzf_sms",
-        label: "SMS : envoyer (Twilio)",
-        category: "Messagerie",
-        icon: "fas fa-sms",
-        output: "sms",
-        description: "Envoie un SMS avec Twilio (compte et num\xE9ro d'envoi \xE0 cr\xE9er chez Twilio).",
-        params: [
-          { name: "secret_sid", label: "Nom du secret du Account SID", default: "TWILIO_SID" },
-          { name: "secret_jeton", label: "Nom du secret de l'Auth Token", default: "TWILIO_TOKEN" },
-          { name: "de", label: "Num\xE9ro d'envoi (Twilio)", required: true },
-          { name: "a", label: "Destinataire (+33\u2026)", required: true },
-          { name: "texte", label: "Texte", type: "text", required: true }
-        ],
-        run: async (p, ctx, api) => {
-          const sid = await need(api, p.secret_sid), tok = await need(api, p.secret_jeton);
-          const r = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, { method: "POST", headers: { Authorization: `Basic ${Buffer.from(`${sid}:${tok}`).toString("base64")}`, "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ From: p.de, To: p.a, Body: String(p.texte).slice(0, 1600) }) });
-          const j = await r.json();
-          if (!r.ok) throw new Error(j.message || `HTTP ${r.status}`);
-          return j.sid;
-        }
-      }
-    ];
-    var CONN = [
-      { name: "url_base", label: "Adresse de l'API (compatible OpenAI)", default: "http://ollama:11434/v1" },
-      { name: "modele", label: "Mod\xE8le", default: "llama3.1", required: true },
-      { name: "variable_cle", label: "Nom du secret de la cl\xE9 (si besoin)" }
-    ];
-    var chat = async (p, api, messages, json) => {
-      const headers = { "Content-Type": "application/json" };
-      if (p.variable_cle) headers.Authorization = `Bearer ${await need(api, p.variable_cle)}`;
-      const j = await post(`${String(p.url_base).replace(/\/$/, "")}/chat/completions`, { model: p.modele, messages, temperature: 0, ...json ? { response_format: { type: "json_object" } } : {} }, headers);
-      const txt = (((j.choices || [])[0] || {}).message || {}).content || "";
-      if (!json) return txt.trim();
-      try {
-        return JSON.parse(txt.replace(/^```(json)?|```$/g, "").trim());
-      } catch (e) {
-        throw new Error("le mod\xE8le n'a pas renvoy\xE9 du JSON valide");
-      }
-    };
-    var ia = [
-      {
-        name: "dzf_ia_extraire",
-        label: "IA : extraire des informations",
-        category: "IA",
-        icon: "fas fa-highlighter",
-        output: "extrait",
-        timeout: 180,
-        description: "Transforme un texte libre (mail, facture, CV, annonce) en donn\xE9es structur\xE9es : tu donnes les champs voulus, l'IA les remplit (null si absent).",
-        params: [
-          ...CONN,
-          { name: "texte", label: "Texte", required: true, type: "text" },
-          { name: "champs", label: "Champs \xE0 extraire", required: true, help: "Ex. montant (nombre), date (AAAA-MM-JJ), fournisseur, numero_facture" }
-        ],
-        run: async (p, ctx, api) => chat(p, api, [{ role: "system", content: `Extrais du texte ces champs et r\xE9ponds uniquement en JSON avec exactement ces cl\xE9s : ${p.champs}. Mets null si l'information n'est pas dans le texte. N'invente rien.` }, { role: "user", content: String(p.texte).slice(0, 24e3) }], true)
-      },
-      {
-        name: "dzf_ia_traduire",
-        label: "IA : traduire",
-        category: "IA",
-        icon: "fas fa-language",
-        output: "traduction",
-        timeout: 180,
-        description: "Traduit un texte dans la langue voulue en gardant la mise en forme.",
-        params: [...CONN, { name: "texte", label: "Texte", required: true, type: "text" }, { name: "langue", label: "Vers la langue", default: "fran\xE7ais" }],
-        run: async (p, ctx, api) => chat(p, api, [{ role: "system", content: `Traduis en ${p.langue}. Garde la mise en forme. R\xE9ponds seulement avec la traduction.` }, { role: "user", content: String(p.texte).slice(0, 24e3) }], false)
-      },
-      {
-        name: "dzf_ia_vecteur",
-        label: "IA : vecteur (embedding)",
-        category: "IA",
-        icon: "fas fa-vector-square",
-        output: "vecteur",
-        timeout: 120,
-        description: "Calcule le vecteur d'un texte (ou d'une liste de textes) pour la recherche par le sens. Ex. nomic-embed-text avec Ollama.",
-        params: [
-          { name: "url_base", label: "Adresse de l'API", default: "http://ollama:11434/v1" },
-          { name: "modele", label: "Mod\xE8le", default: "nomic-embed-text" },
-          { name: "variable_cle", label: "Nom du secret de la cl\xE9 (si besoin)" },
-          { name: "texte", label: "Texte ou liste", required: true }
-        ],
-        run: async (p, ctx, api) => {
-          const headers = p.variable_cle ? { Authorization: `Bearer ${await need(api, p.variable_cle)}` } : {};
-          const input = Array.isArray(p.texte) ? p.texte.map(String) : String(p.texte);
-          const j = await post(`${String(p.url_base).replace(/\/$/, "")}/embeddings`, { model: p.modele, input }, headers);
-          const v = (j.data || []).map((d) => d.embedding);
-          return Array.isArray(p.texte) ? v : v[0];
-        }
-      },
-      {
-        name: "dzf_similarite",
-        label: "IA : plus proches par le sens",
-        category: "IA",
-        icon: "fas fa-compass",
-        output: "proches",
-        description: "Compare un vecteur \xE0 une liste d'\xE9l\xE9ments qui ont chacun un vecteur (similarit\xE9 cosinus) et renvoie les N plus proches. Base d'une recherche intelligente.",
-        params: [
-          { name: "vecteur", label: "Vecteur cherch\xE9", required: true },
-          { name: "liste", label: "\xC9l\xE9ments", required: true },
-          { name: "champ_vecteur", label: "Champ du vecteur", default: "vecteur" },
-          { name: "n", label: "Combien", type: "int", default: 5 },
-          { name: "seuil", label: "Score minimum (0 \xE0 1)", type: "number", default: 0 }
-        ],
-        run: async (p) => {
-          const q = typeof p.vecteur === "string" ? JSON.parse(p.vecteur) : p.vecteur;
-          const cos = (a, b) => {
-            let d = 0, x = 0, y = 0;
-            for (let i = 0; i < a.length; i++) {
-              d += a[i] * b[i];
-              x += a[i] * a[i];
-              y += b[i] * b[i];
-            }
-            return d / (Math.sqrt(x) * Math.sqrt(y) || 1);
-          };
-          return asList(p.liste).map((it) => {
-            let v = getPath(it, p.champ_vecteur);
-            if (typeof v === "string") v = JSON.parse(v);
-            return { ...it, score: v ? +cos(q, v).toFixed(4) : 0 };
-          }).filter((x) => x.score >= (+p.seuil || 0)).sort((a, b) => b.score - a.score).slice(0, +p.n || 5).map(({ [p.champ_vecteur]: _v, ...rest }) => rest);
-        }
-      }
-    ];
-    var controle = [
-      {
-        name: "dzf_aiguiller",
-        label: "Aiguiller (choisir un chemin)",
-        category: "Contr\xF4le",
-        icon: "fas fa-code-branch",
-        output: "chemin",
-        description: "Renvoie le nom du chemin selon la valeur d'un champ (ex. priorit\xE9 urgente \u2192 \xAB alerte \xBB, normale \u2192 \xAB liste \xBB). \xC0 utiliser dans \xAB \xE9tape suivante \xBB : chemin.",
-        params: [
-          { name: "valeur", label: "Valeur test\xE9e", required: true, help: "Ex. {{priorite}}" },
-          { name: "cas", label: "Cas (JSON)", type: "json", required: true, default: '{"urgente":"alerte","haute":"alerte"}' },
-          { name: "defaut", label: "Sinon", default: "suite" }
-        ],
-        run: async (p) => p.cas && Object.prototype.hasOwnProperty.call(p.cas, String(p.valeur)) ? p.cas[String(p.valeur)] : p.defaut || ""
-      },
-      {
-        name: "dzf_idempotence",
-        label: "D\xE9j\xE0 trait\xE9 ?",
-        category: "Contr\xF4le",
-        icon: "fas fa-redo-alt",
-        output: "deja_traite",
-        description: "Dit si une cl\xE9 a d\xE9j\xE0 \xE9t\xE9 vue r\xE9cemment, puis la note. Pour ne jamais traiter deux fois le m\xEAme \xE9v\xE9nement (webhook re\xE7u en double, relance\u2026).",
-        params: [{ name: "cle", label: "Cl\xE9", required: true, help: "Ex. {{id_evenement}}" }, { name: "duree_h", label: "M\xE9moire (heures)", type: "int", default: 72 }],
-        run: async (p) => {
-          const k = `dzf:vu:${crypto.createHash("sha1").update(String(p.cle)).digest("hex")}`;
-          const seen = await kv().get(k);
-          if (!seen) await kv().set(k, Date.now(), (+p.duree_h || 72) * 3600);
-          return !!seen;
-        }
-      },
-      {
-        name: "dzf_disjoncteur",
-        label: "Disjoncteur",
-        category: "Contr\xF4le",
-        icon: "fas fa-power-off",
-        output: "circuit",
-        description: "Prot\xE8ge un service fragile : apr\xE8s N \xE9checs, on arr\xEAte de l'appeler pendant un moment au lieu d'insister. \xAB v\xE9rifier \xBB avant l'appel (sortie .passe = on peut appeler, .coupe = on attend), \xAB signaler \xBB apr\xE8s.",
-        params: [
-          { name: "action", label: "Action", type: "select", options: ["v\xE9rifier", "signaler un \xE9chec", "signaler un succ\xE8s"], default: "v\xE9rifier" },
-          { name: "nom", label: "Service", required: true, help: "Ex. api-france-travail" },
-          { name: "seuil", label: "\xC9checs avant coupure", type: "int", default: 5 },
-          { name: "pause_min", label: "Coupure (minutes)", type: "int", default: 15 }
-        ],
-        run: async (p) => {
-          const k = `dzf:disj:${p.nom}`;
-          const st = await kv().get(k) || { echecs: 0, jusqu_a: 0 };
-          if (p.action === "signaler un succ\xE8s") {
-            await kv().set(k, { echecs: 0, jusqu_a: 0 }, 86400);
-            return { passe: true, coupe: false };
-          }
-          if (p.action === "signaler un \xE9chec") {
-            st.echecs++;
-            if (st.echecs >= (+p.seuil || 5)) {
-              st.jusqu_a = Date.now() + (+p.pause_min || 15) * 6e4;
-              st.echecs = 0;
-            }
-            await kv().set(k, st, 86400);
-            const passe2 = Date.now() >= st.jusqu_a;
-            return { passe: passe2, coupe: !passe2, echecs: st.echecs };
-          }
-          const passe = Date.now() >= (st.jusqu_a || 0);
-          return { passe, coupe: !passe, reprise: passe ? null : new Date(st.jusqu_a).toISOString() };
-        }
-      }
-    ];
-    module2.exports = [...donnees, ...reseau, ...messagerie, ...ia, ...controle];
-  }
-});
-
 // src/blocks/parcours.js
 var require_parcours = __commonJS({
   "src/blocks/parcours.js"(exports2, module2) {
@@ -103392,7 +103479,7 @@ var require_blocks = __commonJS({
       ...require_observabilite(),
       ...require_taches2(),
       ...require_extras(),
-      ...require_controle2(),
+      ...require_controle(),
       ...require_parcours()
     ];
     var CATEGORIES = ["Donn\xE9es", "Transformer", "R\xE9seau", "Messagerie", "IA", "Documents", "Stockage", "Donn\xE9es externes", "Pratique", "Services", "Blockchain", "DevOps", "OVHcloud", "Leads immobiliers", "Objets connect\xE9s", "S\xE9curit\xE9", "Surveillance", "Logs & m\xE9triques", "T\xE2ches & planification", "Contr\xF4le", "Extensions", "Mes blocs"];
@@ -103953,7 +104040,7 @@ var require_expose = __commonJS({
           return reply(res, 405, { erreur: "m\xE9thode non autoris\xE9e" });
         }
         const lim = +p.limite_minute || 60;
-        const { kv } = require_controle2();
+        const { kv } = require_controle();
         const n = await kv.incr(`dzf:api:${nom}:${clientIp(req)}:${Math.floor(Date.now() / 6e4)}`, 90);
         res.setHeader("X-RateLimit-Limit", String(lim));
         res.setHeader("X-RateLimit-Remaining", String(Math.max(0, lim - n)));
