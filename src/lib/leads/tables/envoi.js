@@ -64,7 +64,8 @@ const messages = async (dossier, resultat) => {
   const vide = (raison) => ({ liste: [], simuler: !R.envoi_mails, raison });
   if (!leadId) return vide("lead non enregistré");
   const cle = (a, quoi = "") => `${require("./schema").prefixe()}lead-${leadId}:${quoi}${a}`;
-  const envoiNormal = d.statut === "pret" || (d.statut === "a_verifier" && R.envoi_a_verifier);
+  const envoiNormal = !!(d.bien && d.bien.id) &&
+    (d.statut === "pret" || (d.statut === "a_verifier" && R.envoi_a_verifier));
   const nonAuto = adresses(R.adresse_non_automatise);
   /* le mail reçu n'est lu que s'il sert (format « origine » ou transfert) */
   const mailRecu = async () => {

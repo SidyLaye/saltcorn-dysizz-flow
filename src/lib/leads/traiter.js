@@ -212,9 +212,10 @@ const etapeContact = async (d, crm, conf = {}) => {
   /* Agence et négociateur (le négociateur du dossier reste celui du bien) */
   const ag = trouverAgence(r, rbBien, conf);
   d.agence = ag.agence ? { id: ag.agence.id, nom: ag.agence.nom, par: ag.par } : null;
-  const negoId = rbBien && rbBien.negociateur_id ? rbBien.negociateur_id : dos && dos.negociateur ? dos.negociateur : ag.agence && ag.agence.negociateur_defaut ? ag.agence.negociateur_defaut : null;
+  const negoId = !rbBien ? null : rbBien.negociateur_id ? rbBien.negociateur_id :
+    dos && dos.negociateur ? dos.negociateur : ag.agence && ag.agence.negociateur_defaut ? ag.agence.negociateur_defaut : null;
   let negoFinal = negoId;
-  if (!negoFinal && r.bien && r.bien.titre) { const p = negociateurCite(r.bien.titre, (conf.routage && conf.routage.personnes) || []); if (p) { negoFinal = p.id; d.alertes.push(`négociateur trouvé par son nom dans le titre : ${p.nom}`); } }
+  if (!negoFinal && rbBien && r.bien && r.bien.titre) { const p = negociateurCite(r.bien.titre, (conf.routage && conf.routage.personnes) || []); if (p) { negoFinal = p.id; d.alertes.push(`négociateur trouvé par son nom dans le titre : ${p.nom}`); } }
   d.negociateur = negoFinal;
   if (!negoFinal) d.motifs.push("aucun négociateur (bien non trouvé et pas de négociateur par défaut pour l'agence)");
 

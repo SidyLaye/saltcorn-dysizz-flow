@@ -1,4 +1,4 @@
-/* dysizz-flow 2.14.6 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.14.7 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.14.6" : "dev";
+    var VERSION2 = true ? "2.14.7" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -95371,9 +95371,9 @@ var require_traiter = __commonJS({
       const rbBien = d.bien;
       const ag = trouverAgence(r, rbBien, conf);
       d.agence = ag.agence ? { id: ag.agence.id, nom: ag.agence.nom, par: ag.par } : null;
-      const negoId = rbBien && rbBien.negociateur_id ? rbBien.negociateur_id : dos && dos.negociateur ? dos.negociateur : ag.agence && ag.agence.negociateur_defaut ? ag.agence.negociateur_defaut : null;
+      const negoId = !rbBien ? null : rbBien.negociateur_id ? rbBien.negociateur_id : dos && dos.negociateur ? dos.negociateur : ag.agence && ag.agence.negociateur_defaut ? ag.agence.negociateur_defaut : null;
       let negoFinal = negoId;
-      if (!negoFinal && r.bien && r.bien.titre) {
+      if (!negoFinal && rbBien && r.bien && r.bien.titre) {
         const p = negociateurCite(r.bien.titre, conf.routage && conf.routage.personnes || []);
         if (p) {
           negoFinal = p.id;
@@ -98189,7 +98189,7 @@ ${a}<div style="padding:18px 24px"><div style="font-size:13px;color:#6b7280;marg
       const vide = (raison) => ({ liste: [], simuler: !R.envoi_mails, raison });
       if (!leadId) return vide("lead non enregistr\xE9");
       const cle = (a2, quoi = "") => `${require_schema().prefixe()}lead-${leadId}:${quoi}${a2}`;
-      const envoiNormal = d.statut === "pret" || d.statut === "a_verifier" && R.envoi_a_verifier;
+      const envoiNormal = !!(d.bien && d.bien.id) && (d.statut === "pret" || d.statut === "a_verifier" && R.envoi_a_verifier);
       const nonAuto = adresses(R.adresse_non_automatise);
       const mailRecu = async () => {
         const id = d.mail_id || res.mail_id;

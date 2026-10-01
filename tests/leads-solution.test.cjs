@@ -41,7 +41,7 @@ const { envoyer, reprendre } = require("../src/lib/envois");
   const d = {
     portail: "Leboncoin", statut: "pret", agence: { nom: "Agence Exemple" },
     extraction: { nature: "lead", contact: { prenom: "Paul", nom: "<b>Test</b>", email: "paul@example.org", telephone: "+33600000000" }, bien: { reference: "30123" }, message: "Bonjour <script>alert(1)</script>" },
-    bien: { reference: "30123", ville: "Cahors", prix: 245000, type: "maison" },
+    bien: { id: 30123, reference: "30123", ville: "Cahors", prix: 245000, type: "maison" },
   };
   const m = contenu(d, { email: "martin@agence-exemple.fr", raison: "négociateur du bien" }, "https://exemple.fr/page/lead?id=7");
   assert.strictEqual(m.objet, "Nouveau lead Leboncoin — réf. 30123 — Paul <b>Test</b>");
@@ -60,6 +60,10 @@ const { envoyer, reprendre } = require("../src/lib/envois");
   r = await messages({ ...dp, statut: "a_verifier", motifs: ["bien non trouvé : référence inconnue"] }, { id: 8 });
   assert.deepStrictEqual(r.liste.map((x) => x.a), ["nonauto@agence-exemple.fr"]); assert.strictEqual(r.simuler, false);
   assert.strictEqual(r.liste[0].sujet, MAIL.objet); assert(/non-automatise:/.test(r.liste[0].cle) && /bien non trouvé/.test(r.raison));
+  REGLAGES.envoi_a_verifier = true;
+  r = await messages({ ...dp, bien: null, statut: "a_verifier", motifs: ["bien non trouvé"] }, { id: 18 });
+  assert.deepStrictEqual(r.liste.map((x) => x.a), ["nonauto@agence-exemple.fr"], "sans bien confirmé, jamais d'envoi au négociateur");
+  REGLAGES.envoi_a_verifier = false;
   r = await messages({ ...dp, statut: "a_trier", destinataires: { liste: [] } }, { id: 9 }); assert.strictEqual(r.liste.length, 1, "à trier aussi, même sans destinataire");
   r = await messages({ ...dp, statut: "ignore" }, { id: 10 }); assert.strictEqual(r.liste.length, 0, "un non-lead ne part pas");
   r = await messages({ ...dp, statut: "a_trier", extraction: { ...dp.extraction, nature: "inconnu" } }, { id: 13 }); assert.strictEqual(r.liste.length, 0, "ni client ni bien : pas un lead, rien ne part");
