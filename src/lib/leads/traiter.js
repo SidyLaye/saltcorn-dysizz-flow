@@ -224,9 +224,13 @@ const etapeContact = async (d, crm, conf = {}) => {
   let rc = { contact: null, action: "aucune", trace: [] };
   if (actif.contact) {
     rc = await resoudreContact(c, crm);
-    if (rc.action !== "mettre_a_jour" && dos && dos.contact_id) {
-      const ex = crm.contact ? await crm.contact(dos.contact_id).catch(() => null) : null;
-      rc = { contact: ex || { id: dos.contact_id }, action: "mettre_a_jour", par: "dossier", trace: rc.trace.concat("contact repris du dossier") };
+    if ((rc.action === "creer" || (rc.action === "impossible" && !rc.par)) && dos && dos.contact_id && crm.contact) {
+      const ex = await crm.contact(dos.contact_id).catch((e) => { rc.trace.push("fiche du dossier illisible : " + e.message); return null; });
+      const courriel = (v) => String(v || "").trim().toLowerCase();
+      if (ex && (!c.email || [ex.email, ...(ex.emails || [])].some((x) => courriel(x) === courriel(c.email)) ||
+        (dos.relais && c.email_relais && courriel(c.email) === courriel(c.email_relais) && courriel(c.email) === courriel(dos.relais))))
+        rc = { contact: ex, action: "mettre_a_jour", par: "dossier", trace: rc.trace.concat("contact repris du dossier") };
+      else if (!ex) rc = { contact: null, action: "impossible", par: "recherche_dossier", trace: rc.trace };
     }
     /* La recherche Immofacile ne renvoie pas le consentement : on relit la fiche trouvée,
        sinon un consentement déjà posé serait remplacé (Immofacile n'en garde qu'un). */
@@ -235,7 +239,9 @@ const etapeContact = async (d, crm, conf = {}) => {
       if (ex) rc.contact = { ...rc.contact, ...ex };
       else rc.contact = { ...rc.contact, consentement_inconnu: true };
     }
-    if (rc.action === "impossible") d.motifs.push("contact impossible : ni e-mail ni téléphone");
+    if (rc.action === "impossible") d.motifs.push(rc.par && rc.par.startsWith("recherche_")
+      ? "recherche du contact CRM indisponible : vérifier avant toute création"
+      : "contact impossible : ni e-mail ni téléphone");
     /* Immofacile ne crée pas de contact sans e-mail : le lead passe à la main (le numéro suffit s'il retrouve une fiche) */
     if (rc.action === "creer" && !c.email) d.motifs.push("pas d'e-mail : le CRM ne crée pas de contact sans e-mail (à créer à la main avec le téléphone)");
   }

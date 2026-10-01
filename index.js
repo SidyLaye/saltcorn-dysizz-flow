@@ -1,4 +1,4 @@
-/* dysizz-flow 2.14.2 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.14.3 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.14.2" : "dev";
+    var VERSION2 = true ? "2.14.3" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -94796,19 +94796,26 @@ var require_contact = __commonJS({
     var resoudreContact = async (c = {}, crm) => {
       const trace = [];
       let parEmail = [], parTel = [];
-      if (c.email) parEmail = await crm.contactsParEmail(c.email).catch((e) => {
-        trace.push("recherche par e-mail impossible : " + e.message);
-        return [];
-      });
-      if (c.telephone) parTel = await crm.contactsParTelephone(c.telephone).catch((e) => {
-        trace.push("recherche par t\xE9l\xE9phone impossible : " + e.message);
-        return [];
-      });
+      if (c.email) {
+        try {
+          parEmail = await crm.contactsParEmail(c.email);
+        } catch (e) {
+          trace.push("recherche par e-mail impossible : " + e.message);
+          return { contact: null, action: "impossible", par: "recherche_email", trace };
+        }
+      }
+      if (!c.email && c.telephone) {
+        try {
+          parTel = await crm.contactsParTelephone(c.telephone);
+        } catch (e) {
+          trace.push("recherche par t\xE9l\xE9phone impossible : " + e.message);
+          return { contact: null, action: "impossible", par: "recherche_telephone", trace };
+        }
+      }
       if (parEmail.length) {
         const x = recent(parEmail);
         if (parEmail.length > 1) trace.push(`${parEmail.length} contacts avec cet e-mail : le plus r\xE9cent est gard\xE9 (${x.id})`);
-        const autres = parTel.filter((t) => String(t.id) !== String(x.id));
-        if (autres.length) trace.push(`le t\xE9l\xE9phone est aussi sur ${autres.map((t) => t.id).join(", ")} : priorit\xE9 \xE0 l'e-mail`);
+        trace.push("priorit\xE9 \xE0 l'e-mail");
         return { contact: x, action: "mettre_a_jour", par: "email", trace };
       }
       if (parTel.length && !c.email) {
@@ -94816,7 +94823,6 @@ var require_contact = __commonJS({
         if (parTel.length > 1) trace.push(`${parTel.length} contacts avec ce t\xE9l\xE9phone : le plus r\xE9cent est gard\xE9 (${x.id})`);
         return { contact: x, action: "mettre_a_jour", par: "telephone", trace };
       }
-      if (parTel.length && c.email) trace.push(`t\xE9l\xE9phone connu sur ${recent(parTel).id} mais e-mail diff\xE9rent : priorit\xE9 \xE0 l'e-mail, nouveau contact`);
       if (!c.email && !c.telephone) return { contact: null, action: "impossible", trace: trace.concat("ni e-mail ni t\xE9l\xE9phone") };
       return { contact: null, action: "creer", trace };
     };
@@ -95384,16 +95390,22 @@ var require_traiter = __commonJS({
       let rc = { contact: null, action: "aucune", trace: [] };
       if (actif.contact) {
         rc = await resoudreContact(c, crm);
-        if (rc.action !== "mettre_a_jour" && dos && dos.contact_id) {
-          const ex = crm.contact ? await crm.contact(dos.contact_id).catch(() => null) : null;
-          rc = { contact: ex || { id: dos.contact_id }, action: "mettre_a_jour", par: "dossier", trace: rc.trace.concat("contact repris du dossier") };
+        if ((rc.action === "creer" || rc.action === "impossible" && !rc.par) && dos && dos.contact_id && crm.contact) {
+          const ex = await crm.contact(dos.contact_id).catch((e) => {
+            rc.trace.push("fiche du dossier illisible : " + e.message);
+            return null;
+          });
+          const courriel = (v) => String(v || "").trim().toLowerCase();
+          if (ex && (!c.email || [ex.email, ...ex.emails || []].some((x) => courriel(x) === courriel(c.email)) || dos.relais && c.email_relais && courriel(c.email) === courriel(c.email_relais) && courriel(c.email) === courriel(dos.relais)))
+            rc = { contact: ex, action: "mettre_a_jour", par: "dossier", trace: rc.trace.concat("contact repris du dossier") };
+          else if (!ex) rc = { contact: null, action: "impossible", par: "recherche_dossier", trace: rc.trace };
         }
         if (rc.action === "mettre_a_jour" && rc.par !== "dossier" && rc.contact && rc.contact.id != null && crm.contact) {
           const ex = await crm.contact(rc.contact.id).catch(() => null);
           if (ex) rc.contact = { ...rc.contact, ...ex };
           else rc.contact = { ...rc.contact, consentement_inconnu: true };
         }
-        if (rc.action === "impossible") d.motifs.push("contact impossible : ni e-mail ni t\xE9l\xE9phone");
+        if (rc.action === "impossible") d.motifs.push(rc.par && rc.par.startsWith("recherche_") ? "recherche du contact CRM indisponible : v\xE9rifier avant toute cr\xE9ation" : "contact impossible : ni e-mail ni t\xE9l\xE9phone");
         if (rc.action === "creer" && !c.email) d.motifs.push("pas d'e-mail : le CRM ne cr\xE9e pas de contact sans e-mail (\xE0 cr\xE9er \xE0 la main avec le t\xE9l\xE9phone)");
       }
       d.contact = { id: rc.contact ? rc.contact.id : null, action: rc.action, par: rc.par, trace: rc.trace };
@@ -95647,6 +95659,7 @@ var require_immofacile = __commonJS({
     "use strict";
     var { typeBien } = require_valeurs();
     var { cle } = require_texte();
+    var { completer, recent } = require_contact();
     var JETONS = /* @__PURE__ */ new Map();
     var empreinte = (...x) => require("crypto").createHash("sha256").update(x.map(String).join("\n")).digest("hex");
     var creer = (cfg = {}) => {
@@ -95736,7 +95749,23 @@ var require_immofacile = __commonJS({
             await pause(r, essai);
             continue;
           }
-          if (!r.ok) throw Object.assign(new Error(`Immofacile ${methode} ${chemin} \u2192 HTTP ${r.status}`), { http: r.status, ambiguous: !rejouable && r.status >= 500, permanent: !rejouable && r.status >= 500 || r.status >= 400 && r.status < 500 && r.status !== 429 });
+          if (!r.ok) {
+            let champs = [];
+            try {
+              const erreur = JSON.parse(tx).error;
+              champs = (erreur && Array.isArray(erreur.details) ? erreur.details : []).map((x) => String(x && x.field || "")).filter((x) => /^[a-z][a-z0-9_.\[\]]{0,60}$/i.test(x));
+            } catch (_) {
+            }
+            throw Object.assign(
+              new Error(`Immofacile ${methode} ${chemin} \u2192 HTTP ${r.status}${champs.length ? " (champs : " + [...new Set(champs)].join(", ") + ")" : ""}`),
+              {
+                http: r.status,
+                champs,
+                ambiguous: !rejouable && r.status >= 500,
+                permanent: !rejouable && r.status >= 500 || r.status >= 400 && r.status < 500 && r.status !== 429
+              }
+            );
+          }
           try {
             return tx ? JSON.parse(tx) : {};
           } catch (e) {
@@ -95840,7 +95869,8 @@ var require_immofacile = __commonJS({
         let cursor = null;
         for (let page = 0; page < 20; page++) {
           const j = await appel("POST", "/customers/search", { ...filtre, per_page: 200, ...cursor ? { cursor } : {} });
-          const l = Array.isArray(j && j.data) ? j.data : [];
+          const l = Array.isArray(j) ? j : j && Array.isArray(j.data) ? j.data : null;
+          if (!l) throw new Error("Immofacile /customers/search : liste de contacts absente de la r\xE9ponse");
           for (const c of l) if (c && c.id && !vus.has(c.id)) {
             vus.add(c.id);
             out.push(versContact(c));
@@ -95917,7 +95947,11 @@ var require_immofacile = __commonJS({
       return {
         nom: "immofacile",
         lectureSeule: !!cfg.lectureSeule,
-        tester: async () => ({ ok: true, agences: (data(await appel("GET", "/discovery")) || []).map((a) => ({ id: a.agency_id, nom: a.name, ville: a.city })) }),
+        tester: async () => {
+          const rep = data(await appel("GET", "/discovery"));
+          const agences = Array.isArray(rep) ? rep : rep && Array.isArray(rep.agencies) ? rep.agencies : [];
+          return { ok: true, agences: agences.map((a) => ({ id: a.agency_id ?? a.id, nom: a.name, ville: a.city })) };
+        },
         bienParId: detail,
         biensParReference: async (ref) => (await recherche({ model: String(ref), count: 5 })).filter((b) => b && b.reference.toLowerCase() === String(ref).trim().toLowerCase()).slice(0, 3),
         biensParCriteres: async (q, { max = 2 } = {}) => {
@@ -95942,19 +95976,55 @@ var require_immofacile = __commonJS({
         capacites: ["catalogue", "contact", "suivi", "projet", "commentaire", "action", "consentement", "webhooks"],
         origines: async () => data(await appel("GET", "/customers/origins")),
         groupes: async () => data(await appel("GET", "/customers/groups")),
-        /* check_duplicate: true → 409 si un doublon existe (jamais de mise à jour silencieuse). */
+        /* Le POST détecte les doublons sur e-mail OU téléphone. Créer avec
+           l'e-mail seul évite de rattacher un nouvel acquéreur au numéro partagé
+           d'un autre contact. Le téléphone est complété ensuite, sans perdre l'ID. */
         creerContact: async (d) => {
           const corps = { email: d.email, check_duplicate: true };
           if (d.prenom) corps.firstname = d.prenom;
           if (d.nom) corps.lastname = d.nom;
-          if (d.telephone) corps[/^\+33[67]\d{8}$/.test(d.telephone) ? "mobile_phone" : "phone"] = d.telephone;
           if (d.agence && isFinite(+d.agence)) corps.agency_id = Number(d.agence);
           if (d.negociateur && isFinite(+d.negociateur)) corps.user_id = Number(d.negociateur);
           if (d.origine) corps.origin = Number(d.origine);
           if (cfg.groupe_demandeur) corps.group = Number(cfg.groupe_demandeur);
-          const id = (data(await appel("POST", "/customers", corps)) || {}).id;
-          const non_pris = id ? await relire(id, corps) : [];
-          return { id, ...non_pris.length ? { non_pris } : {} };
+          let id, deja = false;
+          try {
+            id = (data(await appel("POST", "/customers", corps)) || {}).id;
+          } catch (e) {
+            if (e.http !== 409) throw e;
+            const exacts = (await chercherContacts({ email: d.email })).filter((c) => c.emails.some((x) => String(x).trim().toLowerCase() === String(d.email).trim().toLowerCase()));
+            if (!exacts.length) throw e;
+            id = recent(exacts).id;
+            deja = true;
+          }
+          if (!id) throw new Error("Immofacile : cr\xE9ation sans identifiant de contact confirm\xE9");
+          const non_pris = [];
+          if (deja) {
+            const ex = await lireContact(id);
+            if (!ex) throw new Error("Immofacile : contact existant illisible apr\xE8s conflit 409");
+            const p = completer(ex, d);
+            const patch = {};
+            if (p.prenom) patch.firstname = p.prenom;
+            if (p.nom) patch.lastname = p.nom;
+            if (p.telephone) patch.phone = p.telephone;
+            if (p.mobile) patch.mobile_phone = p.mobile;
+            if (d.origine && !ex.origine) patch.origin = Number(d.origine);
+            if (d.agence && !ex.agence) patch.agency_id = Number(d.agence);
+            if (d.negociateur && !ex.negociateur) patch.user_id = Number(d.negociateur);
+            if (Object.keys(patch).length) await appel("PATCH", `/customers/${Number(id)}`, patch);
+            non_pris.push(...await relire(id, patch));
+          } else {
+            if (d.telephone) {
+              const field = /^\+33[67]\d{8}$/.test(d.telephone) ? "mobile_phone" : "phone";
+              try {
+                await appel("PATCH", `/customers/${Number(id)}`, { [field]: d.telephone });
+              } catch (e) {
+                non_pris.push(field + " : " + e.message);
+              }
+            }
+            non_pris.push(...await relire(id, corps));
+          }
+          return { id, ...deja ? { deja: true } : {}, ...non_pris.length ? { non_pris } : {} };
         },
         majContact: async (id, p) => {
           const corps = {};
@@ -96032,7 +96102,7 @@ var require_immofacile = __commonJS({
         ajouterConsentement: async (contactId, a) => {
           const fd = new FormData();
           fd.append("reason", String(a.motif).slice(0, 64));
-          fd.append("consent_date", new Date(a.date).toISOString());
+          fd.append("consent_date", new Date(a.date).toISOString().replace(/\.\d{3}Z$/, "+00:00"));
           if (a.hors_horaires !== void 0) fd.append("accept_outside_hours", a.hors_horaires ? "1" : "0");
           for (const p of a.preuves || []) fd.append("proofs[]", new Blob([Buffer.from(p.base64, "base64")], { type: p.type || "application/octet-stream" }), p.nom);
           await appel("POST", `/customers/${Number(contactId)}/consent`, null, { multipart: fd });

@@ -6,6 +6,7 @@
 "use strict";
 const { typeBien } = require("../valeurs");
 const { cle } = require("../texte");
+const { completer, recent } = require("../contact");
 
 /* Jetons gardés d'un adaptateur à l'autre (un workflow en étapes en crée un par étape) :
    clé = empreinte de l'adresse, du site et des identifiants, jamais les identifiants eux-mêmes. */
@@ -79,7 +80,18 @@ const creer = (cfg = {}) => {
       journal({ methode, chemin, statut: r.status, ms: Date.now() - t0 });
       if (r.status === 401 && essai === 1) { for (const [k, v] of JETONS) if (v.jeton === jeton) JETONS.delete(k); jeton = null; continue; }
       if ((r.status === 429 || (r.status >= 500 && rejouable)) && essai < 4) { await pause(r, essai); continue; }
-      if (!r.ok) throw Object.assign(new Error(`Immofacile ${methode} ${chemin} → HTTP ${r.status}`), { http: r.status, ambiguous: !rejouable && r.status >= 500, permanent: (!rejouable && r.status >= 500) || (r.status >= 400 && r.status < 500 && r.status !== 429) });
+      if (!r.ok) {
+        let champs = [];
+        try {
+          const erreur = JSON.parse(tx).error;
+          champs = (erreur && Array.isArray(erreur.details) ? erreur.details : [])
+            .map((x) => String(x && x.field || ""))
+            .filter((x) => /^[a-z][a-z0-9_.\[\]]{0,60}$/i.test(x));
+        } catch (_) {}
+        throw Object.assign(new Error(`Immofacile ${methode} ${chemin} → HTTP ${r.status}${champs.length ? " (champs : " + [...new Set(champs)].join(", ") + ")" : ""}`),
+          { http: r.status, champs, ambiguous: !rejouable && r.status >= 500,
+            permanent: (!rejouable && r.status >= 500) || (r.status >= 400 && r.status < 500 && r.status !== 429) });
+      }
       try { return tx ? JSON.parse(tx) : {}; } catch (e) { return { brut: tx }; }
     }
   };
@@ -160,7 +172,8 @@ const creer = (cfg = {}) => {
     const out = [], vus = new Set(), curseurs = new Set(); let cursor = null;
     for (let page = 0; page < 20; page++) {
       const j = await appel("POST", "/customers/search", { ...filtre, per_page: 200, ...(cursor ? { cursor } : {}) });
-      const l = Array.isArray(j && j.data) ? j.data : [];
+      const l = Array.isArray(j) ? j : j && Array.isArray(j.data) ? j.data : null;
+      if (!l) throw new Error("Immofacile /customers/search : liste de contacts absente de la réponse");
       for (const c of l) if (c && c.id && !vus.has(c.id)) { vus.add(c.id); out.push(versContact(c)); }
       const next = j && j.meta && j.meta.next_cursor;
       if (!next || !l.length || curseurs.has(next)) break;
@@ -211,7 +224,11 @@ const creer = (cfg = {}) => {
   return {
     nom: "immofacile",
     lectureSeule: !!cfg.lectureSeule,
-    tester: async () => ({ ok: true, agences: (data(await appel("GET", "/discovery")) || []).map((a) => ({ id: a.agency_id, nom: a.name, ville: a.city })) }),
+    tester: async () => {
+      const rep = data(await appel("GET", "/discovery"));
+      const agences = Array.isArray(rep) ? rep : rep && Array.isArray(rep.agencies) ? rep.agencies : [];
+      return { ok: true, agences: agences.map((a) => ({ id: a.agency_id ?? a.id, nom: a.name, ville: a.city })) };
+    },
     bienParId: detail,
     biensParReference: async (ref) => (await recherche({ model: String(ref), count: 5 })).filter((b) => b && b.reference.toLowerCase() === String(ref).trim().toLowerCase()).slice(0, 3),
     biensParCriteres: async (q, { max = 2 } = {}) => {
@@ -233,16 +250,49 @@ const creer = (cfg = {}) => {
     capacites: ["catalogue", "contact", "suivi", "projet", "commentaire", "action", "consentement", "webhooks"],
     origines: async () => data(await appel("GET", "/customers/origins")),
     groupes: async () => data(await appel("GET", "/customers/groups")),
-    /* check_duplicate: true → 409 si un doublon existe (jamais de mise à jour silencieuse). */
+    /* Le POST détecte les doublons sur e-mail OU téléphone. Créer avec
+       l'e-mail seul évite de rattacher un nouvel acquéreur au numéro partagé
+       d'un autre contact. Le téléphone est complété ensuite, sans perdre l'ID. */
     creerContact: async (d) => {
       const corps = { email: d.email, check_duplicate: true };
       if (d.prenom) corps.firstname = d.prenom; if (d.nom) corps.lastname = d.nom;
-      if (d.telephone) corps[/^\+33[67]\d{8}$/.test(d.telephone) ? "mobile_phone" : "phone"] = d.telephone;
       if (d.agence && isFinite(+d.agence)) corps.agency_id = Number(d.agence); if (d.negociateur && isFinite(+d.negociateur)) corps.user_id = Number(d.negociateur);
       if (d.origine) corps.origin = Number(d.origine); if (cfg.groupe_demandeur) corps.group = Number(cfg.groupe_demandeur);
-      const id = (data(await appel("POST", "/customers", corps)) || {}).id;
-      const non_pris = id ? await relire(id, corps) : [];
-      return { id, ...(non_pris.length ? { non_pris } : {}) };
+      let id, deja = false;
+      try { id = (data(await appel("POST", "/customers", corps)) || {}).id; }
+      catch (e) {
+        if (e.http !== 409) throw e;
+        const exacts = (await chercherContacts({ email: d.email }))
+          .filter((c) => c.emails.some((x) => String(x).trim().toLowerCase() === String(d.email).trim().toLowerCase()));
+        if (!exacts.length) throw e;
+        id = recent(exacts).id;
+        deja = true;
+      }
+      if (!id) throw new Error("Immofacile : création sans identifiant de contact confirmé");
+      const non_pris = [];
+      if (deja) {
+        const ex = await lireContact(id);
+        if (!ex) throw new Error("Immofacile : contact existant illisible après conflit 409");
+        const p = completer(ex, d);
+        const patch = {};
+        if (p.prenom) patch.firstname = p.prenom;
+        if (p.nom) patch.lastname = p.nom;
+        if (p.telephone) patch.phone = p.telephone;
+        if (p.mobile) patch.mobile_phone = p.mobile;
+        if (d.origine && !ex.origine) patch.origin = Number(d.origine);
+        if (d.agence && !ex.agence) patch.agency_id = Number(d.agence);
+        if (d.negociateur && !ex.negociateur) patch.user_id = Number(d.negociateur);
+        if (Object.keys(patch).length) await appel("PATCH", `/customers/${Number(id)}`, patch);
+        non_pris.push(...await relire(id, patch));
+      } else {
+        if (d.telephone) {
+          const field = /^\+33[67]\d{8}$/.test(d.telephone) ? "mobile_phone" : "phone";
+          try { await appel("PATCH", `/customers/${Number(id)}`, { [field]: d.telephone }); }
+          catch (e) { non_pris.push(field + " : " + e.message); }
+        }
+        non_pris.push(...await relire(id, corps));
+      }
+      return { id, ...(deja ? { deja: true } : {}), ...(non_pris.length ? { non_pris } : {}) };
     },
     majContact: async (id, p) => {
       const corps = {};
@@ -317,7 +367,9 @@ const creer = (cfg = {}) => {
     ajouterConsentement: async (contactId, a) => {
       const fd = new FormData();
       fd.append("reason", String(a.motif).slice(0, 64));
-      fd.append("consent_date", new Date(a.date).toISOString());
+      /* L'API valide Y-m-d\TH:i:sP : pas de millisecondes et décalage +00:00,
+         même si son OpenAPI appelle plus largement cela « ISO 8601 ». */
+      fd.append("consent_date", new Date(a.date).toISOString().replace(/\.\d{3}Z$/, "+00:00"));
       if (a.hors_horaires !== undefined) fd.append("accept_outside_hours", a.hors_horaires ? "1" : "0");
       for (const p of a.preuves || []) fd.append("proofs[]", new Blob([Buffer.from(p.base64, "base64")], { type: p.type || "application/octet-stream" }), p.nom);
       await appel("POST", `/customers/${Number(contactId)}/consent`, null, { multipart: fd });
