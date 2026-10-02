@@ -22,7 +22,9 @@ const miseAJour = (ancien, d, exec = {}, quand = new Date()) => {
     bien_ref: (d.bien && d.bien.reference) || base.bien_ref || null,
     contact_id: exec.contactId || base.contact_id || (d.contact && d.contact.id) || null,
     recherche_id: exec.rechercheId || base.recherche_id || null,
-    consentement: base.consentement || !!exec.consentement,
+    consentement: exec.consentementVerifie ? !!exec.consentement :
+      !!exec.consentement || (!!base.consentement &&
+        (!exec.contactId || String(exec.contactId) === String(base.contact_id))),
     negociateur: d.negociateur || base.negociateur || null,
     agence_id: (d.agence && d.agence.id) || base.agence_id || null,
     portail: base.portail || x.portail || null,

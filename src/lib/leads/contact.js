@@ -5,6 +5,9 @@
 "use strict";
 
 const recent = (xs) => xs.slice().sort((a, b) => String(b.cree_le || "").localeCompare(String(a.cree_le || "")) || (+b.id || 0) - (+a.id || 0))[0];
+// Libellés explicites pour une fiche individuelle dont le mail ne donne pas l'identité.
+const PRENOM_MANQUANT = "Prénom non communiqué";
+const NOM_MANQUANT = "Nom non communiqué";
 
 const resoudreContact = async (c = {}, crm) => {
   const trace = [];
@@ -42,8 +45,8 @@ const resoudreContact = async (c = {}, crm) => {
 const completer = (existant = {}, c = {}) => {
   const patch = {};
   const vide = (v) => v === undefined || v === null || String(v).trim() === "";
-  if (vide(existant.prenom) && c.prenom) patch.prenom = c.prenom;
-  if (vide(existant.nom) && c.nom) patch.nom = c.nom;
+  if ((vide(existant.prenom) || existant.prenom === PRENOM_MANQUANT) && c.prenom) patch.prenom = c.prenom;
+  if ((vide(existant.nom) || existant.nom === NOM_MANQUANT) && c.nom) patch.nom = c.nom;
   const tels = [existant.telephone, existant.mobile].filter(Boolean).map((t) => String(t).replace(/\D/g, "").slice(-9));
   if (c.telephone && !tels.includes(c.telephone.replace(/\D/g, "").slice(-9))) {
     const mobile = /^\+33[67]\d{8}$/.test(c.telephone);
@@ -54,4 +57,4 @@ const completer = (existant = {}, c = {}) => {
   return patch;
 };
 
-module.exports = { resoudreContact, completer, recent };
+module.exports = { resoudreContact, completer, recent, PRENOM_MANQUANT, NOM_MANQUANT };

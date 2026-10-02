@@ -30,6 +30,7 @@ const rafraichirVues = async ({ workflow, etapes, suivi = {}, api }) => {
   if (!bloc) throw new Error("Bloc de lecture indisponible");
   const rapport = { workflow: nom, etapes: [], terminees: 0, erreur: null, emails_envoyes: 0 };
   suivi.total = noms.length;
+  suivi.fait = 0;
   for (const n of noms) {
     suivi.etape = `recalcul ${n}`;
     const c = parNom[n];

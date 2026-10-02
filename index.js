@@ -1,4 +1,4 @@
-/* dysizz-flow 2.14.7 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.14.8 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.14.7" : "dev";
+    var VERSION2 = true ? "2.14.8" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -94793,6 +94793,8 @@ var require_contact = __commonJS({
   "src/lib/leads/contact.js"(exports2, module2) {
     "use strict";
     var recent = (xs) => xs.slice().sort((a, b) => String(b.cree_le || "").localeCompare(String(a.cree_le || "")) || (+b.id || 0) - (+a.id || 0))[0];
+    var PRENOM_MANQUANT = "Pr\xE9nom non communiqu\xE9";
+    var NOM_MANQUANT = "Nom non communiqu\xE9";
     var resoudreContact = async (c = {}, crm) => {
       const trace = [];
       let parEmail = [], parTel = [];
@@ -94829,8 +94831,8 @@ var require_contact = __commonJS({
     var completer = (existant = {}, c = {}) => {
       const patch = {};
       const vide = (v) => v === void 0 || v === null || String(v).trim() === "";
-      if (vide(existant.prenom) && c.prenom) patch.prenom = c.prenom;
-      if (vide(existant.nom) && c.nom) patch.nom = c.nom;
+      if ((vide(existant.prenom) || existant.prenom === PRENOM_MANQUANT) && c.prenom) patch.prenom = c.prenom;
+      if ((vide(existant.nom) || existant.nom === NOM_MANQUANT) && c.nom) patch.nom = c.nom;
       const tels = [existant.telephone, existant.mobile].filter(Boolean).map((t) => String(t).replace(/\D/g, "").slice(-9));
       if (c.telephone && !tels.includes(c.telephone.replace(/\D/g, "").slice(-9))) {
         const mobile = /^\+33[67]\d{8}$/.test(c.telephone);
@@ -94840,7 +94842,7 @@ var require_contact = __commonJS({
       }
       return patch;
     };
-    module2.exports = { resoudreContact, completer, recent };
+    module2.exports = { resoudreContact, completer, recent, PRENOM_MANQUANT, NOM_MANQUANT };
   }
 });
 
@@ -95417,7 +95419,7 @@ var require_traiter = __commonJS({
         const domaineMail = String(r.site || "").toLowerCase().replace(/^www\./, "");
         return memeOrigine || domaineMail && domaineConfig === domaineMail;
       }) || null : null;
-      const portailMetier = r.portail === "site_agence" ? siteCfg ? siteCfg.libelle || siteCfg.noms && siteCfg.noms[0] || siteCfg.domaine : r.site_nom || r.site || "Site de l'agence" : r.portail_nom || r.portail;
+      const portailMetier = r.portail === "site_agence" ? r.site_nom || (siteCfg ? siteCfg.libelle || siteCfg.noms && siteCfg.noms[0] || siteCfg.domaine : r.site || "Site de l'agence") : r.portail_nom || r.portail;
       if (r.portail === "site_agence") r.portail_nom = portailMetier;
       d.portail = portailMetier;
       d.source = portailMetier;
@@ -95439,7 +95441,7 @@ var require_traiter = __commonJS({
         }
         if (Object.keys(patch).length) d.actions.push({ op: "majContact", id: rc.contact.id, donnees: patch });
       }
-      const nouveauBien = rbBien && !(dos && String(dos.bien_id) === String(rbBien.id));
+      const nouveauBien = rbBien && (rc.action === "creer" || dos && rc.contact && String(dos.contact_id || "") !== String(rc.contact.id) || !(dos && String(dos.bien_id) === String(rbBien.id)));
       if (ok && actif.suivi && nouveauBien) d.actions.push({ op: "lierBien", bien: rbBien.id });
       const comment = actif.commentaire ? C.commentaire(tous, conf.commentaire || {}) : null;
       if (ok && actif.projet) {
@@ -95458,9 +95460,11 @@ var require_traiter = __commonJS({
       if (d.fin) return d;
       const r = d.extraction, dos = d.interne && d.interne.dos || null, rcc = d.interne && d.interne.contact_crm || null, connus = d.interne && d.interne.connus || [];
       const ok = actifs(conf).contact && d.contact && d.contact.action !== "impossible";
-      const dejaConsenti = dos && dos.consentement || rcc && rcc.consentement || connus.some((x) => x.consentement && rcc && String(x.contact_id) === String(rcc.id));
+      const consentementRelu = rcc && !rcc.consentement_inconnu && typeof rcc.consentement === "boolean";
+      if (consentementRelu) d.consentement_crm = { contact_id: rcc.id, actif: rcc.consentement };
+      const dejaConsenti = consentementRelu ? rcc.consentement : dos && dos.consentement && d.contact && String(dos.contact_id) === String(d.contact.id) || connus.some((x) => x.consentement && rcc && String(x.contact_id) === String(rcc.id));
       if (ok && rcc && rcc.consentement_inconnu && !dejaConsenti && conf.consentement && conf.consentement.actif) d.motifs.push("fiche du contact illisible : consentement d\xE9j\xE0 pos\xE9 ou non ? \xE0 v\xE9rifier");
-      if (ok && actifs(conf).consentement && conf.consentement && conf.consentement.actif && !dejaConsenti && !(rcc && rcc.consentement_inconnu)) {
+      if (ok && actifs(conf).consentement && conf.consentement && conf.consentement.actif && (!dejaConsenti || conf.consentement.actualiser_motif) && !(rcc && rcc.consentement_inconnu)) {
         const date = dateDuMail(mail) || d.date_mail || /* @__PURE__ */ new Date();
         const libelle = conf.consentement.libelle || "Demande de contact via {portail} du {date}", portail = String(d.portail || r.site_libelle || r.portail_nom || r.portail || "");
         let motif = gabarit(libelle, { portail, date: dateFr(date) });
@@ -95520,10 +95524,11 @@ var require_traiter = __commonJS({
       const res = [];
       let contactId = dossier.contact && dossier.contact.id;
       let rechercheId = dossier.dossier && dossier.dossier.recherche_id;
-      let consentement = false;
+      let consentement = !!(dossier.consentement_crm && dossier.consentement_crm.actif && String(dossier.consentement_crm.contact_id) === String(contactId));
+      let consentementVerifie = !!(dossier.consentement_crm && String(dossier.consentement_crm.contact_id) === String(contactId));
       if (dossier.statut && !["pret", "suivi"].includes(dossier.statut) && !ecrireAVerifier) {
         for (const a of dossier.actions || []) res.push({ op: a.op, fait: false, note: "non automatis\xE9 : rien n'est \xE9crit dans le CRM" });
-        return { contactId, rechercheId, consentement, resultats: res, non_automatise: true };
+        return { contactId, rechercheId, consentement, consentementVerifie, resultats: res, non_automatise: true };
       }
       for (const a of dossier.actions) {
         if (mode !== "reel") {
@@ -95545,6 +95550,7 @@ var require_traiter = __commonJS({
           else if (a.op === "ajouterConsentement") {
             out = await crm.ajouterConsentement(contactId, a);
             consentement = true;
+            consentementVerifie = true;
           }
           res.push({ op: a.op, fait: out !== null, resultat: out && out.id ? { id: out.id } : !!out, ...out === null ? { note: "non disponible avec ce CRM" } : {}, ...out && out.non_pris ? { non_pris: out.non_pris, alerte: "\xE9crit mais pas retrouv\xE9 \xE0 la relecture : " + out.non_pris.join(", ") } : {} });
         } catch (e) {
@@ -95552,7 +95558,7 @@ var require_traiter = __commonJS({
           if (a.op === "creerContact") break;
         }
       }
-      return { contactId, rechercheId, consentement, resultats: res };
+      return { contactId, rechercheId, consentement, consentementVerifie, resultats: res };
     };
     module2.exports = { traiter, executer, preuveEml, trouverAgence, choisirDossier, criteresProjet, NATURES_LEAD, ETAPES, etapeLire, etapeBien, etapeContact, etapeConsentement, etapeDestinataires, conclure, nettoyer };
   }
@@ -95659,7 +95665,7 @@ var require_immofacile = __commonJS({
     "use strict";
     var { typeBien } = require_valeurs();
     var { cle } = require_texte();
-    var { completer, recent } = require_contact();
+    var { completer, recent, PRENOM_MANQUANT, NOM_MANQUANT } = require_contact();
     var JETONS = /* @__PURE__ */ new Map();
     var empreinte = (...x) => require("crypto").createHash("sha256").update(x.map(String).join("\n")).digest("hex");
     var creer = (cfg = {}) => {
@@ -95670,9 +95676,9 @@ var require_immofacile = __commonJS({
       const journal = cfg.journal || (() => {
       });
       const LECTURE = (m, p) => m === "GET" ? /^\/(discovery|customers\/\d+|customers\/(origins|groups)|criterias\/|products\/\d+|agencies|users)/.test(p) && (!/\/(consent|follow-ups|actions|search-requests)/.test(p) || /^\/customers\/\d+\/(follow-ups|actions)(\?|$)/.test(p)) : m === "POST" && ["/products/search", "/products/search/count", "/customers/search"].includes(p.split("?")[0]);
-      const lectureHttp = async (url, options) => {
+      const lectureHttp = async (url, options, delai) => {
         const ctrl = new AbortController();
-        const to = setTimeout(() => ctrl.abort(), cfg.delai_ms || 15e3);
+        const to = setTimeout(() => ctrl.abort(), delai || cfg.delai_ms || 15e3);
         try {
           const r = await f(url, { ...options, signal: ctrl.signal });
           const tx = await r.text();
@@ -95732,7 +95738,7 @@ var require_immofacile = __commonJS({
           const rejouable = methode === "GET" || LECTURE(methode, chemin);
           let r, tx;
           try {
-            ({ r, tx } = await lectureHttp(racine + chemin, { method: methode, headers, body: multipart || (corps ? JSON.stringify(corps) : void 0) }));
+            ({ r, tx } = await lectureHttp(racine + chemin, { method: methode, headers, body: multipart || (corps ? JSON.stringify(corps) : void 0) }, chemin === "/customers/search" ? cfg.recherche_delai_ms || cfg.delai_ms || 45e3 : void 0));
           } catch (e) {
             if (!rejouable) throw Object.assign(new Error(`Immofacile ${methode} ${chemin} : r\xE9sultat d'\xE9criture inconnu, v\xE9rifier avant reprise`), { cause: e, ambiguous: true, permanent: true });
             if (essai === 4) throw e;
@@ -95843,8 +95849,8 @@ var require_immofacile = __commonJS({
         telephone: c.phone || null,
         mobile: c.mobilePhone || c.mobile_phone || null,
         telephones: [c.phone, c.mobilePhone, c.mobile_phone].filter(Boolean).map((t) => String(t).replace(/[^\d+]/g, "")),
-        prenom: c.firstname || null,
-        nom: c.lastname || null,
+        prenom: c.firstname || c.first_name || null,
+        nom: c.lastname || c.last_name || null,
         cree_le: c.createdAt || c.created_at || null,
         agence: idDe(c.agency ?? c.agency_id ?? c.manufacturer),
         negociateur: idDe(c.user ?? c.user_id ?? c.admin),
@@ -95981,8 +95987,8 @@ var require_immofacile = __commonJS({
            d'un autre contact. Le téléphone est complété ensuite, sans perdre l'ID. */
         creerContact: async (d) => {
           const corps = { email: d.email, check_duplicate: true };
-          if (d.prenom) corps.firstname = d.prenom;
-          if (d.nom) corps.lastname = d.nom;
+          corps.firstname = d.prenom || PRENOM_MANQUANT;
+          corps.lastname = d.nom || NOM_MANQUANT;
           if (d.agence && isFinite(+d.agence)) corps.agency_id = Number(d.agence);
           if (d.negociateur && isFinite(+d.negociateur)) corps.user_id = Number(d.negociateur);
           if (d.origine) corps.origin = Number(d.origine);
@@ -96106,7 +96112,10 @@ var require_immofacile = __commonJS({
           if (a.hors_horaires !== void 0) fd.append("accept_outside_hours", a.hors_horaires ? "1" : "0");
           for (const p of a.preuves || []) fd.append("proofs[]", new Blob([Buffer.from(p.base64, "base64")], { type: p.type || "application/octet-stream" }), p.nom);
           await appel("POST", `/customers/${Number(contactId)}/consent`, null, { multipart: fd });
-          return { id: contactId };
+          const confirme = await lireContact(contactId);
+          if (!confirme || !confirme.consentement)
+            throw new Error("consentement \xE9crit mais non confirm\xE9 sur la fiche Immofacile : \xE0 v\xE9rifier");
+          return { id: contactId, confirme: true };
         }
       };
     };
@@ -97377,7 +97386,7 @@ var require_dossiers = __commonJS({
         bien_ref: d.bien && d.bien.reference || base.bien_ref || null,
         contact_id: exec.contactId || base.contact_id || d.contact && d.contact.id || null,
         recherche_id: exec.rechercheId || base.recherche_id || null,
-        consentement: base.consentement || !!exec.consentement,
+        consentement: exec.consentementVerifie ? !!exec.consentement : !!exec.consentement || !!base.consentement && (!exec.contactId || String(exec.contactId) === String(base.contact_id)),
         negociateur: d.negociateur || base.negociateur || null,
         agence_id: d.agence && d.agence.id || base.agence_id || null,
         portail: base.portail || x.portail || null,
@@ -98003,7 +98012,7 @@ var require_dossier = __commonJS({
         return "mail:" + mailId;
       }
     };
-    var traiterMail = async (mailId, { forcerOmbre = false } = {}) => {
+    var traiterMail = async (mailId, { forcerOmbre = false, actualiserConsentement = false } = {}) => {
       const api = flowApi();
       if (!api) throw new Error("dysizz-flow 2.4 ou plus r\xE9cent est n\xE9cessaire");
       const Table = require("@saltcorn/data/models/table");
@@ -98011,6 +98020,7 @@ var require_dossier = __commonJS({
       const mail = tm && await tm.getRow({ id: +mailId });
       if (!mail) throw new Error("mail introuvable");
       const { conf, crm, reglages: R } = await charger();
+      if (actualiserConsentement) conf.consentement = { ...conf.consentement, actualiser_motif: true };
       const mode = forcerOmbre ? "ombre" : crm.mode;
       const client = await avecCatalogue(api.crmDepuisCoffre(crm.type, crm.reglages, crm.prefixe, mode));
       const m = versMoteur(mail);
@@ -98312,8 +98322,17 @@ var require_reprise_crm = __commonJS({
         return {};
       }
     };
+    var lignesPeriode = async (debut, fin) => {
+      const db = require("@saltcorn/data/db");
+      const name = require_schema().nom("leads");
+      return (await db.query(
+        `select id,mail_id,mode,nature,bien_crm,contact_crm,recu_le,statut,dossier
+    from "${db.getTenantSchema()}"."${name}" where mode='reel' and recu_le >= $1 and recu_le < $2`,
+        [debut, fin]
+      )).rows;
+    };
     var echecsCrm = (row) => ((lire(row && row.dossier).execution || {}).resultats || []).filter((x) => x && ERREURS_CRM.has(x.op) && x.fait === false && x.erreur).map((x) => ({ op: x.op, erreur: String(x.erreur).slice(0, 220) }));
-    var candidatsCrm = (rows, debut, fin) => rows.filter((l) => l.mail_id && l.mode === "reel" && Number.isFinite(Date.parse(l.recu_le)) && Date.parse(l.recu_le) >= debut.getTime() && Date.parse(l.recu_le) < fin.getTime() && echecsCrm(l).length).sort((a, b) => Date.parse(a.recu_le) - Date.parse(b.recu_le) || Number(a.id) - Number(b.id));
+    var candidatsCrm = (rows, debut, fin) => rows.filter((l) => l.mail_id && l.mode === "reel" && Number.isFinite(Date.parse(l.recu_le)) && Date.parse(l.recu_le) >= debut.getTime() && Date.parse(l.recu_le) < fin.getTime() && (echecsCrm(l).length || l.bien_crm && !l.contact_crm && /^(lead|relance)$/.test(l.nature || ""))).sort((a, b) => Date.parse(a.recu_le) - Date.parse(b.recu_le) || Number(a.id) - Number(b.id));
     var rattraperCrm = async ({ debut, fin, suivi = {} } = {}) => {
       const d = new Date(debut), f = fin ? new Date(fin) : /* @__PURE__ */ new Date();
       if (!Number.isFinite(d.getTime()) || !Number.isFinite(f.getTime()) || f <= d)
@@ -98321,7 +98340,7 @@ var require_reprise_crm = __commonJS({
       const { crm } = await charger();
       if (crm.mode !== "reel") throw new Error("Le mode CRM r\xE9el doit \xEAtre activ\xE9 avant la reprise");
       const t = await tables();
-      const choisis = candidatsCrm(await t.leads.getRows({}), d, f);
+      const choisis = candidatsCrm(await lignesPeriode(d, f), d, f);
       const rapport = {
         debut: d.toISOString(),
         fin: f.toISOString(),
@@ -98349,7 +98368,76 @@ var require_reprise_crm = __commonJS({
       }
       return rapport;
     };
-    module2.exports = { echecsCrm, candidatsCrm, rattraperCrm };
+    var reparerCrm = async ({ debut, fin, suivi = {} } = {}) => {
+      const d = new Date(debut), f = fin ? new Date(fin) : /* @__PURE__ */ new Date();
+      if (!Number.isFinite(d.getTime()) || !Number.isFinite(f.getTime()) || f <= d)
+        throw new Error("Fen\xEAtre de r\xE9paration CRM invalide");
+      const { crm, conf } = await charger();
+      if (crm.mode !== "reel" || !conf.consentement || !conf.consentement.actif)
+        throw new Error("Le CRM r\xE9el et le consentement doivent \xEAtre activ\xE9s");
+      const api = require_core3().flowApi();
+      const client = api.crmDepuisCoffre(crm.type, crm.reglages, crm.prefixe, "reel");
+      const t = await tables();
+      const rows = (await lignesPeriode(d, f)).filter((l) => l.mail_id && l.mode === "reel" && /^(lead|relance)$/.test(l.nature || "") && l.bien_crm && Date.parse(l.recu_le) >= d.getTime() && Date.parse(l.recu_le) < f.getTime()).sort((a, b) => Date.parse(a.recu_le) - Date.parse(b.recu_le) || Number(a.id) - Number(b.id));
+      const rapport = {
+        debut: d.toISOString(),
+        fin: f.toISOString(),
+        candidats: rows.length,
+        dernier: null,
+        poursuite_autorisee: false,
+        traites: 0,
+        confirmes: 0,
+        a_verifier: [],
+        erreurs: [],
+        emails_envoyes_par_ce_bloc: 0
+      };
+      if (!rows.length) return rapport;
+      suivi.total = rows.length + 1;
+      const traiter = async (row) => {
+        const r = await traiterMail(row.mail_id, { actualiserConsentement: true });
+        const actuel = await t.leads.getRow({ mail_id: row.mail_id });
+        const id = actuel && actuel.contact_crm;
+        const result = {
+          lead_id: row.id,
+          mail_id: row.mail_id,
+          contact_id: id || null,
+          consentement_confirme: false,
+          motif_confirme: false,
+          erreurs: echecsCrm(actuel)
+        };
+        if (!id || !/^\d+$/.test(String(id))) return result;
+        const contact = await client.contact(id);
+        const a = (r.dossier.actions || []).find((x) => x.op === "ajouterConsentement");
+        result.consentement_confirme = !!(contact && contact.consentement);
+        result.motif_confirme = !!(result.consentement_confirme && a && contact.consentement_detail && contact.consentement_detail.raison === String(a.motif).slice(0, 64));
+        result.motif = a ? String(a.motif).slice(0, 64) : null;
+        if (!a) result.erreurs.push({ op: "ajouterConsentement", erreur: "aucune \xE9criture de consentement planifi\xE9e" });
+        return result;
+      };
+      suivi.etape = "v\xE9rification du dernier lead avec le motif actuel";
+      try {
+        rapport.dernier = await traiter(rows[rows.length - 1]);
+        suivi.fait++;
+        rapport.poursuite_autorisee = rapport.dernier.consentement_confirme && rapport.dernier.motif_confirme && !rapport.dernier.erreurs.length;
+      } catch (e) {
+        rapport.erreurs.push({ etape: "dernier lead", erreur: String(e.message || e).slice(0, 220) });
+      }
+      if (!rapport.poursuite_autorisee) return rapport;
+      for (const row of rows) {
+        suivi.etape = `r\xE9paration CRM du lead ${row.id}`;
+        try {
+          const r = await traiter(row);
+          rapport.traites++;
+          if (r.consentement_confirme && r.motif_confirme && !r.erreurs.length) rapport.confirmes++;
+          else rapport.a_verifier.push(r);
+        } catch (e) {
+          rapport.erreurs.push({ lead_id: row.id, mail_id: row.mail_id, erreur: String(e.message || e).slice(0, 220) });
+        }
+        suivi.fait++;
+      }
+      return rapport;
+    };
+    module2.exports = { echecsCrm, candidatsCrm, lignesPeriode, rattraperCrm, reparerCrm };
   }
 });
 
@@ -99344,6 +99432,7 @@ var require_reprise_vues = __commonJS({
       if (!bloc) throw new Error("Bloc de lecture indisponible");
       const rapport = { workflow: nom, etapes: [], terminees: 0, erreur: null, emails_envoyes: 0 };
       suivi.total = noms.length;
+      suivi.fait = 0;
       for (const n of noms) {
         suivi.etape = `recalcul ${n}`;
         const c = parNom[n];
@@ -99377,6 +99466,7 @@ var require_taches = __commonJS({
     var { nom } = require_schema();
     var db = () => require("@saltcorn/data/db");
     var S = () => db().getTenantSchema();
+    var CURSEURS_CRM = globalThis[Symbol.for("dysizz-flow.reprises-crm")] || (globalThis[Symbol.for("dysizz-flow.reprises-crm")] = /* @__PURE__ */ new Map());
     var reprendreMails = async (limite = 100) => {
       const ids = (await db().query(`select m.id from "${S()}"."${nom("mails")}" m where m.recu_le < now() - interval '10 minutes' and m.recu_le > now() - interval '7 days'
     and not exists (select 1 from "${S()}"."${nom("leads")}" l where l.mail_id = m.id) order by m.date_envoi, m.id limit ${Math.max(1, Math.min(+limite || 100, 500))}`)).rows.map((r) => r.id);
@@ -99414,7 +99504,31 @@ var require_taches = __commonJS({
       const r = await db().query(`update "${S()}"."${nom("mails")}" set corps_texte = '', corps_html = '', source_eml = '' where date_envoi < now() - ($1 || ' days')::interval and (corps_texte <> '' or corps_html <> '' or source_eml <> '')`, [String(j)]);
       return { effaces: r.rowCount || 0 };
     };
-    module2.exports = { reprendreMails, relireIA, retention };
+    var reprendreCrm = async () => {
+      const { reglages } = require_conf();
+      if ((await reglages()).mode !== "reel") return { repris: 0 };
+      const { tables } = require_schema();
+      const { candidatsCrm, echecsCrm, lignesPeriode } = require_reprise_crm();
+      const fin = new Date(Date.now() - 10 * 6e4), debut = new Date(Date.now() - 7 * 864e5);
+      const key = S() + ":" + require_schema().prefixe();
+      const candidats = candidatsCrm(await lignesPeriode(debut, fin), debut, fin).filter((x) => !echecsCrm(x).some((e) => /inconnu|ambigu/i.test(e.erreur))).sort((a, b) => Number(a.id) - Number(b.id));
+      const curseur = CURSEURS_CRM.get(key) || 0;
+      const rows = [...candidats.filter((x) => Number(x.id) > curseur), ...candidats.filter((x) => Number(x.id) <= curseur)].slice(0, 25);
+      const rapport = { candidats: rows.length, repris: 0, encore_en_echec: [], erreurs: [], emails_envoyes: 0 };
+      for (const row of rows) {
+        try {
+          await require_dossier().traiterMail(row.mail_id);
+          const actuel = await (await tables()).leads.getRow({ mail_id: row.mail_id });
+          if (echecsCrm(actuel).length || !actuel.contact_crm) rapport.encore_en_echec.push(row.id);
+          else rapport.repris++;
+        } catch (e) {
+          rapport.erreurs.push({ lead_id: row.id, erreur: String(e.message || e).slice(0, 220) });
+        }
+        CURSEURS_CRM.set(key, Number(row.id));
+      }
+      return rapport;
+    };
+    module2.exports = { reprendreMails, reprendreCrm, relireIA, retention };
   }
 });
 
@@ -99610,6 +99724,82 @@ var require_leads_solution = __commonJS({
         })
       },
       {
+        name: "dzf_leads_reparer_crm",
+        label: "Leads : v\xE9rifier puis r\xE9parer contacts et consentements",
+        category: CAT,
+        icon: "fas fa-check-double",
+        output: "reparation",
+        timeout: 60,
+        description: "Production : reprend le dernier lead avec le motif actuel, confirme dans Immofacile, puis reprend la p\xE9riode seulement si le contr\xF4le r\xE9ussit. Aucun envoi d'e-mail.",
+        params: [
+          P_PREFIXE,
+          { name: "debut", label: "D\xE9but ISO inclus", type: "String", required: true },
+          { name: "fin", label: "Fin ISO exclue (vide = maintenant)", type: "String" },
+          { name: "fichier", label: "Rapport", default: "reparation-crm.json" },
+          { name: "recalcul_vues", label: "Recalculer les vues AMBS apr\xE8s la r\xE9paration", type: "bool" },
+          { name: "reprise_auto", label: "Activer la reprise horaire des \xE9checs CRM", type: "bool" }
+        ],
+        run: async (p, ctx = {}, api) => {
+          if (!api || !api.user || api.user.role_id !== 1) throw new Error("r\xE9serv\xE9 aux administrateurs");
+          return dans(p, async () => {
+            const nom = String(p.fichier || "reparation-crm.json").replace(/[^\w.-]/g, "_");
+            return require_arriere_plan().enFond(p, ctx, "dzf_leads_reparer_crm", nom, async (suivi) => {
+              const rapport = await require_reprise_crm().reparerCrm({ debut: p.debut, fin: p.fin, suivi });
+              if (rapport.poursuite_autorisee && p.reprise_auto) {
+                const Trigger = require("@saltcorn/data/models/trigger");
+                const existant = await Trigger.findOne({ name: "ambs_reprise_crm_heure" });
+                if (existant && (existant.action !== "dzf_leads_reprendre_crm" || existant.when_trigger !== "Hourly"))
+                  throw new Error("Le d\xE9clencheur ambs_reprise_crm_heure existe avec une autre configuration");
+                if (!existant) await Trigger.create({
+                  name: "ambs_reprise_crm_heure",
+                  action: "dzf_leads_reprendre_crm",
+                  when_trigger: "Hourly",
+                  configuration: {},
+                  min_role: 1,
+                  description: "Reprend les \xE9checs CRM confirm\xE9s des leads r\xE9cents, sans envoi d'e-mail"
+                });
+                rapport.reprise_auto = true;
+              }
+              if (p.recalcul_vues) rapport.vues = await require_reprise_vues().rafraichirVues({
+                workflow: "ambs_lecture",
+                etapes: "vue_lead,vue_bien,vue_agence,vue_nego",
+                suivi,
+                api
+              });
+              rapport.termine = true;
+              rapport.termine_le = (/* @__PURE__ */ new Date()).toISOString();
+              const File = require("@saltcorn/data/models/file");
+              await File.from_contents(nom, "application/json", JSON.stringify(rapport, null, 1), api.user.id, 1);
+              return { fichier: nom, ...rapport };
+            });
+          });
+        }
+      },
+      {
+        name: "dzf_leads_reprendre_crm",
+        label: "Leads : reprendre les \xE9checs CRM r\xE9cents",
+        category: CAT,
+        icon: "fas fa-redo",
+        output: "reprise_crm",
+        timeout: 60,
+        description: "Reprise horaire en arri\xE8re-plan des erreurs CRM confirm\xE9es, avec rotation de 25 dossiers. Aucun e-mail ni nouvelle tentative d'\xE9criture ambigu\xEB.",
+        params: [P_PREFIXE],
+        run: async (p, ctx = {}) => dans(p, () => require_arriere_plan().enFond(
+          p,
+          ctx,
+          "dzf_leads_reprendre_crm",
+          "reprise-crm-automatique.json",
+          async () => {
+            const rapport = await require_taches().reprendreCrm();
+            if (rapport.candidats) {
+              const File = require("@saltcorn/data/models/file");
+              await File.from_contents("reprise-crm-automatique.json", "application/json", JSON.stringify(rapport, null, 1), ctx.user && ctx.user.id, 1);
+            }
+            return rapport;
+          }
+        ))
+      },
+      {
         name: "dzf_leads_rafraichir_vues",
         label: "Leads : recalculer les vues de lecture",
         category: CAT,
@@ -99649,7 +99839,7 @@ var require_leads_solution = __commonJS({
         params: [P_PREFIXE],
         run: async (p) => dans(p, async () => {
           const T = require_taches();
-          return { mails: await T.reprendreMails(), ia: await T.relireIA(), conservation: await T.retention() };
+          return { mails: await T.reprendreMails(), crm: await T.reprendreCrm(), ia: await T.relireIA(), conservation: await T.retention() };
         })
       }
     ];

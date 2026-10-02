@@ -13,6 +13,10 @@ const { creer } = require("../src/lib/leads/crm/immofacile");
       form = options.body;
       return { ok: true, status: 204, headers: new Map(), text: async () => "" };
     }
+    if (url.includes("/customers/42?include=")) return {
+      ok: true, status: 200, headers: new Map(),
+      text: async () => JSON.stringify({data:{id:42,consent:{reason:"Demande immobilière",proofs:[{file:"demande.eml"}]}}}),
+    };
     throw Error("Appel inattendu");
   };
   const crm = creer({ site_id: "test", secret: async () => "dGVzdA==", fetch: fake });

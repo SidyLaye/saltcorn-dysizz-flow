@@ -261,7 +261,7 @@ const etapeContact = async (d, crm, conf = {}) => {
       }) || null
     : null;
   const portailMetier = r.portail === "site_agence"
-    ? (siteCfg ? siteCfg.libelle || (siteCfg.noms && siteCfg.noms[0]) || siteCfg.domaine : r.site_nom || r.site || "Site de l'agence")
+    ? (r.site_nom || (siteCfg ? siteCfg.libelle || (siteCfg.noms && siteCfg.noms[0]) || siteCfg.domaine : r.site || "Site de l'agence"))
     : (r.portail_nom || r.portail);
   /* site_agence reste une information technique de l'extraction ; au niveau métier,
      portail = source = origine = l'agence (son site) */
@@ -291,7 +291,9 @@ const etapeContact = async (d, crm, conf = {}) => {
     if (negoFinal && rc.contact && "negociateur" in rc.contact && !rc.contact.negociateur) { patch.negociateur = negoFinal; if (d.agence) patch.agence = d.agence.id; }
     if (Object.keys(patch).length) d.actions.push({ op: "majContact", id: rc.contact.id, donnees: patch });
   }
-  const nouveauBien = rbBien && !(dos && String(dos.bien_id) === String(rbBien.id));
+  const nouveauBien = rbBien && (rc.action === "creer" ||
+    (dos && rc.contact && String(dos.contact_id || "") !== String(rc.contact.id)) ||
+    !(dos && String(dos.bien_id) === String(rbBien.id)));
   if (ok && actif.suivi && nouveauBien) d.actions.push({ op: "lierBien", bien: rbBien.id });
   const comment = actif.commentaire ? C.commentaire(tous, conf.commentaire || {}) : null;
   if (ok && actif.projet) {
@@ -312,9 +314,14 @@ const etapeConsentement = (d, mail, conf = {}) => {
   if (d.fin) return d;
   const r = d.extraction, dos = (d.interne && d.interne.dos) || null, rcc = (d.interne && d.interne.contact_crm) || null, connus = (d.interne && d.interne.connus) || [];
   const ok = actifs(conf).contact && d.contact && d.contact.action !== "impossible";
-  const dejaConsenti = (dos && dos.consentement) || (rcc && rcc.consentement) || connus.some((x) => x.consentement && rcc && String(x.contact_id) === String(rcc.id));
+  // Une fiche relue est la source de vérité, même si l'ancien dossier disait « consenti ».
+  const consentementRelu = rcc && !rcc.consentement_inconnu && typeof rcc.consentement === "boolean";
+  if (consentementRelu) d.consentement_crm = { contact_id: rcc.id, actif: rcc.consentement };
+  const dejaConsenti = consentementRelu ? rcc.consentement :
+    (dos && dos.consentement && d.contact && String(dos.contact_id) === String(d.contact.id)) ||
+    connus.some((x) => x.consentement && rcc && String(x.contact_id) === String(rcc.id));
   if (ok && rcc && rcc.consentement_inconnu && !dejaConsenti && conf.consentement && conf.consentement.actif) d.motifs.push("fiche du contact illisible : consentement déjà posé ou non ? à vérifier");
-  if (ok && actifs(conf).consentement && conf.consentement && conf.consentement.actif && !dejaConsenti && !(rcc && rcc.consentement_inconnu)) {
+  if (ok && actifs(conf).consentement && conf.consentement && conf.consentement.actif && (!dejaConsenti || conf.consentement.actualiser_motif) && !(rcc && rcc.consentement_inconnu)) {
     const date = dateDuMail(mail) || d.date_mail || new Date();
     const libelle = conf.consentement.libelle || "Demande de contact via {portail} du {date}", portail = String(d.portail || r.site_libelle || r.portail_nom || r.portail || "");
     let motif = gabarit(libelle, { portail, date: dateFr(date) });
@@ -375,12 +382,15 @@ const executer = async (dossier, crm, { mode = "ombre", ecrireAVerifier = false 
   const res = [];
   let contactId = dossier.contact && dossier.contact.id;
   let rechercheId = dossier.dossier && dossier.dossier.recherche_id;
-  let consentement = false;
+  let consentement = !!(dossier.consentement_crm && dossier.consentement_crm.actif &&
+    String(dossier.consentement_crm.contact_id) === String(contactId));
+  let consentementVerifie = !!(dossier.consentement_crm &&
+    String(dossier.consentement_crm.contact_id) === String(contactId));
   /* Lead non automatisé (à vérifier, à trier) : traité à la main, rien n'est écrit dans le CRM (comme l'ancien
      système, qui n'écrivait rien pour un lead en quarantaine), sauf réglage contraire. */
   if (dossier.statut && !["pret", "suivi"].includes(dossier.statut) && !ecrireAVerifier) {
     for (const a of dossier.actions || []) res.push({ op: a.op, fait: false, note: "non automatisé : rien n'est écrit dans le CRM" });
-    return { contactId, rechercheId, consentement, resultats: res, non_automatise: true };
+    return { contactId, rechercheId, consentement, consentementVerifie, resultats: res, non_automatise: true };
   }
   for (const a of dossier.actions) {
     if (mode !== "reel") { res.push({ ...a, donnees: a.donnees && a.donnees.comment ? { ...a.donnees, comment: `(${a.donnees.comment.length} caractères)` } : a.donnees, preuves: a.preuves && a.preuves.map((p) => p.nom), fait: false, mode }); continue; }
@@ -392,11 +402,11 @@ const executer = async (dossier, crm, { mode = "ombre", ecrireAVerifier = false 
       else if (a.op === "creerRecherche") { out = crm.creerRecherche ? await crm.creerRecherche(contactId, a.donnees) : null; if (out && out.id) rechercheId = out.id; }
       else if (a.op === "majRecherche") out = crm.majRecherche ? await crm.majRecherche(a.contact || contactId, a.id, a.donnees) : null;
       else if (a.op === "ajouterAction") out = crm.ajouterAction ? await crm.ajouterAction(contactId, a.donnees) : null;
-      else if (a.op === "ajouterConsentement") { out = await crm.ajouterConsentement(contactId, a); consentement = true; }
+      else if (a.op === "ajouterConsentement") { out = await crm.ajouterConsentement(contactId, a); consentement = true; consentementVerifie = true; }
       res.push({ op: a.op, fait: out !== null, resultat: out && out.id ? { id: out.id } : !!out, ...(out === null ? { note: "non disponible avec ce CRM" } : {}), ...(out && out.non_pris ? { non_pris: out.non_pris, alerte: "écrit mais pas retrouvé à la relecture : " + out.non_pris.join(", ") } : {}) });
     } catch (e) { res.push({ op: a.op, fait: false, erreur: e.message }); if (a.op === "creerContact") break; }
   }
-  return { contactId, rechercheId, consentement, resultats: res };
+  return { contactId, rechercheId, consentement, consentementVerifie, resultats: res };
 };
 
 module.exports = { traiter, executer, preuveEml, trouverAgence, choisirDossier, criteresProjet, NATURES_LEAD, ETAPES, etapeLire, etapeBien, etapeContact, etapeConsentement, etapeDestinataires, conclure, nettoyer };

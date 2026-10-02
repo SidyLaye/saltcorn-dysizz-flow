@@ -75,7 +75,7 @@ const cleVerrou = (api, m, conf, mailId) => {
 };
 
 /* Traite (ou retraite) un mail rangé dans ld_mails. */
-const traiterMail = async (mailId, { forcerOmbre = false } = {}) => {
+const traiterMail = async (mailId, { forcerOmbre = false, actualiserConsentement = false } = {}) => {
   const api = flowApi();
   if (!api) throw new Error("dysizz-flow 2.4 ou plus récent est nécessaire");
   const Table = require("@saltcorn/data/models/table");
@@ -83,6 +83,7 @@ const traiterMail = async (mailId, { forcerOmbre = false } = {}) => {
   const mail = tm && (await tm.getRow({ id: +mailId }));
   if (!mail) throw new Error("mail introuvable");
   const { conf, crm, reglages: R } = await charger();
+  if (actualiserConsentement) conf.consentement = { ...conf.consentement, actualiser_motif: true };
   const mode = forcerOmbre ? "ombre" : crm.mode;
   const client = await avecCatalogue(api.crmDepuisCoffre(crm.type, crm.reglages, crm.prefixe, mode));
   const m = versMoteur(mail);

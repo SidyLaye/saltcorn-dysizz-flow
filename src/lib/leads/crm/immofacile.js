@@ -6,7 +6,7 @@
 "use strict";
 const { typeBien } = require("../valeurs");
 const { cle } = require("../texte");
-const { completer, recent } = require("../contact");
+const { completer, recent, PRENOM_MANQUANT, NOM_MANQUANT } = require("../contact");
 
 /* Jetons gardés d'un adaptateur à l'autre (un workflow en étapes en crée un par étape) :
    clé = empreinte de l'adresse, du site et des identifiants, jamais les identifiants eux-mêmes. */
@@ -23,9 +23,9 @@ const creer = (cfg = {}) => {
 
   /* Le délai couvre aussi la lecture du corps, qui peut rester suspendue après
      réception des en-têtes. Un POST d'écriture ambigu n'est jamais rejoué. */
-  const lectureHttp = async (url, options) => {
+  const lectureHttp = async (url, options, delai) => {
     const ctrl = new AbortController();
-    const to = setTimeout(() => ctrl.abort(), cfg.delai_ms || 15000);
+    const to = setTimeout(() => ctrl.abort(), delai || cfg.delai_ms || 15000);
     try {
       const r = await f(url, { ...options, signal: ctrl.signal });
       const tx = await r.text();
@@ -71,7 +71,7 @@ const creer = (cfg = {}) => {
       if (corps && !multipart) headers["Content-Type"] = "application/json";
       const rejouable = methode === "GET" || LECTURE(methode, chemin);
       let r, tx;
-      try { ({ r, tx } = await lectureHttp(racine + chemin, { method: methode, headers, body: multipart || (corps ? JSON.stringify(corps) : undefined) })); }
+      try { ({ r, tx } = await lectureHttp(racine + chemin, { method: methode, headers, body: multipart || (corps ? JSON.stringify(corps) : undefined) }, chemin === "/customers/search" ? cfg.recherche_delai_ms || cfg.delai_ms || 45000 : undefined)); }
       catch (e) {
         if (!rejouable) throw Object.assign(new Error(`Immofacile ${methode} ${chemin} : résultat d'écriture inconnu, vérifier avant reprise`), { cause: e, ambiguous: true, permanent: true });
         if (essai === 4) throw e;
@@ -151,7 +151,7 @@ const creer = (cfg = {}) => {
   const recherche = async (corps) => { const l = data(await appel("POST", `/products/search?fetch=${FETCH}`, corps)); return Promise.all((Array.isArray(l) ? l : []).map((p) => (p && (p.criteres_text || p.criteresText) ? versBien(p) : detail(p.id || p)))); };
 
   const versContact = (c) => ({ id: c.id, email: c.email || null, emails: [c.email].filter(Boolean), telephone: c.phone || null, mobile: c.mobilePhone || c.mobile_phone || null,
-    telephones: [c.phone, c.mobilePhone, c.mobile_phone].filter(Boolean).map((t) => String(t).replace(/[^\d+]/g, "")), prenom: c.firstname || null, nom: c.lastname || null,
+    telephones: [c.phone, c.mobilePhone, c.mobile_phone].filter(Boolean).map((t) => String(t).replace(/[^\d+]/g, "")), prenom: c.firstname || c.first_name || null, nom: c.lastname || c.last_name || null,
     cree_le: c.createdAt || c.created_at || null,
     agence: idDe(c.agency ?? c.agency_id ?? c.manufacturer), negociateur: idDe(c.user ?? c.user_id ?? c.admin),
     consentement: !!(c.consent && !(c.consent.revokedAt || c.consent.revoked_at)), origine: idDe(c.origin ?? c.origin_id), groupes: [].concat(c.groups ?? c.group ?? []).map(idDe).filter(Boolean) });
@@ -255,7 +255,8 @@ const creer = (cfg = {}) => {
        d'un autre contact. Le téléphone est complété ensuite, sans perdre l'ID. */
     creerContact: async (d) => {
       const corps = { email: d.email, check_duplicate: true };
-      if (d.prenom) corps.firstname = d.prenom; if (d.nom) corps.lastname = d.nom;
+      corps.firstname = d.prenom || PRENOM_MANQUANT;
+      corps.lastname = d.nom || NOM_MANQUANT;
       if (d.agence && isFinite(+d.agence)) corps.agency_id = Number(d.agence); if (d.negociateur && isFinite(+d.negociateur)) corps.user_id = Number(d.negociateur);
       if (d.origine) corps.origin = Number(d.origine); if (cfg.groupe_demandeur) corps.group = Number(cfg.groupe_demandeur);
       let id, deja = false;
@@ -373,7 +374,10 @@ const creer = (cfg = {}) => {
       if (a.hors_horaires !== undefined) fd.append("accept_outside_hours", a.hors_horaires ? "1" : "0");
       for (const p of a.preuves || []) fd.append("proofs[]", new Blob([Buffer.from(p.base64, "base64")], { type: p.type || "application/octet-stream" }), p.nom);
       await appel("POST", `/customers/${Number(contactId)}/consent`, null, { multipart: fd });
-      return { id: contactId };
+      const confirme = await lireContact(contactId);
+      if (!confirme || !confirme.consentement)
+        throw new Error("consentement écrit mais non confirmé sur la fiche Immofacile : à vérifier");
+      return { id: contactId, confirme: true };
     },
   };
 };

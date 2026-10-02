@@ -120,6 +120,58 @@ module.exports = [
     }),
   },
   {
+    name: "dzf_leads_reparer_crm", label: "Leads : vérifier puis réparer contacts et consentements", category: CAT,
+    icon: "fas fa-check-double", output: "reparation", timeout: 60,
+    description: "Production : reprend le dernier lead avec le motif actuel, confirme dans Immofacile, puis reprend la période seulement si le contrôle réussit. Aucun envoi d'e-mail.",
+    params: [P_PREFIXE,
+      { name: "debut", label: "Début ISO inclus", type: "String", required: true },
+      { name: "fin", label: "Fin ISO exclue (vide = maintenant)", type: "String" },
+      { name: "fichier", label: "Rapport", default: "reparation-crm.json" },
+      { name: "recalcul_vues", label: "Recalculer les vues AMBS après la réparation", type: "bool" },
+      { name: "reprise_auto", label: "Activer la reprise horaire des échecs CRM", type: "bool" }],
+    run: async (p, ctx = {}, api) => {
+      if (!api || !api.user || api.user.role_id !== 1) throw new Error("réservé aux administrateurs");
+      return dans(p, async () => {
+        const nom = String(p.fichier || "reparation-crm.json").replace(/[^\w.-]/g, "_");
+        return require("../lib/arriere_plan").enFond(p, ctx, "dzf_leads_reparer_crm", nom, async (suivi) => {
+          const rapport = await require("../lib/leads/tables/reprise_crm").reparerCrm({ debut: p.debut, fin: p.fin, suivi });
+          if (rapport.poursuite_autorisee && p.reprise_auto) {
+            const Trigger = require("@saltcorn/data/models/trigger");
+            const existant = await Trigger.findOne({ name: "ambs_reprise_crm_heure" });
+            if (existant && (existant.action !== "dzf_leads_reprendre_crm" || existant.when_trigger !== "Hourly"))
+              throw new Error("Le déclencheur ambs_reprise_crm_heure existe avec une autre configuration");
+            if (!existant) await Trigger.create({ name: "ambs_reprise_crm_heure", action: "dzf_leads_reprendre_crm",
+              when_trigger: "Hourly", configuration: {}, min_role: 1,
+              description: "Reprend les échecs CRM confirmés des leads récents, sans envoi d'e-mail" });
+            rapport.reprise_auto = true;
+          }
+          if (p.recalcul_vues) rapport.vues = await require("../lib/leads/tables/reprise_vues").rafraichirVues({
+            workflow: "ambs_lecture", etapes: "vue_lead,vue_bien,vue_agence,vue_nego", suivi, api });
+          rapport.termine = true;
+          rapport.termine_le = new Date().toISOString();
+          const File = require("@saltcorn/data/models/file");
+          await File.from_contents(nom, "application/json", JSON.stringify(rapport, null, 1), api.user.id, 1);
+          return { fichier: nom, ...rapport };
+        });
+      });
+    },
+  },
+  {
+    name: "dzf_leads_reprendre_crm", label: "Leads : reprendre les échecs CRM récents", category: CAT,
+    icon: "fas fa-redo", output: "reprise_crm", timeout: 60,
+    description: "Reprise horaire en arrière-plan des erreurs CRM confirmées, avec rotation de 25 dossiers. Aucun e-mail ni nouvelle tentative d'écriture ambiguë.",
+    params: [P_PREFIXE],
+    run: async (p, ctx = {}) => dans(p, () => require("../lib/arriere_plan").enFond(p, ctx,
+      "dzf_leads_reprendre_crm", "reprise-crm-automatique.json", async () => {
+        const rapport = await require("../lib/leads/tables/taches").reprendreCrm();
+        if (rapport.candidats) {
+          const File = require("@saltcorn/data/models/file");
+          await File.from_contents("reprise-crm-automatique.json", "application/json", JSON.stringify(rapport,null,1), ctx.user && ctx.user.id, 1);
+        }
+        return rapport;
+      })),
+  },
+  {
     name: "dzf_leads_rafraichir_vues", label: "Leads : recalculer les vues de lecture", category: CAT,
     icon: "fas fa-layer-group", output: "reprise", timeout: 60,
     description: "Recalcule en arrière-plan, dans l'ordre, les tables de lecture d'un workflow déjà configuré. Ne traite aucun mail et n'envoie rien. Rapport dans Fichiers.",
@@ -147,7 +199,7 @@ module.exports = [
     params: [P_PREFIXE],
     run: async (p) => dans(p, async () => {
       const T = require("../lib/leads/tables/taches");
-      return { mails: await T.reprendreMails(), ia: await T.relireIA(), conservation: await T.retention() };
+      return { mails: await T.reprendreMails(), crm: await T.reprendreCrm(), ia: await T.relireIA(), conservation: await T.retention() };
     }),
   },
 ];

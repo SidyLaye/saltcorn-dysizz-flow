@@ -16,6 +16,8 @@ const response = (status, data) => ({ ok: status >= 200 && status < 300, status,
       assert.equal(body.check_duplicate, true);
       assert.equal(body.phone, undefined);
       assert.equal(body.mobile_phone, undefined);
+      assert.equal(body.firstname, "Prénom non communiqué");
+      assert.equal(body.lastname, "Nom non communiqué");
       return response(201, { data: { id: 101 } });
     }
     if (url.includes("/customers/101") && options.method === "PATCH") {
