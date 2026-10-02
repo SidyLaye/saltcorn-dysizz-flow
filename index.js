@@ -1,4 +1,4 @@
-/* dysizz-flow 2.14.8 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.14.9 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.14.8" : "dev";
+    var VERSION2 = true ? "2.14.9" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -98437,7 +98437,57 @@ var require_reprise_crm = __commonJS({
       }
       return rapport;
     };
-    module2.exports = { echecsCrm, candidatsCrm, lignesPeriode, rattraperCrm, reparerCrm };
+    var reparerSelection = async ({ ids, suivi = {} } = {}) => {
+      const choisis = [...new Set((Array.isArray(ids) ? ids : String(ids || "").split(/[ ,;]+/)).map(Number))];
+      if (!choisis.length || choisis.length > 25 || choisis.some((x) => !Number.isSafeInteger(x) || x <= 0))
+        throw new Error("S\xE9lection de leads invalide (1 \xE0 25 identifiants)");
+      const { crm } = await charger();
+      if (crm.mode !== "reel") throw new Error("Le CRM doit \xEAtre en mode r\xE9el");
+      const client = require_core3().flowApi().crmDepuisCoffre(crm.type, crm.reglages, crm.prefixe, "reel");
+      const t = await tables();
+      const rows = [];
+      for (const id of choisis) {
+        const row = await t.leads.getRow({ id });
+        if (!row || row.mode !== "reel" || !row.mail_id || !row.bien_crm || !/^(lead|relance)$/.test(row.nature || ""))
+          throw new Error(`Lead ${id} : demande r\xE9elle avec bien confirm\xE9 requise`);
+        rows.push(row);
+      }
+      const rapport = { selection: choisis, traites: 0, corriges: 0, resultats: [], erreurs: [], emails_envoyes: 0 };
+      suivi.total = rows.length;
+      suivi.fait = 0;
+      for (const row of rows) {
+        suivi.etape = `reprise CRM du lead ${row.id}`;
+        try {
+          await traiterMail(row.mail_id, { actualiserConsentement: true });
+          const actuel = await t.leads.getRow({ id: row.id });
+          const id = actuel && actuel.contact_crm;
+          const result = {
+            lead_id: row.id,
+            mail_id: row.mail_id,
+            contact_id: id || null,
+            contact_confirme: false,
+            consentement_confirme: false,
+            statut: actuel && actuel.statut,
+            erreurs: echecsCrm(actuel)
+          };
+          if (id && /^\d+$/.test(String(id))) {
+            const contact = await client.contact(id);
+            result.contact_confirme = !!(contact && String(contact.id) === String(id));
+            result.consentement_confirme = !!(contact && contact.consentement);
+          }
+          if (!result.contact_confirme || !result.consentement_confirme)
+            result.cause = String(actuel && actuel.motifs || "fiche ou consentement non confirm\xE9").slice(0, 300);
+          rapport.resultats.push(result);
+          rapport.traites++;
+          if (result.contact_confirme && result.consentement_confirme && !result.erreurs.length) rapport.corriges++;
+        } catch (e) {
+          rapport.erreurs.push({ lead_id: row.id, erreur: String(e.message || e).slice(0, 250) });
+        }
+        suivi.fait++;
+      }
+      return rapport;
+    };
+    module2.exports = { echecsCrm, candidatsCrm, lignesPeriode, rattraperCrm, reparerCrm, reparerSelection };
   }
 });
 
@@ -99770,6 +99820,40 @@ var require_leads_solution = __commonJS({
               rapport.termine_le = (/* @__PURE__ */ new Date()).toISOString();
               const File = require("@saltcorn/data/models/file");
               await File.from_contents(nom, "application/json", JSON.stringify(rapport, null, 1), api.user.id, 1);
+              return { fichier: nom, ...rapport };
+            });
+          });
+        }
+      },
+      {
+        name: "dzf_leads_reparer_selection_crm",
+        label: "Leads : r\xE9parer une s\xE9lection de fiches CRM",
+        category: CAT,
+        icon: "fas fa-user-check",
+        output: "reparation_selection",
+        timeout: 60,
+        description: "Reprend uniquement les leads choisis, avec contr\xF4le du contact et du consentement dans Immofacile. Arri\xE8re-plan, rapport final, aucun e-mail.",
+        params: [
+          P_PREFIXE,
+          { name: "ids", label: "Identifiants des leads (JSON)", type: "json", required: true },
+          { name: "fichier", label: "Rapport", default: "reparation-selection-crm.json" },
+          { name: "recalcul_vues", label: "Recalculer les vues AMBS apr\xE8s la reprise", type: "bool" }
+        ],
+        run: async (p, ctx = {}, api) => {
+          if (!api || !api.user || api.user.role_id !== 1) throw new Error("r\xE9serv\xE9 aux administrateurs");
+          return dans(p, () => {
+            const nom = String(p.fichier || "reparation-selection-crm.json").replace(/[^\w.-]/g, "_");
+            return require_arriere_plan().enFond(p, ctx, "dzf_leads_reparer_selection_crm", nom, async (suivi) => {
+              const rapport = await require_reprise_crm().reparerSelection({ ids: p.ids, suivi });
+              if (p.recalcul_vues) rapport.vues = await require_reprise_vues().rafraichirVues({
+                workflow: "ambs_lecture",
+                etapes: "vue_lead,vue_bien,vue_agence,vue_nego",
+                suivi,
+                api
+              });
+              rapport.termine = true;
+              rapport.termine_le = (/* @__PURE__ */ new Date()).toISOString();
+              await require("@saltcorn/data/models/file").from_contents(nom, "application/json", JSON.stringify(rapport, null, 1), api.user.id, 1);
               return { fichier: nom, ...rapport };
             });
           });

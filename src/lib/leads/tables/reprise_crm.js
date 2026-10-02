@@ -117,4 +117,47 @@ const reparerCrm = async ({ debut, fin, suivi = {} } = {}) => {
   return rapport;
 };
 
-module.exports = { echecsCrm, candidatsCrm, lignesPeriode, rattraperCrm, reparerCrm };
+const reparerSelection = async ({ ids, suivi = {} } = {}) => {
+  const choisis = [...new Set((Array.isArray(ids) ? ids : String(ids || "").split(/[ ,;]+/)).map(Number))];
+  if (!choisis.length || choisis.length > 25 || choisis.some(x => !Number.isSafeInteger(x) || x <= 0))
+    throw new Error("Sélection de leads invalide (1 à 25 identifiants)");
+  const { crm } = await charger();
+  if (crm.mode !== "reel") throw new Error("Le CRM doit être en mode réel");
+  const client = require("./core").flowApi().crmDepuisCoffre(crm.type, crm.reglages, crm.prefixe, "reel");
+  const t = await tables();
+  const rows = [];
+  for (const id of choisis) {
+    const row = await t.leads.getRow({ id });
+    if (!row || row.mode !== "reel" || !row.mail_id || !row.bien_crm || !/^(lead|relance)$/.test(row.nature || ""))
+      throw new Error(`Lead ${id} : demande réelle avec bien confirmé requise`);
+    rows.push(row);
+  }
+  const rapport = { selection: choisis, traites: 0, corriges: 0, resultats: [], erreurs: [], emails_envoyes: 0 };
+  suivi.total = rows.length;
+  suivi.fait = 0;
+  for (const row of rows) {
+    suivi.etape = `reprise CRM du lead ${row.id}`;
+    try {
+      await traiterMail(row.mail_id, { actualiserConsentement: true });
+      const actuel = await t.leads.getRow({ id: row.id });
+      const id = actuel && actuel.contact_crm;
+      const result = { lead_id: row.id, mail_id: row.mail_id, contact_id: id || null,
+        contact_confirme: false, consentement_confirme: false, statut: actuel && actuel.statut,
+        erreurs: echecsCrm(actuel) };
+      if (id && /^\d+$/.test(String(id))) {
+        const contact = await client.contact(id);
+        result.contact_confirme = !!(contact && String(contact.id) === String(id));
+        result.consentement_confirme = !!(contact && contact.consentement);
+      }
+      if (!result.contact_confirme || !result.consentement_confirme)
+        result.cause = String(actuel && actuel.motifs || "fiche ou consentement non confirmé").slice(0, 300);
+      rapport.resultats.push(result);
+      rapport.traites++;
+      if (result.contact_confirme && result.consentement_confirme && !result.erreurs.length) rapport.corriges++;
+    } catch (e) { rapport.erreurs.push({ lead_id: row.id, erreur: String(e.message || e).slice(0, 250) }); }
+    suivi.fait++;
+  }
+  return rapport;
+};
+
+module.exports = { echecsCrm, candidatsCrm, lignesPeriode, rattraperCrm, reparerCrm, reparerSelection };

@@ -157,6 +157,29 @@ module.exports = [
     },
   },
   {
+    name: "dzf_leads_reparer_selection_crm", label: "Leads : réparer une sélection de fiches CRM", category: CAT,
+    icon: "fas fa-user-check", output: "reparation_selection", timeout: 60,
+    description: "Reprend uniquement les leads choisis, avec contrôle du contact et du consentement dans Immofacile. Arrière-plan, rapport final, aucun e-mail.",
+    params: [P_PREFIXE, { name: "ids", label: "Identifiants des leads (JSON)", type: "json", required: true },
+      { name: "fichier", label: "Rapport", default: "reparation-selection-crm.json" },
+      { name: "recalcul_vues", label: "Recalculer les vues AMBS après la reprise", type: "bool" }],
+    run: async (p, ctx = {}, api) => {
+      if (!api || !api.user || api.user.role_id !== 1) throw new Error("réservé aux administrateurs");
+      return dans(p, () => {
+        const nom = String(p.fichier || "reparation-selection-crm.json").replace(/[^\w.-]/g, "_");
+        return require("../lib/arriere_plan").enFond(p, ctx, "dzf_leads_reparer_selection_crm", nom, async (suivi) => {
+          const rapport = await require("../lib/leads/tables/reprise_crm").reparerSelection({ ids: p.ids, suivi });
+          if (p.recalcul_vues) rapport.vues = await require("../lib/leads/tables/reprise_vues").rafraichirVues({
+            workflow: "ambs_lecture", etapes: "vue_lead,vue_bien,vue_agence,vue_nego", suivi, api });
+          rapport.termine = true;
+          rapport.termine_le = new Date().toISOString();
+          await require("@saltcorn/data/models/file").from_contents(nom, "application/json", JSON.stringify(rapport,null,1), api.user.id, 1);
+          return { fichier: nom, ...rapport };
+        });
+      });
+    },
+  },
+  {
     name: "dzf_leads_reprendre_crm", label: "Leads : reprendre les échecs CRM récents", category: CAT,
     icon: "fas fa-redo", output: "reprise_crm", timeout: 60,
     description: "Reprise horaire en arrière-plan des erreurs CRM confirmées, avec rotation de 25 dossiers. Aucun e-mail ni nouvelle tentative d'écriture ambiguë.",
