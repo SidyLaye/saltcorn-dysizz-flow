@@ -1,4 +1,4 @@
-/* dysizz-flow 2.14.10 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.14.11 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.14.10" : "dev";
+    var VERSION2 = true ? "2.14.11" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -95435,9 +95435,9 @@ var require_traiter = __commonJS({
       if (ok && rc.action === "mettre_a_jour") {
         const patch = completer(rc.contact, c);
         if (d.origine && d.origine.id && (!rc.contact || String(rc.contact.origine || "") !== String(d.origine.id))) patch.origine = d.origine.id;
-        if (negoFinal && rc.contact && "negociateur" in rc.contact && !rc.contact.negociateur) {
-          patch.negociateur = negoFinal;
-          if (d.agence) patch.agence = d.agence.id;
+        if (rbBien && negoFinal && rc.contact) {
+          if (String(rc.contact.negociateur || "") !== String(negoFinal)) patch.negociateur = negoFinal;
+          if (d.agence && String(rc.contact.agence || "") !== String(d.agence.id)) patch.agence = d.agence.id;
         }
         if (Object.keys(patch).length) d.actions.push({ op: "majContact", id: rc.contact.id, donnees: patch });
       }
@@ -96071,6 +96071,8 @@ var require_immofacile = __commonJS({
           if (!Object.keys(corps).length) return { id };
           await appel("PATCH", `/customers/${Number(id)}`, corps);
           const non_pris = await relire(id, corps);
+          if (("user_id" in corps || "agency_id" in corps) && non_pris.some((k) => ["user_id", "agency_id"].includes(k) || k.startsWith("relecture impossible")))
+            throw new Error("r\xE9affectation du contact CRM non confirm\xE9e par relecture : " + non_pris.join(", "));
           return { id, ...non_pris.length ? { non_pris } : {} };
         },
         /* Suivi (rapprochement) contact ↔ bien ; 409 = déjà suivi, c'est bon. */

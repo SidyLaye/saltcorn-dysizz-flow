@@ -317,6 +317,9 @@ const creer = (cfg = {}) => {
       if (!Object.keys(corps).length) return { id };
       await appel("PATCH", `/customers/${Number(id)}`, corps);
       const non_pris = await relire(id, corps);
+      if (("user_id" in corps || "agency_id" in corps) &&
+          non_pris.some(k => ["user_id", "agency_id"].includes(k) || k.startsWith("relecture impossible")))
+        throw new Error("réaffectation du contact CRM non confirmée par relecture : " + non_pris.join(", "));
       return { id, ...(non_pris.length ? { non_pris } : {}) };
     },
     /* Suivi (rapprochement) contact ↔ bien ; 409 = déjà suivi, c'est bon. */

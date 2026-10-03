@@ -288,7 +288,11 @@ const etapeContact = async (d, crm, conf = {}) => {
   if (ok && rc.action === "mettre_a_jour") {
     const patch = completer(rc.contact, c);
     if (d.origine && d.origine.id && (!rc.contact || String(rc.contact.origine || "") !== String(d.origine.id))) patch.origine = d.origine.id;
-    if (negoFinal && rc.contact && "negociateur" in rc.contact && !rc.contact.negociateur) { patch.negociateur = negoFinal; if (d.agence) patch.agence = d.agence.id; }
+    // Le contact suit le négociateur du bien demandé, même s'il avait déjà un responsable.
+    if (rbBien && negoFinal && rc.contact) {
+      if (String(rc.contact.negociateur || "") !== String(negoFinal)) patch.negociateur = negoFinal;
+      if (d.agence && String(rc.contact.agence || "") !== String(d.agence.id)) patch.agence = d.agence.id;
+    }
     if (Object.keys(patch).length) d.actions.push({ op: "majContact", id: rc.contact.id, donnees: patch });
   }
   const nouveauBien = rbBien && (rc.action === "creer" ||
