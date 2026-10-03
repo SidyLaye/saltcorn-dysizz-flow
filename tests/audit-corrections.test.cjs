@@ -41,10 +41,11 @@ const conf = { ...CONF, agences: [{ id: "1", nom: "AGENCE EXEMPLE CAHORS" }], ro
   assert.strictEqual(ecrit.length, 1, "lead complet : écrit");
   await executer({ statut: "a_verifier", actions: [{ op: "creerContact", donnees: { email: "a@b.fr" } }] }, crm, { mode: "reel", ecrireAVerifier: true });
   assert.strictEqual(ecrit.length, 2, "réglage : écrire aussi les leads à vérifier");
-  /* sans e-mail et sans fiche existante : non automatisé (Immofacile refuse de créer un contact sans e-mail) */
+  /* Téléphone seul : l'absence d'e-mail ne bloque plus la création CRM. */
   const { traiter } = require("../src/lib/leads/traiter"); const M = require("../src/lib/leads/crm/memoire");
   const d = await traiter({ expediteur: "<pacontact@bellespierres.com>", objet: "Vous avez une demande d'appel", texte: "Vous avez une demande d'appel\nNom : Pion\nPrénom : Jean\nTéléphone : +33600112244\nRéférence de l'annonce :\n30123\n" + "x".repeat(60) }, M.creer({ biens: [{ id: 99, reference: "30123", negociateur_id: "500" }] }), conf);
-  assert.ok(d.statut !== "pret" && d.motifs.some((m) => /sans e-mail/.test(m)), d.statut + " " + d.motifs.join(" | "));
+  assert.ok(!d.motifs.some((m) => /sans e-mail/.test(m)), d.motifs.join(" | "));
+  assert.ok(d.actions.some(a=>a.op==="creerContact" && a.donnees.telephone && !a.donnees.email));
   /* casse des noms et pseudos */
   const n1 = { prenom: "NICOLAS", nom: "fontaine" }; nettoyerNoms(n1); assert.deepStrictEqual([n1.prenom, n1.nom], ["Nicolas", "Fontaine"]);
   const n2 = { prenom: "Sebastien", nom: "Sebastien" }; nettoyerNoms(n2); assert.ok(n2.prenom && !n2.nom, "un seul mot : prénom");

@@ -188,6 +188,13 @@ const tenirLecture = async (job) => {
     let retirees = 0;
     if (job.supprimer) retirees = (await client.query(`delete from ${T} where not (${q(job.cle)}::text = any($1))`, [lignes.map((x) => String(x[job.cle]))])).rowCount;
     await client.query("commit");
+    if (up.rowCount || retirees) {
+      // Signal après validation des données, sans aucune ligne ni donnée personnelle.
+      try {
+        const st = require("@saltcorn/data/db/state").getState();
+        if (typeof st.emitDynamicUpdate === "function") st.emitDynamicUpdate(schema, { dzf_lecture: true });
+      } catch (_) { /* Les données sont validées ; la relecture périodique reste disponible. */ }
+    }
     return { lignes: lignes.length, ecrites: up.rowCount, retirees, ms: Date.now() - t0 };
   } catch (e) {
     await client.query("rollback").catch(() => {});

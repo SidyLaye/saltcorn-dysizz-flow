@@ -6,7 +6,7 @@
 "use strict";
 const { typeBien } = require("../valeurs");
 const { cle } = require("../texte");
-const { completer, recent, PRENOM_MANQUANT, NOM_MANQUANT } = require("../contact");
+const { completer, recent, PRENOM_MANQUANT, NOM_MANQUANT, emailTelephone } = require("../contact");
 
 /* Jetons gardés d'un adaptateur à l'autre (un workflow en étapes en crée un par étape) :
    clé = empreinte de l'adresse, du site et des identifiants, jamais les identifiants eux-mêmes. */
@@ -167,7 +167,7 @@ const creer = (cfg = {}) => {
       const c = (await lireContact(id)) || {};
       c.groupes = c.groupes || [];
       const chiffres = (x) => String(x || "").replace(/\D/g, "").slice(-9);
-      const pris = { firstname: c.prenom, lastname: c.nom, phone: c.telephone, mobile_phone: c.mobile, agency_id: c.agence, user_id: c.negociateur, origin: c.origine, group: c.groupes[0] };
+      const pris = { email: c.email, firstname: c.prenom, lastname: c.nom, phone: c.telephone, mobile_phone: c.mobile, agency_id: c.agence, user_id: c.negociateur, origin: c.origine, group: c.groupes[0] };
       return Object.keys(corps).filter((k) => k in pris && (k === "group" ? !c.groupes.map(String).includes(String(corps[k])) : ["phone", "mobile_phone"].includes(k) ? chiffres(pris[k]) !== chiffres(corps[k]) : String(pris[k] ?? "") !== String(corps[k])));
     } catch (e) { return ["relecture impossible : " + e.message]; }
   };
@@ -258,7 +258,9 @@ const creer = (cfg = {}) => {
        l'e-mail seul évite de rattacher un nouvel acquéreur au numéro partagé
        d'un autre contact. Le téléphone est complété ensuite, sans perdre l'ID. */
     creerContact: async (d) => {
-      const corps = { email: d.email, check_duplicate: true };
+      const provisoire = !d.email;
+      const corps = { email: d.email || emailTelephone(d.telephone, cfg.site_id), check_duplicate: true };
+      if (provisoire) corps.phone = d.telephone;
       corps.firstname = d.prenom || PRENOM_MANQUANT;
       corps.lastname = d.nom || NOM_MANQUANT;
       if (d.agence && isFinite(+d.agence)) corps.agency_id = Number(d.agence); if (d.negociateur && isFinite(+d.negociateur)) corps.user_id = Number(d.negociateur);
@@ -267,8 +269,10 @@ const creer = (cfg = {}) => {
       try { id = (data(await appel("POST", "/customers", corps)) || {}).id; }
       catch (e) {
         if (e.http !== 409) throw e;
-        const exacts = (await chercherContacts({ email: d.email }))
-          .filter((c) => c.emails.some((x) => String(x).trim().toLowerCase() === String(d.email).trim().toLowerCase()));
+        let exacts = (await chercherContacts({ email: corps.email }))
+          .filter((c) => c.emails.some((x) => String(x).trim().toLowerCase() === String(corps.email).trim().toLowerCase()));
+        if (!exacts.length && provisoire) exacts = (await chercherContacts({ phone: String(d.telephone).replace(/^\+33/, "0") }))
+          .filter(c => c.telephones.some(x => String(x).replace(/\D/g, "").slice(-9) === String(d.telephone).replace(/\D/g, "").slice(-9)));
         if (!exacts.length) throw e;
         id = recent(exacts).id;
         deja = true;
@@ -282,6 +286,7 @@ const creer = (cfg = {}) => {
         const patch = {};
         if (p.prenom) patch.firstname = p.prenom;
         if (p.nom) patch.lastname = p.nom;
+        if (p.email) patch.email = p.email;
         if (p.telephone) patch.phone = p.telephone;
         if (p.mobile) patch.mobile_phone = p.mobile;
         if (d.origine && !ex.origine) patch.origin = Number(d.origine);
@@ -290,7 +295,7 @@ const creer = (cfg = {}) => {
         if (Object.keys(patch).length) await appel("PATCH", `/customers/${Number(id)}`, patch);
         non_pris.push(...await relire(id, patch));
       } else {
-        if (d.telephone) {
+        if (d.telephone && !provisoire) {
           const field = /^\+33[67]\d{8}$/.test(d.telephone) ? "mobile_phone" : "phone";
           try { await appel("PATCH", `/customers/${Number(id)}`, { [field]: d.telephone }); }
           catch (e) { non_pris.push(field + " : " + e.message); }
@@ -299,11 +304,14 @@ const creer = (cfg = {}) => {
       }
       const affectationNonConfirmee = ("user_id" in corps || "agency_id" in corps) &&
         non_pris.some(k => ["user_id", "agency_id"].includes(k) || k.startsWith("relecture impossible"));
+      const identiteNonConfirmee = provisoire && non_pris.some(k => k === "phone" || k.startsWith("relecture impossible"));
       return { id, ...(deja ? { deja: true } : {}), ...(non_pris.length ? { non_pris } : {}),
+        ...(identiteNonConfirmee ? { identite_confirmee: false } : {}),
         ...(affectationNonConfirmee ? { affectation_confirmee: false } : {}) };
     },
     majContact: async (id, p) => {
       const corps = {};
+      if (p.email) corps.email = p.email;
       if (p.prenom) corps.firstname = p.prenom; if (p.nom) corps.lastname = p.nom;
       if (p.mobile) corps.mobile_phone = p.mobile; if (p.telephone) corps.phone = p.telephone;
       if (p.agence && isFinite(+p.agence))
@@ -320,6 +328,8 @@ const creer = (cfg = {}) => {
       if (!Object.keys(corps).length) return { id };
       await appel("PATCH", `/customers/${Number(id)}`, corps);
       const non_pris = await relire(id, corps);
+      if ("email" in corps && non_pris.some(k => k === "email" || k.startsWith("relecture impossible")))
+        throw new Error("e-mail réel non confirmé après remplacement de l'adresse provisoire");
       if (("user_id" in corps || "agency_id" in corps) &&
           non_pris.some(k => ["user_id", "agency_id"].includes(k) || k.startsWith("relecture impossible")))
         throw new Error("réaffectation du contact CRM non confirmée par relecture : " + non_pris.join(", "));

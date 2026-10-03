@@ -180,6 +180,30 @@ module.exports = [
     },
   },
   {
+    name: "dzf_leads_reprendre_sans_email", label: "Leads : reprendre les fiches avec téléphone sans e-mail", category: CAT,
+    icon: "fas fa-phone", output: "reprise_sans_email", timeout: 60,
+    description: "Période avec bien, téléphone et sans fiche CRM : pipeline existante, relecture CRM, reprise sauvegardée. Aucun e-mail envoyé.",
+    params: [P_PREFIXE, { name: "debut", required: true }, { name: "fichier", default: "reprise-sans-email.json" }],
+    run: async (p, ctx = {}, api) => {
+      if (!api.user || Number(api.user.role_id)!==1) throw new Error("Administrateur requis");
+      const fichier=String(p.fichier||"reprise-sans-email.json").replace(/[^\w.-]/g,"_");
+      return dans(p,()=>require("../lib/arriere_plan").enFond(p,ctx,"dzf_leads_reprendre_sans_email",fichier,async suivi=>{
+        const rapport=await require("../lib/leads/tables/sans_email").reprendre({debut:p.debut,suivi});
+        await require("@saltcorn/data/models/file").from_contents(fichier,"application/json",JSON.stringify(rapport,null,1),api.user.id,1);
+        return {fichier,...rapport};
+      }));
+    },
+  },
+  {
+    name: "dzf_leads_actualiser_pages", label: "Leads : activer l'actualisation des pages AMBS", category: CAT,
+    description: "Sauvegarde les pages et active une relecture toutes les 15 secondes sur leurs blocs de données, sans toucher aux formulaires.",
+    icon: "fas fa-sync", output: "pages", params: [],
+    run: async (_p,_ctx,api) => {
+      if(!api.user || Number(api.user.role_id)!==1) throw new Error("Administrateur requis");
+      return require("../lib/leads/tables/pages_actualisation").installer();
+    },
+  },
+  {
     name: "dzf_leads_reaffecter_periode", label: "Leads : corriger les affectations CRM d'une période", category: CAT,
     icon: "fas fa-user-tag", output: "reaffectation", timeout: 60,
     description: "Dernière demande avec bien par contact, négociateur actuel du bien, contrôle d'identité et relecture. Reprise sauvegardée ; aucun e-mail ni rejeu de pipeline.",

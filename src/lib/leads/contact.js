@@ -8,6 +8,12 @@ const recent = (xs) => xs.slice().sort((a, b) => String(b.cree_le || "").localeC
 // Libellés explicites pour une fiche individuelle dont le mail ne donne pas l'identité.
 const PRENOM_MANQUANT = "Prénom non communiqué";
 const NOM_MANQUANT = "Nom non communiqué";
+const emailIndisponible = v => /^email-indisponible-[a-f0-9]{24}@email-indisponible\.invalid$/i.test(String(v || ""));
+const emailTelephone = (telephone, site = "") => {
+  const n = String(telephone || "").replace(/\D/g, "");
+  if (n.length < 9 || n.length > 15) throw new Error("Téléphone valide requis pour une fiche sans e-mail");
+  return "email-indisponible-" + require("crypto").createHash("sha256").update(String(site) + ":" + n).digest("hex").slice(0,24) + "@email-indisponible.invalid";
+};
 
 const resoudreContact = async (c = {}, crm) => {
   const trace = [];
@@ -37,6 +43,11 @@ const resoudreContact = async (c = {}, crm) => {
     if (parTel.length > 1) trace.push(`${parTel.length} contacts avec ce téléphone : le plus récent est gardé (${x.id})`);
     return { contact: x, action: "mettre_a_jour", par: "telephone", trace };
   }
+  if (c.email && c.telephone && typeof crm.contactsParTelephone === "function") {
+    try { parTel = (await crm.contactsParTelephone(c.telephone)).filter(x => emailIndisponible(x.email)); }
+    catch (e) { return { contact: null, action: "impossible", par: "recherche_telephone", trace: trace.concat("vérification des fiches sans e-mail impossible : " + e.message) }; }
+    if (parTel.length) return { contact: recent(parTel), action: "mettre_a_jour", par: "telephone_placeholder", trace };
+  }
   if (!c.email && !c.telephone) return { contact: null, action: "impossible", trace: trace.concat("ni e-mail ni téléphone") };
   return { contact: null, action: "creer", trace };
 };
@@ -48,6 +59,7 @@ const completer = (existant = {}, c = {}) => {
   if ((vide(existant.prenom) || existant.prenom === PRENOM_MANQUANT) && c.prenom) patch.prenom = c.prenom;
   if ((vide(existant.nom) || existant.nom === NOM_MANQUANT) && c.nom) patch.nom = c.nom;
   const tels = [existant.telephone, existant.mobile].filter(Boolean).map((t) => String(t).replace(/\D/g, "").slice(-9));
+  if (emailIndisponible(existant.email) && c.email && !emailIndisponible(c.email)) patch.email = c.email;
   if (c.telephone && !tels.includes(c.telephone.replace(/\D/g, "").slice(-9))) {
     const mobile = /^\+33[67]\d{8}$/.test(c.telephone);
     if (mobile && vide(existant.mobile)) patch.mobile = c.telephone;
@@ -57,4 +69,4 @@ const completer = (existant = {}, c = {}) => {
   return patch;
 };
 
-module.exports = { resoudreContact, completer, recent, PRENOM_MANQUANT, NOM_MANQUANT };
+module.exports = { resoudreContact, completer, recent, PRENOM_MANQUANT, NOM_MANQUANT, emailIndisponible, emailTelephone };

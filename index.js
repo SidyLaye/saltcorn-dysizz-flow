@@ -1,4 +1,4 @@
-/* dysizz-flow 2.14.12 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.14.13 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.14.12" : "dev";
+    var VERSION2 = true ? "2.14.13" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -94795,6 +94795,12 @@ var require_contact = __commonJS({
     var recent = (xs) => xs.slice().sort((a, b) => String(b.cree_le || "").localeCompare(String(a.cree_le || "")) || (+b.id || 0) - (+a.id || 0))[0];
     var PRENOM_MANQUANT = "Pr\xE9nom non communiqu\xE9";
     var NOM_MANQUANT = "Nom non communiqu\xE9";
+    var emailIndisponible = (v) => /^email-indisponible-[a-f0-9]{24}@email-indisponible\.invalid$/i.test(String(v || ""));
+    var emailTelephone = (telephone, site = "") => {
+      const n = String(telephone || "").replace(/\D/g, "");
+      if (n.length < 9 || n.length > 15) throw new Error("T\xE9l\xE9phone valide requis pour une fiche sans e-mail");
+      return "email-indisponible-" + require("crypto").createHash("sha256").update(String(site) + ":" + n).digest("hex").slice(0, 24) + "@email-indisponible.invalid";
+    };
     var resoudreContact = async (c = {}, crm) => {
       const trace = [];
       let parEmail = [], parTel = [];
@@ -94825,6 +94831,14 @@ var require_contact = __commonJS({
         if (parTel.length > 1) trace.push(`${parTel.length} contacts avec ce t\xE9l\xE9phone : le plus r\xE9cent est gard\xE9 (${x.id})`);
         return { contact: x, action: "mettre_a_jour", par: "telephone", trace };
       }
+      if (c.email && c.telephone && typeof crm.contactsParTelephone === "function") {
+        try {
+          parTel = (await crm.contactsParTelephone(c.telephone)).filter((x) => emailIndisponible(x.email));
+        } catch (e) {
+          return { contact: null, action: "impossible", par: "recherche_telephone", trace: trace.concat("v\xE9rification des fiches sans e-mail impossible : " + e.message) };
+        }
+        if (parTel.length) return { contact: recent(parTel), action: "mettre_a_jour", par: "telephone_placeholder", trace };
+      }
       if (!c.email && !c.telephone) return { contact: null, action: "impossible", trace: trace.concat("ni e-mail ni t\xE9l\xE9phone") };
       return { contact: null, action: "creer", trace };
     };
@@ -94834,6 +94848,7 @@ var require_contact = __commonJS({
       if ((vide(existant.prenom) || existant.prenom === PRENOM_MANQUANT) && c.prenom) patch.prenom = c.prenom;
       if ((vide(existant.nom) || existant.nom === NOM_MANQUANT) && c.nom) patch.nom = c.nom;
       const tels = [existant.telephone, existant.mobile].filter(Boolean).map((t) => String(t).replace(/\D/g, "").slice(-9));
+      if (emailIndisponible(existant.email) && c.email && !emailIndisponible(c.email)) patch.email = c.email;
       if (c.telephone && !tels.includes(c.telephone.replace(/\D/g, "").slice(-9))) {
         const mobile = /^\+33[67]\d{8}$/.test(c.telephone);
         if (mobile && vide(existant.mobile)) patch.mobile = c.telephone;
@@ -94842,7 +94857,7 @@ var require_contact = __commonJS({
       }
       return patch;
     };
-    module2.exports = { resoudreContact, completer, recent, PRENOM_MANQUANT, NOM_MANQUANT };
+    module2.exports = { resoudreContact, completer, recent, PRENOM_MANQUANT, NOM_MANQUANT, emailIndisponible, emailTelephone };
   }
 });
 
@@ -95408,7 +95423,8 @@ var require_traiter = __commonJS({
           else rc.contact = { ...rc.contact, consentement_inconnu: true };
         }
         if (rc.action === "impossible") d.motifs.push(rc.par && rc.par.startsWith("recherche_") ? "recherche du contact CRM indisponible : v\xE9rifier avant toute cr\xE9ation" : "contact impossible : ni e-mail ni t\xE9l\xE9phone");
-        if (rc.action === "creer" && !c.email) d.motifs.push("pas d'e-mail : le CRM ne cr\xE9e pas de contact sans e-mail (\xE0 cr\xE9er \xE0 la main avec le t\xE9l\xE9phone)");
+        if (rc.action === "creer" && !c.email && c.telephone)
+          d.alertes.push("e-mail indisponible : fiche CRM identifi\xE9e par t\xE9l\xE9phone, adresse provisoire non distribuable");
       }
       d.contact = { id: rc.contact ? rc.contact.id : null, action: rc.action, par: rc.par, trace: rc.trace };
       d.interne = { ...d.interne || {}, contact_crm: rc.contact || null, rgpd_disponible: typeof crm.confirmerRgpd === "function" };
@@ -95573,7 +95589,8 @@ var require_traiter = __commonJS({
           }
           res.push({
             op: a.op,
-            fait: out !== null && !(out && out.affectation_confirmee === false),
+            fait: out !== null && !(out && (out.affectation_confirmee === false || out.identite_confirmee === false)),
+            ...out && out.identite_confirmee === false ? { erreur: "t\xE9l\xE9phone du contact cr\xE9\xE9 non confirm\xE9 par relecture CRM" } : {},
             ...out && out.affectation_confirmee === false ? { erreur: "affectation du contact cr\xE9\xE9 ou retrouv\xE9 non confirm\xE9e par relecture CRM" } : {},
             resultat: out && out.id ? { id: out.id } : !!out,
             ...out === null ? { note: "non disponible avec ce CRM" } : {},
@@ -95691,7 +95708,7 @@ var require_immofacile = __commonJS({
     "use strict";
     var { typeBien } = require_valeurs();
     var { cle } = require_texte();
-    var { completer, recent, PRENOM_MANQUANT, NOM_MANQUANT } = require_contact();
+    var { completer, recent, PRENOM_MANQUANT, NOM_MANQUANT, emailTelephone } = require_contact();
     var JETONS = /* @__PURE__ */ new Map();
     var empreinte = (...x) => require("crypto").createHash("sha256").update(x.map(String).join("\n")).digest("hex");
     var creer = (cfg = {}) => {
@@ -95893,7 +95910,7 @@ var require_immofacile = __commonJS({
           const c = await lireContact(id) || {};
           c.groupes = c.groupes || [];
           const chiffres = (x) => String(x || "").replace(/\D/g, "").slice(-9);
-          const pris = { firstname: c.prenom, lastname: c.nom, phone: c.telephone, mobile_phone: c.mobile, agency_id: c.agence, user_id: c.negociateur, origin: c.origine, group: c.groupes[0] };
+          const pris = { email: c.email, firstname: c.prenom, lastname: c.nom, phone: c.telephone, mobile_phone: c.mobile, agency_id: c.agence, user_id: c.negociateur, origin: c.origine, group: c.groupes[0] };
           return Object.keys(corps).filter((k) => k in pris && (k === "group" ? !c.groupes.map(String).includes(String(corps[k])) : ["phone", "mobile_phone"].includes(k) ? chiffres(pris[k]) !== chiffres(corps[k]) : String(pris[k] ?? "") !== String(corps[k])));
         } catch (e) {
           return ["relecture impossible : " + e.message];
@@ -96015,7 +96032,9 @@ var require_immofacile = __commonJS({
            l'e-mail seul évite de rattacher un nouvel acquéreur au numéro partagé
            d'un autre contact. Le téléphone est complété ensuite, sans perdre l'ID. */
         creerContact: async (d) => {
-          const corps = { email: d.email, check_duplicate: true };
+          const provisoire = !d.email;
+          const corps = { email: d.email || emailTelephone(d.telephone, cfg.site_id), check_duplicate: true };
+          if (provisoire) corps.phone = d.telephone;
           corps.firstname = d.prenom || PRENOM_MANQUANT;
           corps.lastname = d.nom || NOM_MANQUANT;
           if (d.agence && isFinite(+d.agence)) corps.agency_id = Number(d.agence);
@@ -96027,7 +96046,8 @@ var require_immofacile = __commonJS({
             id = (data(await appel("POST", "/customers", corps)) || {}).id;
           } catch (e) {
             if (e.http !== 409) throw e;
-            const exacts = (await chercherContacts({ email: d.email })).filter((c) => c.emails.some((x) => String(x).trim().toLowerCase() === String(d.email).trim().toLowerCase()));
+            let exacts = (await chercherContacts({ email: corps.email })).filter((c) => c.emails.some((x) => String(x).trim().toLowerCase() === String(corps.email).trim().toLowerCase()));
+            if (!exacts.length && provisoire) exacts = (await chercherContacts({ phone: String(d.telephone).replace(/^\+33/, "0") })).filter((c) => c.telephones.some((x) => String(x).replace(/\D/g, "").slice(-9) === String(d.telephone).replace(/\D/g, "").slice(-9)));
             if (!exacts.length) throw e;
             id = recent(exacts).id;
             deja = true;
@@ -96041,6 +96061,7 @@ var require_immofacile = __commonJS({
             const patch = {};
             if (p.prenom) patch.firstname = p.prenom;
             if (p.nom) patch.lastname = p.nom;
+            if (p.email) patch.email = p.email;
             if (p.telephone) patch.phone = p.telephone;
             if (p.mobile) patch.mobile_phone = p.mobile;
             if (d.origine && !ex.origine) patch.origin = Number(d.origine);
@@ -96049,7 +96070,7 @@ var require_immofacile = __commonJS({
             if (Object.keys(patch).length) await appel("PATCH", `/customers/${Number(id)}`, patch);
             non_pris.push(...await relire(id, patch));
           } else {
-            if (d.telephone) {
+            if (d.telephone && !provisoire) {
               const field = /^\+33[67]\d{8}$/.test(d.telephone) ? "mobile_phone" : "phone";
               try {
                 await appel("PATCH", `/customers/${Number(id)}`, { [field]: d.telephone });
@@ -96060,15 +96081,18 @@ var require_immofacile = __commonJS({
             non_pris.push(...await relire(id, corps));
           }
           const affectationNonConfirmee = ("user_id" in corps || "agency_id" in corps) && non_pris.some((k) => ["user_id", "agency_id"].includes(k) || k.startsWith("relecture impossible"));
+          const identiteNonConfirmee = provisoire && non_pris.some((k) => k === "phone" || k.startsWith("relecture impossible"));
           return {
             id,
             ...deja ? { deja: true } : {},
             ...non_pris.length ? { non_pris } : {},
+            ...identiteNonConfirmee ? { identite_confirmee: false } : {},
             ...affectationNonConfirmee ? { affectation_confirmee: false } : {}
           };
         },
         majContact: async (id, p) => {
           const corps = {};
+          if (p.email) corps.email = p.email;
           if (p.prenom) corps.firstname = p.prenom;
           if (p.nom) corps.lastname = p.nom;
           if (p.mobile) corps.mobile_phone = p.mobile;
@@ -96084,6 +96108,8 @@ var require_immofacile = __commonJS({
           if (!Object.keys(corps).length) return { id };
           await appel("PATCH", `/customers/${Number(id)}`, corps);
           const non_pris = await relire(id, corps);
+          if ("email" in corps && non_pris.some((k) => k === "email" || k.startsWith("relecture impossible")))
+            throw new Error("e-mail r\xE9el non confirm\xE9 apr\xE8s remplacement de l'adresse provisoire");
           if (("user_id" in corps || "agency_id" in corps) && non_pris.some((k) => ["user_id", "agency_id"].includes(k) || k.startsWith("relecture impossible")))
             throw new Error("r\xE9affectation du contact CRM non confirm\xE9e par relecture : " + non_pris.join(", "));
           return { id, ...non_pris.length ? { non_pris } : {} };
@@ -99204,6 +99230,13 @@ var require_extras = __commonJS({
         let retirees = 0;
         if (job.supprimer) retirees = (await client.query(`delete from ${T} where not (${q(job.cle)}::text = any($1))`, [lignes.map((x) => String(x[job.cle]))])).rowCount;
         await client.query("commit");
+        if (up.rowCount || retirees) {
+          try {
+            const st = require("@saltcorn/data/db/state").getState();
+            if (typeof st.emitDynamicUpdate === "function") st.emitDynamicUpdate(schema, { dzf_lecture: true });
+          } catch (_) {
+          }
+        }
         return { lignes: lignes.length, ecrites: up.rowCount, retirees, ms: Date.now() - t0 };
       } catch (e) {
         await client.query("rollback").catch(() => {
@@ -99649,6 +99682,150 @@ var require_reprise_vues = __commonJS({
       return rapport;
     };
     module2.exports = { etapesValides, rafraichirVues };
+  }
+});
+
+// src/lib/leads/tables/sans_email.js
+var require_sans_email = __commonJS({
+  "src/lib/leads/tables/sans_email.js"(exports2, module2) {
+    "use strict";
+    var S = require_schema();
+    var { charger } = require_conf();
+    var { traiterMail } = require_dossier();
+    var { echecsCrm } = require_reprise_crm();
+    var lire = (v) => typeof v === "string" ? JSON.parse(v) : v || {};
+    var candidat = (r) => !String(r.contact_email || "").trim() && /^\d{9,15}$/.test(String(r.contact_tel || "").replace(/\D/g, "")) && /^\d+$/.test(String(r.bien_crm || "")) && !/^\d+$/.test(String(r.contact_crm || "")) && /^(lead|relance|direct|recherche|estimation)$/.test(r.nature || "") && r.mode !== "ombre";
+    var reprendre = async ({ debut, suivi = {}, budgetMs = 80 * 6e4 }) => {
+      const date = new Date(debut);
+      if (!Number.isFinite(date.getTime()) || date > /* @__PURE__ */ new Date()) throw new Error("Date de d\xE9but invalide");
+      const { crm } = await charger();
+      if (crm.type !== "immofacile" || crm.mode !== "reel") throw new Error("Immofacile r\xE9el requis");
+      const api = require_core3().flowApi(), client = api.crmDepuisCoffre(crm.type, crm.reglages, crm.prefixe, "reel");
+      const db = require("@saltcorn/data/db"), t = await S.tables();
+      const table = `"${db.getTenantSchema()}"."${S.nom("leads")}"`;
+      const cache = (await require_store().ensureTables()).cache;
+      const cle = `sans-email-v1:${S.prefixe()}:${date.toISOString()}`;
+      const ancien = await cache.getRow({ cle });
+      let state = ancien ? lire(ancien.valeur) : null;
+      if (!state) {
+        const fin = (/* @__PURE__ */ new Date()).toISOString();
+        const rows = (await db.query(`select id,mail_id,mode,nature,bien_crm,contact_crm,contact_email,contact_tel,recu_le,dossier
+      from ${table} where recu_le >= $1 and recu_le <= $2 and coalesce(contact_email,'')=''
+      and bien_crm ~ '^[0-9]+$' and coalesce(contact_crm,'') !~ '^[0-9]+$' order by recu_le,id`, [date.toISOString(), fin])).rows;
+        state = { cibles: rows.filter(candidat), curseur: 0, rapport: {
+          debut: date.toISOString(),
+          fin,
+          candidats: rows.filter(candidat).length,
+          traites: 0,
+          contacts_confirmes: 0,
+          resultats: [],
+          erreurs: [],
+          emails_envoyes: 0
+        } };
+      }
+      const sauver = async () => {
+        const row = { cle, valeur: JSON.stringify(state), expire: new Date(Date.now() + 90 * 864e5) };
+        const ex = await cache.getRow({ cle });
+        if (ex) await cache.updateRow(row, ex.id);
+        else await cache.insertRow(row);
+      };
+      await sauver();
+      const r = state.rapport, start = Date.now();
+      suivi.total = state.cibles.length;
+      suivi.fait = state.curseur;
+      for (; state.curseur < state.cibles.length && Date.now() - start < budgetMs; state.curseur++) {
+        const old = state.cibles[state.curseur];
+        suivi.etape = `fiche sans e-mail : lead ${old.id}`;
+        try {
+          const row = await t.leads.getRow({ id: old.id });
+          if (!row) throw new Error("Demande introuvable");
+          const precedent = echecsCrm(row);
+          if (precedent.some((x) => /résultat d'écriture inconnu|vérifier avant reprise/i.test(x.erreur)))
+            throw new Error("Ancienne \xE9criture ambigu\xEB : v\xE9rifier la fiche avant toute reprise");
+          if (!row.contact_crm) {
+            if (!candidat(row)) throw new Error("La demande a chang\xE9 : reprise \xE0 v\xE9rifier");
+            await traiterMail(row.mail_id, { forcerOmbre: false });
+          }
+          const actuel = await t.leads.getRow({ id: old.id }), id = actuel && actuel.contact_crm;
+          if (!/^\d+$/.test(String(id || ""))) throw new Error("La pipeline n'a pas confirm\xE9 de fiche CRM : " + String(actuel?.motifs || "\xE0 v\xE9rifier").slice(0, 220));
+          const contact = await client.contact(id), n = String(row.contact_tel).replace(/\D/g, "").slice(-9);
+          if (!contact || !(contact.telephones || []).some((x) => String(x).replace(/\D/g, "").slice(-9) === n))
+            throw new Error("T\xE9l\xE9phone de la fiche CRM non confirm\xE9 par relecture");
+          if (!(await client.suivis(id)).some((x) => String(x.bien) === String(actuel.bien_crm)))
+            throw new Error("Liaison de la fiche au bien non confirm\xE9e");
+          const latest = (await db.query(`select bien_crm from ${table} where contact_crm=$1 and bien_crm ~ '^[0-9]+$'
+        and nature in ('lead','relance','direct','recherche','estimation')
+        and coalesce(mode,'') <> 'ombre' order by recu_le desc nulls last,id desc limit 1`, [String(id)])).rows[0];
+          const bien = await client.bienParId(latest?.bien_crm || actuel.bien_crm);
+          if (!bien?.negociateur_id) throw new Error("N\xE9gociateur du bien actuel introuvable");
+          const patch = {};
+          if (String(contact.negociateur) !== String(bien.negociateur_id)) patch.negociateur = bien.negociateur_id;
+          if (bien.agence_id && String(contact.agence) !== String(bien.agence_id)) patch.agence = bien.agence_id;
+          if (Object.keys(patch).length) await client.majContact(id, patch);
+          const relu = await client.contact(id);
+          if (String(relu?.negociateur) !== String(bien.negociateur_id) || bien.agence_id && String(relu?.agence) !== String(bien.agence_id))
+            throw new Error("Affectation non confirm\xE9e par relecture");
+          r.contacts_confirmes++;
+          r.resultats.push({ lead_id: old.id, contact_id: id, telephone_confirme: true, bien_confirme: true, affectation_confirmee: true, erreurs_crm: echecsCrm(actuel) });
+        } catch (e) {
+          r.erreurs.push({ lead_id: old.id, erreur: String(e.message || e).slice(0, 400) });
+        }
+        r.traites++;
+        suivi.fait = state.curseur + 1;
+        state.curseur++;
+        await sauver();
+        state.curseur--;
+      }
+      r.reste = state.cibles.length - state.curseur;
+      r.termine = r.reste === 0;
+      r.a_verifier = r.erreurs.length + r.resultats.filter((x) => x.erreurs_crm.length).length;
+      r.derniere_sauvegarde = (/* @__PURE__ */ new Date()).toISOString();
+      await sauver();
+      return r;
+    };
+    module2.exports = { candidat, reprendre };
+  }
+});
+
+// src/lib/leads/tables/pages_actualisation.js
+var require_pages_actualisation = __commonJS({
+  "src/lib/leads/tables/pages_actualisation.js"(exports2, module2) {
+    "use strict";
+    var NOMS = ["leads", "lead", "biens", "bien", "agences", "agence", "negociateurs", "negociateur", "stats", "executions", "execution", "envois", "reception", "etat"];
+    var modifier = (layout) => {
+      const out = JSON.parse(JSON.stringify(layout));
+      let blocs = 0;
+      const walk = (x) => {
+        if (!x || typeof x !== "object") return;
+        if (x.view === "dz_ecran" && x.configuration?.widget === "tableau" && x.configuration.source && !["filtres", "note", "onglets"].includes(x.configuration.vue)) {
+          if (String(x.configuration.rafraichir) !== "15") {
+            x.configuration.rafraichir = "15";
+            blocs++;
+          }
+        }
+        for (const v of Object.values(x)) if (v && typeof v === "object") walk(v);
+      };
+      walk(out);
+      return { layout: out, blocs };
+    };
+    var installer = async () => {
+      const Page = require("@saltcorn/data/models/page"), cache = (await require_store().ensureTables()).cache;
+      const rapport = { pages: [], blocs: 0, emails_envoyes: 0 };
+      for (const name of NOMS) {
+        const page = await Page.findOne({ name });
+        if (!page) continue;
+        const next = modifier(page.layout);
+        if (!next.blocs) continue;
+        const cle = `pages-actualisation-v1:${name}`;
+        if (!await cache.getRow({ cle })) await cache.insertRow({ cle, valeur: JSON.stringify(page.layout), expire: new Date(Date.now() + 90 * 864e5) });
+        await Page.update(page.id, { layout: next.layout });
+        rapport.pages.push(name);
+        rapport.blocs += next.blocs;
+      }
+      await require_rafraichir().rafraichir(["pages"]);
+      return rapport;
+    };
+    module2.exports = { modifier, installer };
   }
 });
 
@@ -100159,6 +100336,38 @@ var require_leads_solution = __commonJS({
               return { fichier: nom, ...rapport };
             });
           });
+        }
+      },
+      {
+        name: "dzf_leads_reprendre_sans_email",
+        label: "Leads : reprendre les fiches avec t\xE9l\xE9phone sans e-mail",
+        category: CAT,
+        icon: "fas fa-phone",
+        output: "reprise_sans_email",
+        timeout: 60,
+        description: "P\xE9riode avec bien, t\xE9l\xE9phone et sans fiche CRM : pipeline existante, relecture CRM, reprise sauvegard\xE9e. Aucun e-mail envoy\xE9.",
+        params: [P_PREFIXE, { name: "debut", required: true }, { name: "fichier", default: "reprise-sans-email.json" }],
+        run: async (p, ctx = {}, api) => {
+          if (!api.user || Number(api.user.role_id) !== 1) throw new Error("Administrateur requis");
+          const fichier = String(p.fichier || "reprise-sans-email.json").replace(/[^\w.-]/g, "_");
+          return dans(p, () => require_arriere_plan().enFond(p, ctx, "dzf_leads_reprendre_sans_email", fichier, async (suivi) => {
+            const rapport = await require_sans_email().reprendre({ debut: p.debut, suivi });
+            await require("@saltcorn/data/models/file").from_contents(fichier, "application/json", JSON.stringify(rapport, null, 1), api.user.id, 1);
+            return { fichier, ...rapport };
+          }));
+        }
+      },
+      {
+        name: "dzf_leads_actualiser_pages",
+        label: "Leads : activer l'actualisation des pages AMBS",
+        category: CAT,
+        description: "Sauvegarde les pages et active une relecture toutes les 15 secondes sur leurs blocs de donn\xE9es, sans toucher aux formulaires.",
+        icon: "fas fa-sync",
+        output: "pages",
+        params: [],
+        run: async (_p, _ctx, api) => {
+          if (!api.user || Number(api.user.role_id) !== 1) throw new Error("Administrateur requis");
+          return require_pages_actualisation().installer();
         }
       },
       {

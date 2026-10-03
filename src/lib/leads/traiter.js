@@ -243,8 +243,8 @@ const etapeContact = async (d, crm, conf = {}) => {
     if (rc.action === "impossible") d.motifs.push(rc.par && rc.par.startsWith("recherche_")
       ? "recherche du contact CRM indisponible : vérifier avant toute création"
       : "contact impossible : ni e-mail ni téléphone");
-    /* Immofacile ne crée pas de contact sans e-mail : le lead passe à la main (le numéro suffit s'il retrouve une fiche) */
-    if (rc.action === "creer" && !c.email) d.motifs.push("pas d'e-mail : le CRM ne crée pas de contact sans e-mail (à créer à la main avec le téléphone)");
+    if (rc.action === "creer" && !c.email && c.telephone)
+      d.alertes.push("e-mail indisponible : fiche CRM identifiée par téléphone, adresse provisoire non distribuable");
   }
   d.contact = { id: rc.contact ? rc.contact.id : null, action: rc.action, par: rc.par, trace: rc.trace };
   d.interne = { ...(d.interne || {}), contact_crm: rc.contact || null, rgpd_disponible: typeof crm.confirmerRgpd === "function" };
@@ -424,7 +424,8 @@ const executer = async (dossier, crm, { mode = "ombre", ecrireAVerifier = false 
         if (!consentementVerifie || !consentement) { res.push({ op: a.op, fait: false, ignore: true, note: "consentement non confirmé : RGPD non modifié" }); continue; }
         out = crm.confirmerRgpd ? await crm.confirmerRgpd(contactId) : null;
       }
-      res.push({ op: a.op, fait: out !== null && !(out && out.affectation_confirmee === false),
+      res.push({ op: a.op, fait: out !== null && !(out && (out.affectation_confirmee === false || out.identite_confirmee === false)),
+        ...(out && out.identite_confirmee === false ? { erreur: "téléphone du contact créé non confirmé par relecture CRM" } : {}),
         ...(out && out.affectation_confirmee === false ? { erreur: "affectation du contact créé ou retrouvé non confirmée par relecture CRM" } : {}),
         resultat: out && out.id ? { id: out.id } : !!out, ...(out === null ? { note: "non disponible avec ce CRM" } : {}), ...(out && out.non_pris ? { non_pris: out.non_pris, alerte: "écrit mais pas retrouvé à la relecture : " + out.non_pris.join(", ") } : {}) });
     } catch (e) { res.push({ op: a.op, fait: false, erreur: e.message }); if (a.op === "creerContact") break; }
