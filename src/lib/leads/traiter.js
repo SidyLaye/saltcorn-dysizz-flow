@@ -424,7 +424,9 @@ const executer = async (dossier, crm, { mode = "ombre", ecrireAVerifier = false 
         if (!consentementVerifie || !consentement) { res.push({ op: a.op, fait: false, ignore: true, note: "consentement non confirmé : RGPD non modifié" }); continue; }
         out = crm.confirmerRgpd ? await crm.confirmerRgpd(contactId) : null;
       }
-      res.push({ op: a.op, fait: out !== null, resultat: out && out.id ? { id: out.id } : !!out, ...(out === null ? { note: "non disponible avec ce CRM" } : {}), ...(out && out.non_pris ? { non_pris: out.non_pris, alerte: "écrit mais pas retrouvé à la relecture : " + out.non_pris.join(", ") } : {}) });
+      res.push({ op: a.op, fait: out !== null && !(out && out.affectation_confirmee === false),
+        ...(out && out.affectation_confirmee === false ? { erreur: "affectation du contact créé ou retrouvé non confirmée par relecture CRM" } : {}),
+        resultat: out && out.id ? { id: out.id } : !!out, ...(out === null ? { note: "non disponible avec ce CRM" } : {}), ...(out && out.non_pris ? { non_pris: out.non_pris, alerte: "écrit mais pas retrouvé à la relecture : " + out.non_pris.join(", ") } : {}) });
     } catch (e) { res.push({ op: a.op, fait: false, erreur: e.message }); if (a.op === "creerContact") break; }
   }
   return { contactId, rechercheId, consentement, consentementVerifie, resultats: res };

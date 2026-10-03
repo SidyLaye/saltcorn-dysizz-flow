@@ -285,8 +285,8 @@ const creer = (cfg = {}) => {
         if (p.telephone) patch.phone = p.telephone;
         if (p.mobile) patch.mobile_phone = p.mobile;
         if (d.origine && !ex.origine) patch.origin = Number(d.origine);
-        if (d.agence && !ex.agence) patch.agency_id = Number(d.agence);
-        if (d.negociateur && !ex.negociateur) patch.user_id = Number(d.negociateur);
+        if (d.agence && String(ex.agence || "") !== String(d.agence)) patch.agency_id = Number(d.agence);
+        if (d.negociateur && String(ex.negociateur || "") !== String(d.negociateur)) patch.user_id = Number(d.negociateur);
         if (Object.keys(patch).length) await appel("PATCH", `/customers/${Number(id)}`, patch);
         non_pris.push(...await relire(id, patch));
       } else {
@@ -297,7 +297,10 @@ const creer = (cfg = {}) => {
         }
         non_pris.push(...await relire(id, corps));
       }
-      return { id, ...(deja ? { deja: true } : {}), ...(non_pris.length ? { non_pris } : {}) };
+      const affectationNonConfirmee = ("user_id" in corps || "agency_id" in corps) &&
+        non_pris.some(k => ["user_id", "agency_id"].includes(k) || k.startsWith("relecture impossible"));
+      return { id, ...(deja ? { deja: true } : {}), ...(non_pris.length ? { non_pris } : {}),
+        ...(affectationNonConfirmee ? { affectation_confirmee: false } : {}) };
     },
     majContact: async (id, p) => {
       const corps = {};
@@ -325,7 +328,9 @@ const creer = (cfg = {}) => {
     /* Suivi (rapprochement) contact ↔ bien ; 409 = déjà suivi, c'est bon. */
     lierBien: async (contactId, bienId) => {
       const r = await tolere409(() => appel("POST", `/customers/${Number(contactId)}/follow-ups/${Number(bienId)}`));
-      return { id: contactId, deja: !!(r && r.deja) };
+      if (!(await suivis(contactId)).some(s => String(s.bien) === String(bienId)))
+        throw new Error("liaison du contact au bien non confirmée par relecture Immofacile");
+      return { id: contactId, deja: !!(r && r.deja), confirme: true };
     },
     /* Projet de recherche (POST /customers/{id}/search-requests), un par dossier. Les critères sont
        ceux du bien demandé (doc API, cas d'usage 1, étape 3) ou ceux donnés par le portail.

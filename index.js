@@ -1,4 +1,4 @@
-/* dysizz-flow 2.14.11 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.14.12 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.14.11" : "dev";
+    var VERSION2 = true ? "2.14.12" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -95571,7 +95571,14 @@ var require_traiter = __commonJS({
             }
             out = crm.confirmerRgpd ? await crm.confirmerRgpd(contactId) : null;
           }
-          res.push({ op: a.op, fait: out !== null, resultat: out && out.id ? { id: out.id } : !!out, ...out === null ? { note: "non disponible avec ce CRM" } : {}, ...out && out.non_pris ? { non_pris: out.non_pris, alerte: "\xE9crit mais pas retrouv\xE9 \xE0 la relecture : " + out.non_pris.join(", ") } : {} });
+          res.push({
+            op: a.op,
+            fait: out !== null && !(out && out.affectation_confirmee === false),
+            ...out && out.affectation_confirmee === false ? { erreur: "affectation du contact cr\xE9\xE9 ou retrouv\xE9 non confirm\xE9e par relecture CRM" } : {},
+            resultat: out && out.id ? { id: out.id } : !!out,
+            ...out === null ? { note: "non disponible avec ce CRM" } : {},
+            ...out && out.non_pris ? { non_pris: out.non_pris, alerte: "\xE9crit mais pas retrouv\xE9 \xE0 la relecture : " + out.non_pris.join(", ") } : {}
+          });
         } catch (e) {
           res.push({ op: a.op, fait: false, erreur: e.message });
           if (a.op === "creerContact") break;
@@ -96037,8 +96044,8 @@ var require_immofacile = __commonJS({
             if (p.telephone) patch.phone = p.telephone;
             if (p.mobile) patch.mobile_phone = p.mobile;
             if (d.origine && !ex.origine) patch.origin = Number(d.origine);
-            if (d.agence && !ex.agence) patch.agency_id = Number(d.agence);
-            if (d.negociateur && !ex.negociateur) patch.user_id = Number(d.negociateur);
+            if (d.agence && String(ex.agence || "") !== String(d.agence)) patch.agency_id = Number(d.agence);
+            if (d.negociateur && String(ex.negociateur || "") !== String(d.negociateur)) patch.user_id = Number(d.negociateur);
             if (Object.keys(patch).length) await appel("PATCH", `/customers/${Number(id)}`, patch);
             non_pris.push(...await relire(id, patch));
           } else {
@@ -96052,7 +96059,13 @@ var require_immofacile = __commonJS({
             }
             non_pris.push(...await relire(id, corps));
           }
-          return { id, ...deja ? { deja: true } : {}, ...non_pris.length ? { non_pris } : {} };
+          const affectationNonConfirmee = ("user_id" in corps || "agency_id" in corps) && non_pris.some((k) => ["user_id", "agency_id"].includes(k) || k.startsWith("relecture impossible"));
+          return {
+            id,
+            ...deja ? { deja: true } : {},
+            ...non_pris.length ? { non_pris } : {},
+            ...affectationNonConfirmee ? { affectation_confirmee: false } : {}
+          };
         },
         majContact: async (id, p) => {
           const corps = {};
@@ -96078,7 +96091,9 @@ var require_immofacile = __commonJS({
         /* Suivi (rapprochement) contact ↔ bien ; 409 = déjà suivi, c'est bon. */
         lierBien: async (contactId, bienId) => {
           const r = await tolere409(() => appel("POST", `/customers/${Number(contactId)}/follow-ups/${Number(bienId)}`));
-          return { id: contactId, deja: !!(r && r.deja) };
+          if (!(await suivis(contactId)).some((s) => String(s.bien) === String(bienId)))
+            throw new Error("liaison du contact au bien non confirm\xE9e par relecture Immofacile");
+          return { id: contactId, deja: !!(r && r.deja), confirme: true };
         },
         /* Projet de recherche (POST /customers/{id}/search-requests), un par dossier. Les critères sont
            ceux du bien demandé (doc API, cas d'usage 1, étape 3) ou ceux donnés par le portail.
@@ -99637,6 +99652,160 @@ var require_reprise_vues = __commonJS({
   }
 });
 
+// src/lib/leads/tables/reaffectation.js
+var require_reaffectation = __commonJS({
+  "src/lib/leads/tables/reaffectation.js"(exports2, module2) {
+    "use strict";
+    var { tables, nom, prefixe } = require_schema();
+    var { charger } = require_conf();
+    var { cleVerrou, versMoteur } = require_dossier();
+    var lire = (v) => typeof v === "string" ? JSON.parse(v) : v;
+    var email = (v) => String(v || "").trim().toLowerCase();
+    var positif = (v) => /^\d+$/.test(String(v || "")) && Number(v) > 0;
+    var NATURES = ["lead", "relance", "direct", "recherche", "estimation"];
+    var derniers = (rows) => {
+      const m = /* @__PURE__ */ new Map();
+      for (const r of rows) {
+        const k = String(r.contact_crm), old = m.get(k);
+        if (!old || Date.parse(r.recu_le) > Date.parse(old.recu_le) || Date.parse(r.recu_le) === Date.parse(old.recu_le) && Number(r.id) > Number(old.id)) m.set(k, r);
+      }
+      return [...m.values()].sort((a, b) => Number(a.contact_crm) - Number(b.contact_crm));
+    };
+    var reaffecter = async ({ debut, suivi = {}, budgetMs = 80 * 6e4 } = {}) => {
+      const date = new Date(debut);
+      if (!Number.isFinite(date.getTime()) || date > /* @__PURE__ */ new Date()) throw new Error("Date de d\xE9but invalide");
+      const { conf, crm } = await charger();
+      if (crm.type !== "immofacile" || crm.mode !== "reel") throw new Error("Immofacile r\xE9el doit \xEAtre activ\xE9");
+      const api = require_core3().flowApi();
+      const client = api.crmDepuisCoffre(crm.type, crm.reglages, crm.prefixe, "reel");
+      const db = require("@saltcorn/data/db"), t = await tables();
+      const cache = (await require_store().ensureTables()).cache;
+      const cle = `reaffectation-v1:${prefixe()}:${date.toISOString()}`;
+      const ex = await cache.getRow({ cle });
+      let etat = ex ? lire(ex.valeur) : null;
+      const table = `"${db.getTenantSchema()}"."${nom("leads")}"`;
+      if (!etat) {
+        const fin = (/* @__PURE__ */ new Date()).toISOString();
+        const rows = (await db.query(
+          `select id,mail_id,recu_le,contact_crm,contact_email,contact_tel,bien_crm,agence
+      from ${table} where recu_le >= $1 and recu_le <= $2 and nature = any($3::text[])
+      and coalesce(mode,'') <> 'ombre' and contact_crm ~ '^[0-9]+$' and bien_crm ~ '^[0-9]+$'`,
+          [date.toISOString(), fin, NATURES]
+        )).rows;
+        const sans = (await db.query(
+          `select count(*)::int as n from ${table} where recu_le >= $1 and recu_le <= $2
+      and nature = any($3::text[]) and bien_crm ~ '^[0-9]+$' and coalesce(contact_crm,'') !~ '^[0-9]+$'`,
+          [date.toISOString(), fin, NATURES]
+        )).rows[0].n;
+        etat = {
+          debut: date.toISOString(),
+          fin,
+          cibles: derniers(rows),
+          curseur: 0,
+          rapport: {
+            debut: date.toISOString(),
+            fin,
+            contacts: derniers(rows).length,
+            demandes_sans_contact_crm: sans,
+            traites: 0,
+            confirmes: 0,
+            modifies: 0,
+            deja_corrects: 0,
+            demandes_plus_recentes: 0,
+            agence_non_verifiable: 0,
+            erreurs: [],
+            resultats: [],
+            emails_envoyes: 0
+          }
+        };
+      }
+      const sauver = async () => {
+        const row = { cle, valeur: JSON.stringify(etat), expire: new Date(Date.now() + 90 * 864e5) };
+        const old = await cache.getRow({ cle });
+        if (old) await cache.updateRow(row, old.id);
+        else await cache.insertRow(row);
+      };
+      await sauver();
+      const r = etat.rapport, depart = Date.now(), biens = /* @__PURE__ */ new Map();
+      suivi.total = etat.cibles.length;
+      suivi.fait = etat.curseur;
+      for (; etat.curseur < etat.cibles.length && Date.now() - depart < budgetMs; etat.curseur++) {
+        const row = etat.cibles[etat.curseur];
+        suivi.etape = `affectation du contact ${row.contact_crm}`;
+        const resultat = { lead_id: row.id, contact_id: row.contact_crm, bien_id: row.bien_crm };
+        try {
+          const mail = await t.mails.getRow({ id: row.mail_id });
+          if (!mail) throw new Error("mail d'origine introuvable : affectation non modifi\xE9e");
+          await api.verrou.sous(cleVerrou(api, versMoteur(mail), conf, mail.id), async () => {
+            const latest = (await db.query(`select id,recu_le from ${table} where contact_crm=$1
+          and nature=any($2::text[]) and bien_crm ~ '^[0-9]+$' and coalesce(mode,'') <> 'ombre'
+          order by recu_le desc,id desc limit 1`, [String(row.contact_crm), NATURES])).rows[0];
+            if (latest && Number(latest.id) !== Number(row.id)) {
+              r.demandes_plus_recentes++;
+              resultat.ignore = "une demande plus r\xE9cente existe pour ce contact";
+              return;
+            }
+            if (!biens.has(row.bien_crm)) biens.set(row.bien_crm, await client.bienParId(row.bien_crm));
+            const b = biens.get(row.bien_crm);
+            if (!b || !positif(b.negociateur_id)) throw new Error("bien ou n\xE9gociateur actuel du bien introuvable");
+            if (String(b.proprietaire_id || "") === String(row.contact_crm)) throw new Error("contact propri\xE9taire du bien : \xE0 v\xE9rifier avant r\xE9affectation acqu\xE9reur");
+            const avant = await client.contact(row.contact_crm);
+            if (!avant) throw new Error("contact CRM introuvable");
+            if (row.contact_email && email(row.contact_email) !== email(avant.email)) throw new Error("e-mail du contact diff\xE9rent de la demande : identit\xE9 \xE0 v\xE9rifier");
+            if (!row.contact_email) {
+              const tel = String(row.contact_tel || "").replace(/\D/g, "");
+              if (tel.length < 9 || !(avant.telephones || []).some((v) => String(v).replace(/\D/g, "").slice(-9) === tel.slice(-9)))
+                throw new Error("identit\xE9 sans e-mail non confirm\xE9e par t\xE9l\xE9phone");
+            }
+            const personne = ((conf.routage || {}).personnes || []).find((p) => String(p.id) === String(b.negociateur_id));
+            const agence = positif(b.agence_id) ? b.agence_id : personne && positif(personne.agence_id) ? personne.agence_id : null;
+            const patch = {};
+            if (String(avant.negociateur || "") !== String(b.negociateur_id)) patch.negociateur = b.negociateur_id;
+            if (agence && String(avant.agence || "") !== String(agence)) patch.agence = agence;
+            if (Object.keys(patch).length) await client.majContact(row.contact_crm, patch);
+            const suivis = await client.suivis(row.contact_crm);
+            if (!suivis.some((s) => String(s.bien) === String(b.id))) await client.lierBien(row.contact_crm, b.id);
+            const apres = await client.contact(row.contact_crm);
+            if (!apres || String(apres.negociateur) !== String(b.negociateur_id) || agence && String(apres.agence) !== String(agence))
+              throw new Error("affectation non confirm\xE9e apr\xE8s relecture CRM");
+            const liens = await client.suivis(row.contact_crm);
+            if (!liens.some((s) => String(s.bien) === String(b.id))) throw new Error("liaison au bien non confirm\xE9e apr\xE8s relecture CRM");
+            resultat.negociateur_id = b.negociateur_id;
+            resultat.agence_id = agence;
+            resultat.affectation_confirmee = true;
+            resultat.bien_confirme = true;
+            resultat.agence_confirmee = agence ? true : null;
+            if (!agence) r.agence_non_verifiable++;
+            r.confirmes++;
+            if (Object.keys(patch).length) r.modifies++;
+            else r.deja_corrects++;
+          }, { attente_ms: 1e4 });
+        } catch (e) {
+          resultat.erreur = String(e.message || e).slice(0, 250);
+          r.erreurs.push(resultat);
+        }
+        r.resultats.push(resultat);
+        r.traites++;
+        suivi.fait = etat.curseur + 1;
+        if ((etat.curseur + 1) % 10 === 0) {
+          etat.curseur++;
+          await sauver();
+          etat.curseur--;
+        }
+      }
+      r.reste = etat.cibles.length - etat.curseur;
+      r.termine = r.reste === 0;
+      r.a_verifier = r.erreurs.length + r.agence_non_verifiable;
+      r.derniere_sauvegarde = (/* @__PURE__ */ new Date()).toISOString();
+      if (r.termine) r.termine_le = r.derniere_sauvegarde;
+      else r.reprise = "Relancer le m\xEAme Run JS : reprise au prochain contact, sans e-mail";
+      await sauver();
+      return r;
+    };
+    module2.exports = { reaffecter, derniers };
+  }
+});
+
 // src/lib/leads/tables/taches.js
 var require_taches = __commonJS({
   "src/lib/leads/tables/taches.js"(exports2, module2) {
@@ -99990,6 +100159,35 @@ var require_leads_solution = __commonJS({
               return { fichier: nom, ...rapport };
             });
           });
+        }
+      },
+      {
+        name: "dzf_leads_reaffecter_periode",
+        label: "Leads : corriger les affectations CRM d'une p\xE9riode",
+        category: CAT,
+        icon: "fas fa-user-tag",
+        output: "reaffectation",
+        timeout: 60,
+        description: "Derni\xE8re demande avec bien par contact, n\xE9gociateur actuel du bien, contr\xF4le d'identit\xE9 et relecture. Reprise sauvegard\xE9e ; aucun e-mail ni rejeu de pipeline.",
+        params: [
+          P_PREFIXE,
+          { name: "debut", label: "D\xE9but ISO inclus", required: true },
+          { name: "fichier", label: "Rapport", default: "reaffectation-crm.json" }
+        ],
+        run: async (p, ctx = {}, api) => {
+          if (!api.user || Number(api.user.role_id) !== 1) throw new Error("Administrateur requis");
+          return dans(p, () => require_arriere_plan().enFond(
+            p,
+            ctx,
+            "dzf_leads_reaffecter_periode",
+            String(p.fichier || "reaffectation-crm.json").replace(/[^\w.-]/g, "_"),
+            async (suivi) => {
+              const rapport = await require_reaffectation().reaffecter({ debut: p.debut, suivi });
+              const fichier = String(p.fichier || "reaffectation-crm.json").replace(/[^\w.-]/g, "_");
+              await require("@saltcorn/data/models/file").from_contents(fichier, "application/json", JSON.stringify(rapport, null, 1), api.user.id, 1);
+              return { fichier, ...rapport };
+            }
+          ));
         }
       },
       {

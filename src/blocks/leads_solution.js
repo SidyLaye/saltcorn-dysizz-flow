@@ -180,6 +180,23 @@ module.exports = [
     },
   },
   {
+    name: "dzf_leads_reaffecter_periode", label: "Leads : corriger les affectations CRM d'une période", category: CAT,
+    icon: "fas fa-user-tag", output: "reaffectation", timeout: 60,
+    description: "Dernière demande avec bien par contact, négociateur actuel du bien, contrôle d'identité et relecture. Reprise sauvegardée ; aucun e-mail ni rejeu de pipeline.",
+    params: [P_PREFIXE, { name: "debut", label: "Début ISO inclus", required: true },
+      { name: "fichier", label: "Rapport", default: "reaffectation-crm.json" }],
+    run: async (p, ctx = {}, api) => {
+      if (!api.user || Number(api.user.role_id) !== 1) throw new Error("Administrateur requis");
+      return dans(p, () => require("../lib/arriere_plan").enFond(p, ctx, "dzf_leads_reaffecter_periode",
+        String(p.fichier || "reaffectation-crm.json").replace(/[^\w.-]/g, "_"), async suivi => {
+          const rapport = await require("../lib/leads/tables/reaffectation").reaffecter({ debut: p.debut, suivi });
+          const fichier = String(p.fichier || "reaffectation-crm.json").replace(/[^\w.-]/g, "_");
+          await require("@saltcorn/data/models/file").from_contents(fichier, "application/json", JSON.stringify(rapport,null,1), api.user.id, 1);
+          return { fichier, ...rapport };
+        }));
+    },
+  },
+  {
     name: "dzf_leads_reparer_selection_crm", label: "Leads : réparer une sélection de fiches CRM", category: CAT,
     icon: "fas fa-user-check", output: "reparation_selection", timeout: 60,
     description: "Reprend uniquement les leads choisis, avec contrôle du contact et du consentement dans Immofacile. Arrière-plan, rapport final, aucun e-mail.",
