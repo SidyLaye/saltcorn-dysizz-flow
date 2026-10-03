@@ -9,7 +9,7 @@ Module._load=function(n,parent,...args){
     if(n==="./schema")return {nom:()=>"ld_leads",tables:async()=>({leads:{getRows:async()=>rows,getRow:async({mail_id,id})=>rows.find(x=>x.mail_id===mail_id || x.id===id)}})};
     if(n==="@saltcorn/data/db")return {getTenantSchema:()=>"test",query:async()=>({rows})};
     if(n==="./dossier")return {traiterMail:async(id,o)=>{assert.equal(o.actualiserConsentement,true);calls.push(id);return {dossier:{actions:[{op:"ajouterConsentement",motif:"Motif actuel"}]}}}};
-    if(n==="./core")return {flowApi:()=>({crmDepuisCoffre:()=>({contact:async(id)=>({id,consentement:actif,consentement_detail:{raison:"Motif actuel"}})})})};
+    if(n==="./core")return {flowApi:()=>({crmDepuisCoffre:()=>({contact:async(id)=>({id,consentement:actif,rgpd_consent:actif,conformite:actif?1:0,consentement_detail:{raison:"Motif actuel"}})})})};
   }
   return original.call(this,n,parent,...args);
 };

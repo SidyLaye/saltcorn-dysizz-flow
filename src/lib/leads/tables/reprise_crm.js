@@ -5,7 +5,7 @@ const { charger } = require("./conf");
 const { traiterMail } = require("./dossier");
 
 const ERREURS_CRM = new Set(["creerContact", "majContact", "lierBien", "creerRecherche",
-  "majRecherche", "ajouterAction", "ajouterConsentement"]);
+  "majRecherche", "ajouterAction", "ajouterConsentement", "confirmerRgpd"]);
 const lire = (v) => { try { return typeof v === "string" ? JSON.parse(v) : v || {}; } catch (_) { return {}; } };
 const lignesPeriode = async (debut, fin) => {
   const db = require("@saltcorn/data/db");
@@ -84,6 +84,7 @@ const reparerCrm = async ({ debut, fin, suivi = {} } = {}) => {
     const contact = await client.contact(id);
     const a = (r.dossier.actions || []).find((x) => x.op === "ajouterConsentement");
     result.consentement_confirme = !!(contact && contact.consentement);
+    result.rgpd_confirme = !!(contact && contact.rgpd_consent === true && contact.conformite === 1);
     result.motif_confirme = !!(result.consentement_confirme && a && contact.consentement_detail &&
       contact.consentement_detail.raison === String(a.motif).slice(0, 64));
     result.motif = a ? String(a.motif).slice(0, 64) : null;
@@ -95,7 +96,7 @@ const reparerCrm = async ({ debut, fin, suivi = {} } = {}) => {
     rapport.dernier = await traiter(rows[rows.length - 1]);
     suivi.fait++;
     rapport.poursuite_autorisee = rapport.dernier.consentement_confirme &&
-      rapport.dernier.motif_confirme && !rapport.dernier.erreurs.length;
+      rapport.dernier.motif_confirme && rapport.dernier.rgpd_confirme && !rapport.dernier.erreurs.length;
   } catch (e) {
     rapport.erreurs.push({ etape: "dernier lead", erreur: String(e.message || e).slice(0, 220) });
   }
@@ -107,7 +108,7 @@ const reparerCrm = async ({ debut, fin, suivi = {} } = {}) => {
     try {
       const r = await traiter(row);
       rapport.traites++;
-      if (r.consentement_confirme && r.motif_confirme && !r.erreurs.length) rapport.confirmes++;
+      if (r.consentement_confirme && r.motif_confirme && r.rgpd_confirme && !r.erreurs.length) rapport.confirmes++;
       else rapport.a_verifier.push(r);
     } catch (e) {
       rapport.erreurs.push({ lead_id: row.id, mail_id: row.mail_id, erreur: String(e.message || e).slice(0, 220) });
@@ -117,7 +118,7 @@ const reparerCrm = async ({ debut, fin, suivi = {} } = {}) => {
   return rapport;
 };
 
-const reparerSelection = async ({ ids, suivi = {} } = {}) => {
+const reparerSelection = async ({ ids, suivi = {}, actualiserConsentement = true } = {}) => {
   const choisis = [...new Set((Array.isArray(ids) ? ids : String(ids || "").split(/[ ,;]+/)).map(Number))];
   if (!choisis.length || choisis.length > 25 || choisis.some(x => !Number.isSafeInteger(x) || x <= 0))
     throw new Error("Sélection de leads invalide (1 à 25 identifiants)");
@@ -138,7 +139,7 @@ const reparerSelection = async ({ ids, suivi = {} } = {}) => {
   for (const row of rows) {
     suivi.etape = `reprise CRM du lead ${row.id}`;
     try {
-      await traiterMail(row.mail_id, { actualiserConsentement: true });
+      await traiterMail(row.mail_id, { actualiserConsentement });
       const actuel = await t.leads.getRow({ id: row.id });
       const id = actuel && actuel.contact_crm;
       const result = { lead_id: row.id, mail_id: row.mail_id, contact_id: id || null,
@@ -148,12 +149,17 @@ const reparerSelection = async ({ ids, suivi = {} } = {}) => {
         const contact = await client.contact(id);
         result.contact_confirme = !!(contact && String(contact.id) === String(id));
         result.consentement_confirme = !!(contact && contact.consentement);
+        result.rgpd_confirme = !!(contact && contact.rgpd_consent === true && contact.conformite === 1);
+        result.consentement_rgpd_confirme = !!(contact && contact.rgpd_consent === true);
+        const dossier = lire(actuel.dossier);
+        result.projet_id = dossier.execution && dossier.execution.rechercheId || dossier.dossier && dossier.dossier.recherche_id || null;
+        result.projet_confirme = !!(contact && result.projet_id && (contact.recherches || []).some(p => String(p.id) === String(result.projet_id)));
       }
-      if (!result.contact_confirme || !result.consentement_confirme)
+      if (!result.contact_confirme || !result.consentement_confirme || !result.rgpd_confirme)
         result.cause = String(actuel && actuel.motifs || "fiche ou consentement non confirmé").slice(0, 300);
       rapport.resultats.push(result);
       rapport.traites++;
-      if (result.contact_confirme && result.consentement_confirme && !result.erreurs.length) rapport.corriges++;
+      if (result.contact_confirme && result.consentement_confirme && result.rgpd_confirme && !result.erreurs.length) rapport.corriges++;
     } catch (e) { rapport.erreurs.push({ lead_id: row.id, erreur: String(e.message || e).slice(0, 250) }); }
     suivi.fait++;
   }

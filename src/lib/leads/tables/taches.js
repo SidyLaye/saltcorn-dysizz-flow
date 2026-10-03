@@ -48,7 +48,7 @@ const reprendreCrm = async () => {
   const fin = new Date(Date.now() - 10 * 60000), debut = new Date(Date.now() - 7 * 864e5);
   const key = S() + ":" + require("./schema").prefixe();
   const candidats = candidatsCrm(await lignesPeriode(debut, fin), debut, fin)
-    .filter((x) => !echecsCrm(x).some((e) => /inconnu|ambigu/i.test(e.erreur)))
+    .filter((x) => !echecsCrm(x).some((e) => /inconnu|ambigu|non exposée|déclaré non conforme/i.test(e.erreur)))
     .sort((a,b) => Number(a.id)-Number(b.id));
   const curseur = CURSEURS_CRM.get(key) || 0;
   const rows = [...candidats.filter(x=>Number(x.id)>curseur), ...candidats.filter(x=>Number(x.id)<=curseur)].slice(0,25);

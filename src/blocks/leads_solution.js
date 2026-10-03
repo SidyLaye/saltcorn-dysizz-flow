@@ -41,6 +41,29 @@ module.exports = [
   etape("dzf_leads_consentement", "Leads : consentement anti-démarchage", "fas fa-file-signature", "Ajoute au plan le consentement du prospect : date de la demande, motif « Demande de contact via <portail> du <date> » (réglable), et le mail d'origine (.eml) en preuve. Une seule fois par contact.", E.consentement),
   etape("dzf_leads_destinataires", "Leads : qui reçoit ?", "fas fa-user-check", "Négociateur du bien, assistant(e), règles d'envoi (personne, groupe, agence, tous), congés, mi-temps, départs, siège et copies ciblées. Une relance d'une conversation déjà suivie ne va qu'au négociateur (réglable). Donne aussi le statut : prêt, à vérifier, à trier.", E.destinataires),
   etape("dzf_leads_crm", "Leads : écrire dans le CRM", "fas fa-cloud-upload-alt", "Exécute le plan (contact, suivi du bien, projet de recherche, consentement) selon le mode : en ombre, rien n'est écrit, tout est noté. Chaque écriture est relue ; rejouer ne crée pas de doublon.", E.ecrireCrm, 120),
+  etape("dzf_leads_conformite", "Leads : vérifier la conformité RGPD", "fas fa-file-signature", "Complète le RGPD après un contact CRM et un consentement confirmés. Relit la fiche après écriture ; ne rejoue ni le CRM ni les e-mails. Sans contact, étape sans effet.", E.conformite, 120),
+  {
+    name: "dzf_leads_integrer_conformite", label: "Leads : intégrer le correctif RGPD de l'atelier", category: CAT,
+    icon: "fas fa-file-signature", description: "Sauvegarde et migre le bloc RGPD personnalisé connu vers le contrôle natif avec relecture. Refuse un code modifié ; aucun envoi.",
+    output: "integration", params: [],
+    run: async (_p, _ctx, api) => {
+      if (!api.user || Number(api.user.role_id) !== 1) throw new Error("Administrateur requis");
+      const { blocs, versions } = await require("../store").ensureTables();
+      const old = await blocs.getRow({ nom: "leads_crm_conformite" });
+      if (!old) return { modifie: false, motif: "aucun bloc personnalisé à migrer", emails_envoyes: 0 };
+      const code = 'const r = await Actions.dzf_leads_conformite({ dossier: params.dossier });\nreturn r.dossier;';
+      if (old.code === code) { await require("../userblocks").broadcast(); return { modifie: false, deja_corrige: true, emails_envoyes: 0 }; }
+      const hash = require("crypto").createHash("sha256").update(String(old.code || "").replace(/\r/g, "")).digest("hex");
+      if (hash !== "7105f65e0acf7352ff7340541fe82657d17f79ad16b6c3594802d7fb37e21596")
+        throw new Error("Le bloc RGPD a changé depuis la sauvegarde : vérifier ce nouveau code avant migration");
+      const sauvegarde = await versions.insertRow({ nom: old.nom, version: old.version || 1,
+        contenu: JSON.stringify(old), quand: new Date(), par: "migration dysizz-flow 2.14.10" });
+      await blocs.updateRow({ code, version: (old.version || 1) + 1, maj_le: new Date(),
+        description: "Contrôle RGPD après CRM confirmé ; relecture obligatoire ; sans contact, étape sans effet." }, old.id);
+      await require("../userblocks").broadcast();
+      return { modifie: true, sauvegarde, version: (old.version || 1) + 1, emails_envoyes: 0 };
+    },
+  },
   {
     name: "dzf_leads_enregistrer", label: "Leads : enregistrer le lead et la conversation", category: CAT, icon: "fas fa-save", output: "resultat",
     description: "Range le lead, chaque valeur lue et sa provenance, le dossier du prospect et la conversation. Retraiter un mail met à jour les mêmes lignes.",
@@ -162,13 +185,14 @@ module.exports = [
     description: "Reprend uniquement les leads choisis, avec contrôle du contact et du consentement dans Immofacile. Arrière-plan, rapport final, aucun e-mail.",
     params: [P_PREFIXE, { name: "ids", label: "Identifiants des leads (JSON)", type: "json", required: true },
       { name: "fichier", label: "Rapport", default: "reparation-selection-crm.json" },
+      { name: "actualiser_motif", label: "Remplacer aussi le motif d'un consentement déjà présent", type: "bool", default: true },
       { name: "recalcul_vues", label: "Recalculer les vues AMBS après la reprise", type: "bool" }],
     run: async (p, ctx = {}, api) => {
       if (!api || !api.user || api.user.role_id !== 1) throw new Error("réservé aux administrateurs");
       return dans(p, () => {
         const nom = String(p.fichier || "reparation-selection-crm.json").replace(/[^\w.-]/g, "_");
         return require("../lib/arriere_plan").enFond(p, ctx, "dzf_leads_reparer_selection_crm", nom, async (suivi) => {
-          const rapport = await require("../lib/leads/tables/reprise_crm").reparerSelection({ ids: p.ids, suivi });
+          const rapport = await require("../lib/leads/tables/reprise_crm").reparerSelection({ ids: p.ids, suivi, actualiserConsentement: p.actualiser_motif !== false });
           if (p.recalcul_vues) rapport.vues = await require("../lib/leads/tables/reprise_vues").rafraichirVues({
             workflow: "ambs_lecture", etapes: "vue_lead,vue_bien,vue_agence,vue_nego", suivi, api });
           rapport.termine = true;

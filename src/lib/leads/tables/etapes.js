@@ -83,6 +83,24 @@ const ecrireCrm = async (dossier) => {
   return d;
 };
 
+/* Compatibilité avec l'ajout manuel : contrôle après CRM, sans rejouer le CRM ni les mails. */
+const conformite = async (dossier) => {
+  const d = obj(dossier), execution = d.execution;
+  if (d.fin || !execution || execution.mode !== "reel" || execution.non_automatise ||
+      !execution.contactId || !execution.consentementVerifie || !execution.consentement) return d;
+  if ((execution.resultats || []).some(r => r.op === "confirmerRgpd")) return d;
+  const { crm, conf } = await charger();
+  if (crm.mode !== "reel" || !conf.consentement || !conf.consentement.actif) return d;
+  const client = await clientCrm(crm, "reel");
+  if (!client.confirmerRgpd) return d;
+  execution.resultats = execution.resultats || [];
+  try {
+    const r = await client.confirmerRgpd(execution.contactId);
+    execution.resultats.push({ op: "confirmerRgpd", fait: !!(r && r.confirme), resultat: r });
+  } catch (e) { execution.resultats.push({ op: "confirmerRgpd", fait: false, erreur: e.message }); }
+  return d;
+};
+
 /* Enregistrer : le dossier (ld_dossiers, conversation dans ld_evenements) et le lead (ld_leads). */
 const ranger = async (dossier) => {
   const a = api(), d = obj(dossier);
@@ -96,4 +114,4 @@ const ranger = async (dossier) => {
   return { id, dossier_id: dossierId, statut: d.statut };
 };
 
-module.exports = { preparer, lire, bien, contact, consentement, destinataires, ecrireCrm, ranger };
+module.exports = { preparer, lire, bien, contact, consentement, destinataires, ecrireCrm, conformite, ranger };

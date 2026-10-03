@@ -154,7 +154,11 @@ const creer = (cfg = {}) => {
     telephones: [c.phone, c.mobilePhone, c.mobile_phone].filter(Boolean).map((t) => String(t).replace(/[^\d+]/g, "")), prenom: c.firstname || c.first_name || null, nom: c.lastname || c.last_name || null,
     cree_le: c.createdAt || c.created_at || null,
     agence: idDe(c.agency ?? c.agency_id ?? c.manufacturer), negociateur: idDe(c.user ?? c.user_id ?? c.admin),
-    consentement: !!(c.consent && !(c.consent.revokedAt || c.consent.revoked_at)), origine: idDe(c.origin ?? c.origin_id), groupes: [].concat(c.groups ?? c.group ?? []).map(idDe).filter(Boolean) });
+    consentement: !!(c.consent && !(c.consent.revokedAt || c.consent.revoked_at)),
+    rgpd: typeof c.rgpd === "boolean" ? c.rgpd : null,
+    rgpd_consent: typeof c.rgpd_consent === "boolean" ? c.rgpd_consent : null,
+    conformite: [0, 1, 2].includes(c.conformity) ? c.conformity : null,
+    origine: idDe(c.origin ?? c.origin_id), groupes: [].concat(c.groups ?? c.group ?? []).map(idDe).filter(Boolean) });
   const idDe = (x) => (x == null ? null : typeof x === "object" ? x.id ?? null : x);
   /* Relecture après écriture : l'ancien service écrivait origin / group / phone sans jamais les
      retrouver à la relecture (2 081 cas sur 2 127). On relit et on dit ce qui n'a pas été pris. */
@@ -201,7 +205,7 @@ const creer = (cfg = {}) => {
   /* Contact avec ses relations : sans « include », origine et groupes ne reviennent pas
      (c'est pour ça que l'ancien service ne les retrouvait jamais à la relecture). */
   const lireContact = async (id) => {
-    const c = data(await appel("GET", `/customers/${Number(id)}?include=origin,groups,user,agency,searchRequests,consent`));
+    const c = data(await appel("GET", `/customers/${Number(id)}?include=origin,groups,user,agency,searchRequests,consent,rgpd`));
     if (!c || !c.id) return null;
     const k = c.consent && !(c.consent.revokedAt || c.consent.revoked_at) ? c.consent : null;
     return { ...versContact(c), recherches: (c.searchRequests || []).map((x) => ({ id: x.id, comment: x.comment || "" })),
@@ -365,6 +369,26 @@ const creer = (cfg = {}) => {
     },
     /* Consentement anti-démarchage (POST /customers/{id}/consent, multipart) :
        reason (64 caractères max), consent_date (ISO), proofs[] (rangées dans Documents confidentiels/Consentement). */
+    confirmerRgpd: async (contactId) => {
+      const avant = await lireContact(contactId);
+      if (!avant || typeof avant.rgpd_consent !== "boolean")
+        throw new Error("confirmation RGPD illisible sur la fiche Immofacile : à vérifier");
+      if (!avant.consentement) throw new Error("consentement du contact non confirmé : conformité RGPD non modifiée");
+      if (avant.conformite === 2) throw new Error("contact déclaré non conforme dans Immofacile : vérification manuelle requise");
+      if (avant.conformite === 1 && avant.rgpd_consent) return { id: contactId, confirme: true, deja: true };
+      const corps = {};
+      if (!avant.rgpd_consent) corps.rgpd_consent = true;
+      if (avant.conformite !== 1) corps.conformity = 1;
+      await appel("PATCH", `/customers/${Number(contactId)}`, corps);
+      const apres = await lireContact(contactId);
+      if (!apres || apres.rgpd_consent !== true)
+        throw new Error("confirmation RGPD écrite mais non confirmée sur la fiche Immofacile : à vérifier");
+      if (apres.conformite === null)
+        throw new Error("consentement RGPD relu et confirmé ; confirmation conformity non exposée par Immofacile : à vérifier sur la fiche");
+      if (apres.conformite !== 1)
+        throw new Error("conformité RGPD écrite mais non confirmée par relecture Immofacile");
+      return { id: contactId, confirme: true };
+    },
     ajouterConsentement: async (contactId, a) => {
       const fd = new FormData();
       fd.append("reason", String(a.motif).slice(0, 64));

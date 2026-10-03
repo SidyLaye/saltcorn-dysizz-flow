@@ -247,7 +247,7 @@ const etapeContact = async (d, crm, conf = {}) => {
     if (rc.action === "creer" && !c.email) d.motifs.push("pas d'e-mail : le CRM ne crée pas de contact sans e-mail (à créer à la main avec le téléphone)");
   }
   d.contact = { id: rc.contact ? rc.contact.id : null, action: rc.action, par: rc.par, trace: rc.trace };
-  d.interne = { ...(d.interne || {}), contact_crm: rc.contact || null };
+  d.interne = { ...(d.interne || {}), contact_crm: rc.contact || null, rgpd_disponible: typeof crm.confirmerRgpd === "function" };
   /* le contact est le propriétaire (vendeur) du bien : ce n'est pas un acquéreur */
   if (rbBien && rbBien.proprietaire_id && rc.contact && String(rbBien.proprietaire_id) === String(rc.contact.id)) d.motifs.push("à vérifier : le mail vient du propriétaire du bien (vendeur), pas d'un acquéreur");
 
@@ -297,7 +297,15 @@ const etapeContact = async (d, crm, conf = {}) => {
   if (ok && actif.suivi && nouveauBien) d.actions.push({ op: "lierBien", bien: rbBien.id });
   const comment = actif.commentaire ? C.commentaire(tous, conf.commentaire || {}) : null;
   if (ok && actif.projet) {
-    if (dos && dos.recherche_id) { if (comment) d.actions.push({ op: "majRecherche", id: dos.recherche_id, donnees: { comment } }); }
+    const recherchesRelues = rc.contact && Array.isArray(rc.contact.recherches) ? rc.contact.recherches : null;
+    const memeContact = dos && rc.contact && String(dos.contact_id) === String(rc.contact.id);
+    const projetValide = dos && dos.recherche_id && memeContact &&
+      (!recherchesRelues || recherchesRelues.some(p => String(p.id) === String(dos.recherche_id)));
+    if (dos && dos.recherche_id && !projetValide) {
+      d.alertes.push("ancien projet absent de la fiche CRM du contact : nouveau projet pour cette demande");
+      d.dossier.recherche_id = null;
+    }
+    if (projetValide) { if (comment) d.actions.push({ op: "majRecherche", id: dos.recherche_id, donnees: { comment } }); }
     else {
       const cr = criteresProjet(r, rbBien, conf.marges_projet);
       if (cr) d.actions.push({ op: "creerRecherche", donnees: { ...cr, libelle: `${r.portail_nom || r.portail || "Demande"}${rbBien && rbBien.reference ? " — réf. " + rbBien.reference : ""}`, comment } });
@@ -331,6 +339,10 @@ const etapeConsentement = (d, mail, conf = {}) => {
     d.actions.push({ op: "ajouterConsentement", date: new Date(date).toISOString(), motif, hors_horaires: r.hors_horaires, preuves: [preuveEml(mail)] });
     if (motif.length > 64) d.alertes.push(`motif du consentement trop long (${motif.length} caractères) : Immofacile n'en garde que 64`);
   }
+  // Les deux validations sont indépendantes : RGPD peut manquer malgré un consentement actif.
+  if (ok && d.interne && d.interne.rgpd_disponible && actifs(conf).consentement && conf.consentement && conf.consentement.actif &&
+      !(rcc && rcc.consentement_inconnu) && (!rcc || rcc.conformite !== 1 || rcc.rgpd_consent !== true))
+    d.actions.push({ op: "confirmerRgpd" });
   return d;
 };
 
@@ -403,6 +415,11 @@ const executer = async (dossier, crm, { mode = "ombre", ecrireAVerifier = false 
       else if (a.op === "majRecherche") out = crm.majRecherche ? await crm.majRecherche(a.contact || contactId, a.id, a.donnees) : null;
       else if (a.op === "ajouterAction") out = crm.ajouterAction ? await crm.ajouterAction(contactId, a.donnees) : null;
       else if (a.op === "ajouterConsentement") { out = await crm.ajouterConsentement(contactId, a); consentement = true; consentementVerifie = true; }
+      else if (a.op === "confirmerRgpd") {
+        if (!contactId) { res.push({ op: a.op, fait: false, ignore: true, note: "aucun contact CRM : RGPD non applicable" }); continue; }
+        if (!consentementVerifie || !consentement) { res.push({ op: a.op, fait: false, ignore: true, note: "consentement non confirmé : RGPD non modifié" }); continue; }
+        out = crm.confirmerRgpd ? await crm.confirmerRgpd(contactId) : null;
+      }
       res.push({ op: a.op, fait: out !== null, resultat: out && out.id ? { id: out.id } : !!out, ...(out === null ? { note: "non disponible avec ce CRM" } : {}), ...(out && out.non_pris ? { non_pris: out.non_pris, alerte: "écrit mais pas retrouvé à la relecture : " + out.non_pris.join(", ") } : {}) });
     } catch (e) { res.push({ op: a.op, fait: false, erreur: e.message }); if (a.op === "creerContact") break; }
   }

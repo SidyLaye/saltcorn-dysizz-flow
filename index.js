@@ -1,4 +1,4 @@
-/* dysizz-flow 2.14.9 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.14.10 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.14.9" : "dev";
+    var VERSION2 = true ? "2.14.10" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -95411,7 +95411,7 @@ var require_traiter = __commonJS({
         if (rc.action === "creer" && !c.email) d.motifs.push("pas d'e-mail : le CRM ne cr\xE9e pas de contact sans e-mail (\xE0 cr\xE9er \xE0 la main avec le t\xE9l\xE9phone)");
       }
       d.contact = { id: rc.contact ? rc.contact.id : null, action: rc.action, par: rc.par, trace: rc.trace };
-      d.interne = { ...d.interne || {}, contact_crm: rc.contact || null };
+      d.interne = { ...d.interne || {}, contact_crm: rc.contact || null, rgpd_disponible: typeof crm.confirmerRgpd === "function" };
       if (rbBien && rbBien.proprietaire_id && rc.contact && String(rbBien.proprietaire_id) === String(rc.contact.id)) d.motifs.push("\xE0 v\xE9rifier : le mail vient du propri\xE9taire du bien (vendeur), pas d'un acqu\xE9reur");
       const siteCfg = r.portail === "site_agence" ? (conf.sites || []).find((s) => {
         const memeOrigine = r.site_origine && String(s.origine || "") === String(r.site_origine);
@@ -95445,7 +95445,14 @@ var require_traiter = __commonJS({
       if (ok && actif.suivi && nouveauBien) d.actions.push({ op: "lierBien", bien: rbBien.id });
       const comment = actif.commentaire ? C.commentaire(tous, conf.commentaire || {}) : null;
       if (ok && actif.projet) {
-        if (dos && dos.recherche_id) {
+        const recherchesRelues = rc.contact && Array.isArray(rc.contact.recherches) ? rc.contact.recherches : null;
+        const memeContact = dos && rc.contact && String(dos.contact_id) === String(rc.contact.id);
+        const projetValide = dos && dos.recherche_id && memeContact && (!recherchesRelues || recherchesRelues.some((p) => String(p.id) === String(dos.recherche_id)));
+        if (dos && dos.recherche_id && !projetValide) {
+          d.alertes.push("ancien projet absent de la fiche CRM du contact : nouveau projet pour cette demande");
+          d.dossier.recherche_id = null;
+        }
+        if (projetValide) {
           if (comment) d.actions.push({ op: "majRecherche", id: dos.recherche_id, donnees: { comment } });
         } else {
           const cr = criteresProjet(r, rbBien, conf.marges_projet);
@@ -95476,6 +95483,8 @@ var require_traiter = __commonJS({
         d.actions.push({ op: "ajouterConsentement", date: new Date(date).toISOString(), motif, hors_horaires: r.hors_horaires, preuves: [preuveEml(mail)] });
         if (motif.length > 64) d.alertes.push(`motif du consentement trop long (${motif.length} caract\xE8res) : Immofacile n'en garde que 64`);
       }
+      if (ok && d.interne && d.interne.rgpd_disponible && actifs(conf).consentement && conf.consentement && conf.consentement.actif && !(rcc && rcc.consentement_inconnu) && (!rcc || rcc.conformite !== 1 || rcc.rgpd_consent !== true))
+        d.actions.push({ op: "confirmerRgpd" });
       return d;
     };
     var etapeDestinataires = (d, conf = {}) => {
@@ -95551,6 +95560,16 @@ var require_traiter = __commonJS({
             out = await crm.ajouterConsentement(contactId, a);
             consentement = true;
             consentementVerifie = true;
+          } else if (a.op === "confirmerRgpd") {
+            if (!contactId) {
+              res.push({ op: a.op, fait: false, ignore: true, note: "aucun contact CRM : RGPD non applicable" });
+              continue;
+            }
+            if (!consentementVerifie || !consentement) {
+              res.push({ op: a.op, fait: false, ignore: true, note: "consentement non confirm\xE9 : RGPD non modifi\xE9" });
+              continue;
+            }
+            out = crm.confirmerRgpd ? await crm.confirmerRgpd(contactId) : null;
           }
           res.push({ op: a.op, fait: out !== null, resultat: out && out.id ? { id: out.id } : !!out, ...out === null ? { note: "non disponible avec ce CRM" } : {}, ...out && out.non_pris ? { non_pris: out.non_pris, alerte: "\xE9crit mais pas retrouv\xE9 \xE0 la relecture : " + out.non_pris.join(", ") } : {} });
         } catch (e) {
@@ -95855,6 +95874,9 @@ var require_immofacile = __commonJS({
         agence: idDe(c.agency ?? c.agency_id ?? c.manufacturer),
         negociateur: idDe(c.user ?? c.user_id ?? c.admin),
         consentement: !!(c.consent && !(c.consent.revokedAt || c.consent.revoked_at)),
+        rgpd: typeof c.rgpd === "boolean" ? c.rgpd : null,
+        rgpd_consent: typeof c.rgpd_consent === "boolean" ? c.rgpd_consent : null,
+        conformite: [0, 1, 2].includes(c.conformity) ? c.conformity : null,
         origine: idDe(c.origin ?? c.origin_id),
         groupes: [].concat(c.groups ?? c.group ?? []).map(idDe).filter(Boolean)
       });
@@ -95914,7 +95936,7 @@ var require_immofacile = __commonJS({
         return c;
       };
       const lireContact = async (id) => {
-        const c = data(await appel("GET", `/customers/${Number(id)}?include=origin,groups,user,agency,searchRequests,consent`));
+        const c = data(await appel("GET", `/customers/${Number(id)}?include=origin,groups,user,agency,searchRequests,consent,rgpd`));
         if (!c || !c.id) return null;
         const k = c.consent && !(c.consent.revokedAt || c.consent.revoked_at) ? c.consent : null;
         return {
@@ -96105,6 +96127,26 @@ var require_immofacile = __commonJS({
         },
         /* Consentement anti-démarchage (POST /customers/{id}/consent, multipart) :
            reason (64 caractères max), consent_date (ISO), proofs[] (rangées dans Documents confidentiels/Consentement). */
+        confirmerRgpd: async (contactId) => {
+          const avant = await lireContact(contactId);
+          if (!avant || typeof avant.rgpd_consent !== "boolean")
+            throw new Error("confirmation RGPD illisible sur la fiche Immofacile : \xE0 v\xE9rifier");
+          if (!avant.consentement) throw new Error("consentement du contact non confirm\xE9 : conformit\xE9 RGPD non modifi\xE9e");
+          if (avant.conformite === 2) throw new Error("contact d\xE9clar\xE9 non conforme dans Immofacile : v\xE9rification manuelle requise");
+          if (avant.conformite === 1 && avant.rgpd_consent) return { id: contactId, confirme: true, deja: true };
+          const corps = {};
+          if (!avant.rgpd_consent) corps.rgpd_consent = true;
+          if (avant.conformite !== 1) corps.conformity = 1;
+          await appel("PATCH", `/customers/${Number(contactId)}`, corps);
+          const apres = await lireContact(contactId);
+          if (!apres || apres.rgpd_consent !== true)
+            throw new Error("confirmation RGPD \xE9crite mais non confirm\xE9e sur la fiche Immofacile : \xE0 v\xE9rifier");
+          if (apres.conformite === null)
+            throw new Error("consentement RGPD relu et confirm\xE9 ; confirmation conformity non expos\xE9e par Immofacile : \xE0 v\xE9rifier sur la fiche");
+          if (apres.conformite !== 1)
+            throw new Error("conformit\xE9 RGPD \xE9crite mais non confirm\xE9e par relecture Immofacile");
+          return { id: contactId, confirme: true };
+        },
         ajouterConsentement: async (contactId, a) => {
           const fd = new FormData();
           fd.append("reason", String(a.motif).slice(0, 64));
@@ -98123,6 +98165,23 @@ var require_etapes = __commonJS({
       if (client.notees) d.execution.ecritures_notees = client.notees.map((x) => x && x.donnees && x.donnees.comment ? { ...x, donnees: { ...x.donnees, comment: `(${x.donnees.comment.length} caract\xE8res)` } } : x);
       return d;
     };
+    var conformite = async (dossier) => {
+      const d = obj(dossier), execution = d.execution;
+      if (d.fin || !execution || execution.mode !== "reel" || execution.non_automatise || !execution.contactId || !execution.consentementVerifie || !execution.consentement) return d;
+      if ((execution.resultats || []).some((r) => r.op === "confirmerRgpd")) return d;
+      const { crm, conf } = await charger();
+      if (crm.mode !== "reel" || !conf.consentement || !conf.consentement.actif) return d;
+      const client = await clientCrm(crm, "reel");
+      if (!client.confirmerRgpd) return d;
+      execution.resultats = execution.resultats || [];
+      try {
+        const r = await client.confirmerRgpd(execution.contactId);
+        execution.resultats.push({ op: "confirmerRgpd", fait: !!(r && r.confirme), resultat: r });
+      } catch (e) {
+        execution.resultats.push({ op: "confirmerRgpd", fait: false, erreur: e.message });
+      }
+      return d;
+    };
     var ranger = async (dossier) => {
       const a = api(), d = obj(dossier);
       const mail = await lireMail(d.mail_id);
@@ -98135,7 +98194,67 @@ var require_etapes = __commonJS({
       const id = await enregistrer(propre, mail, dossierId);
       return { id, dossier_id: dossierId, statut: d.statut };
     };
-    module2.exports = { preparer, lire, bien, contact, consentement, destinataires, ecrireCrm, ranger };
+    module2.exports = { preparer, lire, bien, contact, consentement, destinataires, ecrireCrm, conformite, ranger };
+  }
+});
+
+// src/userblocks.js
+var require_userblocks = __commonJS({
+  "src/userblocks.js"(exports2, module2) {
+    "use strict";
+    var { toAction: toAction2 } = require_engine();
+    var { ensureTables } = require_store();
+    var { PLUGIN: PLUGIN2 } = require_core();
+    var PREFIX = "dzf_u_";
+    var NAME_RE = /^[a-z][a-z0-9_]{1,40}$/;
+    var fromRow = (r) => {
+      let params = [];
+      try {
+        params = JSON.parse(r.params || "[]");
+      } catch (e) {
+        params = [];
+      }
+      const code = r.code || "return null;";
+      return {
+        name: PREFIX + r.nom,
+        label: r.libelle || r.nom,
+        category: "Mes blocs",
+        icon: r.icone || "fas fa-cube",
+        description: r.description || "Bloc perso",
+        params,
+        output: r.sortie || r.nom,
+        custom: true,
+        code,
+        row: r,
+        run: async (p, ctx, api) => {
+          const { getState } = require("@saltcorn/data/db/state");
+          const js = getState().actions.run_js_code;
+          return js.run({ configuration: { code, run_where: "Server" }, row: { ...ctx, params: p }, user: api.user, req: api.req, mode: "workflow" });
+        }
+      };
+    };
+    var loadUserBlocks = async () => {
+      const { blocs } = await ensureTables();
+      return (await blocs.getRows({ actif: true }, { orderBy: "nom" })).map(fromRow);
+    };
+    var registerUserBlocks2 = async () => {
+      const { getState } = require("@saltcorn/data/db/state");
+      const st = getState();
+      if (!st || !st.actions) return 0;
+      const list = await loadUserBlocks();
+      for (const k of Object.keys(st.actions)) if (k.startsWith(PREFIX)) delete st.actions[k];
+      for (const b of list) st.actions[b.name] = toAction2(b);
+      return list.length;
+    };
+    var broadcast = async () => {
+      await registerUserBlocks2();
+      try {
+        const db = require("@saltcorn/data/db");
+        require("@saltcorn/data/db/state").getState().processSend({ refresh_plugin_cfg: PLUGIN2, tenant: db.getTenantSchema() });
+      } catch (e) {
+      }
+    };
+    module2.exports = { loadUserBlocks, registerUserBlocks: registerUserBlocks2, broadcast, fromRow, PREFIX, NAME_RE };
   }
 });
 
@@ -98313,7 +98432,8 @@ var require_reprise_crm = __commonJS({
       "creerRecherche",
       "majRecherche",
       "ajouterAction",
-      "ajouterConsentement"
+      "ajouterConsentement",
+      "confirmerRgpd"
     ]);
     var lire = (v) => {
       try {
@@ -98409,6 +98529,7 @@ var require_reprise_crm = __commonJS({
         const contact = await client.contact(id);
         const a = (r.dossier.actions || []).find((x) => x.op === "ajouterConsentement");
         result.consentement_confirme = !!(contact && contact.consentement);
+        result.rgpd_confirme = !!(contact && contact.rgpd_consent === true && contact.conformite === 1);
         result.motif_confirme = !!(result.consentement_confirme && a && contact.consentement_detail && contact.consentement_detail.raison === String(a.motif).slice(0, 64));
         result.motif = a ? String(a.motif).slice(0, 64) : null;
         if (!a) result.erreurs.push({ op: "ajouterConsentement", erreur: "aucune \xE9criture de consentement planifi\xE9e" });
@@ -98418,7 +98539,7 @@ var require_reprise_crm = __commonJS({
       try {
         rapport.dernier = await traiter(rows[rows.length - 1]);
         suivi.fait++;
-        rapport.poursuite_autorisee = rapport.dernier.consentement_confirme && rapport.dernier.motif_confirme && !rapport.dernier.erreurs.length;
+        rapport.poursuite_autorisee = rapport.dernier.consentement_confirme && rapport.dernier.motif_confirme && rapport.dernier.rgpd_confirme && !rapport.dernier.erreurs.length;
       } catch (e) {
         rapport.erreurs.push({ etape: "dernier lead", erreur: String(e.message || e).slice(0, 220) });
       }
@@ -98428,7 +98549,7 @@ var require_reprise_crm = __commonJS({
         try {
           const r = await traiter(row);
           rapport.traites++;
-          if (r.consentement_confirme && r.motif_confirme && !r.erreurs.length) rapport.confirmes++;
+          if (r.consentement_confirme && r.motif_confirme && r.rgpd_confirme && !r.erreurs.length) rapport.confirmes++;
           else rapport.a_verifier.push(r);
         } catch (e) {
           rapport.erreurs.push({ lead_id: row.id, mail_id: row.mail_id, erreur: String(e.message || e).slice(0, 220) });
@@ -98437,7 +98558,7 @@ var require_reprise_crm = __commonJS({
       }
       return rapport;
     };
-    var reparerSelection = async ({ ids, suivi = {} } = {}) => {
+    var reparerSelection = async ({ ids, suivi = {}, actualiserConsentement = true } = {}) => {
       const choisis = [...new Set((Array.isArray(ids) ? ids : String(ids || "").split(/[ ,;]+/)).map(Number))];
       if (!choisis.length || choisis.length > 25 || choisis.some((x) => !Number.isSafeInteger(x) || x <= 0))
         throw new Error("S\xE9lection de leads invalide (1 \xE0 25 identifiants)");
@@ -98458,7 +98579,7 @@ var require_reprise_crm = __commonJS({
       for (const row of rows) {
         suivi.etape = `reprise CRM du lead ${row.id}`;
         try {
-          await traiterMail(row.mail_id, { actualiserConsentement: true });
+          await traiterMail(row.mail_id, { actualiserConsentement });
           const actuel = await t.leads.getRow({ id: row.id });
           const id = actuel && actuel.contact_crm;
           const result = {
@@ -98474,12 +98595,17 @@ var require_reprise_crm = __commonJS({
             const contact = await client.contact(id);
             result.contact_confirme = !!(contact && String(contact.id) === String(id));
             result.consentement_confirme = !!(contact && contact.consentement);
+            result.rgpd_confirme = !!(contact && contact.rgpd_consent === true && contact.conformite === 1);
+            result.consentement_rgpd_confirme = !!(contact && contact.rgpd_consent === true);
+            const dossier = lire(actuel.dossier);
+            result.projet_id = dossier.execution && dossier.execution.rechercheId || dossier.dossier && dossier.dossier.recherche_id || null;
+            result.projet_confirme = !!(contact && result.projet_id && (contact.recherches || []).some((p) => String(p.id) === String(result.projet_id)));
           }
-          if (!result.contact_confirme || !result.consentement_confirme)
+          if (!result.contact_confirme || !result.consentement_confirme || !result.rgpd_confirme)
             result.cause = String(actuel && actuel.motifs || "fiche ou consentement non confirm\xE9").slice(0, 300);
           rapport.resultats.push(result);
           rapport.traites++;
-          if (result.contact_confirme && result.consentement_confirme && !result.erreurs.length) rapport.corriges++;
+          if (result.contact_confirme && result.consentement_confirme && result.rgpd_confirme && !result.erreurs.length) rapport.corriges++;
         } catch (e) {
           rapport.erreurs.push({ lead_id: row.id, erreur: String(e.message || e).slice(0, 250) });
         }
@@ -99561,7 +99687,7 @@ var require_taches = __commonJS({
       const { candidatsCrm, echecsCrm, lignesPeriode } = require_reprise_crm();
       const fin = new Date(Date.now() - 10 * 6e4), debut = new Date(Date.now() - 7 * 864e5);
       const key = S() + ":" + require_schema().prefixe();
-      const candidats = candidatsCrm(await lignesPeriode(debut, fin), debut, fin).filter((x) => !echecsCrm(x).some((e) => /inconnu|ambigu/i.test(e.erreur))).sort((a, b) => Number(a.id) - Number(b.id));
+      const candidats = candidatsCrm(await lignesPeriode(debut, fin), debut, fin).filter((x) => !echecsCrm(x).some((e) => /inconnu|ambigu|non exposée|déclaré non conforme/i.test(e.erreur))).sort((a, b) => Number(a.id) - Number(b.id));
       const curseur = CURSEURS_CRM.get(key) || 0;
       const rows = [...candidats.filter((x) => Number(x.id) > curseur), ...candidats.filter((x) => Number(x.id) <= curseur)].slice(0, 25);
       const rapport = { candidats: rows.length, repris: 0, encore_en_echec: [], erreurs: [], emails_envoyes: 0 };
@@ -99643,6 +99769,45 @@ var require_leads_solution = __commonJS({
       etape("dzf_leads_consentement", "Leads : consentement anti-d\xE9marchage", "fas fa-file-signature", "Ajoute au plan le consentement du prospect : date de la demande, motif \xAB Demande de contact via <portail> du <date> \xBB (r\xE9glable), et le mail d'origine (.eml) en preuve. Une seule fois par contact.", E.consentement),
       etape("dzf_leads_destinataires", "Leads : qui re\xE7oit ?", "fas fa-user-check", "N\xE9gociateur du bien, assistant(e), r\xE8gles d'envoi (personne, groupe, agence, tous), cong\xE9s, mi-temps, d\xE9parts, si\xE8ge et copies cibl\xE9es. Une relance d'une conversation d\xE9j\xE0 suivie ne va qu'au n\xE9gociateur (r\xE9glable). Donne aussi le statut : pr\xEAt, \xE0 v\xE9rifier, \xE0 trier.", E.destinataires),
       etape("dzf_leads_crm", "Leads : \xE9crire dans le CRM", "fas fa-cloud-upload-alt", "Ex\xE9cute le plan (contact, suivi du bien, projet de recherche, consentement) selon le mode : en ombre, rien n'est \xE9crit, tout est not\xE9. Chaque \xE9criture est relue ; rejouer ne cr\xE9e pas de doublon.", E.ecrireCrm, 120),
+      etape("dzf_leads_conformite", "Leads : v\xE9rifier la conformit\xE9 RGPD", "fas fa-file-signature", "Compl\xE8te le RGPD apr\xE8s un contact CRM et un consentement confirm\xE9s. Relit la fiche apr\xE8s \xE9criture ; ne rejoue ni le CRM ni les e-mails. Sans contact, \xE9tape sans effet.", E.conformite, 120),
+      {
+        name: "dzf_leads_integrer_conformite",
+        label: "Leads : int\xE9grer le correctif RGPD de l'atelier",
+        category: CAT,
+        icon: "fas fa-file-signature",
+        description: "Sauvegarde et migre le bloc RGPD personnalis\xE9 connu vers le contr\xF4le natif avec relecture. Refuse un code modifi\xE9 ; aucun envoi.",
+        output: "integration",
+        params: [],
+        run: async (_p, _ctx, api) => {
+          if (!api.user || Number(api.user.role_id) !== 1) throw new Error("Administrateur requis");
+          const { blocs, versions } = await require_store().ensureTables();
+          const old = await blocs.getRow({ nom: "leads_crm_conformite" });
+          if (!old) return { modifie: false, motif: "aucun bloc personnalis\xE9 \xE0 migrer", emails_envoyes: 0 };
+          const code = "const r = await Actions.dzf_leads_conformite({ dossier: params.dossier });\nreturn r.dossier;";
+          if (old.code === code) {
+            await require_userblocks().broadcast();
+            return { modifie: false, deja_corrige: true, emails_envoyes: 0 };
+          }
+          const hash = require("crypto").createHash("sha256").update(String(old.code || "").replace(/\r/g, "")).digest("hex");
+          if (hash !== "7105f65e0acf7352ff7340541fe82657d17f79ad16b6c3594802d7fb37e21596")
+            throw new Error("Le bloc RGPD a chang\xE9 depuis la sauvegarde : v\xE9rifier ce nouveau code avant migration");
+          const sauvegarde = await versions.insertRow({
+            nom: old.nom,
+            version: old.version || 1,
+            contenu: JSON.stringify(old),
+            quand: /* @__PURE__ */ new Date(),
+            par: "migration dysizz-flow 2.14.10"
+          });
+          await blocs.updateRow({
+            code,
+            version: (old.version || 1) + 1,
+            maj_le: /* @__PURE__ */ new Date(),
+            description: "Contr\xF4le RGPD apr\xE8s CRM confirm\xE9 ; relecture obligatoire ; sans contact, \xE9tape sans effet."
+          }, old.id);
+          await require_userblocks().broadcast();
+          return { modifie: true, sauvegarde, version: (old.version || 1) + 1, emails_envoyes: 0 };
+        }
+      },
       {
         name: "dzf_leads_enregistrer",
         label: "Leads : enregistrer le lead et la conversation",
@@ -99837,6 +100002,7 @@ var require_leads_solution = __commonJS({
           P_PREFIXE,
           { name: "ids", label: "Identifiants des leads (JSON)", type: "json", required: true },
           { name: "fichier", label: "Rapport", default: "reparation-selection-crm.json" },
+          { name: "actualiser_motif", label: "Remplacer aussi le motif d'un consentement d\xE9j\xE0 pr\xE9sent", type: "bool", default: true },
           { name: "recalcul_vues", label: "Recalculer les vues AMBS apr\xE8s la reprise", type: "bool" }
         ],
         run: async (p, ctx = {}, api) => {
@@ -99844,7 +100010,7 @@ var require_leads_solution = __commonJS({
           return dans(p, () => {
             const nom = String(p.fichier || "reparation-selection-crm.json").replace(/[^\w.-]/g, "_");
             return require_arriere_plan().enFond(p, ctx, "dzf_leads_reparer_selection_crm", nom, async (suivi) => {
-              const rapport = await require_reprise_crm().reparerSelection({ ids: p.ids, suivi });
+              const rapport = await require_reprise_crm().reparerSelection({ ids: p.ids, suivi, actualiserConsentement: p.actualiser_motif !== false });
               if (p.recalcul_vues) rapport.vues = await require_reprise_vues().rafraichirVues({
                 workflow: "ambs_lecture",
                 etapes: "vue_lead,vue_bien,vue_agence,vue_nego",
@@ -103763,66 +103929,6 @@ var require_blocks = __commonJS({
       seen.add(b.name);
     }
     module2.exports = { BLOCKS: BLOCKS2, CATEGORIES };
-  }
-});
-
-// src/userblocks.js
-var require_userblocks = __commonJS({
-  "src/userblocks.js"(exports2, module2) {
-    "use strict";
-    var { toAction: toAction2 } = require_engine();
-    var { ensureTables } = require_store();
-    var { PLUGIN: PLUGIN2 } = require_core();
-    var PREFIX = "dzf_u_";
-    var NAME_RE = /^[a-z][a-z0-9_]{1,40}$/;
-    var fromRow = (r) => {
-      let params = [];
-      try {
-        params = JSON.parse(r.params || "[]");
-      } catch (e) {
-        params = [];
-      }
-      const code = r.code || "return null;";
-      return {
-        name: PREFIX + r.nom,
-        label: r.libelle || r.nom,
-        category: "Mes blocs",
-        icon: r.icone || "fas fa-cube",
-        description: r.description || "Bloc perso",
-        params,
-        output: r.sortie || r.nom,
-        custom: true,
-        code,
-        row: r,
-        run: async (p, ctx, api) => {
-          const { getState } = require("@saltcorn/data/db/state");
-          const js = getState().actions.run_js_code;
-          return js.run({ configuration: { code, run_where: "Server" }, row: { ...ctx, params: p }, user: api.user, req: api.req, mode: "workflow" });
-        }
-      };
-    };
-    var loadUserBlocks = async () => {
-      const { blocs } = await ensureTables();
-      return (await blocs.getRows({ actif: true }, { orderBy: "nom" })).map(fromRow);
-    };
-    var registerUserBlocks2 = async () => {
-      const { getState } = require("@saltcorn/data/db/state");
-      const st = getState();
-      if (!st || !st.actions) return 0;
-      const list = await loadUserBlocks();
-      for (const k of Object.keys(st.actions)) if (k.startsWith(PREFIX)) delete st.actions[k];
-      for (const b of list) st.actions[b.name] = toAction2(b);
-      return list.length;
-    };
-    var broadcast = async () => {
-      await registerUserBlocks2();
-      try {
-        const db = require("@saltcorn/data/db");
-        require("@saltcorn/data/db/state").getState().processSend({ refresh_plugin_cfg: PLUGIN2, tenant: db.getTenantSchema() });
-      } catch (e) {
-      }
-    };
-    module2.exports = { loadUserBlocks, registerUserBlocks: registerUserBlocks2, broadcast, fromRow, PREFIX, NAME_RE };
   }
 });
 
