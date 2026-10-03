@@ -22,7 +22,7 @@ const reaffecter = async ({ debut, suivi = {}, budgetMs = 80 * 60000 } = {}) => 
   const { conf, crm } = await charger();
   if (crm.type !== "immofacile" || crm.mode !== "reel") throw new Error("Immofacile réel doit être activé");
   const api = require("./core").flowApi();
-  const client = api.crmDepuisCoffre(crm.type, crm.reglages, crm.prefixe, "reel");
+  const client = api.crmDepuisCoffre(crm.type, { ...crm.reglages, groupe_demandeur: null }, crm.prefixe, "reel");
   const db = require("@saltcorn/data/db"), t = await tables();
   const cache = (await require("../../../store").ensureTables()).cache;
   const cle = `reaffectation-v1:${prefixe()}:${date.toISOString()}`;

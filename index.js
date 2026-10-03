@@ -99677,7 +99677,7 @@ var require_reaffectation = __commonJS({
       const { conf, crm } = await charger();
       if (crm.type !== "immofacile" || crm.mode !== "reel") throw new Error("Immofacile r\xE9el doit \xEAtre activ\xE9");
       const api = require_core3().flowApi();
-      const client = api.crmDepuisCoffre(crm.type, crm.reglages, crm.prefixe, "reel");
+      const client = api.crmDepuisCoffre(crm.type, { ...crm.reglages, groupe_demandeur: null }, crm.prefixe, "reel");
       const db = require("@saltcorn/data/db"), t = await tables();
       const cache = (await require_store().ensureTables()).cache;
       const cle = `reaffectation-v1:${prefixe()}:${date.toISOString()}`;
