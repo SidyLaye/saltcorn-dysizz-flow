@@ -31,13 +31,15 @@ const reaffecter = async ({ debut, suivi = {}, budgetMs = 80 * 60000, simuler = 
   const db = require("@saltcorn/data/db"); await tables();
   const cache = (await require("../../../store").ensureTables()).cache;
   const cle = `reaffectation-v1:${prefixe()}:${date.toISOString()}${cible ? ":agence-" + cible : ""}`;
+  const annuaire = (conf.routage || {}).personnes || [];
+  const personneDe = (id) => (positif(id) ? annuaire.find((p) => String(p.id) === String(id)) : null) || null;
   const nomAgence = (id) => ((conf.agences || []).find((a) => String(a.id) === String(id)) || {}).nom || null;
   const ex = simuler ? null : await cache.getRow({ cle });
   let etat = ex ? lire(ex.valeur) : null;
   const table = `"${db.getTenantSchema()}"."${nom("leads")}"`;
   if (!etat) {
     const fin = new Date().toISOString();
-    const rows = (await db.query(`select id,mail_id,recu_le,contact_crm,contact_email,contact_tel,bien_crm,agence
+    const rows = (await db.query(`select id,mail_id,recu_le,contact_crm,contact_email,contact_tel,bien_crm,agence,negociateur
       from ${table} where recu_le >= $1 and recu_le <= $2 and nature = any($3::text[])
       and coalesce(mode,'') <> 'ombre' and contact_crm ~ '^[0-9]+$' and bien_crm ~ '^[0-9]+$'`,
       [date.toISOString(), fin, NATURES])).rows;
@@ -48,7 +50,9 @@ const reaffecter = async ({ debut, suivi = {}, budgetMs = 80 * 60000, simuler = 
       rapport: { debut: date.toISOString(), fin, contacts: derniers(rows).length, demandes_sans_contact_crm: sans,
         simulation: !!simuler, agence_erronee: cible, agence_erronee_nom: cible ? nomAgence(cible) : null,
         traites: 0, confirmes: 0, modifies: 0, a_modifier: 0, hors_cible: 0, leads_corriges: 0, deja_corrects: 0, demandes_plus_recentes: 0,
-        agence_non_verifiable: 0, erreurs: [], resultats: [], emails_envoyes: 0 } };
+        agence_non_verifiable: 0, erreurs: [], resultats: [], emails_envoyes: 0,
+        /* diagnostic : l'annuaire vu par l'outil (l'agence vient du négociateur quand le CRM ne la donne pas) */
+        annuaire: { personnes: annuaire.length, avec_agence: annuaire.filter((p) => positif(p.agence_id)).length } } };
   }
   const sauver = async () => {
     if (simuler) return;
@@ -88,8 +92,12 @@ const reaffecter = async ({ debut, suivi = {}, budgetMs = 80 * 60000, simuler = 
           if (tel.length < 9 || !(avant.telephones || []).some(v => String(v).replace(/\D/g, "").slice(-9) === tel.slice(-9)))
             throw new Error("identité sans e-mail non confirmée par téléphone");
         }
-        const personne = ((conf.routage || {}).personnes || []).find(p => String(p.id) === String(b.negociateur_id));
+        /* agence : celle du bien, sinon celle de son négociateur (lu dans le CRM, ou retenu sur le lead à l'époque) */
+        const pBien = personneDe(b.negociateur_id), pLead = personneDe(row.negociateur);
+        const personne = pBien && positif(pBien.agence_id) ? pBien : pLead && positif(pLead.agence_id) ? pLead : pBien || pLead;
         const agence = positif(b.agence_id) ? b.agence_id : personne && positif(personne.agence_id) ? personne.agence_id : null;
+        resultat.negociateur_bien = b.negociateur_id ?? null; resultat.negociateur_lead = row.negociateur ?? null;
+        resultat.personne = personne ? personne.nom || personne.id : null;
         if (cible && String(avant.agence || "") !== cible) { r.hors_cible++; resultat.ignore = "contact qui n'est plus dans l'agence visée"; return; }
         const patch = {};
         if (!cible && String(avant.negociateur || "") !== String(b.negociateur_id)) patch.negociateur = b.negociateur_id;

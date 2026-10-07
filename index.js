@@ -1,4 +1,4 @@
-/* dysizz-flow 2.14.15 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.14.16 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.14.15" : "dev";
+    var VERSION2 = true ? "2.14.16" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -99867,6 +99867,8 @@ var require_reaffectation = __commonJS({
       await tables();
       const cache = (await require_store().ensureTables()).cache;
       const cle = `reaffectation-v1:${prefixe()}:${date.toISOString()}${cible ? ":agence-" + cible : ""}`;
+      const annuaire = (conf.routage || {}).personnes || [];
+      const personneDe = (id) => (positif(id) ? annuaire.find((p) => String(p.id) === String(id)) : null) || null;
       const nomAgence = (id) => ((conf.agences || []).find((a) => String(a.id) === String(id)) || {}).nom || null;
       const ex = simuler ? null : await cache.getRow({ cle });
       let etat = ex ? lire(ex.valeur) : null;
@@ -99874,7 +99876,7 @@ var require_reaffectation = __commonJS({
       if (!etat) {
         const fin = (/* @__PURE__ */ new Date()).toISOString();
         const rows = (await db.query(
-          `select id,mail_id,recu_le,contact_crm,contact_email,contact_tel,bien_crm,agence
+          `select id,mail_id,recu_le,contact_crm,contact_email,contact_tel,bien_crm,agence,negociateur
       from ${table} where recu_le >= $1 and recu_le <= $2 and nature = any($3::text[])
       and coalesce(mode,'') <> 'ombre' and contact_crm ~ '^[0-9]+$' and bien_crm ~ '^[0-9]+$'`,
           [date.toISOString(), fin, NATURES]
@@ -99908,7 +99910,9 @@ var require_reaffectation = __commonJS({
             agence_non_verifiable: 0,
             erreurs: [],
             resultats: [],
-            emails_envoyes: 0
+            emails_envoyes: 0,
+            /* diagnostic : l'annuaire vu par l'outil (l'agence vient du négociateur quand le CRM ne la donne pas) */
+            annuaire: { personnes: annuaire.length, avec_agence: annuaire.filter((p) => positif(p.agence_id)).length }
           }
         };
       }
@@ -99953,8 +99957,12 @@ var require_reaffectation = __commonJS({
               if (tel.length < 9 || !(avant.telephones || []).some((v) => String(v).replace(/\D/g, "").slice(-9) === tel.slice(-9)))
                 throw new Error("identit\xE9 sans e-mail non confirm\xE9e par t\xE9l\xE9phone");
             }
-            const personne = ((conf.routage || {}).personnes || []).find((p) => String(p.id) === String(b.negociateur_id));
+            const pBien = personneDe(b.negociateur_id), pLead = personneDe(row.negociateur);
+            const personne = pBien && positif(pBien.agence_id) ? pBien : pLead && positif(pLead.agence_id) ? pLead : pBien || pLead;
             const agence = positif(b.agence_id) ? b.agence_id : personne && positif(personne.agence_id) ? personne.agence_id : null;
+            resultat.negociateur_bien = b.negociateur_id ?? null;
+            resultat.negociateur_lead = row.negociateur ?? null;
+            resultat.personne = personne ? personne.nom || personne.id : null;
             if (cible && String(avant.agence || "") !== cible) {
               r.hors_cible++;
               resultat.ignore = "contact qui n'est plus dans l'agence vis\xE9e";

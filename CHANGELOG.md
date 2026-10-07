@@ -1,5 +1,12 @@
 # Journal des versions
 
+## 2.14.16
+
+### Corrigé
+- Réaffectation d'une période : quand le négociateur lu dans le CRM ne se retrouve pas dans l'annuaire, l'agence
+  est prise sur le négociateur retenu sur le lead. Le rapport donne, par contact, les deux négociateurs et la
+  personne trouvée, et en tête l'annuaire vu par l'outil (personnes, dont avec agence).
+
 ## 2.14.15
 
 ### Corrigé
