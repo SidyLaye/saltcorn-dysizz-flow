@@ -16,17 +16,23 @@ const derniers = rows => {
   }
   return [...m.values()].sort((a,b) => Number(a.contact_crm) - Number(b.contact_crm));
 };
-const reaffecter = async ({ debut, suivi = {}, budgetMs = 80 * 60000 } = {}) => {
+/* simuler : rien n'est écrit (ni CRM, ni leads, ni reprise), le rapport dit ce qui serait fait.
+   agenceErronee (id CRM) : seuls les contacts encore rangés dans cette agence sont corrigés, et seulement
+   leur agence ; un contact déplacé à la main depuis n'est pas touché. */
+const reaffecter = async ({ debut, suivi = {}, budgetMs = 80 * 60000, simuler = false, agenceErronee = null } = {}) => {
   const date = new Date(debut);
   if (!Number.isFinite(date.getTime()) || date > new Date()) throw new Error("Date de début invalide");
+  const cible = agenceErronee != null && String(agenceErronee).trim() !== "" ? String(agenceErronee).trim() : null;
+  if (cible && !positif(cible)) throw new Error("Agence erronée : identifiant CRM numérique attendu");
   const { conf, crm } = await charger();
   if (crm.type !== "immofacile" || crm.mode !== "reel") throw new Error("Immofacile réel doit être activé");
   const api = require("./core").flowApi();
   const client = api.crmDepuisCoffre(crm.type, { ...crm.reglages, groupe_demandeur: null }, crm.prefixe, "reel");
   const db = require("@saltcorn/data/db"), t = await tables();
   const cache = (await require("../../../store").ensureTables()).cache;
-  const cle = `reaffectation-v1:${prefixe()}:${date.toISOString()}`;
-  const ex = await cache.getRow({ cle });
+  const cle = `reaffectation-v1:${prefixe()}:${date.toISOString()}${cible ? ":agence-" + cible : ""}`;
+  const nomAgence = (id) => ((conf.agences || []).find((a) => String(a.id) === String(id)) || {}).nom || null;
+  const ex = simuler ? null : await cache.getRow({ cle });
   let etat = ex ? lire(ex.valeur) : null;
   const table = `"${db.getTenantSchema()}"."${nom("leads")}"`;
   if (!etat) {
@@ -40,10 +46,12 @@ const reaffecter = async ({ debut, suivi = {}, budgetMs = 80 * 60000 } = {}) => 
       [date.toISOString(), fin, NATURES])).rows[0].n;
     etat = { debut: date.toISOString(), fin, cibles: derniers(rows), curseur: 0,
       rapport: { debut: date.toISOString(), fin, contacts: derniers(rows).length, demandes_sans_contact_crm: sans,
-        traites: 0, confirmes: 0, modifies: 0, deja_corrects: 0, demandes_plus_recentes: 0,
+        simulation: !!simuler, agence_erronee: cible, agence_erronee_nom: cible ? nomAgence(cible) : null,
+        traites: 0, confirmes: 0, modifies: 0, a_modifier: 0, hors_cible: 0, leads_corriges: 0, deja_corrects: 0, demandes_plus_recentes: 0,
         agence_non_verifiable: 0, erreurs: [], resultats: [], emails_envoyes: 0 } };
   }
   const sauver = async () => {
+    if (simuler) return;
     const row = { cle, valeur: JSON.stringify(etat), expire: new Date(Date.now() + 90*86400000) };
     const old = await cache.getRow({ cle });
     if (old) await cache.updateRow(row, old.id); else await cache.insertRow(row);
@@ -79,9 +87,16 @@ const reaffecter = async ({ debut, suivi = {}, budgetMs = 80 * 60000 } = {}) => 
         }
         const personne = ((conf.routage || {}).personnes || []).find(p => String(p.id) === String(b.negociateur_id));
         const agence = positif(b.agence_id) ? b.agence_id : personne && positif(personne.agence_id) ? personne.agence_id : null;
+        if (cible && String(avant.agence || "") !== cible) { r.hors_cible++; resultat.ignore = "contact qui n'est plus dans l'agence visée"; return; }
         const patch = {};
-        if (String(avant.negociateur || "") !== String(b.negociateur_id)) patch.negociateur = b.negociateur_id;
+        if (!cible && String(avant.negociateur || "") !== String(b.negociateur_id)) patch.negociateur = b.negociateur_id;
         if (agence && String(avant.agence || "") !== String(agence)) patch.agence = agence;
+        resultat.agence_avant = avant.agence ?? null; resultat.agence_id = agence;
+        if (simuler) {
+          resultat.prevu = patch;
+          if (!agence) r.agence_non_verifiable++; else if (Object.keys(patch).length) r.a_modifier++; else r.deja_corrects++;
+          return;
+        }
         if (Object.keys(patch).length) await client.majContact(row.contact_crm, patch);
         const suivis = await client.suivis(row.contact_crm);
         if (!suivis.some(s => String(s.bien) === String(b.id))) await client.lierBien(row.contact_crm, b.id);
@@ -90,7 +105,13 @@ const reaffecter = async ({ debut, suivi = {}, budgetMs = 80 * 60000 } = {}) => 
           throw new Error("affectation non confirmée après relecture CRM");
         const liens = await client.suivis(row.contact_crm);
         if (!liens.some(s => String(s.bien) === String(b.id))) throw new Error("liaison au bien non confirmée après relecture CRM");
-        resultat.negociateur_id = b.negociateur_id; resultat.agence_id = agence;
+        resultat.negociateur_id = b.negociateur_id;
+        /* nos leads de la période gardaient le nom de l'agence erronée : on les aligne sur le CRM */
+        if (cible && agence && nomAgence(agence)) {
+          const u = await db.query(`update ${table} set agence=$1 where contact_crm=$2 and recu_le >= $3 and agence=$4`,
+            [nomAgence(agence), String(row.contact_crm), etat.debut, nomAgence(cible)]);
+          r.leads_corriges += (u && u.rowCount) || 0;
+        }
         resultat.affectation_confirmee = true; resultat.bien_confirme = true;
         resultat.agence_confirmee = agence ? true : null;
         if (!agence) r.agence_non_verifiable++;

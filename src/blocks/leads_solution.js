@@ -208,12 +208,15 @@ module.exports = [
     icon: "fas fa-user-tag", output: "reaffectation", timeout: 60,
     description: "Dernière demande avec bien par contact, négociateur actuel du bien, contrôle d'identité et relecture. Reprise sauvegardée ; aucun e-mail ni rejeu de pipeline.",
     params: [P_PREFIXE, { name: "debut", label: "Début ISO inclus", required: true },
-      { name: "fichier", label: "Rapport", default: "reaffectation-crm.json" }],
+      { name: "fichier", label: "Rapport", default: "reaffectation-crm.json" },
+      { name: "simuler", label: "Simuler (n'écrit rien, rapport seulement)", type: "bool", default: true },
+      { name: "agence_erronee", label: "Ne corriger que les contacts rangés dans cette agence (id CRM)", help: "Vide : tous les contacts de la période. Rempli : seulement l'agence de ces contacts, s'ils y sont encore." }],
     run: async (p, ctx = {}, api) => {
       if (!api.user || Number(api.user.role_id) !== 1) throw new Error("Administrateur requis");
       return dans(p, () => require("../lib/arriere_plan").enFond(p, ctx, "dzf_leads_reaffecter_periode",
         String(p.fichier || "reaffectation-crm.json").replace(/[^\w.-]/g, "_"), async suivi => {
-          const rapport = await require("../lib/leads/tables/reaffectation").reaffecter({ debut: p.debut, suivi });
+          const rapport = await require("../lib/leads/tables/reaffectation").reaffecter({ debut: p.debut, suivi,
+            simuler: p.simuler !== false && p.simuler !== "false", agenceErronee: p.agence_erronee || null });
           const fichier = String(p.fichier || "reaffectation-crm.json").replace(/[^\w.-]/g, "_");
           await require("@saltcorn/data/models/file").from_contents(fichier, "application/json", JSON.stringify(rapport,null,1), api.user.id, 1);
           return { fichier, ...rapport };

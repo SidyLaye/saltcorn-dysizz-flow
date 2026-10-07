@@ -37,10 +37,18 @@ const preuveEml = (mail) => {
   return { nom: `demande-${jourIso(mail.date || mail.date_envoi)}.eml`, type: "message/rfc822", base64: Buffer.from(txt, "utf8").toString("base64") };
 };
 
-/* Agence : par le bien, le compte du portail, la boîte qui a reçu le mail, puis l'agence citée. */
+/* Agence : par le bien, son négociateur, le compte du portail, la boîte qui a reçu le mail, puis l'agence citée.
+   Le CRM ne renvoie pas toujours l'agence du bien : sans le repli sur son négociateur, tout lead reçu sur la
+   boîte centrale partait chez l'agence qui la déclare, quel que soit le bien. */
 const trouverAgence = (r, bien, conf) => {
   const A = conf.agences || [];
-  if (bien && bien.agence_id) { const a = A.find((x) => String(x.id) === String(bien.agence_id)); if (a) return { agence: a, par: "bien" }; }
+  const parId = (id) => (id != null && id !== "" ? A.find((x) => String(x.id) === String(id)) : null);
+  if (bien && bien.agence_id) { const a = parId(bien.agence_id); if (a) return { agence: a, par: "bien" }; }
+  if (bien && bien.negociateur_id) {
+    const p = ((conf.routage && conf.routage.personnes) || []).find((x) => String(x.id) === String(bien.negociateur_id));
+    const a = p && parId(p.agence_id);
+    if (a) return { agence: a, par: "négociateur du bien" };
+  }
   if (r.agence_crm) { const a = A.find((x) => String(x.id) === String(r.agence_crm) || String(x.id_crm || "") === String(r.agence_crm)); if (a) return { agence: a, par: "compte de l'agence sur le portail" }; }
   const dest = String(r.destinataire || "").toLowerCase();
   const a = A.find((x) => (x.boites || []).some((b) => dest.includes(String(b).toLowerCase())));

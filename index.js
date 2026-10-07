@@ -1,4 +1,4 @@
-/* dysizz-flow 2.14.13 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.14.14 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.14.13" : "dev";
+    var VERSION2 = true ? "2.14.14" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -95218,9 +95218,15 @@ var require_traiter = __commonJS({
     };
     var trouverAgence = (r, bien, conf) => {
       const A = conf.agences || [];
+      const parId = (id) => id != null && id !== "" ? A.find((x) => String(x.id) === String(id)) : null;
       if (bien && bien.agence_id) {
-        const a2 = A.find((x) => String(x.id) === String(bien.agence_id));
+        const a2 = parId(bien.agence_id);
         if (a2) return { agence: a2, par: "bien" };
+      }
+      if (bien && bien.negociateur_id) {
+        const p = (conf.routage && conf.routage.personnes || []).find((x) => String(x.id) === String(bien.negociateur_id));
+        const a2 = p && parId(p.agence_id);
+        if (a2) return { agence: a2, par: "n\xE9gociateur du bien" };
       }
       if (r.agence_crm) {
         const a2 = A.find((x) => String(x.id) === String(r.agence_crm) || String(x.id_crm || "") === String(r.agence_crm));
@@ -99848,17 +99854,20 @@ var require_reaffectation = __commonJS({
       }
       return [...m.values()].sort((a, b) => Number(a.contact_crm) - Number(b.contact_crm));
     };
-    var reaffecter = async ({ debut, suivi = {}, budgetMs = 80 * 6e4 } = {}) => {
+    var reaffecter = async ({ debut, suivi = {}, budgetMs = 80 * 6e4, simuler = false, agenceErronee = null } = {}) => {
       const date = new Date(debut);
       if (!Number.isFinite(date.getTime()) || date > /* @__PURE__ */ new Date()) throw new Error("Date de d\xE9but invalide");
+      const cible = agenceErronee != null && String(agenceErronee).trim() !== "" ? String(agenceErronee).trim() : null;
+      if (cible && !positif(cible)) throw new Error("Agence erron\xE9e : identifiant CRM num\xE9rique attendu");
       const { conf, crm } = await charger();
       if (crm.type !== "immofacile" || crm.mode !== "reel") throw new Error("Immofacile r\xE9el doit \xEAtre activ\xE9");
       const api = require_core3().flowApi();
       const client = api.crmDepuisCoffre(crm.type, { ...crm.reglages, groupe_demandeur: null }, crm.prefixe, "reel");
       const db = require("@saltcorn/data/db"), t = await tables();
       const cache = (await require_store().ensureTables()).cache;
-      const cle = `reaffectation-v1:${prefixe()}:${date.toISOString()}`;
-      const ex = await cache.getRow({ cle });
+      const cle = `reaffectation-v1:${prefixe()}:${date.toISOString()}${cible ? ":agence-" + cible : ""}`;
+      const nomAgence = (id) => ((conf.agences || []).find((a) => String(a.id) === String(id)) || {}).nom || null;
+      const ex = simuler ? null : await cache.getRow({ cle });
       let etat = ex ? lire(ex.valeur) : null;
       const table = `"${db.getTenantSchema()}"."${nom("leads")}"`;
       if (!etat) {
@@ -99884,9 +99893,15 @@ var require_reaffectation = __commonJS({
             fin,
             contacts: derniers(rows).length,
             demandes_sans_contact_crm: sans,
+            simulation: !!simuler,
+            agence_erronee: cible,
+            agence_erronee_nom: cible ? nomAgence(cible) : null,
             traites: 0,
             confirmes: 0,
             modifies: 0,
+            a_modifier: 0,
+            hors_cible: 0,
+            leads_corriges: 0,
             deja_corrects: 0,
             demandes_plus_recentes: 0,
             agence_non_verifiable: 0,
@@ -99897,6 +99912,7 @@ var require_reaffectation = __commonJS({
         };
       }
       const sauver = async () => {
+        if (simuler) return;
         const row = { cle, valeur: JSON.stringify(etat), expire: new Date(Date.now() + 90 * 864e5) };
         const old = await cache.getRow({ cle });
         if (old) await cache.updateRow(row, old.id);
@@ -99936,9 +99952,23 @@ var require_reaffectation = __commonJS({
             }
             const personne = ((conf.routage || {}).personnes || []).find((p) => String(p.id) === String(b.negociateur_id));
             const agence = positif(b.agence_id) ? b.agence_id : personne && positif(personne.agence_id) ? personne.agence_id : null;
+            if (cible && String(avant.agence || "") !== cible) {
+              r.hors_cible++;
+              resultat.ignore = "contact qui n'est plus dans l'agence vis\xE9e";
+              return;
+            }
             const patch = {};
-            if (String(avant.negociateur || "") !== String(b.negociateur_id)) patch.negociateur = b.negociateur_id;
+            if (!cible && String(avant.negociateur || "") !== String(b.negociateur_id)) patch.negociateur = b.negociateur_id;
             if (agence && String(avant.agence || "") !== String(agence)) patch.agence = agence;
+            resultat.agence_avant = avant.agence ?? null;
+            resultat.agence_id = agence;
+            if (simuler) {
+              resultat.prevu = patch;
+              if (!agence) r.agence_non_verifiable++;
+              else if (Object.keys(patch).length) r.a_modifier++;
+              else r.deja_corrects++;
+              return;
+            }
             if (Object.keys(patch).length) await client.majContact(row.contact_crm, patch);
             const suivis = await client.suivis(row.contact_crm);
             if (!suivis.some((s) => String(s.bien) === String(b.id))) await client.lierBien(row.contact_crm, b.id);
@@ -99948,7 +99978,13 @@ var require_reaffectation = __commonJS({
             const liens = await client.suivis(row.contact_crm);
             if (!liens.some((s) => String(s.bien) === String(b.id))) throw new Error("liaison au bien non confirm\xE9e apr\xE8s relecture CRM");
             resultat.negociateur_id = b.negociateur_id;
-            resultat.agence_id = agence;
+            if (cible && agence && nomAgence(agence)) {
+              const u = await db.query(
+                `update ${table} set agence=$1 where contact_crm=$2 and recu_le >= $3 and agence=$4`,
+                [nomAgence(agence), String(row.contact_crm), etat.debut, nomAgence(cible)]
+              );
+              r.leads_corriges += u && u.rowCount || 0;
+            }
             resultat.affectation_confirmee = true;
             resultat.bien_confirme = true;
             resultat.agence_confirmee = agence ? true : null;
@@ -100381,7 +100417,9 @@ var require_leads_solution = __commonJS({
         params: [
           P_PREFIXE,
           { name: "debut", label: "D\xE9but ISO inclus", required: true },
-          { name: "fichier", label: "Rapport", default: "reaffectation-crm.json" }
+          { name: "fichier", label: "Rapport", default: "reaffectation-crm.json" },
+          { name: "simuler", label: "Simuler (n'\xE9crit rien, rapport seulement)", type: "bool", default: true },
+          { name: "agence_erronee", label: "Ne corriger que les contacts rang\xE9s dans cette agence (id CRM)", help: "Vide : tous les contacts de la p\xE9riode. Rempli : seulement l'agence de ces contacts, s'ils y sont encore." }
         ],
         run: async (p, ctx = {}, api) => {
           if (!api.user || Number(api.user.role_id) !== 1) throw new Error("Administrateur requis");
@@ -100391,7 +100429,12 @@ var require_leads_solution = __commonJS({
             "dzf_leads_reaffecter_periode",
             String(p.fichier || "reaffectation-crm.json").replace(/[^\w.-]/g, "_"),
             async (suivi) => {
-              const rapport = await require_reaffectation().reaffecter({ debut: p.debut, suivi });
+              const rapport = await require_reaffectation().reaffecter({
+                debut: p.debut,
+                suivi,
+                simuler: p.simuler !== false && p.simuler !== "false",
+                agenceErronee: p.agence_erronee || null
+              });
               const fichier = String(p.fichier || "reaffectation-crm.json").replace(/[^\w.-]/g, "_");
               await require("@saltcorn/data/models/file").from_contents(fichier, "application/json", JSON.stringify(rapport, null, 1), api.user.id, 1);
               return { fichier, ...rapport };

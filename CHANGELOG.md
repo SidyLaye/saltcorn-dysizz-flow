@@ -1,5 +1,19 @@
 # Journal des versions
 
+## 2.14.14
+
+### Corrigé
+- Agence d'un lead : quand le CRM ne renvoie pas l'agence du bien, on prend celle du négociateur du bien avant de
+  regarder la boîte qui a reçu le mail. Sans ce repli, les leads reçus sur la boîte centrale partaient tous chez
+  l'agence qui la déclare, quel que soit le bien. Test : `tests/agence.test.cjs`.
+
+### Ajouté
+- « Leads : corriger les affectations CRM d'une période » : option **Simuler** (cochée par défaut, n'écrit rien,
+  rapport seulement) et option **agence erronée** (id CRM) : seuls les contacts encore rangés dans cette agence
+  sont corrigés, et seulement leur agence ; nos leads de la période qui portaient son nom sont alignés.
+  Attention : un déclencheur existant sans ces réglages simule désormais au lieu d'écrire.
+  Test : `tests/reaffectation-cible.test.cjs`.
+
 ## 2.14.2
 
 ### Corrigé
