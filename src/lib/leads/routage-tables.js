@@ -70,6 +70,8 @@ const lireRoutageLignes = async (noms = {}, fuseau = "Europe/Paris") => {
     __equipe: eq,
     personnes: eq.map((p) => ({
       id: p.id, nom: p.nom, email: p.email, role: p.role, actif: p.actif !== false, assistante_id: p.assistante || null,
+      /* agence CRM de la personne : sert à retrouver l'agence d'un lead quand le CRM ne la donne pas sur le bien */
+      agence_id: p.agency_id ?? p.agence_crm_id ?? null,
       temps: p.temps || "plein", jours: ids(p.jours).map(Number),
       remplacant_hors_jours: ref(p.remplacant_hors_jours), remplacant_inactif: ref(p.remplacant_inactif),
     })),

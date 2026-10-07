@@ -1,4 +1,4 @@
-/* dysizz-flow 2.14.16 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.14.17 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.14.16" : "dev";
+    var VERSION2 = true ? "2.14.17" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -95666,6 +95666,8 @@ var require_routage_tables = __commonJS({
           role: p.role,
           actif: p.actif !== false,
           assistante_id: p.assistante || null,
+          /* agence CRM de la personne : sert à retrouver l'agence d'un lead quand le CRM ne la donne pas sur le bien */
+          agence_id: p.agency_id ?? p.agence_crm_id ?? null,
           temps: p.temps || "plein",
           jours: ids(p.jours).map(Number),
           remplacant_hors_jours: ref(p.remplacant_hors_jours),

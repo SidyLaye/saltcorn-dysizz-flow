@@ -1,5 +1,12 @@
 # Journal des versions
 
+## 2.14.17
+
+### Corrigé
+- Routage lu dans les tables (équipe, absences, règles) : l'agence CRM de chaque personne (`agency_id`) n'était pas
+  reprise. Le repli « agence du négociateur du bien » ne trouvait donc jamais rien, et un lead dont le bien arrive
+  sans agence retombait sur la boîte de réception. Test : `tests/routage-tables.test.cjs`.
+
 ## 2.14.16
 
 ### Corrigé

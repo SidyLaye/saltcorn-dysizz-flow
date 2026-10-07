@@ -8,7 +8,7 @@ const autreJour = (jourIso % 7) + 1;
 const plus = (j) => new Date(Date.parse(auj + "T12:00:00Z") + j * 864e5);
 const DONNEES = {
   equipe: [
-    { id: 1, nom: "Alice", email: "alice@ex.org", role: "negociateur", actif: true, assistante: 3, temps: "plein", groupe: 7, crm: "500" },
+    { id: 1, nom: "Alice", email: "alice@ex.org", role: "negociateur", actif: true, assistante: 3, temps: "plein", groupe: 7, crm: "500", agency_id: 405 },
     { id: 2, nom: "Bruno", email: "bruno@ex.org", role: "negociateur", actif: true, temps: "mi_temps", jours: String(autreJour), remplacant_hors_jours: 1 },
     { id: 3, nom: "Chloé", email: "chloe@ex.org", role: "assistante", actif: true },
     { id: 4, nom: "Denis", email: "denis@ex.org", role: "negociateur", actif: false, remplacant_inactif: 1 },
@@ -90,6 +90,10 @@ const B = (n) => BLOCKS.find((b) => b.name === n);
   const c2 = await lireRoutage({}, "Europe/Paris", { id: "crm" });
   const alice = c2.personnes.find((p) => p.nom === "Alice");
   assert.strictEqual(alice.id, "500"); assert.strictEqual(alice.assistante_id, "e3", "sans id CRM : e<ligne>");
+  assert.strictEqual(alice.agence_id, 405, "l'agence CRM de la personne suit (repli de l'agence d'un lead)");
+  const T = require("../src/lib/leads/traiter");
+  const ag = T.trouverAgence({ destinataire: "boite@ex.org" }, { negociateur_id: "500", agence_id: null }, { agences: [{ id: "405", nom: "Agence Albi", boites: ["boite@ex.org"] }, { id: "9", nom: "Centrale", boites: ["boite@ex.org"] }], routage: c2 });
+  assert.strictEqual(ag.par, "négociateur du bien", "routage par tables : l'agence vient du négociateur");
   assert.deepStrictEqual(c2.regles[0].cible, { negociateurs: ["600", "e6"] });
   assert.strictEqual(c2.absences[0].personne_id, "600"); assert.strictEqual(c2.absences[0].remplacant.personne, "500");
   assert.ok(!("__equipe" in c2) && !("__equipe" in conf), "rien d'interne dans la configuration");
