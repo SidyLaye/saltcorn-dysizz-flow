@@ -11,11 +11,12 @@ const client={bienParId:async id=>({id,negociateur_id:20,agence_id:40}),contact:
 const original=Module._load;
 Module._load=function(n,parent,...rest){
   if(parent.filename.endsWith("reaffectation.js")){
-    if(n==="./schema")return {nom:()=>"ld_leads",prefixe:()=>"ld_",tables:async()=>({mails:{getRow:async({id})=>({id})}})};
+    if(n==="./schema")return {nom:()=>"ld_leads",prefixe:()=>"ld_",tables:async()=>({leads:{}})};
     if(n==="./conf")return {charger:async()=>({conf:{routage:{personnes:[]}},crm:{mode:"reel",type:"immofacile"}})};
     if(n==="./dossier")return {cleVerrou:(_a,_m,_c,id)=>"mail:"+id,versMoteur:x=>x};
     if(n==="./core")return {flowApi:()=>({crmDepuisCoffre:(_type,reglages)=>{assert.equal(reglages.groupe_demandeur,null);return client;},verrou:{sous:async(_k,fn)=>fn()}})};
     if(n==="../../../store")return {ensureTables:async()=>({cache:{getRow:async()=>saved,insertRow:async r=>{saved={...r,id:1};},updateRow:async r=>{saved={...r,id:1};}}})};
+    if(n==="@saltcorn/data/models/table")return {findOne:()=>({getRow:async({id})=>({id})})};
     if(n==="@saltcorn/data/db")return {getTenantSchema:()=>"test",query:async(sql,args)=>{
       if(sql.includes("count(*)"))return {rows:[{n:1}]};
       if(sql.includes("order by recu_le"))return {rows:rows.filter(r=>r.contact_crm===args[0]).slice(-1)};

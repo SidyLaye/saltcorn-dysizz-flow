@@ -1,4 +1,4 @@
-/* dysizz-flow 2.14.14 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.14.15 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.14.14" : "dev";
+    var VERSION2 = true ? "2.14.15" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -99863,7 +99863,8 @@ var require_reaffectation = __commonJS({
       if (crm.type !== "immofacile" || crm.mode !== "reel") throw new Error("Immofacile r\xE9el doit \xEAtre activ\xE9");
       const api = require_core3().flowApi();
       const client = api.crmDepuisCoffre(crm.type, { ...crm.reglages, groupe_demandeur: null }, crm.prefixe, "reel");
-      const db = require("@saltcorn/data/db"), t = await tables();
+      const db = require("@saltcorn/data/db");
+      await tables();
       const cache = (await require_store().ensureTables()).cache;
       const cle = `reaffectation-v1:${prefixe()}:${date.toISOString()}${cible ? ":agence-" + cible : ""}`;
       const nomAgence = (id) => ((conf.agences || []).find((a) => String(a.id) === String(id)) || {}).nom || null;
@@ -99927,7 +99928,9 @@ var require_reaffectation = __commonJS({
         suivi.etape = `affectation du contact ${row.contact_crm}`;
         const resultat = { lead_id: row.id, contact_id: row.contact_crm, bien_id: row.bien_crm };
         try {
-          const mail = await t.mails.getRow({ id: row.mail_id });
+          const tm = require("@saltcorn/data/models/table").findOne({ name: nom("mails") });
+          if (!tm) throw new Error(`table ${nom("mails")} introuvable`);
+          const mail = await tm.getRow({ id: row.mail_id });
           if (!mail) throw new Error("mail d'origine introuvable : affectation non modifi\xE9e");
           await api.verrou.sous(cleVerrou(api, versMoteur(mail), conf, mail.id), async () => {
             const latest = (await db.query(`select id,recu_le from ${table} where contact_crm=$1

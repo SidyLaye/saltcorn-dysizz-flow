@@ -28,7 +28,7 @@ const reaffecter = async ({ debut, suivi = {}, budgetMs = 80 * 60000, simuler = 
   if (crm.type !== "immofacile" || crm.mode !== "reel") throw new Error("Immofacile réel doit être activé");
   const api = require("./core").flowApi();
   const client = api.crmDepuisCoffre(crm.type, { ...crm.reglages, groupe_demandeur: null }, crm.prefixe, "reel");
-  const db = require("@saltcorn/data/db"), t = await tables();
+  const db = require("@saltcorn/data/db"); await tables();
   const cache = (await require("../../../store").ensureTables()).cache;
   const cle = `reaffectation-v1:${prefixe()}:${date.toISOString()}${cible ? ":agence-" + cible : ""}`;
   const nomAgence = (id) => ((conf.agences || []).find((a) => String(a.id) === String(id)) || {}).nom || null;
@@ -64,7 +64,10 @@ const reaffecter = async ({ debut, suivi = {}, budgetMs = 80 * 60000, simuler = 
     suivi.etape = `affectation du contact ${row.contact_crm}`;
     const resultat = { lead_id: row.id, contact_id: row.contact_crm, bien_id: row.bien_crm };
     try {
-      const mail = await t.mails.getRow({ id: row.mail_id });
+      /* la table des mails n'est pas dans tables() : on la prend par son nom, comme le reste du module */
+      const tm = require("@saltcorn/data/models/table").findOne({ name: nom("mails") });
+      if (!tm) throw new Error(`table ${nom("mails")} introuvable`);
+      const mail = await tm.getRow({ id: row.mail_id });
       if (!mail) throw new Error("mail d'origine introuvable : affectation non modifiée");
       await api.verrou.sous(cleVerrou(api, versMoteur(mail), conf, mail.id), async () => {
         const latest = (await db.query(`select id,recu_le from ${table} where contact_crm=$1

@@ -1,5 +1,12 @@
 # Journal des versions
 
+## 2.14.15
+
+### Corrigé
+- « Leads : corriger les affectations CRM d'une période » : chaque contact échouait avant tout contrôle
+  (« Cannot read properties of undefined (reading 'getRow') ») ; la table des mails est désormais prise par son nom,
+  comme dans le reste du module. Les tests simulent les tables telles qu'elles sont, pour attraper ce cas.
+
 ## 2.14.14
 
 ### Corrigé
