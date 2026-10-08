@@ -65,8 +65,11 @@ module.exports = [
     name: "dzf_lead_destinataires", label: "Leads : qui reçoit ?", category: "Leads immobiliers", icon: "fas fa-user-check", output: "destinataires",
     description: "Donne les adresses exactes qui recevraient un lead de ce négociateur à cette date, avec l'explication (règle, congés, mi-temps, remplaçant, siège). C'est le bouton « tester ».",
     params: [{ name: "negociateur", label: "Négociateur (id)", required: true }, { name: "date", label: "Date", default: "", help: "Vide = maintenant" },
-      { name: "prix", label: "Prix du bien (€)", default: "", help: "Pour les copies avec seuil de prix. Vide = prix inconnu" }, P_ROUTAGE, P_TABLES],
-    run: async (p) => destinataires(p.negociateur, p.date || new Date(), await routageDe(p), { prix: p.prix }),
+      { name: "prix", label: "Prix du bien (€)", default: "", help: "Pour les règles et copies avec condition. Vide = inconnu" },
+      { name: "type", label: "Type de bien", default: "", help: "maison, appartement, terrain, immeuble, local, grange, chateau, propriete" },
+      { name: "code_postal", label: "Code postal", default: "" }, { name: "portail", label: "Portail", default: "" },
+      { name: "nature", label: "Nature", default: "", help: "lead, recherche, estimation, direct" }, P_ROUTAGE, P_TABLES],
+    run: async (p) => destinataires(p.negociateur, p.date || new Date(), await routageDe(p), { prix: p.prix, type: p.type, code_postal: p.code_postal, portail: p.portail, nature: p.nature }),
   },
   {
     name: "dzf_lead_absents", label: "Leads : absents de la semaine", category: "Leads immobiliers", icon: "fas fa-umbrella-beach", output: "absents",

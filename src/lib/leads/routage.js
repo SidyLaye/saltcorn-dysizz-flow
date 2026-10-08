@@ -14,12 +14,17 @@
                   assistante_remplacante: ref, adresses_libres: [email…], actif }],
      absences: [{ personne_id, debut: "AAAA-MM-JJ", fin: "AAAA-MM-JJ", remplacant: ref, motif }],
      siege:    [email…],                    // en copie de chaque lead
-     copies:   [{ email, nom, cible: { tous: true } | { negociateurs: [id…] }, prix_au_dela }], // en copie de certains leads seulement
-                                           // prix_au_dela : seulement si le prix du bien le dépasse (strictement)
+     copies:   [{ email, nom, cible: { tous: true } | { negociateurs: [id…] }, condition }], // en copie de certains leads seulement
      fuseau_horaire: "Europe/Paris" // UTC par défaut
    }
    ref = { personne: id } | { email: "x@y" }
-   ctx = { prix } : le prix du bien du lead (copies avec seuil) ; { apercu: true } : liste les copies avec seuil sans prix connu */
+   condition (facultative, sur une règle ou une copie) : tout ce qui est rempli doit être vrai
+     { prix_au_dela, prix_jusqu_a, types_bien: [..], codes_postaux: [débuts..], portails: [..], natures: [..] }
+   ctx = ce que l'on sait du lead : { prix, type, code_postal, portail, nature } ;
+         { apercu: true } : vue « qui reçoit aujourd'hui », sans lead précis (conditions affichées, pas évaluées)
+   Une règle dont la condition n'est pas remplie est écartée : la règle suivante s'applique (« sinon »).
+   Priorité : la règle d'une personne, puis d'un groupe / d'une agence, puis de tout le monde ;
+   à niveau égal, une règle avec condition remplie passe avant une règle sans condition. */
 "use strict";
 
 const jour = (d, fuseau = "UTC") => {
@@ -52,13 +57,63 @@ const disponibilite = (conf, p, quand) => {
   return { dispo: true };
 };
 
-const regleDe = (conf, negoId) => {
+/* ── conditions ── */
+const norm = (v) => String(v ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+const compact = (v) => norm(v).replace(/[^a-z0-9]/g, "");
+const euros = (n) => `${(+n).toLocaleString("fr-FR")} €`;
+const listeDe = (v) => (Array.isArray(v) ? v : String(v ?? "").split(/[,;\n]+/)).map((x) => String(x).trim()).filter(Boolean);
+const aCondition = (c) => !!c && (+c.prix_au_dela > 0 || +c.prix_jusqu_a > 0 || ["types_bien", "codes_postaux", "portails", "natures"].some((k) => listeDe(c[k]).length > 0));
+const decrireCondition = (c) => {
+  const p = [];
+  if (+c.prix_au_dela > 0 && +c.prix_jusqu_a > 0) p.push(`prix entre ${euros(c.prix_au_dela)} (exclu) et ${euros(c.prix_jusqu_a)}`);
+  else if (+c.prix_au_dela > 0) p.push(`prix au-delà de ${euros(c.prix_au_dela)}`);
+  else if (+c.prix_jusqu_a > 0) p.push(`prix jusqu'à ${euros(c.prix_jusqu_a)}`);
+  if (listeDe(c.types_bien).length) p.push(`type : ${listeDe(c.types_bien).join(", ")}`);
+  if (listeDe(c.codes_postaux).length) p.push(`code postal : ${listeDe(c.codes_postaux).join(", ")}`);
+  if (listeDe(c.portails).length) p.push(`portail : ${listeDe(c.portails).join(", ")}`);
+  if (listeDe(c.natures).length) p.push(`nature : ${listeDe(c.natures).join(", ")}`);
+  return p.join(" · ");
+};
+/* null si la condition est remplie, sinon la raison */
+const nonRemplie = (c, ctx = {}) => {
+  if (+c.prix_au_dela > 0 || +c.prix_jusqu_a > 0) {
+    const prix = +ctx.prix;
+    if (!(prix > 0)) return "prix du bien inconnu";
+    if (+c.prix_au_dela > 0 && !(prix > +c.prix_au_dela)) return `prix ${euros(prix)}, pas au-delà de ${euros(c.prix_au_dela)}`;
+    if (+c.prix_jusqu_a > 0 && !(prix <= +c.prix_jusqu_a)) return `prix ${euros(prix)}, au-delà de ${euros(c.prix_jusqu_a)}`;
+  }
+  const types = listeDe(c.types_bien).map((t) => norm(t).replace(/s$/, ""));
+  if (types.length && !types.includes(norm(ctx.type))) return ctx.type ? `type ${ctx.type}` : "type du bien inconnu";
+  const cps = listeDe(c.codes_postaux).map((x) => x.replace(/\D/g, "")).filter(Boolean);
+  if (cps.length && !cps.some((x) => String(ctx.code_postal || "").startsWith(x))) return ctx.code_postal ? `code postal ${ctx.code_postal}` : "code postal inconnu";
+  const portails = listeDe(c.portails).map(compact).filter(Boolean);
+  if (portails.length && !portails.some((x) => compact(ctx.portail).includes(x))) return ctx.portail ? `portail ${ctx.portail}` : "portail inconnu";
+  const natures = listeDe(c.natures).map(norm);
+  if (natures.length && !natures.includes(norm(ctx.nature))) return ctx.nature ? `nature ${ctx.nature}` : "nature inconnue";
+  return null;
+};
+
+const regleDe = (conf, negoId, ctx = {}, trace = []) => {
   const rs = (conf.regles || []).filter((r) => r.actif !== false);
-  const cibles = rs.filter((r) => r.cible && (r.cible.negociateurs || []).map(String).includes(String(negoId)));
   // Une exception individuelle prime sur une règle de groupe, puis sur « tous ».
   // « individuelle » (réglée par la table) ; sinon une cible d'une seule personne compte comme individuelle.
-  return cibles.find((r) => r.individuelle) || cibles.find((r) => r.individuelle === undefined && new Set(r.cible.negociateurs.map(String)).size === 1) || cibles[0]
-    || rs.find((r) => r.cible && r.cible.tous) || {};
+  const niveau = (r) => {
+    const cib = r.cible && r.cible.negociateurs ? r.cible.negociateurs.map(String) : null;
+    if (cib && cib.includes(String(negoId))) return r.individuelle ? 0 : r.individuelle === undefined && new Set(cib).size === 1 ? 1 : 2;
+    return r.cible && r.cible.tous ? 3 : null;
+  };
+  const nomR = (r) => r.nom || r.libelle || r.id;
+  const retenues = rs.map((r, i) => ({ r, i, n: niveau(r), c: aCondition(r.condition) })).filter((x) => x.n !== null).filter((x) => {
+    if (!x.c) return true;
+    if (ctx.apercu) { trace.push(`règle « ${nomR(x.r)} » : seulement si ${decrireCondition(x.r.condition)} (pas appliquée dans l'aperçu)`); return false; }
+    const non = nonRemplie(x.r.condition, ctx);
+    if (non) trace.push(`règle « ${nomR(x.r)} » écartée : ${non} (condition : ${decrireCondition(x.r.condition)})`);
+    return !non;
+  });
+  retenues.sort((a, b) => a.n - b.n || (a.c ? 0 : 1) - (b.c ? 0 : 1) || a.i - b.i);
+  const choisie = retenues[0];
+  if (choisie && choisie.c) trace.push(`règle « ${nomR(choisie.r)} » appliquée : ${decrireCondition(choisie.r.condition)}`);
+  return choisie ? choisie.r : {};
 };
 
 const destinataires = (negoId, quand = new Date(), conf = {}, ctx = {}) => {
@@ -86,7 +141,7 @@ const destinataires = (negoId, quand = new Date(), conf = {}, ctx = {}) => {
   };
 
   const nego = P.get(String(negoId));
-  const r = regleDe(conf, negoId);
+  const r = regleDe(conf, negoId, ctx, trace);
   if (!nego) trace.push(negoId ? `négociateur ${negoId} inconnu` : "aucun négociateur trouvé pour ce lead");
   else {
     if (r.couper_negociateur) trace.push(`négociateur : ${nego.nom} coupé(e) par une règle d'envoi`);
@@ -105,12 +160,14 @@ const destinataires = (negoId, quand = new Date(), conf = {}, ctx = {}) => {
     const vise = c && c.cible && (c.cible.tous || (c.cible.negociateurs || []).map(String).includes(String(negoId)));
     if (!vise) continue;
     const pour = c.cible.tous ? "en copie de chaque lead" : `en copie pour ${nego ? nego.nom : "ce négociateur"}`;
-    const seuil = +c.prix_au_dela || 0;
-    if (!seuil) { ajouterAdresse(c.email, "copie", c.nom || "copie", pour); continue; }
-    const montant = `${seuil.toLocaleString("fr-FR")} €`;
-    if (ctx.apercu) ajouterAdresse(c.email, "copie", c.nom || "copie", `${pour}, si le prix dépasse ${montant}`);
-    else if (+ctx.prix > seuil) ajouterAdresse(c.email, "copie", c.nom || "copie", `${pour} : prix ${(+ctx.prix).toLocaleString("fr-FR")} € au-delà de ${montant}`);
-    else trace.push(`copie ${c.nom || c.email} : ${+ctx.prix > 0 ? `prix ${(+ctx.prix).toLocaleString("fr-FR")} €` : "prix du bien inconnu"}, pas au-delà de ${montant}`);
+    /* « prix_au_dela » seul : format de la 2.14.18 */
+    const cond = c.condition || (+c.prix_au_dela > 0 ? { prix_au_dela: +c.prix_au_dela } : null);
+    if (!aCondition(cond)) { ajouterAdresse(c.email, "copie", c.nom || "copie", pour); continue; }
+    const texte = decrireCondition(cond);
+    if (ctx.apercu) { ajouterAdresse(c.email, "copie", c.nom || "copie", `${pour}, seulement si ${texte}`); continue; }
+    const non = nonRemplie(cond, ctx);
+    if (non) trace.push(`copie ${c.nom || c.email} : ${non} (condition : ${texte})`);
+    else ajouterAdresse(c.email, "copie", c.nom || "copie", `${pour} : ${texte}`);
   }
   return { liste, trace, regle: r.id || null };
 };
@@ -134,4 +191,4 @@ const absentsSemaine = (conf, lundi = new Date()) => {
   return out;
 };
 
-module.exports = { destinataires, disponibilite, absentsSemaine, isoJour };
+module.exports = { destinataires, disponibilite, absentsSemaine, isoJour, aCondition, nonRemplie, decrireCondition, listeDe };

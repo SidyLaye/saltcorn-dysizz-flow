@@ -19,7 +19,9 @@ const DONNEES = {
     { id: 1, personne: 5, debut: plus(-2), fin: plus(3), remplacant: 1, motif: "congés", actif: true },
     { id: 2, personne: 6, debut: plus(-10), fin: plus(-1), remplacant: 1, motif: "congés", actif: true },
   ],
-  regle_envoi: [{ id: 1, nom: "groupe Albi", actif: true, negociateurs: "5,6", adresses_libres: "direction@ex.org" }],
+  regle_envoi: [{ id: 1, nom: "groupe Albi", actif: true, negociateurs: "5,6", adresses_libres: "direction@ex.org" },
+    /* si / sinon : mêmes personnes, la règle avec condition passe devant quand elle est remplie */
+    { id: 6, nom: "Albi prestige", actif: true, negociateurs: "5,6", prix_au_dela: 1000000, couper_negociateur: true, adresses_libres: "prestige@ex.org" }],
   destinataire_custom: [
     { id: 1, email: "siege@ex.org", portee: "tous", actif: true },
     { id: 2, email: "compta@ex.org", libelle: "Compta Tarn", portee: "groupe", groupe: 7, actif: true },
@@ -27,6 +29,10 @@ const DONNEES = {
     { id: 4, email: "coupe@ex.org", portee: "tous", actif: false },
     { id: 5, email: "region@ex.org", libelle: "Responsable région", portee: "personnes", personnes: "1,6", prix_au_dela: 700000, actif: true },
     { id: 6, email: "luxe@ex.org", portee: "tous", prix_au_dela: 2000000, actif: true },
+    { id: 7, email: "fourchette@ex.org", portee: "personnes", personnes: "1", prix_au_dela: 500000, prix_jusqu_a: 700000, actif: true },
+    { id: 8, email: "petits@ex.org", portee: "personnes", personnes: "1", prix_jusqu_a: 200000, actif: true },
+    { id: 9, email: "landes@ex.org", portee: "tous", types_bien: "maisons, Propriété", codes_postaux: "40", actif: true },
+    { id: 10, email: "lbc@ex.org", portee: "personnes", personnes: "1", portails: "leboncoin", natures: "estimation", actif: true },
   ],
   vue_routage: [],
 };
@@ -108,8 +114,32 @@ const B = (n) => BLOCKS.find((b) => b.name === n);
   assert.ok(!("__equipe" in c2) && !("__equipe" in conf), "rien d'interne dans la configuration");
   const R = require("../src/lib/leads/routage");
   assert.deepStrictEqual(R.destinataires("500", new Date(), c2).liste.map((d) => d.email).sort().slice(0, 2), ["alice@ex.org", "chloe@ex.org"], "routage avec les ids du CRM");
+  /* conditions générales : fourchette, plafond, type + code postal, portail + nature */
+  const quiC = async (id, ctx) => (await B("dzf_lead_destinataires").run({ negociateur: String(id), routage: "tables", tables: {}, ...ctx })).liste.map((d) => d.email);
+  assert.ok((await quiC(1, { prix: 600000 })).includes("fourchette@ex.org"), "fourchette : 600 000 € entre 500 000 et 700 000");
+  assert.ok((await quiC(1, { prix: 700000 })).includes("fourchette@ex.org"), "fourchette : 700 000 € compris (jusqu'à)");
+  assert.ok(!(await quiC(1, { prix: 500000 })).includes("fourchette@ex.org") && !(await quiC(1, { prix: 800000 })).includes("fourchette@ex.org"), "fourchette : bornes respectées");
+  assert.ok((await quiC(1, { prix: 150000 })).includes("petits@ex.org") && !(await quiC(1, { prix: 250000 })).includes("petits@ex.org") && !(await quiC(1, {})).includes("petits@ex.org"), "plafond : seulement en dessous, prix inconnu exclu");
+  assert.ok((await quiC(5, { type: "maison", code_postal: "40150" })).includes("landes@ex.org"), "type + code postal : maison des Landes");
+  assert.ok((await quiC(5, { type: "propriete", code_postal: "40000" })).includes("landes@ex.org"), "type : accents et majuscules ignorés");
+  assert.ok(!(await quiC(5, { type: "appartement", code_postal: "40150" })).includes("landes@ex.org") && !(await quiC(5, { type: "maison", code_postal: "64200" })).includes("landes@ex.org"), "type + code postal : les deux doivent être vrais");
+  assert.ok((await quiC(1, { portail: "Leboncoin", nature: "estimation" })).includes("lbc@ex.org") && !(await quiC(1, { portail: "SeLoger", nature: "estimation" })).includes("lbc@ex.org") && !(await quiC(1, { portail: "Leboncoin", nature: "lead" })).includes("lbc@ex.org"), "portail + nature");
+  /* si / sinon */
+  const cher = await quiC(6, { prix: 1500000 });
+  assert.ok(cher.includes("prestige@ex.org") && !cher.includes("farid@ex.org") && !cher.includes("direction@ex.org"), "si : condition remplie → règle prestige (négociateur coupé)");
+  const normal = await quiC(6, { prix: 400000 });
+  assert.ok(normal.includes("farid@ex.org") && normal.includes("direction@ex.org") && !normal.includes("prestige@ex.org"), "sinon : règle générale");
+  const trace = (await B("dzf_lead_destinataires").run({ negociateur: "6", routage: "tables", tables: {}, prix: 400000 })).trace.join(" | ");
+  assert.ok(/Albi prestige.*écartée/.test(trace), "la trace dit pourquoi la règle conditionnelle est écartée");
+  /* priorité : une règle individuelle sans condition reste devant une règle de groupe avec condition */
+  DONNEES.regle_envoi.push({ id: 7, nom: "Farid seul", actif: true, negociateur: 6, adresses_libres: "farid-perso@ex.org" });
+  const prio = await quiC(6, { prix: 1500000 });
+  assert.ok(prio.includes("farid-perso@ex.org") && !prio.includes("prestige@ex.org"), "priorité : la personne avant le groupe, même conditionnel");
+  DONNEES.regle_envoi.pop();
   /* pipeline : le prix du bien du lead décide de la copie avec seuil */
   const etape = (prix) => T.etapeDestinataires({ motifs: [], alertes: [], extraction: {}, interne: {}, negociateur: "500", bien: prix ? { prix } : null }, { routage: c2 }).destinataires.liste.map((d) => d.email);
   assert.ok(etape(820000).includes("region@ex.org") && !etape(650000).includes("region@ex.org") && !etape(null).includes("region@ex.org"), "pipeline : copie région seulement au-delà du seuil");
+  const etapeMail = T.etapeDestinataires({ motifs: [], alertes: [], extraction: { nature: "estimation", bien: { prix: 900000 } }, portail: "Leboncoin", interne: {}, negociateur: "500", bien: null }, { routage: c2 }).destinataires.liste.map((d) => d.email);
+  assert.ok(etapeMail.includes("region@ex.org") && etapeMail.includes("lbc@ex.org"), "pipeline : prix du mail en repli, portail et nature du lead");
   console.log("routage lu dans les tables OK : ids du CRM, groupe, agence, priorité individuelle, relais par adresse, mi-temps, départ, congés, retour automatique, table « qui reçoit »");
 })().catch((e) => { console.error(e); process.exit(1); });

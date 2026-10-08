@@ -1,4 +1,4 @@
-/* dysizz-flow 2.14.18 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.15.0 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.14.18" : "dev";
+    var VERSION2 = true ? "2.15.0" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -94893,10 +94893,61 @@ var require_routage = __commonJS({
         return { dispo: false, raison: `${p.nom} ne travaille pas le ${NOMS_JOURS[j]} (mi-temps)`, remplacant: p.remplacant_hors_jours || null, type: "hors_jours" };
       return { dispo: true };
     };
-    var regleDe = (conf, negoId) => {
+    var norm = (v) => String(v ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+    var compact = (v) => norm(v).replace(/[^a-z0-9]/g, "");
+    var euros = (n) => `${(+n).toLocaleString("fr-FR")} \u20AC`;
+    var listeDe = (v) => (Array.isArray(v) ? v : String(v ?? "").split(/[,;\n]+/)).map((x) => String(x).trim()).filter(Boolean);
+    var aCondition = (c) => !!c && (+c.prix_au_dela > 0 || +c.prix_jusqu_a > 0 || ["types_bien", "codes_postaux", "portails", "natures"].some((k) => listeDe(c[k]).length > 0));
+    var decrireCondition = (c) => {
+      const p = [];
+      if (+c.prix_au_dela > 0 && +c.prix_jusqu_a > 0) p.push(`prix entre ${euros(c.prix_au_dela)} (exclu) et ${euros(c.prix_jusqu_a)}`);
+      else if (+c.prix_au_dela > 0) p.push(`prix au-del\xE0 de ${euros(c.prix_au_dela)}`);
+      else if (+c.prix_jusqu_a > 0) p.push(`prix jusqu'\xE0 ${euros(c.prix_jusqu_a)}`);
+      if (listeDe(c.types_bien).length) p.push(`type : ${listeDe(c.types_bien).join(", ")}`);
+      if (listeDe(c.codes_postaux).length) p.push(`code postal : ${listeDe(c.codes_postaux).join(", ")}`);
+      if (listeDe(c.portails).length) p.push(`portail : ${listeDe(c.portails).join(", ")}`);
+      if (listeDe(c.natures).length) p.push(`nature : ${listeDe(c.natures).join(", ")}`);
+      return p.join(" \xB7 ");
+    };
+    var nonRemplie = (c, ctx = {}) => {
+      if (+c.prix_au_dela > 0 || +c.prix_jusqu_a > 0) {
+        const prix = +ctx.prix;
+        if (!(prix > 0)) return "prix du bien inconnu";
+        if (+c.prix_au_dela > 0 && !(prix > +c.prix_au_dela)) return `prix ${euros(prix)}, pas au-del\xE0 de ${euros(c.prix_au_dela)}`;
+        if (+c.prix_jusqu_a > 0 && !(prix <= +c.prix_jusqu_a)) return `prix ${euros(prix)}, au-del\xE0 de ${euros(c.prix_jusqu_a)}`;
+      }
+      const types = listeDe(c.types_bien).map((t) => norm(t).replace(/s$/, ""));
+      if (types.length && !types.includes(norm(ctx.type))) return ctx.type ? `type ${ctx.type}` : "type du bien inconnu";
+      const cps = listeDe(c.codes_postaux).map((x) => x.replace(/\D/g, "")).filter(Boolean);
+      if (cps.length && !cps.some((x) => String(ctx.code_postal || "").startsWith(x))) return ctx.code_postal ? `code postal ${ctx.code_postal}` : "code postal inconnu";
+      const portails = listeDe(c.portails).map(compact).filter(Boolean);
+      if (portails.length && !portails.some((x) => compact(ctx.portail).includes(x))) return ctx.portail ? `portail ${ctx.portail}` : "portail inconnu";
+      const natures = listeDe(c.natures).map(norm);
+      if (natures.length && !natures.includes(norm(ctx.nature))) return ctx.nature ? `nature ${ctx.nature}` : "nature inconnue";
+      return null;
+    };
+    var regleDe = (conf, negoId, ctx = {}, trace = []) => {
       const rs = (conf.regles || []).filter((r) => r.actif !== false);
-      const cibles = rs.filter((r) => r.cible && (r.cible.negociateurs || []).map(String).includes(String(negoId)));
-      return cibles.find((r) => r.individuelle) || cibles.find((r) => r.individuelle === void 0 && new Set(r.cible.negociateurs.map(String)).size === 1) || cibles[0] || rs.find((r) => r.cible && r.cible.tous) || {};
+      const niveau = (r) => {
+        const cib = r.cible && r.cible.negociateurs ? r.cible.negociateurs.map(String) : null;
+        if (cib && cib.includes(String(negoId))) return r.individuelle ? 0 : r.individuelle === void 0 && new Set(cib).size === 1 ? 1 : 2;
+        return r.cible && r.cible.tous ? 3 : null;
+      };
+      const nomR = (r) => r.nom || r.libelle || r.id;
+      const retenues = rs.map((r, i) => ({ r, i, n: niveau(r), c: aCondition(r.condition) })).filter((x) => x.n !== null).filter((x) => {
+        if (!x.c) return true;
+        if (ctx.apercu) {
+          trace.push(`r\xE8gle \xAB ${nomR(x.r)} \xBB : seulement si ${decrireCondition(x.r.condition)} (pas appliqu\xE9e dans l'aper\xE7u)`);
+          return false;
+        }
+        const non = nonRemplie(x.r.condition, ctx);
+        if (non) trace.push(`r\xE8gle \xAB ${nomR(x.r)} \xBB \xE9cart\xE9e : ${non} (condition : ${decrireCondition(x.r.condition)})`);
+        return !non;
+      });
+      retenues.sort((a, b) => a.n - b.n || (a.c ? 0 : 1) - (b.c ? 0 : 1) || a.i - b.i);
+      const choisie = retenues[0];
+      if (choisie && choisie.c) trace.push(`r\xE8gle \xAB ${nomR(choisie.r)} \xBB appliqu\xE9e : ${decrireCondition(choisie.r.condition)}`);
+      return choisie ? choisie.r : {};
     };
     var destinataires = (negoId, quand = /* @__PURE__ */ new Date(), conf = {}, ctx = {}) => {
       const P = new Map((conf.personnes || []).map((p) => [String(p.id), p]));
@@ -94933,7 +94984,7 @@ var require_routage = __commonJS({
         ajouterPersonne(d.remplacant, role, pour, chemin.concat(p.nom), /* @__PURE__ */ new Set([...ids, String(p.id)]));
       };
       const nego = P.get(String(negoId));
-      const r = regleDe(conf, negoId);
+      const r = regleDe(conf, negoId, ctx, trace);
       if (!nego) trace.push(negoId ? `n\xE9gociateur ${negoId} inconnu` : "aucun n\xE9gociateur trouv\xE9 pour ce lead");
       else {
         if (r.couper_negociateur) trace.push(`n\xE9gociateur : ${nego.nom} coup\xE9(e) par une r\xE8gle d'envoi`);
@@ -94951,15 +95002,19 @@ var require_routage = __commonJS({
         const vise = c && c.cible && (c.cible.tous || (c.cible.negociateurs || []).map(String).includes(String(negoId)));
         if (!vise) continue;
         const pour = c.cible.tous ? "en copie de chaque lead" : `en copie pour ${nego ? nego.nom : "ce n\xE9gociateur"}`;
-        const seuil = +c.prix_au_dela || 0;
-        if (!seuil) {
+        const cond = c.condition || (+c.prix_au_dela > 0 ? { prix_au_dela: +c.prix_au_dela } : null);
+        if (!aCondition(cond)) {
           ajouterAdresse(c.email, "copie", c.nom || "copie", pour);
           continue;
         }
-        const montant = `${seuil.toLocaleString("fr-FR")} \u20AC`;
-        if (ctx.apercu) ajouterAdresse(c.email, "copie", c.nom || "copie", `${pour}, si le prix d\xE9passe ${montant}`);
-        else if (+ctx.prix > seuil) ajouterAdresse(c.email, "copie", c.nom || "copie", `${pour} : prix ${(+ctx.prix).toLocaleString("fr-FR")} \u20AC au-del\xE0 de ${montant}`);
-        else trace.push(`copie ${c.nom || c.email} : ${+ctx.prix > 0 ? `prix ${(+ctx.prix).toLocaleString("fr-FR")} \u20AC` : "prix du bien inconnu"}, pas au-del\xE0 de ${montant}`);
+        const texte = decrireCondition(cond);
+        if (ctx.apercu) {
+          ajouterAdresse(c.email, "copie", c.nom || "copie", `${pour}, seulement si ${texte}`);
+          continue;
+        }
+        const non = nonRemplie(cond, ctx);
+        if (non) trace.push(`copie ${c.nom || c.email} : ${non} (condition : ${texte})`);
+        else ajouterAdresse(c.email, "copie", c.nom || "copie", `${pour} : ${texte}`);
       }
       return { liste, trace, regle: r.id || null };
     };
@@ -94981,7 +95036,7 @@ var require_routage = __commonJS({
       }
       return out;
     };
-    module2.exports = { destinataires, disponibilite, absentsSemaine, isoJour };
+    module2.exports = { destinataires, disponibilite, absentsSemaine, isoJour, aCondition, nonRemplie, decrireCondition, listeDe };
   }
 });
 
@@ -95523,7 +95578,15 @@ var require_traiter = __commonJS({
       if (d.fin) return d;
       const dos = d.interne && d.interne.dos || null;
       if (actifs(conf).notification) {
-        const dest = destinataires(d.negociateur, d.date_mail || /* @__PURE__ */ new Date(), conf.routage || {}, { prix: d.bien && d.bien.prix });
+        const b = d.bien || {}, m = d.extraction && d.extraction.bien || {};
+        const ctx = {
+          prix: +b.prix || +m.prix || null,
+          type: b.type || m.type || null,
+          code_postal: b.code_postal || m.code_postal || null,
+          portail: d.portail || null,
+          nature: d.extraction && d.extraction.nature || null
+        };
+        const dest = destinataires(d.negociateur, d.date_mail || /* @__PURE__ */ new Date(), conf.routage || {}, ctx);
         if (dos && (conf.notifier_relances || "negociateur") === "negociateur") {
           const avant = dest.liste.length;
           dest.liste = dest.liste.filter((x) => (x.roles || [x.role]).some((ro) => ["negociateur", "assistante"].includes(ro)));
@@ -95628,6 +95691,18 @@ var require_routage_tables = __commonJS({
   "src/lib/leads/routage-tables.js"(exports2, module2) {
     "use strict";
     var NOMS = { equipe: "equipe", absence: "absence", regle: "regle_envoi", copies: "destinataire_custom" };
+    var { aCondition, listeDe } = require_routage();
+    var conditionDe = (x) => {
+      const c = {
+        prix_au_dela: +x.prix_au_dela > 0 ? +x.prix_au_dela : null,
+        prix_jusqu_a: +x.prix_jusqu_a > 0 ? +x.prix_jusqu_a : null,
+        types_bien: listeDe(x.types_bien),
+        codes_postaux: listeDe(x.codes_postaux),
+        portails: listeDe(x.portails),
+        natures: listeDe(x.natures)
+      };
+      return aCondition(c) ? c : null;
+    };
     var jourDe = (d, fuseau) => d ? new Intl.DateTimeFormat("en-CA", { timeZone: fuseau, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(d)) : null;
     var modeAssistante = (v) => {
       const x = String(v || "").toLowerCase();
@@ -95693,6 +95768,7 @@ var require_routage_tables = __commonJS({
             id: r.id,
             nom: r.nom,
             cible: groupe.length ? { negociateurs: groupe } : cibleVide ? { negociateurs: [] } : { tous: true },
+            condition: conditionDe(r),
             couper_negociateur: !!r.couper_negociateur,
             assistante: modeAssistante(r.assistante),
             assistante_remplacante: ref(r.assistante_remplacante),
@@ -95707,17 +95783,17 @@ var require_routage_tables = __commonJS({
           remplacant: a.remplacant ? ref(a.remplacant) : /@/.test(String(a.remplacant_adresse || "")) ? { email: String(a.remplacant_adresse).trim() } : null,
           motif: a.motif
         })),
-        siege: cp.filter((d) => (!d.portee || d.portee === "tous") && !(+d.prix_au_dela > 0)).map((d) => d.email).filter(Boolean),
+        siege: cp.filter((d) => (!d.portee || d.portee === "tous") && !conditionDe(d)).map((d) => d.email).filter(Boolean),
         /* copies ciblées : les membres de l'agence ou du groupe aujourd'hui, ou les personnes choisies */
-        copies: cp.filter((d) => d.email && (d.portee && d.portee !== "tous" || +d.prix_au_dela > 0)).map((d) => {
+        copies: cp.filter((d) => d.email && (d.portee && d.portee !== "tous" || conditionDe(d))).map((d) => {
           const par = (champ) => d[champ] === null || d[champ] === void 0 || d[champ] === "" ? [] : eq.filter((p) => String(p[champ] ?? "") === String(d[champ])).map((p) => String(p.id));
           const vises = d.portee === "agence" ? par("agence") : d.portee === "groupe" ? par("groupe") : d.portee === "personnes" ? ids(d.personnes) : [];
           const tous = !d.portee || d.portee === "tous";
-          return { email: d.email, nom: d.libelle || d.email, cible: tous ? { tous: true } : { negociateurs: [...new Set(vises)] }, prix_au_dela: +d.prix_au_dela > 0 ? +d.prix_au_dela : null };
+          return { email: d.email, nom: d.libelle || d.email, cible: tous ? { tous: true } : { negociateurs: [...new Set(vises)] }, condition: conditionDe(d) };
         })
       };
     };
-    module2.exports = { lireRoutage, jourDe, modeAssistante, NOMS };
+    module2.exports = { lireRoutage, jourDe, modeAssistante, conditionDe, NOMS };
   }
 });
 
@@ -96540,11 +96616,15 @@ var require_leads = __commonJS({
         params: [
           { name: "negociateur", label: "N\xE9gociateur (id)", required: true },
           { name: "date", label: "Date", default: "", help: "Vide = maintenant" },
-          { name: "prix", label: "Prix du bien (\u20AC)", default: "", help: "Pour les copies avec seuil de prix. Vide = prix inconnu" },
+          { name: "prix", label: "Prix du bien (\u20AC)", default: "", help: "Pour les r\xE8gles et copies avec condition. Vide = inconnu" },
+          { name: "type", label: "Type de bien", default: "", help: "maison, appartement, terrain, immeuble, local, grange, chateau, propriete" },
+          { name: "code_postal", label: "Code postal", default: "" },
+          { name: "portail", label: "Portail", default: "" },
+          { name: "nature", label: "Nature", default: "", help: "lead, recherche, estimation, direct" },
           P_ROUTAGE,
           P_TABLES
         ],
-        run: async (p) => destinataires(p.negociateur, p.date || /* @__PURE__ */ new Date(), await routageDe(p), { prix: p.prix })
+        run: async (p) => destinataires(p.negociateur, p.date || /* @__PURE__ */ new Date(), await routageDe(p), { prix: p.prix, type: p.type, code_postal: p.code_postal, portail: p.portail, nature: p.nature })
       },
       {
         name: "dzf_lead_absents",
@@ -97293,6 +97373,7 @@ var require_conf = __commonJS({
   "src/lib/leads/tables/conf.js"(exports2, module2) {
     "use strict";
     var { tables } = require_schema();
+    var { conditionDe } = require_routage_tables();
     var liste = (s) => String(s || "").split(/[\s,;]+/).map((x) => x.trim()).filter(Boolean);
     var json = (s, def) => {
       if (!s) return def;
@@ -97402,20 +97483,21 @@ var require_conf = __commonJS({
             id: "r" + r.id,
             libelle: r.libelle,
             cible: cibleDe(r),
+            condition: conditionDe(r),
             couper_negociateur: !!r.couper_negociateur,
             assistante: r.assistante || "garder",
             assistante_remplacante: ref(r.assistante_remplacante),
             adresses_libres: liste(r.adresses_libres)
           })),
           absences: absences.filter((a) => a.actif !== false).map((a) => ({ personne_id: idMoteur.get(a.personne), debut: a.debut, fin: a.fin, remplacant: ref(a.remplacant), motif: a.motif || "cong\xE9s" })),
-          siege: siege.filter((s) => s.actif !== false && (!s.portee || s.portee === "tous") && !(+s.prix_au_dela > 0)).map((s) => s.email),
+          siege: siege.filter((s) => s.actif !== false && (!s.portee || s.portee === "tous") && !conditionDe(s)).map((s) => s.email),
           /* copies ciblées : les membres de l'agence ou du groupe au moment de l'envoi, ou des personnes choisies ;
-             prix_au_dela : seulement les leads dont le bien dépasse ce prix */
-          copies: siege.filter((s) => s.actif !== false && s.email && (s.portee && s.portee !== "tous" || +s.prix_au_dela > 0)).map((s) => ({
+             une condition (prix, type, code postal, portail, nature) limite la copie aux leads qui la remplissent */
+          copies: siege.filter((s) => s.actif !== false && s.email && (s.portee && s.portee !== "tous" || conditionDe(s))).map((s) => ({
             email: s.email,
             nom: s.libelle || s.email,
             cible: !s.portee || s.portee === "tous" ? { tous: true } : { negociateurs: membres(s) },
-            prix_au_dela: +s.prix_au_dela > 0 ? +s.prix_au_dela : null
+            condition: conditionDe(s)
           }))
         }
       };

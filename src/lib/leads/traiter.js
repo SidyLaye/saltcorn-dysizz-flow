@@ -363,7 +363,11 @@ const etapeDestinataires = (d, conf = {}) => {
   if (d.fin) return d;
   const dos = (d.interne && d.interne.dos) || null;
   if (actifs(conf).notification) {
-    const dest = destinataires(d.negociateur, d.date_mail || new Date(), conf.routage || {}, { prix: d.bien && d.bien.prix });
+    /* ce que l'on sait du lead, pour les règles et copies avec condition : le bien du CRM, sinon ce que dit le mail */
+    const b = d.bien || {}, m = (d.extraction && d.extraction.bien) || {};
+    const ctx = { prix: +b.prix || +m.prix || null, type: b.type || m.type || null, code_postal: b.code_postal || m.code_postal || null,
+      portail: d.portail || null, nature: (d.extraction && d.extraction.nature) || null };
+    const dest = destinataires(d.negociateur, d.date_mail || new Date(), conf.routage || {}, ctx);
     if (dos && (conf.notifier_relances || "negociateur") === "negociateur") {
       const avant = dest.liste.length;
       dest.liste = dest.liste.filter((x) => (x.roles || [x.role]).some((ro) => ["negociateur", "assistante"].includes(ro)));

@@ -12,13 +12,22 @@
                    « remplacé(e) »), assistante_remplacante (→ equipe),
                    adresses_libres ("a@x, b@y")
    - copies      : email, libelle, actif, portee : « tous » (chaque lead), « agence » (+ agence), « groupe » (+ groupe),
-                   « personnes » (+ personnes : "3,7,9", numéros de l'équipe) ;
-                   prix_au_dela (facultatif) : seulement les leads dont le bien dépasse ce prix
+                   « personnes » (+ personnes : "3,7,9", numéros de l'équipe)
+   Règles et copies, conditions facultatives (tout ce qui est rempli doit être vrai) : prix_au_dela, prix_jusqu_a,
+   types_bien, codes_postaux (débuts), portails, natures — listes séparées par des virgules.
 
    Une colonne absente est ignorée : une table plus simple fonctionne aussi. */
 "use strict";
 
 const NOMS = { equipe: "equipe", absence: "absence", regle: "regle_envoi", copies: "destinataire_custom" };
+const { aCondition, listeDe } = require("./routage");
+
+/* condition d'une ligne (règle ou copie), ou null si rien n'est rempli */
+const conditionDe = (x) => {
+  const c = { prix_au_dela: +x.prix_au_dela > 0 ? +x.prix_au_dela : null, prix_jusqu_a: +x.prix_jusqu_a > 0 ? +x.prix_jusqu_a : null,
+    types_bien: listeDe(x.types_bien), codes_postaux: listeDe(x.codes_postaux), portails: listeDe(x.portails), natures: listeDe(x.natures) };
+  return aCondition(c) ? c : null;
+};
 
 /* date → « AAAA-MM-JJ » dans le fuseau voulu */
 const jourDe = (d, fuseau) => (d ? new Intl.DateTimeFormat("en-CA", { timeZone: fuseau, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(d)) : null);
@@ -84,22 +93,22 @@ const lireRoutageLignes = async (noms = {}, fuseau = "Europe/Paris") => {
       return {
         /* un groupe ou une agence vide ne devient pas « tous » : la règle ne vise personne */
         individuelle: !!r.negociateur && !ids(r.negociateurs).length && !membres("groupe").length && !membres("agence").length,
-        id: r.id, nom: r.nom, cible: groupe.length ? { negociateurs: groupe } : cibleVide ? { negociateurs: [] } : { tous: true }, couper_negociateur: !!r.couper_negociateur,
+        id: r.id, nom: r.nom, cible: groupe.length ? { negociateurs: groupe } : cibleVide ? { negociateurs: [] } : { tous: true }, condition: conditionDe(r), couper_negociateur: !!r.couper_negociateur,
         assistante: modeAssistante(r.assistante), assistante_remplacante: ref(r.assistante_remplacante),
         adresses_libres: String(r.adresses_libres || "").split(/[\s,;]+/).filter((x) => x.includes("@")), actif: true,
       };
     }),
     absences: abs.map((a) => ({ personne_id: a.personne, debut: jourDe(a.debut, fuseau), fin: jourDe(a.fin, fuseau),
       remplacant: a.remplacant ? ref(a.remplacant) : /@/.test(String(a.remplacant_adresse || "")) ? { email: String(a.remplacant_adresse).trim() } : null, motif: a.motif })),
-    siege: cp.filter((d) => (!d.portee || d.portee === "tous") && !(+d.prix_au_dela > 0)).map((d) => d.email).filter(Boolean),
+    siege: cp.filter((d) => (!d.portee || d.portee === "tous") && !conditionDe(d)).map((d) => d.email).filter(Boolean),
     /* copies ciblées : les membres de l'agence ou du groupe aujourd'hui, ou les personnes choisies */
-    copies: cp.filter((d) => d.email && ((d.portee && d.portee !== "tous") || +d.prix_au_dela > 0)).map((d) => {
+    copies: cp.filter((d) => d.email && ((d.portee && d.portee !== "tous") || conditionDe(d))).map((d) => {
       const par = (champ) => (d[champ] === null || d[champ] === undefined || d[champ] === "" ? [] : eq.filter((p) => String(p[champ] ?? "") === String(d[champ])).map((p) => String(p.id)));
       const vises = d.portee === "agence" ? par("agence") : d.portee === "groupe" ? par("groupe") : d.portee === "personnes" ? ids(d.personnes) : [];
       const tous = !d.portee || d.portee === "tous";
-      return { email: d.email, nom: d.libelle || d.email, cible: tous ? { tous: true } : { negociateurs: [...new Set(vises)] }, prix_au_dela: +d.prix_au_dela > 0 ? +d.prix_au_dela : null };
+      return { email: d.email, nom: d.libelle || d.email, cible: tous ? { tous: true } : { negociateurs: [...new Set(vises)] }, condition: conditionDe(d) };
     }),
   };
 };
 
-module.exports = { lireRoutage, jourDe, modeAssistante, NOMS };
+module.exports = { lireRoutage, jourDe, modeAssistante, conditionDe, NOMS };

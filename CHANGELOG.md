@@ -1,5 +1,17 @@
 # Journal des versions
 
+## 2.15.0
+
+### Ajouté
+- Conditions sur les règles d'envoi et les copies : `prix_au_dela`, `prix_jusqu_a`, `types_bien`, `codes_postaux`
+  (débuts), `portails`, `natures` (listes séparées par des virgules). Tout ce qui est rempli doit être vrai ;
+  une information inconnue du lead ne remplit pas la condition. Fourchette de prix = les deux bornes.
+- « Si / sinon » : une règle dont la condition n'est pas remplie est écartée et la suivante s'applique. Priorité :
+  personne, puis groupe ou agence, puis tout le monde ; à niveau égal, la règle avec condition remplie passe devant.
+- Le pipeline donne au routage le prix, le type et le code postal du bien (CRM, sinon le mail), le portail et la
+  nature. Le bloc « Leads : qui reçoit ? » prend ces valeurs pour tester ; la vue « qui reçoit aujourd'hui » affiche
+  les conditions sans les appliquer. La trace dit pourquoi une règle ou une copie est écartée.
+
 ## 2.14.18
 
 ### Ajouté

@@ -2,6 +2,7 @@
    Références de personnes dans les tables : « p:<id de ligne> » ou une adresse e-mail. */
 "use strict";
 const { tables } = require("./schema");
+const { conditionDe } = require("../routage-tables");
 
 const liste = (s) => String(s || "").split(/[\s,;]+/).map((x) => x.trim()).filter(Boolean);
 const json = (s, def) => { if (!s) return def; if (typeof s === "object") return s; try { return JSON.parse(s); } catch (e) { return def; } };
@@ -63,14 +64,14 @@ const charger = async () => {
       personnes: personnes.map((p) => ({ id: idMoteur.get(p.id), ligne: p.id, nom: p.nom, telephone: p.telephone || null, alias: String(p.alias || "").split(/[,;\n]+/).map((x) => x.trim()).filter(Boolean), email: p.email, role: p.role || "negociateur", actif: p.actif !== false, agence_id: p.agence_crm_id,
         assistante_id: p.assistante ? idMoteur.get(p.assistante) : null, temps: p.temps || "plein", jours: liste(p.jours).map(Number).filter((n) => n >= 1 && n <= 7), remplacant_hors_jours: ref(p.remplacant_hors_jours),
         remplacant_inactif: ref(p.remplacant_inactif), groupe: p.groupe || null })),
-      regles: regles.filter((r) => r.actif !== false).map((r) => ({ id: "r" + r.id, libelle: r.libelle, cible: cibleDe(r),
+      regles: regles.filter((r) => r.actif !== false).map((r) => ({ id: "r" + r.id, libelle: r.libelle, cible: cibleDe(r), condition: conditionDe(r),
         couper_negociateur: !!r.couper_negociateur, assistante: r.assistante || "garder", assistante_remplacante: ref(r.assistante_remplacante), adresses_libres: liste(r.adresses_libres) })),
       absences: absences.filter((a) => a.actif !== false).map((a) => ({ personne_id: idMoteur.get(a.personne), debut: a.debut, fin: a.fin, remplacant: ref(a.remplacant), motif: a.motif || "congés" })),
-      siege: siege.filter((s) => s.actif !== false && (!s.portee || s.portee === "tous") && !(+s.prix_au_dela > 0)).map((s) => s.email),
+      siege: siege.filter((s) => s.actif !== false && (!s.portee || s.portee === "tous") && !conditionDe(s)).map((s) => s.email),
       /* copies ciblées : les membres de l'agence ou du groupe au moment de l'envoi, ou des personnes choisies ;
-         prix_au_dela : seulement les leads dont le bien dépasse ce prix */
-      copies: siege.filter((s) => s.actif !== false && s.email && ((s.portee && s.portee !== "tous") || +s.prix_au_dela > 0)).map((s) => ({ email: s.email, nom: s.libelle || s.email,
-        cible: !s.portee || s.portee === "tous" ? { tous: true } : { negociateurs: membres(s) }, prix_au_dela: +s.prix_au_dela > 0 ? +s.prix_au_dela : null })),
+         une condition (prix, type, code postal, portail, nature) limite la copie aux leads qui la remplissent */
+      copies: siege.filter((s) => s.actif !== false && s.email && ((s.portee && s.portee !== "tous") || conditionDe(s))).map((s) => ({ email: s.email, nom: s.libelle || s.email,
+        cible: !s.portee || s.portee === "tous" ? { tous: true } : { negociateurs: membres(s) }, condition: conditionDe(s) })),
     },
   };
   /* équipe et règles d'envoi lues dans d'autres tables (ex. les écrans Gestion d'une application) :
