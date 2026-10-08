@@ -1,4 +1,4 @@
-/* dysizz-flow 2.14.17 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.14.18 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.14.17" : "dev";
+    var VERSION2 = true ? "2.14.18" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -94898,7 +94898,7 @@ var require_routage = __commonJS({
       const cibles = rs.filter((r) => r.cible && (r.cible.negociateurs || []).map(String).includes(String(negoId)));
       return cibles.find((r) => r.individuelle) || cibles.find((r) => r.individuelle === void 0 && new Set(r.cible.negociateurs.map(String)).size === 1) || cibles[0] || rs.find((r) => r.cible && r.cible.tous) || {};
     };
-    var destinataires = (negoId, quand = /* @__PURE__ */ new Date(), conf = {}) => {
+    var destinataires = (negoId, quand = /* @__PURE__ */ new Date(), conf = {}, ctx = {}) => {
       const P = new Map((conf.personnes || []).map((p) => [String(p.id), p]));
       const liste = [], trace = [];
       const ajouterAdresse = (email, role, pour, raison) => {
@@ -94949,7 +94949,17 @@ var require_routage = __commonJS({
       for (const e of conf.siege || []) ajouterAdresse(e, "siege", "tous", "le si\xE8ge re\xE7oit toujours");
       for (const c of conf.copies || []) {
         const vise = c && c.cible && (c.cible.tous || (c.cible.negociateurs || []).map(String).includes(String(negoId)));
-        if (vise) ajouterAdresse(c.email, "copie", c.nom || "copie", c.cible.tous ? "en copie de chaque lead" : `en copie pour ${nego ? nego.nom : "ce n\xE9gociateur"}`);
+        if (!vise) continue;
+        const pour = c.cible.tous ? "en copie de chaque lead" : `en copie pour ${nego ? nego.nom : "ce n\xE9gociateur"}`;
+        const seuil = +c.prix_au_dela || 0;
+        if (!seuil) {
+          ajouterAdresse(c.email, "copie", c.nom || "copie", pour);
+          continue;
+        }
+        const montant = `${seuil.toLocaleString("fr-FR")} \u20AC`;
+        if (ctx.apercu) ajouterAdresse(c.email, "copie", c.nom || "copie", `${pour}, si le prix d\xE9passe ${montant}`);
+        else if (+ctx.prix > seuil) ajouterAdresse(c.email, "copie", c.nom || "copie", `${pour} : prix ${(+ctx.prix).toLocaleString("fr-FR")} \u20AC au-del\xE0 de ${montant}`);
+        else trace.push(`copie ${c.nom || c.email} : ${+ctx.prix > 0 ? `prix ${(+ctx.prix).toLocaleString("fr-FR")} \u20AC` : "prix du bien inconnu"}, pas au-del\xE0 de ${montant}`);
       }
       return { liste, trace, regle: r.id || null };
     };
@@ -95513,7 +95523,7 @@ var require_traiter = __commonJS({
       if (d.fin) return d;
       const dos = d.interne && d.interne.dos || null;
       if (actifs(conf).notification) {
-        const dest = destinataires(d.negociateur, d.date_mail || /* @__PURE__ */ new Date(), conf.routage || {});
+        const dest = destinataires(d.negociateur, d.date_mail || /* @__PURE__ */ new Date(), conf.routage || {}, { prix: d.bien && d.bien.prix });
         if (dos && (conf.notifier_relances || "negociateur") === "negociateur") {
           const avant = dest.liste.length;
           dest.liste = dest.liste.filter((x) => (x.roles || [x.role]).some((ro) => ["negociateur", "assistante"].includes(ro)));
@@ -95640,7 +95650,7 @@ var require_routage_tables = __commonJS({
         personnes: conf.personnes.map((p) => ({ ...p, ligne: p.id, id: id(p.id), assistante_id: id(p.assistante_id), remplacant_hors_jours: ref2(p.remplacant_hors_jours), remplacant_inactif: ref2(p.remplacant_inactif) })),
         regles: conf.regles.map((r) => ({ ...r, cible: r.cible && r.cible.negociateurs ? { negociateurs: r.cible.negociateurs.map(id) } : r.cible, assistante_remplacante: ref2(r.assistante_remplacante) })),
         absences: conf.absences.map((a) => ({ ...a, personne_id: id(a.personne_id), remplacant: ref2(a.remplacant) })),
-        copies: conf.copies.map((c) => ({ ...c, cible: { negociateurs: c.cible.negociateurs.map(id) } }))
+        copies: conf.copies.map((c) => ({ ...c, cible: c.cible.tous ? c.cible : { negociateurs: c.cible.negociateurs.map(id) } }))
       };
       delete out.__equipe;
       return out;
@@ -95697,12 +95707,13 @@ var require_routage_tables = __commonJS({
           remplacant: a.remplacant ? ref(a.remplacant) : /@/.test(String(a.remplacant_adresse || "")) ? { email: String(a.remplacant_adresse).trim() } : null,
           motif: a.motif
         })),
-        siege: cp.filter((d) => !d.portee || d.portee === "tous").map((d) => d.email).filter(Boolean),
+        siege: cp.filter((d) => (!d.portee || d.portee === "tous") && !(+d.prix_au_dela > 0)).map((d) => d.email).filter(Boolean),
         /* copies ciblées : les membres de l'agence ou du groupe aujourd'hui, ou les personnes choisies */
-        copies: cp.filter((d) => d.portee && d.portee !== "tous" && d.email).map((d) => {
+        copies: cp.filter((d) => d.email && (d.portee && d.portee !== "tous" || +d.prix_au_dela > 0)).map((d) => {
           const par = (champ) => d[champ] === null || d[champ] === void 0 || d[champ] === "" ? [] : eq.filter((p) => String(p[champ] ?? "") === String(d[champ])).map((p) => String(p.id));
           const vises = d.portee === "agence" ? par("agence") : d.portee === "groupe" ? par("groupe") : d.portee === "personnes" ? ids(d.personnes) : [];
-          return { email: d.email, nom: d.libelle || d.email, cible: { negociateurs: [...new Set(vises)] } };
+          const tous = !d.portee || d.portee === "tous";
+          return { email: d.email, nom: d.libelle || d.email, cible: tous ? { tous: true } : { negociateurs: [...new Set(vises)] }, prix_au_dela: +d.prix_au_dela > 0 ? +d.prix_au_dela : null };
         })
       };
     };
@@ -96526,8 +96537,14 @@ var require_leads = __commonJS({
         icon: "fas fa-user-check",
         output: "destinataires",
         description: "Donne les adresses exactes qui recevraient un lead de ce n\xE9gociateur \xE0 cette date, avec l'explication (r\xE8gle, cong\xE9s, mi-temps, rempla\xE7ant, si\xE8ge). C'est le bouton \xAB tester \xBB.",
-        params: [{ name: "negociateur", label: "N\xE9gociateur (id)", required: true }, { name: "date", label: "Date", default: "", help: "Vide = maintenant" }, P_ROUTAGE, P_TABLES],
-        run: async (p) => destinataires(p.negociateur, p.date || /* @__PURE__ */ new Date(), await routageDe(p))
+        params: [
+          { name: "negociateur", label: "N\xE9gociateur (id)", required: true },
+          { name: "date", label: "Date", default: "", help: "Vide = maintenant" },
+          { name: "prix", label: "Prix du bien (\u20AC)", default: "", help: "Pour les copies avec seuil de prix. Vide = prix inconnu" },
+          P_ROUTAGE,
+          P_TABLES
+        ],
+        run: async (p) => destinataires(p.negociateur, p.date || /* @__PURE__ */ new Date(), await routageDe(p), { prix: p.prix })
       },
       {
         name: "dzf_lead_absents",
@@ -96561,7 +96578,7 @@ var require_leads = __commonJS({
           const roles = String(p.roles || "negociateur").split(",").map((x) => x.trim()).filter(Boolean);
           const maintenant = /* @__PURE__ */ new Date();
           const lignes = (conf.personnes || []).filter((x) => roles.includes(x.role)).map((x) => {
-            const r = destinataires(x.id, maintenant, conf);
+            const r = destinataires(x.id, maintenant, conf, { apercu: true });
             const liste = r.liste || [];
             const perso = liste.find((d) => d.email === String(x.email || "").toLowerCase());
             return {
@@ -97391,9 +97408,15 @@ var require_conf = __commonJS({
             adresses_libres: liste(r.adresses_libres)
           })),
           absences: absences.filter((a) => a.actif !== false).map((a) => ({ personne_id: idMoteur.get(a.personne), debut: a.debut, fin: a.fin, remplacant: ref(a.remplacant), motif: a.motif || "cong\xE9s" })),
-          siege: siege.filter((s) => s.actif !== false && (!s.portee || s.portee === "tous")).map((s) => s.email),
-          /* copies ciblées : les membres de l'agence ou du groupe au moment de l'envoi, ou des personnes choisies */
-          copies: siege.filter((s) => s.actif !== false && s.portee && s.portee !== "tous" && s.email).map((s) => ({ email: s.email, nom: s.libelle || s.email, cible: { negociateurs: membres(s) } }))
+          siege: siege.filter((s) => s.actif !== false && (!s.portee || s.portee === "tous") && !(+s.prix_au_dela > 0)).map((s) => s.email),
+          /* copies ciblées : les membres de l'agence ou du groupe au moment de l'envoi, ou des personnes choisies ;
+             prix_au_dela : seulement les leads dont le bien dépasse ce prix */
+          copies: siege.filter((s) => s.actif !== false && s.email && (s.portee && s.portee !== "tous" || +s.prix_au_dela > 0)).map((s) => ({
+            email: s.email,
+            nom: s.libelle || s.email,
+            cible: !s.portee || s.portee === "tous" ? { tous: true } : { negociateurs: membres(s) },
+            prix_au_dela: +s.prix_au_dela > 0 ? +s.prix_au_dela : null
+          }))
         }
       };
       const rt = json(R.routage_tables, null);

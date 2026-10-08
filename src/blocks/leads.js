@@ -64,8 +64,9 @@ module.exports = [
   {
     name: "dzf_lead_destinataires", label: "Leads : qui reçoit ?", category: "Leads immobiliers", icon: "fas fa-user-check", output: "destinataires",
     description: "Donne les adresses exactes qui recevraient un lead de ce négociateur à cette date, avec l'explication (règle, congés, mi-temps, remplaçant, siège). C'est le bouton « tester ».",
-    params: [{ name: "negociateur", label: "Négociateur (id)", required: true }, { name: "date", label: "Date", default: "", help: "Vide = maintenant" }, P_ROUTAGE, P_TABLES],
-    run: async (p) => destinataires(p.negociateur, p.date || new Date(), await routageDe(p)),
+    params: [{ name: "negociateur", label: "Négociateur (id)", required: true }, { name: "date", label: "Date", default: "", help: "Vide = maintenant" },
+      { name: "prix", label: "Prix du bien (€)", default: "", help: "Pour les copies avec seuil de prix. Vide = prix inconnu" }, P_ROUTAGE, P_TABLES],
+    run: async (p) => destinataires(p.negociateur, p.date || new Date(), await routageDe(p), { prix: p.prix }),
   },
   {
     name: "dzf_lead_absents", label: "Leads : absents de la semaine", category: "Leads immobiliers", icon: "fas fa-umbrella-beach", output: "absents",
@@ -86,7 +87,7 @@ module.exports = [
       const roles = String(p.roles || "negociateur").split(",").map((x) => x.trim()).filter(Boolean);
       const maintenant = new Date();
       const lignes = (conf.personnes || []).filter((x) => roles.includes(x.role)).map((x) => {
-        const r = destinataires(x.id, maintenant, conf);
+        const r = destinataires(x.id, maintenant, conf, { apercu: true });
         const liste = r.liste || [];
         const perso = liste.find((d) => d.email === String(x.email || "").toLowerCase());
         return { personne: x.id, nom: x.nom, destinataires: liste.map((d) => `${d.email} (${d.roles.join(", ")})`).join(" · "),

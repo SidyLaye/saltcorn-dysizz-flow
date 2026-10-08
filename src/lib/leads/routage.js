@@ -14,10 +14,12 @@
                   assistante_remplacante: ref, adresses_libres: [email…], actif }],
      absences: [{ personne_id, debut: "AAAA-MM-JJ", fin: "AAAA-MM-JJ", remplacant: ref, motif }],
      siege:    [email…],                    // en copie de chaque lead
-     copies:   [{ email, nom, cible: { tous: true } | { negociateurs: [id…] } }], // en copie de certains leads seulement
+     copies:   [{ email, nom, cible: { tous: true } | { negociateurs: [id…] }, prix_au_dela }], // en copie de certains leads seulement
+                                           // prix_au_dela : seulement si le prix du bien le dépasse (strictement)
      fuseau_horaire: "Europe/Paris" // UTC par défaut
    }
-   ref = { personne: id } | { email: "x@y" } */
+   ref = { personne: id } | { email: "x@y" }
+   ctx = { prix } : le prix du bien du lead (copies avec seuil) ; { apercu: true } : liste les copies avec seuil sans prix connu */
 "use strict";
 
 const jour = (d, fuseau = "UTC") => {
@@ -59,7 +61,7 @@ const regleDe = (conf, negoId) => {
     || rs.find((r) => r.cible && r.cible.tous) || {};
 };
 
-const destinataires = (negoId, quand = new Date(), conf = {}) => {
+const destinataires = (negoId, quand = new Date(), conf = {}, ctx = {}) => {
   const P = new Map((conf.personnes || []).map((p) => [String(p.id), p]));
   const liste = [], trace = [];
   const ajouterAdresse = (email, role, pour, raison) => {
@@ -101,7 +103,14 @@ const destinataires = (negoId, quand = new Date(), conf = {}) => {
   /* copies ciblées : seulement pour les négociateurs visés (agence, groupe, personnes choisies) */
   for (const c of conf.copies || []) {
     const vise = c && c.cible && (c.cible.tous || (c.cible.negociateurs || []).map(String).includes(String(negoId)));
-    if (vise) ajouterAdresse(c.email, "copie", c.nom || "copie", c.cible.tous ? "en copie de chaque lead" : `en copie pour ${nego ? nego.nom : "ce négociateur"}`);
+    if (!vise) continue;
+    const pour = c.cible.tous ? "en copie de chaque lead" : `en copie pour ${nego ? nego.nom : "ce négociateur"}`;
+    const seuil = +c.prix_au_dela || 0;
+    if (!seuil) { ajouterAdresse(c.email, "copie", c.nom || "copie", pour); continue; }
+    const montant = `${seuil.toLocaleString("fr-FR")} €`;
+    if (ctx.apercu) ajouterAdresse(c.email, "copie", c.nom || "copie", `${pour}, si le prix dépasse ${montant}`);
+    else if (+ctx.prix > seuil) ajouterAdresse(c.email, "copie", c.nom || "copie", `${pour} : prix ${(+ctx.prix).toLocaleString("fr-FR")} € au-delà de ${montant}`);
+    else trace.push(`copie ${c.nom || c.email} : ${+ctx.prix > 0 ? `prix ${(+ctx.prix).toLocaleString("fr-FR")} €` : "prix du bien inconnu"}, pas au-delà de ${montant}`);
   }
   return { liste, trace, regle: r.id || null };
 };

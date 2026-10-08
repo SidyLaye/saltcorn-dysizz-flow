@@ -12,7 +12,8 @@
                    « remplacé(e) »), assistante_remplacante (→ equipe),
                    adresses_libres ("a@x, b@y")
    - copies      : email, libelle, actif, portee : « tous » (chaque lead), « agence » (+ agence), « groupe » (+ groupe),
-                   « personnes » (+ personnes : "3,7,9", numéros de l'équipe)
+                   « personnes » (+ personnes : "3,7,9", numéros de l'équipe) ;
+                   prix_au_dela (facultatif) : seulement les leads dont le bien dépasse ce prix
 
    Une colonne absente est ignorée : une table plus simple fonctionne aussi. */
 "use strict";
@@ -48,7 +49,7 @@ const versIdentifiant = (conf, eq, champ) => {
     personnes: conf.personnes.map((p) => ({ ...p, ligne: p.id, id: id(p.id), assistante_id: id(p.assistante_id), remplacant_hors_jours: ref(p.remplacant_hors_jours), remplacant_inactif: ref(p.remplacant_inactif) })),
     regles: conf.regles.map((r) => ({ ...r, cible: r.cible && r.cible.negociateurs ? { negociateurs: r.cible.negociateurs.map(id) } : r.cible, assistante_remplacante: ref(r.assistante_remplacante) })),
     absences: conf.absences.map((a) => ({ ...a, personne_id: id(a.personne_id), remplacant: ref(a.remplacant) })),
-    copies: conf.copies.map((c) => ({ ...c, cible: { negociateurs: c.cible.negociateurs.map(id) } })),
+    copies: conf.copies.map((c) => ({ ...c, cible: c.cible.tous ? c.cible : { negociateurs: c.cible.negociateurs.map(id) } })),
   };
   delete out.__equipe;
   return out;
@@ -90,12 +91,13 @@ const lireRoutageLignes = async (noms = {}, fuseau = "Europe/Paris") => {
     }),
     absences: abs.map((a) => ({ personne_id: a.personne, debut: jourDe(a.debut, fuseau), fin: jourDe(a.fin, fuseau),
       remplacant: a.remplacant ? ref(a.remplacant) : /@/.test(String(a.remplacant_adresse || "")) ? { email: String(a.remplacant_adresse).trim() } : null, motif: a.motif })),
-    siege: cp.filter((d) => !d.portee || d.portee === "tous").map((d) => d.email).filter(Boolean),
+    siege: cp.filter((d) => (!d.portee || d.portee === "tous") && !(+d.prix_au_dela > 0)).map((d) => d.email).filter(Boolean),
     /* copies ciblées : les membres de l'agence ou du groupe aujourd'hui, ou les personnes choisies */
-    copies: cp.filter((d) => d.portee && d.portee !== "tous" && d.email).map((d) => {
+    copies: cp.filter((d) => d.email && ((d.portee && d.portee !== "tous") || +d.prix_au_dela > 0)).map((d) => {
       const par = (champ) => (d[champ] === null || d[champ] === undefined || d[champ] === "" ? [] : eq.filter((p) => String(p[champ] ?? "") === String(d[champ])).map((p) => String(p.id)));
       const vises = d.portee === "agence" ? par("agence") : d.portee === "groupe" ? par("groupe") : d.portee === "personnes" ? ids(d.personnes) : [];
-      return { email: d.email, nom: d.libelle || d.email, cible: { negociateurs: [...new Set(vises)] } };
+      const tous = !d.portee || d.portee === "tous";
+      return { email: d.email, nom: d.libelle || d.email, cible: tous ? { tous: true } : { negociateurs: [...new Set(vises)] }, prix_au_dela: +d.prix_au_dela > 0 ? +d.prix_au_dela : null };
     }),
   };
 };

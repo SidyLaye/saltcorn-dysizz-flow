@@ -1,5 +1,14 @@
 # Journal des versions
 
+## 2.14.18
+
+### Ajouté
+- Copies ciblées avec seuil de prix : colonne facultative `prix_au_dela` sur la table des copies
+  (`destinataire_custom`, ou `ld_siege`). La copie ne part que si le prix du bien du lead la dépasse strictement.
+  Prix inconnu : pas de copie, et la raison est notée dans la trace. Fonctionne avec toutes les portées
+  (« personnes », « agence », « groupe », « tous »). Le bloc « Leads : qui reçoit ? » prend un prix à tester, et la
+  table « qui reçoit aujourd'hui » affiche la copie avec sa condition. Test : `tests/routage-tables.test.cjs`.
+
 ## 2.14.17
 
 ### Corrigé

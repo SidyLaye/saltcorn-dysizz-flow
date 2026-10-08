@@ -25,6 +25,8 @@ const DONNEES = {
     { id: 2, email: "compta@ex.org", libelle: "Compta Tarn", portee: "groupe", groupe: 7, actif: true },
     { id: 3, email: "direct@ex.org", libelle: "Direction", portee: "personnes", personnes: "6", actif: true },
     { id: 4, email: "coupe@ex.org", portee: "tous", actif: false },
+    { id: 5, email: "region@ex.org", libelle: "Responsable région", portee: "personnes", personnes: "1,6", prix_au_dela: 700000, actif: true },
+    { id: 6, email: "luxe@ex.org", portee: "tous", prix_au_dela: 2000000, actif: true },
   ],
   vue_routage: [],
 };
@@ -58,6 +60,13 @@ const B = (n) => BLOCKS.find((b) => b.name === n);
   /* copies ciblées : seulement pour les personnes visées ; une copie coupée n'envoie rien */
   assert.ok(!(await qui(5)).includes("compta@ex.org"), "copie de groupe : pas pour une personne hors du groupe");
   assert.ok((await qui(6)).includes("direct@ex.org") && !(await qui(1)).includes("direct@ex.org"), "copie pour des personnes choisies");
+  /* copie avec seuil de prix : seulement au-delà (strictement), seulement pour les personnes visées */
+  const quiP = async (id, prix) => (await B("dzf_lead_destinataires").run({ negociateur: String(id), prix, routage: "tables", tables: {} })).liste.map((d) => d.email);
+  assert.ok((await quiP(1, 750000)).includes("region@ex.org"), "seuil : bien au-delà de 700 000 €");
+  assert.ok(!(await quiP(1, 700000)).includes("region@ex.org"), "seuil : 700 000 € pile n'est pas au-delà");
+  assert.ok(!(await quiP(1, "")).includes("region@ex.org") && !(await qui(1)).includes("region@ex.org"), "seuil : prix inconnu → pas de copie");
+  assert.ok(!(await quiP(5, 900000)).includes("region@ex.org"), "seuil : personne hors liste → pas de copie");
+  assert.ok(!conf.siege.includes("luxe@ex.org") && (await quiP(5, 2500000)).includes("luxe@ex.org") && !(await quiP(5, 900000)).includes("luxe@ex.org"), "seuil sur une copie « tous » : pas dans le siège");
   assert.ok(!(await qui(1)).includes("coupe@ex.org"), "copie coupée");
   assert.ok((await qui(2)).includes("alice@ex.org") && !(await qui(2)).includes("bruno@ex.org"), "mi-temps : jour non travaillé → remplaçant");
   assert.ok((await qui(4)).includes("alice@ex.org") && !(await qui(4)).includes("denis@ex.org"), "parti : son remplaçant reçoit");
@@ -99,5 +108,8 @@ const B = (n) => BLOCKS.find((b) => b.name === n);
   assert.ok(!("__equipe" in c2) && !("__equipe" in conf), "rien d'interne dans la configuration");
   const R = require("../src/lib/leads/routage");
   assert.deepStrictEqual(R.destinataires("500", new Date(), c2).liste.map((d) => d.email).sort().slice(0, 2), ["alice@ex.org", "chloe@ex.org"], "routage avec les ids du CRM");
+  /* pipeline : le prix du bien du lead décide de la copie avec seuil */
+  const etape = (prix) => T.etapeDestinataires({ motifs: [], alertes: [], extraction: {}, interne: {}, negociateur: "500", bien: prix ? { prix } : null }, { routage: c2 }).destinataires.liste.map((d) => d.email);
+  assert.ok(etape(820000).includes("region@ex.org") && !etape(650000).includes("region@ex.org") && !etape(null).includes("region@ex.org"), "pipeline : copie région seulement au-delà du seuil");
   console.log("routage lu dans les tables OK : ids du CRM, groupe, agence, priorité individuelle, relais par adresse, mi-temps, départ, congés, retour automatique, table « qui reçoit »");
 })().catch((e) => { console.error(e); process.exit(1); });

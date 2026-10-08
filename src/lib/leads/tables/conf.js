@@ -66,9 +66,11 @@ const charger = async () => {
       regles: regles.filter((r) => r.actif !== false).map((r) => ({ id: "r" + r.id, libelle: r.libelle, cible: cibleDe(r),
         couper_negociateur: !!r.couper_negociateur, assistante: r.assistante || "garder", assistante_remplacante: ref(r.assistante_remplacante), adresses_libres: liste(r.adresses_libres) })),
       absences: absences.filter((a) => a.actif !== false).map((a) => ({ personne_id: idMoteur.get(a.personne), debut: a.debut, fin: a.fin, remplacant: ref(a.remplacant), motif: a.motif || "congés" })),
-      siege: siege.filter((s) => s.actif !== false && (!s.portee || s.portee === "tous")).map((s) => s.email),
-      /* copies ciblées : les membres de l'agence ou du groupe au moment de l'envoi, ou des personnes choisies */
-      copies: siege.filter((s) => s.actif !== false && s.portee && s.portee !== "tous" && s.email).map((s) => ({ email: s.email, nom: s.libelle || s.email, cible: { negociateurs: membres(s) } })),
+      siege: siege.filter((s) => s.actif !== false && (!s.portee || s.portee === "tous") && !(+s.prix_au_dela > 0)).map((s) => s.email),
+      /* copies ciblées : les membres de l'agence ou du groupe au moment de l'envoi, ou des personnes choisies ;
+         prix_au_dela : seulement les leads dont le bien dépasse ce prix */
+      copies: siege.filter((s) => s.actif !== false && s.email && ((s.portee && s.portee !== "tous") || +s.prix_au_dela > 0)).map((s) => ({ email: s.email, nom: s.libelle || s.email,
+        cible: !s.portee || s.portee === "tous" ? { tous: true } : { negociateurs: membres(s) }, prix_au_dela: +s.prix_au_dela > 0 ? +s.prix_au_dela : null })),
     },
   };
   /* équipe et règles d'envoi lues dans d'autres tables (ex. les écrans Gestion d'une application) :

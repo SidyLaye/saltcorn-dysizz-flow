@@ -363,7 +363,7 @@ const etapeDestinataires = (d, conf = {}) => {
   if (d.fin) return d;
   const dos = (d.interne && d.interne.dos) || null;
   if (actifs(conf).notification) {
-    const dest = destinataires(d.negociateur, d.date_mail || new Date(), conf.routage || {});
+    const dest = destinataires(d.negociateur, d.date_mail || new Date(), conf.routage || {}, { prix: d.bien && d.bien.prix });
     if (dos && (conf.notifier_relances || "negociateur") === "negociateur") {
       const avant = dest.liste.length;
       dest.liste = dest.liste.filter((x) => (x.roles || [x.role]).some((ro) => ["negociateur", "assistante"].includes(ro)));
