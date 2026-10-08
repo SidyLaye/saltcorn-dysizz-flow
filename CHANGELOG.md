@@ -1,5 +1,18 @@
 # Journal des versions
 
+## 2.15.1
+
+### Corrigé
+- Lecture « à vérifier » (nouvel expéditeur, règles générales, complétée par l'IA) : un lead n'est plus bloqué quand
+  tout est prouvé. Contrôle automatique : bien trouvé (confiance suffisante) et négociateur, contact joignable,
+  chaque valeur lue (nom, prénom, e-mail, téléphone, référence, prix, code postal) retrouvée dans le mail, prix et
+  code postal du mail identiques à ceux du bien. Validé : le motif devient une alerte et le lead suit le circuit
+  normal (CRM et envoi). Sinon le motif dit pourquoi (« prix du mail 266 000 € ≠ prix du bien 299 900 € »). Un autre
+  doute (vendeur, bien sur deux critères…) garde la main humaine.
+- Référence avec suffixe du CRM : « 33074 » (portail) retrouve « 33074-EXCL » (Immofacile, recherche exacte),
+  seulement avec un fait concordant (code postal, ville, prix) ou si la référence complète est écrite dans le mail.
+- Villes : « Ste-Croix » = « Sainte Croix » (seul « St » = « Saint » était reconnu).
+
 ## 2.15.0
 
 ### Ajouté

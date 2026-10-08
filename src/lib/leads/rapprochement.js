@@ -17,7 +17,9 @@ const { cle } = require("./texte");
 const REGLES = { prix_ok: 0.035, prix_proche: 0.10, prix_ko: 0.10, surface_ok_m2: 3, surface_ok: 0.035, surface_ko: 0.10, surface_ko_m2: 8 };
 
 const ecart = (a, b) => Math.abs(a - b) / Math.max(Math.abs(a), Math.abs(b), 1);
-const memeVille = (a, b) => { const x = cle(a).replace(/\b(saint|st)\b/g, "st").replace(/\s+/g, ""), y = cle(b).replace(/\b(saint|st)\b/g, "st").replace(/\s+/g, ""); return x && y && (x === y || x.includes(y) || y.includes(x)); };
+/* « Ste-Croix » = « Sainte Croix », « St-Cere » = « Saint Céré » */
+const formeVille = (v) => cle(v).replace(/\b(sainte|ste)\b/g, "ste").replace(/\b(saint|st)\b/g, "st").replace(/\s+/g, "");
+const memeVille = (a, b) => { const x = formeVille(a), y = formeVille(b); return x && y && (x === y || x.includes(y) || y.includes(x)); };
 
 /* Compare les faits du mail et du bien. Renvoie { accords, conflits, inconnus, legers }. */
 const comparer = (mail = {}, bien = {}, regles = REGLES) => {
@@ -84,12 +86,18 @@ const verdict = (cmp, minAccords, force = "faible") => {
 /* Variantes d'une référence, dans l'ordre de la procédure décrite au client : complète, sans le dernier caractère,
    segments de droite à gauche ; puis paires de segments voisins (« AB-1234 » dans « 7654321a-AB-1234 ») et
    parties numériques. */
-const variantes = (ref) => {
+/* Suffixes ajoutés par l'agence dans le CRM et absents des portails (« 33074 » sur Giraffe = « 33074-EXCL » dans
+   Immofacile pour une exclusivité). La recherche du CRM est exacte : on essaie aussi la référence + suffixe, mais
+   avec au moins un fait concordant (code postal, ville, prix…) pour ne jamais prendre un autre bien. */
+const SUFFIXES = ["EXCL"];
+const variantes = (ref, suffixes = SUFFIXES) => {
   const r = String(ref || "").trim();
   if (!r) return [];
   const out = [];
   const add = (valeur, etape, min) => { if (valeur && valeur.length >= 2 && !out.some((x) => x.valeur.toLowerCase() === valeur.toLowerCase())) out.push({ valeur, etape, min }); };
   add(r, "reference_complete", 0);
+  /* seulement une référence courte de l'agence (« 33074 », « AC28925 ») : pas les identifiants composés des portails */
+  if (/^[a-z0-9]{2,10}$/i.test(r)) for (const sfx of suffixes || []) if (sfx) add(`${r}-${sfx}`, "reference_suffixe", 1);
   const seg = r.split(/[_\-/.\s|:]+/).filter(Boolean);
   /* « 32562-32562 » : la même référence répétée vaut la référence complète */
   if (seg.length > 1 && new Set(seg.map((x) => x.toLowerCase())).size === 1) add(seg[0], "reference_complete", 0);
@@ -161,15 +169,19 @@ const rapprocher = async (lead, crm, opts = {}) => {
   /* 2-3. toutes les références, complètes d'abord (agence, mandat, portail), puis leurs variantes */
   const refs = [...new Set(toutesRefs)];
   const essais = [];
-  for (const ref of refs) for (const v of variantes(ref)) essais.push(v);
-  essais.sort((a, c) => (a.etape === "reference_complete" ? 0 : 1) - (c.etape === "reference_complete" ? 0 : 1));
+  for (const ref of refs) for (const v of variantes(ref, opts.suffixes || SUFFIXES)) essais.push(v);
+  /* référence complète d'abord, puis référence + suffixe, puis les variantes plus courtes */
+  const rang = (e) => (e === "reference_complete" ? 0 : e === "reference_suffixe" ? 1 : 2);
+  essais.sort((a, c) => rang(a.etape) - rang(c.etape));
   const deja = new Set();
   for (const v of essais) {
     const k = v.valeur.toLowerCase(); if (deja.has(k)) continue; deja.add(k);
     const biens = await crm.biensParReference(v.valeur).catch(() => []);
     const exacts = biens.filter((x) => String(x.reference).trim().toLowerCase() === k);
     const force = forceRef(v.valeur, v.etape);
-    const hit = await essayer(v.etape, v.valeur, exacts, force === "faible" ? Math.max(v.min, 1) : v.min, force);
+    /* référence + suffixe écrite telle quelle dans le mail (« réf. 33074-excl ») : c'est la preuve, pas besoin d'un autre fait */
+    const litterale = v.etape === "reference_suffixe" && opts.texte && String(opts.texte).toLowerCase().includes(k);
+    const hit = await essayer(v.etape, v.valeur, exacts, litterale ? 0 : force === "faible" || v.etape === "reference_suffixe" ? Math.max(v.min, 1) : v.min, litterale ? "forte" : force);
     if (hit) return { bien: hit, methode: v.etape, etapes, alertes, confiance: force === "faible" ? "moyenne" : "haute" };
   }
   /* 4. recherche par critères : le catalogue entier est noté (le prix est obligatoire) */

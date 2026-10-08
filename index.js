@@ -1,4 +1,4 @@
-/* dysizz-flow 2.15.0 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.15.1 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.15.0" : "dev";
+    var VERSION2 = true ? "2.15.1" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -93904,8 +93904,9 @@ var require_rapprochement = __commonJS({
     var { cle } = require_texte();
     var REGLES = { prix_ok: 0.035, prix_proche: 0.1, prix_ko: 0.1, surface_ok_m2: 3, surface_ok: 0.035, surface_ko: 0.1, surface_ko_m2: 8 };
     var ecart = (a, b) => Math.abs(a - b) / Math.max(Math.abs(a), Math.abs(b), 1);
+    var formeVille = (v) => cle(v).replace(/\b(sainte|ste)\b/g, "ste").replace(/\b(saint|st)\b/g, "st").replace(/\s+/g, "");
     var memeVille = (a, b) => {
-      const x = cle(a).replace(/\b(saint|st)\b/g, "st").replace(/\s+/g, ""), y = cle(b).replace(/\b(saint|st)\b/g, "st").replace(/\s+/g, "");
+      const x = formeVille(a), y = formeVille(b);
       return x && y && (x === y || x.includes(y) || y.includes(x));
     };
     var comparer = (mail = {}, bien = {}, regles = REGLES) => {
@@ -93977,7 +93978,8 @@ var require_rapprochement = __commonJS({
       if (cmp.accords.length < minAccords) return { ok: false, raison: `preuves insuffisantes (${cmp.accords.length}/${minAccords} accord)` };
       return legers.length ? ecartSignale(legers.join(", ")) : { ok: true, raison: "accords : " + cmp.accords.join(", ") };
     };
-    var variantes = (ref) => {
+    var SUFFIXES = ["EXCL"];
+    var variantes = (ref, suffixes = SUFFIXES) => {
       const r = String(ref || "").trim();
       if (!r) return [];
       const out = [];
@@ -93985,6 +93987,9 @@ var require_rapprochement = __commonJS({
         if (valeur && valeur.length >= 2 && !out.some((x) => x.valeur.toLowerCase() === valeur.toLowerCase())) out.push({ valeur, etape, min });
       };
       add(r, "reference_complete", 0);
+      if (/^[a-z0-9]{2,10}$/i.test(r)) {
+        for (const sfx of suffixes || []) if (sfx) add(`${r}-${sfx}`, "reference_suffixe", 1);
+      }
       const seg = r.split(/[_\-/.\s|:]+/).filter(Boolean);
       if (seg.length > 1 && new Set(seg.map((x) => x.toLowerCase())).size === 1) add(seg[0], "reference_complete", 0);
       if (r.length > 3) add(r.slice(0, -1), "reference_moins_dernier", 1);
@@ -94049,8 +94054,9 @@ var require_rapprochement = __commonJS({
       }
       const refs = [...new Set(toutesRefs)];
       const essais = [];
-      for (const ref of refs) for (const v of variantes(ref)) essais.push(v);
-      essais.sort((a, c) => (a.etape === "reference_complete" ? 0 : 1) - (c.etape === "reference_complete" ? 0 : 1));
+      for (const ref of refs) for (const v of variantes(ref, opts.suffixes || SUFFIXES)) essais.push(v);
+      const rang = (e) => e === "reference_complete" ? 0 : e === "reference_suffixe" ? 1 : 2;
+      essais.sort((a, c) => rang(a.etape) - rang(c.etape));
       const deja = /* @__PURE__ */ new Set();
       for (const v of essais) {
         const k = v.valeur.toLowerCase();
@@ -94059,7 +94065,8 @@ var require_rapprochement = __commonJS({
         const biens = await crm.biensParReference(v.valeur).catch(() => []);
         const exacts = biens.filter((x) => String(x.reference).trim().toLowerCase() === k);
         const force = forceRef(v.valeur, v.etape);
-        const hit = await essayer(v.etape, v.valeur, exacts, force === "faible" ? Math.max(v.min, 1) : v.min, force);
+        const litterale = v.etape === "reference_suffixe" && opts.texte && String(opts.texte).toLowerCase().includes(k);
+        const hit = await essayer(v.etape, v.valeur, exacts, litterale ? 0 : force === "faible" || v.etape === "reference_suffixe" ? Math.max(v.min, 1) : v.min, litterale ? "forte" : force);
         if (hit) return { bien: hit, methode: v.etape, etapes, alertes, confiance: force === "faible" ? "moyenne" : "haute" };
       }
       if (!opts.sansCriteres && (faits.prix || (faits.prix_candidats || []).length || faits.loyer)) {
@@ -95356,7 +95363,14 @@ var require_traiter = __commonJS({
       const conv = C.messages(r.mail_deballe ? { ...mail, ...r.mail_deballe, html: "" } : mail, r, conf);
       const cles = C.cles(r, conv.texte, conf);
       const connus = opts.dossiers ? await opts.dossiers.trouver(cles).catch(() => []) : [];
-      const d = { extraction: r, ...vide(), role: conv.role, fil: { cles, messages: conv.messages, dossiers_connus: connus.length }, date_mail: dateDuMail(mail), interne: { connus } };
+      const d = {
+        extraction: r,
+        ...vide(),
+        role: conv.role,
+        fil: { cles, messages: conv.messages, dossiers_connus: connus.length },
+        date_mail: dateDuMail(mail),
+        interne: { connus, texte_mail: [mail.objet, mail.expediteur, require_texte().texteMail({ texte: mail.texte, html: mail.html })].filter(Boolean).join("\n").slice(0, 2e4) }
+      };
       const fin = () => {
         d.fin = true;
         d.duree_ms = Date.now() - t0;
@@ -95419,7 +95433,11 @@ var require_traiter = __commonJS({
         const qui = r.portail === "inconnu" ? `nouvel exp\xE9diteur \xAB ${r.portail_inconnu} \xBB` : `mail de ${r.portail_nom || r.portail || "source non reconnue"}`;
         const fiable = g && !r.lu_par.includes("ia") && g.observations >= GABARIT_FIABLE && !g.echecs;
         if (fiable) d.alertes.push(qui + ` : lu avec un gabarit confirm\xE9 ${g.observations} fois (${g.source})`);
-        else d.motifs.push(qui + (r.lu_par.includes("ia") ? ` : compl\xE9t\xE9 par l'IA${a && a.fait !== "rien" ? `, gabarit ${a.fait} (${a.observations} observation(s))` : ""}` : g ? ` : lu avec un gabarit pas encore assez confirm\xE9 (${g.observations} fois, ${g.source})` : " : lu par les r\xE8gles g\xE9n\xE9rales"));
+        else {
+          const motif = qui + (r.lu_par.includes("ia") ? ` : compl\xE9t\xE9 par l'IA${a && a.fait !== "rien" ? `, gabarit ${a.fait} (${a.observations} observation(s))` : ""}` : g ? ` : lu avec un gabarit pas encore assez confirm\xE9 (${g.observations} fois, ${g.source})` : " : lu par les r\xE8gles g\xE9n\xE9rales");
+          d.motifs.push(motif);
+          d.interne.motif_lecture = motif;
+        }
       }
       if (r.lecture && r.lecture.ia && r.lecture.ia.statut !== "ok") d.alertes.push(r.lecture.etapes.slice(-1)[0] || "IA non disponible");
       d.duree_ms = Date.now() - t0;
@@ -95431,7 +95449,7 @@ var require_traiter = __commonJS({
       const r = d.extraction, cles = d.fil.cles, connus = d.interne && d.interne.connus || [];
       let rb = { bien: null, methode: null, etapes: [], alertes: [] };
       if (actifs(conf).bien) {
-        rb = await rapprocher(r, crm, conf.rapprochement || {});
+        rb = await rapprocher(r, crm, { ...conf.rapprochement || {}, texte: d.interne && d.interne.texte_mail });
         for (const a of rb.alertes || []) d.alertes.push(a);
       }
       d.bien = rb.bien;
@@ -95597,9 +95615,43 @@ var require_traiter = __commonJS({
       }
       return conclure(d);
     };
+    var normTexte = (v) => String(v ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
+    var controleLecture = (d) => {
+      const r = d.extraction || {}, c = r.contact || {}, b = r.bien || {}, bien = d.bien;
+      if (!bien) return "bien non trouv\xE9";
+      if (d.rapprochement && d.rapprochement.confiance === "basse") return "bien trouv\xE9 sur deux crit\xE8res seulement";
+      if (!d.negociateur) return "aucun n\xE9gociateur";
+      if (!(c.email || c.email_relais || c.telephone) || d.contact && d.contact.action === "impossible") return "contact injoignable";
+      const texte = String(d.interne && d.interne.texte_mail || "");
+      if (!texte) return "texte du mail indisponible";
+      const tn = normTexte(texte), chiffres = texte.replace(/\D/g, "");
+      const nombres = texte.replace(/(?<=\d)[\s.\u202f\u00a0']+(?=\d)/g, "").split(/\D+/).filter(Boolean);
+      const absent = [];
+      for (const [k, v] of [["nom", c.nom], ["pr\xE9nom", c.prenom], ["e-mail", c.email || c.email_relais], ["r\xE9f\xE9rence", b.reference], ["code postal", b.code_postal]])
+        if (v && !tn.includes(normTexte(v))) absent.push(`${k} \xAB ${v} \xBB`);
+      if (c.telephone && !chiffres.includes(String(c.telephone).replace(/\D/g, "").slice(-9))) absent.push(`t\xE9l\xE9phone \xAB ${c.telephone} \xBB`);
+      if (+b.prix && !nombres.includes(String(Math.round(+b.prix)))) absent.push(`prix \xAB ${b.prix} \xBB`);
+      if (absent.length) return "valeur lue absente du mail : " + absent.join(", ");
+      if (+b.prix && +bien.prix && Math.abs(+b.prix - +bien.prix) > Math.max(1, +bien.prix * 5e-3)) return `prix du mail ${(+b.prix).toLocaleString("fr-FR")} \u20AC \u2260 prix du bien ${(+bien.prix).toLocaleString("fr-FR")} \u20AC`;
+      if (b.code_postal && bien.code_postal && String(b.code_postal) !== String(bien.code_postal)) return `code postal du mail ${b.code_postal} \u2260 code postal du bien ${bien.code_postal}`;
+      return null;
+    };
+    var validerLecture = (d) => {
+      const motif = d.interne && d.interne.motif_lecture;
+      if (!motif || !d.motifs.includes(motif)) return;
+      const raison = controleLecture(d);
+      if (raison) {
+        d.motifs[d.motifs.indexOf(motif)] = `${motif} \u2014 contr\xF4le automatique non concluant : ${raison}`;
+        return;
+      }
+      if (d.motifs.length !== 1) return;
+      d.motifs = [];
+      d.alertes.push(`${motif} \u2014 valid\xE9 automatiquement : valeurs retrouv\xE9es dans le mail, bien et n\xE9gociateur confirm\xE9s`);
+    };
     var conclure = (d) => {
       if (d.fin) return d;
       const r = d.extraction, dos = d.interne && d.interne.dos || null;
+      validerLecture(d);
       d.statut = d.motifs.length ? "a_verifier" : "pret";
       if (r.nature === "direct" && !d.bien && !dos) {
         d.statut = "a_trier";
@@ -95682,7 +95734,7 @@ var require_traiter = __commonJS({
       }
       return { contactId, rechercheId, consentement, consentementVerifie, resultats: res };
     };
-    module2.exports = { traiter, executer, preuveEml, trouverAgence, choisirDossier, criteresProjet, NATURES_LEAD, ETAPES, etapeLire, etapeBien, etapeContact, etapeConsentement, etapeDestinataires, conclure, nettoyer };
+    module2.exports = { traiter, executer, controleLecture, preuveEml, trouverAgence, choisirDossier, criteresProjet, NATURES_LEAD, ETAPES, etapeLire, etapeBien, etapeContact, etapeConsentement, etapeDestinataires, conclure, nettoyer };
   }
 });
 

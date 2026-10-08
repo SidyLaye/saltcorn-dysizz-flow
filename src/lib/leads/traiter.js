@@ -118,7 +118,8 @@ const etapeLire = async (mail, conf = {}, opts = {}) => {
   const conv = C.messages(r.mail_deballe ? { ...mail, ...r.mail_deballe, html: "" } : mail, r, conf);
   const cles = C.cles(r, conv.texte, conf);
   const connus = opts.dossiers ? await opts.dossiers.trouver(cles).catch(() => []) : [];
-  const d = { extraction: r, ...vide(), role: conv.role, fil: { cles, messages: conv.messages, dossiers_connus: connus.length }, date_mail: dateDuMail(mail), interne: { connus } };
+  const d = { extraction: r, ...vide(), role: conv.role, fil: { cles, messages: conv.messages, dossiers_connus: connus.length }, date_mail: dateDuMail(mail),
+    interne: { connus, texte_mail: [mail.objet, mail.expediteur, require("./texte").texteMail({ texte: mail.texte, html: mail.html })].filter(Boolean).join("\n").slice(0, 20000) } };
   const fin = () => { d.fin = true; d.duree_ms = Date.now() - t0; return d; };
 
   /* Message de l'équipe : jamais un lead. On l'ajoute au dossier s'il existe (réponse au prospect). */
@@ -176,7 +177,11 @@ const etapeLire = async (mail, conf = {}, opts = {}) => {
        Sinon, comme une lecture par l'IA ou par les règles générales : à vérifier. */
     const fiable = g && !r.lu_par.includes("ia") && g.observations >= GABARIT_FIABLE && !g.echecs;
     if (fiable) d.alertes.push(qui + ` : lu avec un gabarit confirmé ${g.observations} fois (${g.source})`);
-    else d.motifs.push(qui + (r.lu_par.includes("ia") ? ` : complété par l'IA${a && a.fait !== "rien" ? `, gabarit ${a.fait} (${a.observations} observation(s))` : ""}` : g ? ` : lu avec un gabarit pas encore assez confirmé (${g.observations} fois, ${g.source})` : " : lu par les règles générales"));
+    else {
+      const motif = qui + (r.lu_par.includes("ia") ? ` : complété par l'IA${a && a.fait !== "rien" ? `, gabarit ${a.fait} (${a.observations} observation(s))` : ""}` : g ? ` : lu avec un gabarit pas encore assez confirmé (${g.observations} fois, ${g.source})` : " : lu par les règles générales");
+      d.motifs.push(motif);
+      d.interne.motif_lecture = motif;
+    }
   }
   if (r.lecture && r.lecture.ia && r.lecture.ia.statut !== "ok") d.alertes.push(r.lecture.etapes.slice(-1)[0] || "IA non disponible");
   d.duree_ms = Date.now() - t0;
@@ -190,7 +195,7 @@ const etapeBien = async (d, crm, conf = {}) => {
   const r = d.extraction, cles = d.fil.cles, connus = (d.interne && d.interne.connus) || [];
   let rb = { bien: null, methode: null, etapes: [], alertes: [] };
   if (actifs(conf).bien) {
-    rb = await rapprocher(r, crm, conf.rapprochement || {});
+    rb = await rapprocher(r, crm, { ...(conf.rapprochement || {}), texte: d.interne && d.interne.texte_mail });
     for (const a of rb.alertes || []) d.alertes.push(a);
   }
   d.bien = rb.bien; d.rapprochement = { methode: rb.methode, confiance: rb.confiance, motif: rb.motif, etapes: rb.etapes };
@@ -379,10 +384,49 @@ const etapeDestinataires = (d, conf = {}) => {
   return conclure(d);
 };
 
+/* Contrôle automatique d'une lecture « à vérifier » (nouvel expéditeur, règles générales, IA) : on n'attend pas un
+   humain quand tout est prouvé. Rend null si la lecture est validée, sinon la raison (dite telle quelle dans le motif).
+   - un bien trouvé avec une confiance suffisante, et un négociateur ;
+   - un contact joignable (e-mail, relais du portail ou téléphone) ;
+   - chaque valeur lue (nom, prénom, e-mail, téléphone, référence, prix, code postal) présente dans le mail ;
+   - le prix et le code postal du mail, s'ils y sont, identiques à ceux du bien du CRM. */
+const normTexte = (v) => String(v ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
+const controleLecture = (d) => {
+  const r = d.extraction || {}, c = r.contact || {}, b = r.bien || {}, bien = d.bien;
+  if (!bien) return "bien non trouvé";
+  if (d.rapprochement && d.rapprochement.confiance === "basse") return "bien trouvé sur deux critères seulement";
+  if (!d.negociateur) return "aucun négociateur";
+  if (!(c.email || c.email_relais || c.telephone) || (d.contact && d.contact.action === "impossible")) return "contact injoignable";
+  const texte = String((d.interne && d.interne.texte_mail) || "");
+  if (!texte) return "texte du mail indisponible";
+  const tn = normTexte(texte), chiffres = texte.replace(/\D/g, "");
+  const nombres = texte.replace(/(?<=\d)[\s.\u202f\u00a0']+(?=\d)/g, "").split(/\D+/).filter(Boolean);
+  const absent = [];
+  for (const [k, v] of [["nom", c.nom], ["prénom", c.prenom], ["e-mail", c.email || c.email_relais], ["référence", b.reference], ["code postal", b.code_postal]])
+    if (v && !tn.includes(normTexte(v))) absent.push(`${k} « ${v} »`);
+  if (c.telephone && !chiffres.includes(String(c.telephone).replace(/\D/g, "").slice(-9))) absent.push(`téléphone « ${c.telephone} »`);
+  if (+b.prix && !nombres.includes(String(Math.round(+b.prix)))) absent.push(`prix « ${b.prix} »`);
+  if (absent.length) return "valeur lue absente du mail : " + absent.join(", ");
+  if (+b.prix && +bien.prix && Math.abs(+b.prix - +bien.prix) > Math.max(1, +bien.prix * 0.005)) return `prix du mail ${(+b.prix).toLocaleString("fr-FR")} € ≠ prix du bien ${(+bien.prix).toLocaleString("fr-FR")} €`;
+  if (b.code_postal && bien.code_postal && String(b.code_postal) !== String(bien.code_postal)) return `code postal du mail ${b.code_postal} ≠ code postal du bien ${bien.code_postal}`;
+  return null;
+};
+const validerLecture = (d) => {
+  const motif = d.interne && d.interne.motif_lecture;
+  if (!motif || !d.motifs.includes(motif)) return;
+  const raison = controleLecture(d);
+  if (raison) { d.motifs[d.motifs.indexOf(motif)] = `${motif} — contrôle automatique non concluant : ${raison}`; return; }
+  /* validé seulement si c'est le seul motif : un autre doute (vendeur, bien à confirmer…) garde la main humaine */
+  if (d.motifs.length !== 1) return;
+  d.motifs = [];
+  d.alertes.push(`${motif} — validé automatiquement : valeurs retrouvées dans le mail, bien et négociateur confirmés`);
+};
+
 /* Statut final (sauf si la lecture a déjà tranché). */
 const conclure = (d) => {
   if (d.fin) return d;
   const r = d.extraction, dos = (d.interne && d.interne.dos) || null;
+  validerLecture(d);
   d.statut = d.motifs.length ? "a_verifier" : "pret";
   if (r.nature === "direct" && !d.bien && !dos) { d.statut = "a_trier"; d.motifs.push("mail direct sans bien reconnu"); }
   if (r.suspect === "message de test") d.statut = "a_trier";
@@ -445,4 +489,4 @@ const executer = async (dossier, crm, { mode = "ombre", ecrireAVerifier = false 
   return { contactId, rechercheId, consentement, consentementVerifie, resultats: res };
 };
 
-module.exports = { traiter, executer, preuveEml, trouverAgence, choisirDossier, criteresProjet, NATURES_LEAD, ETAPES, etapeLire, etapeBien, etapeContact, etapeConsentement, etapeDestinataires, conclure, nettoyer };
+module.exports = { traiter, executer, controleLecture, preuveEml, trouverAgence, choisirDossier, criteresProjet, NATURES_LEAD, ETAPES, etapeLire, etapeBien, etapeContact, etapeConsentement, etapeDestinataires, conclure, nettoyer };
