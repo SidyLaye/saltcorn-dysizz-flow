@@ -269,6 +269,19 @@ module.exports = [
       })),
   },
   {
+    name: "dzf_leads_rattraper", label: "Leads : rattraper des leads précis (CRM + envoi)", category: CAT,
+    icon: "fas fa-life-ring", output: "rattrapage", timeout: 900,
+    description: "Retraite des leads choisis avec la version actuelle. « simuler » : lecture seule, rien n'est écrit dans le CRM, rien n'est enregistré ni envoyé ; le rapport dit ce qui serait fait. « appliquer » : retraitement réel puis envoi une seule fois aux destinataires (un destinataire déjà servi ne reçoit rien). Rapport dans Fichiers.",
+    params: [P_PREFIXE, { name: "leads", label: "Numéros des leads (séparés par des virgules)", required: true },
+      { name: "mode", label: "Mode", type: "select", options: ["simuler", "appliquer"], default: "simuler" }],
+    run: async (p, ctx = {}) => dans(p, async () => {
+      const r = await require("../lib/leads/tables/rattrapage").rattraper(p.leads, p.mode === "appliquer" ? "appliquer" : "simuler");
+      const File = require("@saltcorn/data/models/file");
+      await File.from_contents(`rattrapage-leads-${r.mode}.json`, "application/json", JSON.stringify(r, null, 1), ctx.user && ctx.user.id, 1).catch(() => null);
+      return r;
+    }),
+  },
+  {
     name: "dzf_leads_rafraichir_vues", label: "Leads : recalculer les vues de lecture", category: CAT,
     icon: "fas fa-layer-group", output: "reprise", timeout: 60,
     description: "Recalcule en arrière-plan, dans l'ordre, les tables de lecture d'un workflow déjà configuré. Ne traite aucun mail et n'envoie rien. Rapport dans Fichiers.",

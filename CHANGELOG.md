@@ -1,5 +1,13 @@
 # Journal des versions
 
+## 2.15.3
+
+### Ajouté
+- « Leads : rattraper des leads précis (CRM + envoi) » : retraite les leads choisis avec la version actuelle.
+  « simuler » : lecture seule (CRM en ombre, aucun gabarit appris, rien d'enregistré ni d'envoyé), rapport de ce qui
+  serait fait ; « appliquer » : retraitement réel puis envoi une seule fois (clé de l'envoi normal). Un contact saisi à
+  la main est retrouvé et mis à jour, pas recréé. `traiterMail` accepte `simulation`.
+
 ## 2.15.2
 
 ### Corrigé

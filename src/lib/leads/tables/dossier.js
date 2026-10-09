@@ -75,7 +75,8 @@ const cleVerrou = (api, m, conf, mailId) => {
 };
 
 /* Traite (ou retraite) un mail rangé dans ld_mails. */
-const traiterMail = async (mailId, { forcerOmbre = false, actualiserConsentement = false } = {}) => {
+/* simulation : CRM en lecture seule (ombre), aucun gabarit appris ni appel IA noté, rien d'enregistré — on rend le dossier */
+const traiterMail = async (mailId, { forcerOmbre = false, actualiserConsentement = false, simulation = false } = {}) => {
   const api = flowApi();
   if (!api) throw new Error("dysizz-flow 2.4 ou plus récent est nécessaire");
   const Table = require("@saltcorn/data/models/table");
@@ -84,11 +85,12 @@ const traiterMail = async (mailId, { forcerOmbre = false, actualiserConsentement
   if (!mail) throw new Error("mail introuvable");
   const { conf, crm, reglages: R } = await charger();
   if (actualiserConsentement) conf.consentement = { ...conf.consentement, actualiser_motif: true };
-  const mode = forcerOmbre ? "ombre" : crm.mode;
+  const mode = forcerOmbre || simulation ? "ombre" : crm.mode;
   const client = await avecCatalogue(api.crmDepuisCoffre(crm.type, crm.reglages, crm.prefixe, mode));
   const m = versMoteur(mail);
   return api.verrou.sous(cleVerrou(api, m, conf, mail.id), async () => {
-    const lecture = await G.optionsLecture(api).catch(() => ({}));
+    let lecture = await G.optionsLecture(api).catch(() => ({}));
+    if (simulation) lecture = { ...lecture, noter: undefined, gabarits: lecture.gabarits && { ...lecture.gabarits, creer: async (g) => ({ ...g, id: "simulation" }), maj: async () => {} } };
     const d = await api.leads.traiter(m, client, conf, { dossiers: { trouver: fil.trouver }, ...lecture });
 
     if (d.dossier && d.portail)
@@ -96,6 +98,7 @@ const traiterMail = async (mailId, { forcerOmbre = false, actualiserConsentement
 
     d.execution = { ...(await api.leads.executer(d, client, { mode, ecrireAVerifier: R && R.crm_a_verifier === true })), mode };
     if (client.notees) d.execution.ecritures_notees = client.notees.map(sansCommentaire);
+    if (simulation) return { id: null, dossier_id: null, statut: d.statut, dossier: d, simulation: true };
     /* un mail « à trier » ne crée pas de dossier ; il peut en compléter un */
     const garder = d.dossier && !(d.statut === "a_trier" && !d.dossier.existant);
     const dossierId = garder ? await fil.enregistrer(api)(d, d.execution, new Date(mail.date_envoi || Date.now()), mail.id) : null;
