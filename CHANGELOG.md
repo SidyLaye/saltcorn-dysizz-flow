@@ -1,5 +1,15 @@
 # Journal des versions
 
+## 2.15.2
+
+### Corrigé
+- Un lead devenu « prêt » après une reprise (écriture CRM reprise, relecture IA du lendemain, fiche par téléphone…)
+  n'était jamais envoyé : les reprises n'envoient rien. « Leads : reprises et entretien » envoie maintenant, une seule
+  fois, les leads prêts des N derniers jours (3 par défaut) dont aucun destinataire n'a été servi, avec la même clé que
+  l'envoi normal (jamais de doublon). Les leads repris de l'ancien système sont écartés. Test :
+  `tests/envoi-devenus-prets.test.cjs`. Branché sur la reprise horaire « Leads : reprendre les échecs CRM récents »
+  (celle qui tourne en production), qui réessaie aussi désormais les envois en échec.
+
 ## 2.15.1
 
 ### Corrigé

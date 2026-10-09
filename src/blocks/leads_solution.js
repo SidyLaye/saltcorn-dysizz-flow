@@ -250,12 +250,18 @@ module.exports = [
   {
     name: "dzf_leads_reprendre_crm", label: "Leads : reprendre les échecs CRM récents", category: CAT,
     icon: "fas fa-redo", output: "reprise_crm", timeout: 60,
-    description: "Reprise horaire en arrière-plan des erreurs CRM confirmées, avec rotation de 25 dossiers. Aucun e-mail ni nouvelle tentative d'écriture ambiguë.",
-    params: [P_PREFIXE],
+    description: "Reprise horaire en arrière-plan des erreurs CRM confirmées, avec rotation de 25 dossiers, sans nouvelle tentative d'écriture ambiguë. Puis envoi, une seule fois, des leads devenus prêts après une reprise et jamais envoyés (N derniers jours), et nouvel essai des envois en échec.",
+    params: [P_PREFIXE, { name: "jours_envoi", label: "Leads devenus prêts : envoyer ceux des N derniers jours (0 = jamais)", type: "int", default: 3 }],
     run: async (p, ctx = {}) => dans(p, () => require("../lib/arriere_plan").enFond(p, ctx,
       "dzf_leads_reprendre_crm", "reprise-crm-automatique.json", async () => {
-        const rapport = await require("../lib/leads/tables/taches").reprendreCrm();
-        if (rapport.candidats) {
+        const T = require("../lib/leads/tables/taches");
+        const rapport = await T.reprendreCrm();
+        /* les reprises n'envoient rien : un lead devenu prêt part ici (une seule fois, même clé que l'envoi normal) */
+        const jours = p.jours_envoi === undefined || p.jours_envoi === "" ? 3 : +p.jours_envoi;
+        if (jours > 0) { rapport.envois = await T.envoyerDevenusPrets({ jours }); rapport.emails_envoyes = rapport.envois.leads_envoyes.length; }
+        /* envois en échec (serveur indisponible…) : réessayés, abandon après 5 essais ou une erreur définitive */
+        rapport.envois_en_echec = await require("../lib/envois").reprendre(50);
+        if (rapport.candidats || (rapport.envois && rapport.envois.a_envoyer) || rapport.envois_en_echec.repris) {
           const File = require("@saltcorn/data/models/file");
           await File.from_contents("reprise-crm-automatique.json", "application/json", JSON.stringify(rapport,null,1), ctx.user && ctx.user.id, 1);
         }
@@ -286,11 +292,14 @@ module.exports = [
   },
   {
     name: "dzf_leads_entretien", label: "Leads : reprises et entretien", category: CAT, icon: "fas fa-broom", output: "entretien", timeout: 600,
-    description: "Retraite les mails restés sans lead (panne, redémarrage), relit ceux laissés de côté faute de budget d'IA, efface le texte des vieux mails (durée de conservation réglée). À mettre dans un workflow horaire.",
-    params: [P_PREFIXE],
+    description: "Retraite les mails restés sans lead (panne, redémarrage), relit ceux laissés de côté faute de budget d'IA, envoie les leads devenus prêts après une reprise et jamais envoyés (une seule fois), efface le texte des vieux mails (durée de conservation réglée). À mettre dans un workflow horaire.",
+    params: [P_PREFIXE, { name: "jours_envoi", label: "Leads devenus prêts : envoyer ceux des N derniers jours", type: "int", default: 3 }],
     run: async (p) => dans(p, async () => {
       const T = require("../lib/leads/tables/taches");
-      return { mails: await T.reprendreMails(), crm: await T.reprendreCrm(), ia: await T.relireIA(), conservation: await T.retention() };
+      const r = { mails: await T.reprendreMails(), crm: await T.reprendreCrm(), ia: await T.relireIA() };
+      r.envois = await T.envoyerDevenusPrets({ jours: +p.jours_envoi || 3 });
+      r.conservation = await T.retention();
+      return r;
     }),
   },
 ];

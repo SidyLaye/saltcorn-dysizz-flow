@@ -1,4 +1,4 @@
-/* dysizz-flow 2.15.1 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.15.2 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.15.1" : "dev";
+    var VERSION2 = true ? "2.15.2" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -100258,7 +100258,32 @@ var require_taches = __commonJS({
       }
       return rapport;
     };
-    module2.exports = { reprendreMails, reprendreCrm, relireIA, retention };
+    var envoyerDevenusPrets = async ({ jours = 3, limite = 50 } = {}) => {
+      const p = require_schema().prefixe(), cle = p + "lead-";
+      const rows = (await db().query(`select l.id, l.mail_id, l.dossier from "${S()}"."${nom("leads")}" l
+    where l.statut = 'pret' and l.recu_le > now() - ($1::text || ' days')::interval and l.traite_le < now() - interval '10 minutes'
+      and coalesce(l.motifs, '') not like '%ancien syst\xE8me%'
+      and not exists (select 1 from "${S()}"."dzf_envois" e where e.cle like $2::text || l.id || ':%' and e.cle not like $2::text || l.id || ':non-automatise:%')
+    order by l.id limit ${Math.max(1, Math.min(+limite || 50, 200))}`, [String(Math.max(1, +jours || 3)), cle])).rows;
+      const out = { a_envoyer: rows.length, leads_envoyes: [], sans_destinataire: [], erreurs: [] };
+      for (const r of rows) {
+        try {
+          const d = typeof r.dossier === "string" ? JSON.parse(r.dossier) : r.dossier || {};
+          d.mail_id = d.mail_id || r.mail_id;
+          const m = await require_envoi().messages(d, { id: r.id, mail_id: r.mail_id });
+          if (!m.liste.length) {
+            out.sans_destinataire.push({ lead_id: r.id, raison: m.raison });
+            continue;
+          }
+          const b = await require_envois().envoyer(m.liste, { simuler: m.simuler });
+          out.leads_envoyes.push({ lead_id: r.id, bilan: b.resume });
+        } catch (e) {
+          out.erreurs.push({ lead_id: r.id, erreur: String(e.message || e).slice(0, 220) });
+        }
+      }
+      return out;
+    };
+    module2.exports = { reprendreMails, reprendreCrm, relireIA, retention, envoyerDevenusPrets };
   }
 });
 
@@ -100654,16 +100679,23 @@ var require_leads_solution = __commonJS({
         icon: "fas fa-redo",
         output: "reprise_crm",
         timeout: 60,
-        description: "Reprise horaire en arri\xE8re-plan des erreurs CRM confirm\xE9es, avec rotation de 25 dossiers. Aucun e-mail ni nouvelle tentative d'\xE9criture ambigu\xEB.",
-        params: [P_PREFIXE],
+        description: "Reprise horaire en arri\xE8re-plan des erreurs CRM confirm\xE9es, avec rotation de 25 dossiers, sans nouvelle tentative d'\xE9criture ambigu\xEB. Puis envoi, une seule fois, des leads devenus pr\xEAts apr\xE8s une reprise et jamais envoy\xE9s (N derniers jours), et nouvel essai des envois en \xE9chec.",
+        params: [P_PREFIXE, { name: "jours_envoi", label: "Leads devenus pr\xEAts : envoyer ceux des N derniers jours (0 = jamais)", type: "int", default: 3 }],
         run: async (p, ctx = {}) => dans(p, () => require_arriere_plan().enFond(
           p,
           ctx,
           "dzf_leads_reprendre_crm",
           "reprise-crm-automatique.json",
           async () => {
-            const rapport = await require_taches().reprendreCrm();
-            if (rapport.candidats) {
+            const T = require_taches();
+            const rapport = await T.reprendreCrm();
+            const jours = p.jours_envoi === void 0 || p.jours_envoi === "" ? 3 : +p.jours_envoi;
+            if (jours > 0) {
+              rapport.envois = await T.envoyerDevenusPrets({ jours });
+              rapport.emails_envoyes = rapport.envois.leads_envoyes.length;
+            }
+            rapport.envois_en_echec = await require_envois().reprendre(50);
+            if (rapport.candidats || rapport.envois && rapport.envois.a_envoyer || rapport.envois_en_echec.repris) {
               const File = require("@saltcorn/data/models/file");
               await File.from_contents("reprise-crm-automatique.json", "application/json", JSON.stringify(rapport, null, 1), ctx.user && ctx.user.id, 1);
             }
@@ -100707,11 +100739,14 @@ var require_leads_solution = __commonJS({
         icon: "fas fa-broom",
         output: "entretien",
         timeout: 600,
-        description: "Retraite les mails rest\xE9s sans lead (panne, red\xE9marrage), relit ceux laiss\xE9s de c\xF4t\xE9 faute de budget d'IA, efface le texte des vieux mails (dur\xE9e de conservation r\xE9gl\xE9e). \xC0 mettre dans un workflow horaire.",
-        params: [P_PREFIXE],
+        description: "Retraite les mails rest\xE9s sans lead (panne, red\xE9marrage), relit ceux laiss\xE9s de c\xF4t\xE9 faute de budget d'IA, envoie les leads devenus pr\xEAts apr\xE8s une reprise et jamais envoy\xE9s (une seule fois), efface le texte des vieux mails (dur\xE9e de conservation r\xE9gl\xE9e). \xC0 mettre dans un workflow horaire.",
+        params: [P_PREFIXE, { name: "jours_envoi", label: "Leads devenus pr\xEAts : envoyer ceux des N derniers jours", type: "int", default: 3 }],
         run: async (p) => dans(p, async () => {
           const T = require_taches();
-          return { mails: await T.reprendreMails(), crm: await T.reprendreCrm(), ia: await T.relireIA(), conservation: await T.retention() };
+          const r = { mails: await T.reprendreMails(), crm: await T.reprendreCrm(), ia: await T.relireIA() };
+          r.envois = await T.envoyerDevenusPrets({ jours: +p.jours_envoi || 3 });
+          r.conservation = await T.retention();
+          return r;
         })
       }
     ];

@@ -65,4 +65,29 @@ const reprendreCrm = async () => {
   return rapport;
 };
 
-module.exports = { reprendreMails, reprendreCrm, relireIA, retention };
+/* Leads devenus « prêts » après une reprise (écriture CRM reprise, lecture IA du lendemain, fiche par téléphone…) :
+   ces reprises n'envoient rien. Un lead prêt dont AUCUN destinataire n'a encore été servi part ici, une seule fois,
+   avec la même clé que l'envoi normal (lead + destinataire) : jamais de doublon. Fenêtre courte (jours) : un vieux
+   lead n'est pas renvoyé en silence ; pour un rattrapage plus ancien, élargir la fenêtre volontairement. */
+const envoyerDevenusPrets = async ({ jours = 3, limite = 50 } = {}) => {
+  const p = require("./schema").prefixe(), cle = p + "lead-";
+  const rows = (await db().query(`select l.id, l.mail_id, l.dossier from "${S()}"."${nom("leads")}" l
+    where l.statut = 'pret' and l.recu_le > now() - ($1::text || ' days')::interval and l.traite_le < now() - interval '10 minutes'
+      and coalesce(l.motifs, '') not like '%ancien système%'
+      and not exists (select 1 from "${S()}"."dzf_envois" e where e.cle like $2::text || l.id || ':%' and e.cle not like $2::text || l.id || ':non-automatise:%')
+    order by l.id limit ${Math.max(1, Math.min(+limite || 50, 200))}`, [String(Math.max(1, +jours || 3)), cle])).rows;
+  const out = { a_envoyer: rows.length, leads_envoyes: [], sans_destinataire: [], erreurs: [] };
+  for (const r of rows) {
+    try {
+      const d = typeof r.dossier === "string" ? JSON.parse(r.dossier) : r.dossier || {};
+      d.mail_id = d.mail_id || r.mail_id;
+      const m = await require("./envoi").messages(d, { id: r.id, mail_id: r.mail_id });
+      if (!m.liste.length) { out.sans_destinataire.push({ lead_id: r.id, raison: m.raison }); continue; }
+      const b = await require("../../envois").envoyer(m.liste, { simuler: m.simuler });
+      out.leads_envoyes.push({ lead_id: r.id, bilan: b.resume });
+    } catch (e) { out.erreurs.push({ lead_id: r.id, erreur: String(e.message || e).slice(0, 220) }); }
+  }
+  return out;
+};
+
+module.exports = { reprendreMails, reprendreCrm, relireIA, retention, envoyerDevenusPrets };
