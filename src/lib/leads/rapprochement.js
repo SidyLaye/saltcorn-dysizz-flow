@@ -38,14 +38,16 @@ const comparer = (mail = {}, bien = {}, regles = REGLES) => {
   if (mail.pieces && +bien.pieces > 0) note("pieces", +mail.pieces === +bien.pieces, Math.abs(mail.pieces - bien.pieces) >= 2);
   /* Lieu : un portail au lieu approximatif ne contredit jamais ; il peut seulement confirmer. */
   const approx = !!mail.lieu_approche;
-  if (mail.code_postal && bien.code_postal) {
-    const ok = String(mail.code_postal) === String(bien.code_postal), ko = String(mail.code_postal).slice(0, 2) !== String(bien.code_postal).slice(0, 2);
+  /* code postal affiché sur l'annonce ou code postal réel du bien : l'un ou l'autre confirme */
+  const cps = [bien.code_postal, bien.code_postal_reel].filter(Boolean).map(String);
+  if (mail.code_postal && cps.length) {
+    const ok = cps.includes(String(mail.code_postal)), ko = cps.every((c) => c.slice(0, 2) !== String(mail.code_postal).slice(0, 2));
     if (ok || !approx) note("code_postal", ok, ko && !approx); if (!ok && approx) out.legers.push("code_postal");
-  } else if (mail.departement && bien.code_postal) {
-    const ok = String(bien.code_postal).startsWith(mail.departement);
+  } else if (mail.departement && cps.length) {
+    const ok = cps.some((c) => c.startsWith(mail.departement));
     if (ok || !approx) note("departement", ok, !ok && !approx); if (!ok && approx) out.legers.push("departement");
   }
-  if (mail.ville && bien.ville) { const ok = memeVille(mail.ville, bien.ville); if (ok || !approx) { note("ville", ok, false); if (!ok) out.legers.push("ville"); } else out.legers.push("ville"); }
+  if (mail.ville && bien.ville) { const ok = !!(memeVille(mail.ville, bien.ville) || memeVille(mail.ville, bien.ville_reelle)); if (ok || !approx) { note("ville", ok, false); if (!ok) out.legers.push("ville"); } else out.legers.push("ville"); }
   if (mail.type && bien.type) { const ok = mail.type === bien.type; note("type", ok, false); if (!ok) out.legers.push("type"); }
   return out;
 };

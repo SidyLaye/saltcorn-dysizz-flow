@@ -142,6 +142,8 @@ const creer = (cfg = {}) => {
       type: typeBien(lab.typebien || v.typebien || (p.category && (p.category.name || p.category.label)) || ""),
       ville: v.villeweb || v.ville_web || v.ville || null,
       code_postal: (String(v.codepostalweb || v.cpvilleweb || v.codepostal || v.cpville || "").match(/\d{5}/) || [])[0] || null,
+      /* adresse réelle, quand l'annonce affiche une commune voisine : un mail peut citer l'une ou l'autre */
+      ville_reelle: v.ville || null, code_postal_reel: (String(v.codepostal || v.cpville || "").match(/\d{5}/) || [])[0] || null,
       negociateur_id: a.id ?? a.user_id ?? p.userId ?? p.user_id ?? null, proprietaire_id: p.customers_id ?? p.customer_id ?? (p.customer && p.customer.id) ?? null, agence_id: p.agencyId ?? p.agency_id ?? (p.agency && p.agency.id) ?? null,
     };
   };

@@ -411,7 +411,7 @@ const controleLecture = (d) => {
   if (+b.prix && !nombres.includes(String(Math.round(+b.prix)))) absent.push(`prix « ${b.prix} »`);
   if (absent.length) return "valeur lue absente du mail : " + absent.join(", ");
   if (+b.prix && +bien.prix && Math.abs(+b.prix - +bien.prix) > Math.max(1, +bien.prix * 0.005)) return `prix du mail ${(+b.prix).toLocaleString("fr-FR")} € ≠ prix du bien ${(+bien.prix).toLocaleString("fr-FR")} €`;
-  if (b.code_postal && bien.code_postal && String(b.code_postal) !== String(bien.code_postal)) return `code postal du mail ${b.code_postal} ≠ code postal du bien ${bien.code_postal}`;
+  if (b.code_postal && bien.code_postal && ![bien.code_postal, bien.code_postal_reel].map(String).includes(String(b.code_postal))) return `code postal du mail ${b.code_postal} ≠ code postal du bien ${bien.code_postal}`;
   return null;
 };
 const validerLecture = (d) => {

@@ -1,5 +1,13 @@
 # Journal des versions
 
+## 2.15.7
+
+### Corrigé
+- Immofacile : un bien dont l'annonce affiche une commune voisine a deux codes postaux (le réel et celui
+  « internet »). Seul celui d'internet était comparé : un mail citant le code postal réel était rejeté
+  (« bien trouvé mais contredit par le mail »). Les deux sont maintenant acceptés, pour le code postal comme
+  pour la ville ; un autre département que les deux reste une contradiction.
+
 ## 2.15.6
 
 ### Corrigé

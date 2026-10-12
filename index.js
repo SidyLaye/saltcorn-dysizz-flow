@@ -1,4 +1,4 @@
-/* dysizz-flow 2.15.6 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.15.7 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.15.6" : "dev";
+    var VERSION2 = true ? "2.15.7" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -93929,17 +93929,18 @@ var require_rapprochement = __commonJS({
       }
       if (mail.pieces && +bien.pieces > 0) note("pieces", +mail.pieces === +bien.pieces, Math.abs(mail.pieces - bien.pieces) >= 2);
       const approx = !!mail.lieu_approche;
-      if (mail.code_postal && bien.code_postal) {
-        const ok = String(mail.code_postal) === String(bien.code_postal), ko = String(mail.code_postal).slice(0, 2) !== String(bien.code_postal).slice(0, 2);
+      const cps = [bien.code_postal, bien.code_postal_reel].filter(Boolean).map(String);
+      if (mail.code_postal && cps.length) {
+        const ok = cps.includes(String(mail.code_postal)), ko = cps.every((c) => c.slice(0, 2) !== String(mail.code_postal).slice(0, 2));
         if (ok || !approx) note("code_postal", ok, ko && !approx);
         if (!ok && approx) out.legers.push("code_postal");
-      } else if (mail.departement && bien.code_postal) {
-        const ok = String(bien.code_postal).startsWith(mail.departement);
+      } else if (mail.departement && cps.length) {
+        const ok = cps.some((c) => c.startsWith(mail.departement));
         if (ok || !approx) note("departement", ok, !ok && !approx);
         if (!ok && approx) out.legers.push("departement");
       }
       if (mail.ville && bien.ville) {
-        const ok = memeVille(mail.ville, bien.ville);
+        const ok = !!(memeVille(mail.ville, bien.ville) || memeVille(mail.ville, bien.ville_reelle));
         if (ok || !approx) {
           note("ville", ok, false);
           if (!ok) out.legers.push("ville");
@@ -95643,7 +95644,7 @@ var require_traiter = __commonJS({
       if (+b.prix && !nombres.includes(String(Math.round(+b.prix)))) absent.push(`prix \xAB ${b.prix} \xBB`);
       if (absent.length) return "valeur lue absente du mail : " + absent.join(", ");
       if (+b.prix && +bien.prix && Math.abs(+b.prix - +bien.prix) > Math.max(1, +bien.prix * 5e-3)) return `prix du mail ${(+b.prix).toLocaleString("fr-FR")} \u20AC \u2260 prix du bien ${(+bien.prix).toLocaleString("fr-FR")} \u20AC`;
-      if (b.code_postal && bien.code_postal && String(b.code_postal) !== String(bien.code_postal)) return `code postal du mail ${b.code_postal} \u2260 code postal du bien ${bien.code_postal}`;
+      if (b.code_postal && bien.code_postal && ![bien.code_postal, bien.code_postal_reel].map(String).includes(String(b.code_postal))) return `code postal du mail ${b.code_postal} \u2260 code postal du bien ${bien.code_postal}`;
       return null;
     };
     var validerLecture = (d) => {
@@ -96031,6 +96032,9 @@ var require_immofacile = __commonJS({
           type: typeBien(lab.typebien || v.typebien || p.category && (p.category.name || p.category.label) || ""),
           ville: v.villeweb || v.ville_web || v.ville || null,
           code_postal: (String(v.codepostalweb || v.cpvilleweb || v.codepostal || v.cpville || "").match(/\d{5}/) || [])[0] || null,
+          /* adresse réelle, quand l'annonce affiche une commune voisine : un mail peut citer l'une ou l'autre */
+          ville_reelle: v.ville || null,
+          code_postal_reel: (String(v.codepostal || v.cpville || "").match(/\d{5}/) || [])[0] || null,
           negociateur_id: a.id ?? a.user_id ?? p.userId ?? p.user_id ?? null,
           proprietaire_id: p.customers_id ?? p.customer_id ?? (p.customer && p.customer.id) ?? null,
           agence_id: p.agencyId ?? p.agency_id ?? (p.agency && p.agency.id) ?? null

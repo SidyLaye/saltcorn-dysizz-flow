@@ -63,5 +63,14 @@ const fin = (d) => T.etapeDestinataires(d, { etapes: { notification: false } });
   assert.ok(!r.bien, "bien déjà retenu mais prix du mail différent : refusé");
   r = await rapprocher({ bien: { reference: "64000000001" } }, crm2, { sansCriteres: true, bienConnu: "60000001" });
   assert.ok(!r.bien, "bien déjà retenu sans aucun fait pour confirmer : refusé");
+  /* 9. annonce affichée dans la commune voisine : le code postal réel du bien, cité par le mail, confirme aussi */
+  const crm3 = { bienParId: async () => null, biensParCriteres: async () => [],
+    biensParReference: async (ref) => (ref === "40002-EXCL" ? [{ id: 60000002, reference: "40002-EXCL", ville: "VILLE AFFICHEE", code_postal: "92100", ville_reelle: "VILLE REELLE", code_postal_reel: "75001" }] : []) };
+  r = await rapprocher({ bien: { reference: "40002", code_postal: "75001", ville: "Ville Reelle" } }, crm3, { sansCriteres: true });
+  assert.strictEqual(r.bien && r.bien.id, 60000002, "code postal réel accepté");
+  r = await rapprocher({ bien: { reference: "40002", code_postal: "92100" } }, crm3, { sansCriteres: true });
+  assert.strictEqual(r.bien && r.bien.id, 60000002, "code postal affiché toujours accepté");
+  r = await rapprocher({ bien: { reference: "40002", code_postal: "33000" } }, crm3, { sansCriteres: true });
+  assert.ok(!r.bien, "autre département que les deux codes postaux : refusé");
   console.log("validation automatique de la lecture OK : valeurs ancrées dans le mail, prix et code postal du bien, négociateur, autre doute ; référence + suffixe -EXCL confirmée par un fait");
 })().catch((e) => { console.error(e); process.exit(1); });
