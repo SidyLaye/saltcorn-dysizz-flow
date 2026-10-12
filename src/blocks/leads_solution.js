@@ -256,12 +256,14 @@ module.exports = [
       "dzf_leads_reprendre_crm", "reprise-crm-automatique.json", async () => {
         const T = require("../lib/leads/tables/taches");
         const rapport = await T.reprendreCrm();
+        /* mails restés sans lead (traitement interrompu : verrou, CRM trop lent, rafale) : retraités, 7 derniers jours */
+        rapport.mails_sans_lead = await T.reprendreMails(40).catch((e) => ({ erreur: String(e.message || e).slice(0, 200) }));
         /* les reprises n'envoient rien : un lead devenu prêt part ici (une seule fois, même clé que l'envoi normal) */
         const jours = p.jours_envoi === undefined || p.jours_envoi === "" ? 3 : +p.jours_envoi;
         if (jours > 0) { rapport.envois = await T.envoyerDevenusPrets({ jours }); rapport.emails_envoyes = rapport.envois.leads_envoyes.length; }
         /* envois en échec (serveur indisponible…) : réessayés, abandon après 5 essais ou une erreur définitive */
         rapport.envois_en_echec = await require("../lib/envois").reprendre(50);
-        if (rapport.candidats || (rapport.envois && rapport.envois.a_envoyer) || rapport.envois_en_echec.repris) {
+        if (rapport.candidats || (rapport.envois && rapport.envois.a_envoyer) || rapport.envois_en_echec.repris || rapport.mails_sans_lead.a_reprendre) {
           const File = require("@saltcorn/data/models/file");
           await File.from_contents("reprise-crm-automatique.json", "application/json", JSON.stringify(rapport,null,1), ctx.user && ctx.user.id, 1);
         }
@@ -269,16 +271,25 @@ module.exports = [
       })),
   },
   {
-    name: "dzf_leads_rattraper", label: "Leads : rattraper des leads précis (CRM + envoi)", category: CAT,
-    icon: "fas fa-life-ring", output: "rattrapage", timeout: 900,
-    description: "Retraite des leads choisis avec la version actuelle. « simuler » : lecture seule, rien n'est écrit dans le CRM, rien n'est enregistré ni envoyé ; le rapport dit ce qui serait fait. « appliquer » : retraitement réel puis envoi une seule fois aux destinataires (un destinataire déjà servi ne reçoit rien). Rapport dans Fichiers.",
-    params: [P_PREFIXE, { name: "leads", label: "Numéros des leads (séparés par des virgules)", required: true },
-      { name: "mode", label: "Mode", type: "select", options: ["simuler", "appliquer"], default: "simuler" }],
+    name: "dzf_leads_rattraper", label: "Leads : rattraper des leads (CRM + envoi)", category: CAT,
+    icon: "fas fa-life-ring", output: "rattrapage", timeout: 60,
+    description: "Retraite des leads avec la version actuelle. Sans numéros : cherche lui-même, depuis la date, les mails jamais traités, les leads complets bloqués par la seule lecture, les références à suffixe du CRM et les leads prêts jamais envoyés. « simuler » : lecture seule, rien n'est écrit dans le CRM, rien n'est enregistré ni envoyé ; le rapport dit ce qui serait fait. « appliquer » : retraitement réel puis envoi une seule fois aux destinataires (un destinataire déjà servi ne reçoit rien). En arrière-plan, rapport dans Fichiers.",
+    params: [P_PREFIXE, { name: "mode", label: "Mode", type: "select", options: ["simuler", "appliquer"], default: "simuler" },
+      { name: "depuis", label: "Recherche automatique depuis (date)", default: "", help: "Ex. 2026-10-01. Utilisé si « Numéros des leads » est vide." },
+      { name: "leads", label: "…ou numéros des leads (séparés par des virgules)", default: "" },
+      { name: "sauf", label: "Leads à laisser de côté (numéros)", default: "", help: "Doublons transférés, cas à traiter à la main…" }],
     run: async (p, ctx = {}) => dans(p, async () => {
-      const r = await require("../lib/leads/tables/rattrapage").rattraper(p.leads, p.mode === "appliquer" ? "appliquer" : "simuler");
-      const File = require("@saltcorn/data/models/file");
-      await File.from_contents(`rattrapage-leads-${r.mode}.json`, "application/json", JSON.stringify(r, null, 1), ctx.user && ctx.user.id, 1).catch(() => null);
-      return r;
+      const R = require("../lib/leads/tables/rattrapage");
+      const mode = p.mode === "appliquer" ? "appliquer" : "simuler", fichier = `rattrapage-leads-${mode}.json`;
+      if (!String(p.leads || "").trim() && !String(p.depuis || "").trim()) throw new Error("donner une date « depuis » ou des numéros de leads");
+      return require("../lib/arriere_plan").enFond(p, ctx, "dzf_leads_rattraper", fichier, async (suivi) => {
+        const exclus = new Set(R.ids(p.sauf));
+        const cible = String(p.leads || "").trim() ? { leads: R.ids(p.leads).filter((id) => !exclus.has(id)), mails: [] } : await R.trouver({ depuis: p.depuis, sauf: p.sauf });
+        const r = { trouves: { mails_jamais_traites: cible.mails.length, leads: cible.leads.length }, ...(await R.rattraper(cible.leads, mode, { mails: cible.mails, suivi })) };
+        const File = require("@saltcorn/data/models/file");
+        await File.from_contents(fichier, "application/json", JSON.stringify(r, null, 1), ctx.user && ctx.user.id, 1);
+        return { fichier, ...r };
+      });
     }),
   },
   {

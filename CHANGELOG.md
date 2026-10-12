@@ -1,5 +1,18 @@
 # Journal des versions
 
+## 2.15.4
+
+### Corrigé
+- Mails restés sans lead (traitement interrompu : verrou, CRM trop lent, arrivée en rafale) : rien ne les reprenait
+  quand le workflow « chaque heure » n'est pas installé. La reprise horaire « Leads : reprendre les échecs CRM
+  récents » les retraite maintenant (7 derniers jours, 40 par passe).
+
+### Ajouté
+- « Leads : rattraper des leads (CRM + envoi) » : sans numéros, cherche lui-même depuis une date les mails jamais
+  traités, les leads complets bloqués par la seule lecture, les références à suffixe du CRM et les leads prêts jamais
+  envoyés ; « leads à laisser de côté » ; tourne en arrière-plan (rapport dans Fichiers). Requêtes vérifiées sur
+  PostgreSQL 16.
+
 ## 2.15.3
 
 ### Ajouté

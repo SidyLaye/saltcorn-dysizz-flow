@@ -1,4 +1,4 @@
-/* dysizz-flow 2.15.3 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.15.4 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.15.3" : "dev";
+    var VERSION2 = true ? "2.15.4" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -100295,39 +100295,68 @@ var require_rattrapage = __commonJS({
   "src/lib/leads/tables/rattrapage.js"(exports2, module2) {
     "use strict";
     var ids = (v) => [...new Set(String(v || "").split(/[^0-9]+/).filter(Boolean).map(Number))];
-    var resume = (l, r) => {
+    var db = () => require("@saltcorn/data/db");
+    var trouver = async ({ depuis, sauf = [] } = {}) => {
+      const { nom, prefixe } = require_schema();
+      const S = db().getTenantSchema(), d = new Date(depuis);
+      if (isNaN(d)) throw new Error("date \xAB depuis \xBB invalide (ex. 2026-10-01)");
+      const exclus = new Set(ids(sauf));
+      const mails = (await db().query(`select m.id from "${S}"."${nom("mails")}" m where m.recu_le >= $1 and m.recu_le < now() - interval '10 minutes'
+    and not exists (select 1 from "${S}"."${nom("leads")}" l where l.mail_id = m.id) order by m.id`, [d])).rows.map((r) => Number(r.id));
+      const leads = (await db().query(`select l.id from "${S}"."${nom("leads")}" l where l.recu_le >= $1 and l.traite_le < now() - interval '10 minutes'
+    and not exists (select 1 from "${S}"."dzf_envois" e where e.cle like $2::text || l.id || ':%' and e.cle not like $2::text || l.id || ':non-automatise:%')
+    and ( (l.statut = 'pret' and coalesce(l.motifs, '') not like '%ancien syst\xE8me%')
+       or (l.statut in ('a_verifier', 'a_trier') and coalesce(l.bien_crm, '') <> '' and coalesce(l.negociateur, '') <> ''
+           and l.motifs ~ '(compl\xE9t\xE9 par l''IA|lu par les r\xE8gles g\xE9n\xE9rales|gabarit pas encore assez confirm\xE9)' and l.motifs not like '% \xB7 %')
+       or (l.statut in ('a_verifier', 'a_trier') and coalesce(l.bien_crm, '') = '' and l.reference ~ '^[A-Za-z0-9]{2,10}$' and l.motifs like '%r\xE9f\xE9rence introuvable%') )
+    order by l.id`, [d, prefixe() + "lead-"])).rows.map((r) => Number(r.id)).filter((id) => !exclus.has(id));
+      return { mails, leads };
+    };
+    var resume = (avant, r) => {
       const d = r.dossier || {}, ex = d.execution || {};
       return {
-        lead: l.id,
-        statut_avant: l.statut,
+        ...avant,
         statut_apres: r.statut,
         motifs: d.motifs || [],
         alertes: (d.alertes || []).slice(0, 4),
+        contact: [d.extraction && d.extraction.contact && [d.extraction.contact.prenom, d.extraction.contact.nom].filter(Boolean).join(" "), d.contact && d.contact.action].filter(Boolean).join(" \xB7 "),
         bien: d.bien ? `${d.bien.reference || ""} (${d.bien.id})` : null,
         negociateur: d.negociateur || null,
         destinataires: (d.destinataires && d.destinataires.liste || []).map((x) => x.email),
-        crm: (ex.resultats || []).map((x) => `${x.op}${x.fait ? " \u2713" : x.ignore ? " (sans objet)" : ex.non_automatise ? " (non automatis\xE9)" : x.mode === "ombre" || x.mode ? " (pr\xE9vu)" : " \u2717"}${x.erreur ? " : " + String(x.erreur).slice(0, 80) : ""}`)
+        crm: (ex.resultats || []).map((x) => `${x.op}${x.fait ? " \u2713" : x.ignore ? " (sans objet)" : ex.non_automatise ? " (non automatis\xE9)" : x.mode && x.mode !== "reel" ? " (pr\xE9vu)" : " \u2717"}${x.erreur ? " : " + String(x.erreur).slice(0, 80) : ""}`)
       };
     };
-    var rattraper = async (liste, mode = "simuler") => {
+    var rattraper = async (liste, mode = "simuler", { mails = [], suivi = null } = {}) => {
       const { tables } = require_schema();
       const t = await tables();
       const appliquer = mode === "appliquer";
-      const out = { mode, leads: [], envoyes: 0, encore_bloques: 0, erreurs: [] };
-      for (const id of ids(liste)) {
+      const out = { mode, leads: [], prets: 0, envoyes: 0, encore_bloques: 0, erreurs: [] };
+      const travaux = [...ids(mails).map((id) => ({ mail: id })), ...ids(liste).map((id) => ({ lead: id }))];
+      if (suivi) {
+        suivi.etape = appliquer ? "rattrapage" : "simulation";
+        suivi.total = travaux.length;
+      }
+      for (const w of travaux) {
         try {
-          const l = await t.leads.getRow({ id });
-          if (!l || !l.mail_id) {
-            out.erreurs.push({ lead: id, erreur: "lead ou mail introuvable" });
-            continue;
+          let mailId = w.mail, avant = { mail: w.mail, statut_avant: "(jamais trait\xE9)" };
+          if (w.lead) {
+            const l = await t.leads.getRow({ id: w.lead });
+            if (!l || !l.mail_id) {
+              out.erreurs.push({ lead: w.lead, erreur: "lead ou mail introuvable" });
+              continue;
+            }
+            mailId = l.mail_id;
+            avant = { lead: l.id, statut_avant: l.statut };
           }
-          const r = await require_dossier().traiterMail(l.mail_id, { simulation: !appliquer });
-          const x = resume(l, r);
-          if (r.statut !== "pret") out.encore_bloques++;
+          const r = await require_dossier().traiterMail(mailId, { simulation: !appliquer });
+          const x = resume(avant, r);
+          if (r.id) x.lead = r.id;
+          if (r.statut === "pret") out.prets++;
+          else if (!["ignore", "alerte", "suivi"].includes(r.statut)) out.encore_bloques++;
           if (appliquer && r.statut === "pret") {
             const d = r.dossier;
-            d.mail_id = d.mail_id || l.mail_id;
-            const m = await require_envoi().messages(d, { id: r.id || l.id, mail_id: l.mail_id });
+            d.mail_id = d.mail_id || mailId;
+            const m = await require_envoi().messages(d, { id: r.id || w.lead, mail_id: mailId });
             if (m.liste.length) {
               const b = await require_envois().envoyer(m.liste, { simuler: m.simuler });
               x.envoi = b.resume;
@@ -100336,12 +100365,13 @@ var require_rattrapage = __commonJS({
           } else if (!appliquer) x.envoi = r.statut === "pret" ? "serait envoy\xE9" : "ne serait pas envoy\xE9";
           out.leads.push(x);
         } catch (e) {
-          out.erreurs.push({ lead: id, erreur: String(e.message || e).slice(0, 220) });
+          out.erreurs.push({ ...w, erreur: String(e.message || e).slice(0, 220) });
         }
+        if (suivi) suivi.fait++;
       }
       return out;
     };
-    module2.exports = { rattraper, ids };
+    module2.exports = { rattraper, trouver, ids };
   }
 });
 
@@ -100747,13 +100777,14 @@ var require_leads_solution = __commonJS({
           async () => {
             const T = require_taches();
             const rapport = await T.reprendreCrm();
+            rapport.mails_sans_lead = await T.reprendreMails(40).catch((e) => ({ erreur: String(e.message || e).slice(0, 200) }));
             const jours = p.jours_envoi === void 0 || p.jours_envoi === "" ? 3 : +p.jours_envoi;
             if (jours > 0) {
               rapport.envois = await T.envoyerDevenusPrets({ jours });
               rapport.emails_envoyes = rapport.envois.leads_envoyes.length;
             }
             rapport.envois_en_echec = await require_envois().reprendre(50);
-            if (rapport.candidats || rapport.envois && rapport.envois.a_envoyer || rapport.envois_en_echec.repris) {
+            if (rapport.candidats || rapport.envois && rapport.envois.a_envoyer || rapport.envois_en_echec.repris || rapport.mails_sans_lead.a_reprendre) {
               const File = require("@saltcorn/data/models/file");
               await File.from_contents("reprise-crm-automatique.json", "application/json", JSON.stringify(rapport, null, 1), ctx.user && ctx.user.id, 1);
             }
@@ -100763,22 +100794,31 @@ var require_leads_solution = __commonJS({
       },
       {
         name: "dzf_leads_rattraper",
-        label: "Leads : rattraper des leads pr\xE9cis (CRM + envoi)",
+        label: "Leads : rattraper des leads (CRM + envoi)",
         category: CAT,
         icon: "fas fa-life-ring",
         output: "rattrapage",
-        timeout: 900,
-        description: "Retraite des leads choisis avec la version actuelle. \xAB simuler \xBB : lecture seule, rien n'est \xE9crit dans le CRM, rien n'est enregistr\xE9 ni envoy\xE9 ; le rapport dit ce qui serait fait. \xAB appliquer \xBB : retraitement r\xE9el puis envoi une seule fois aux destinataires (un destinataire d\xE9j\xE0 servi ne re\xE7oit rien). Rapport dans Fichiers.",
+        timeout: 60,
+        description: "Retraite des leads avec la version actuelle. Sans num\xE9ros : cherche lui-m\xEAme, depuis la date, les mails jamais trait\xE9s, les leads complets bloqu\xE9s par la seule lecture, les r\xE9f\xE9rences \xE0 suffixe du CRM et les leads pr\xEAts jamais envoy\xE9s. \xAB simuler \xBB : lecture seule, rien n'est \xE9crit dans le CRM, rien n'est enregistr\xE9 ni envoy\xE9 ; le rapport dit ce qui serait fait. \xAB appliquer \xBB : retraitement r\xE9el puis envoi une seule fois aux destinataires (un destinataire d\xE9j\xE0 servi ne re\xE7oit rien). En arri\xE8re-plan, rapport dans Fichiers.",
         params: [
           P_PREFIXE,
-          { name: "leads", label: "Num\xE9ros des leads (s\xE9par\xE9s par des virgules)", required: true },
-          { name: "mode", label: "Mode", type: "select", options: ["simuler", "appliquer"], default: "simuler" }
+          { name: "mode", label: "Mode", type: "select", options: ["simuler", "appliquer"], default: "simuler" },
+          { name: "depuis", label: "Recherche automatique depuis (date)", default: "", help: "Ex. 2026-10-01. Utilis\xE9 si \xAB Num\xE9ros des leads \xBB est vide." },
+          { name: "leads", label: "\u2026ou num\xE9ros des leads (s\xE9par\xE9s par des virgules)", default: "" },
+          { name: "sauf", label: "Leads \xE0 laisser de c\xF4t\xE9 (num\xE9ros)", default: "", help: "Doublons transf\xE9r\xE9s, cas \xE0 traiter \xE0 la main\u2026" }
         ],
         run: async (p, ctx = {}) => dans(p, async () => {
-          const r = await require_rattrapage().rattraper(p.leads, p.mode === "appliquer" ? "appliquer" : "simuler");
-          const File = require("@saltcorn/data/models/file");
-          await File.from_contents(`rattrapage-leads-${r.mode}.json`, "application/json", JSON.stringify(r, null, 1), ctx.user && ctx.user.id, 1).catch(() => null);
-          return r;
+          const R = require_rattrapage();
+          const mode = p.mode === "appliquer" ? "appliquer" : "simuler", fichier = `rattrapage-leads-${mode}.json`;
+          if (!String(p.leads || "").trim() && !String(p.depuis || "").trim()) throw new Error("donner une date \xAB depuis \xBB ou des num\xE9ros de leads");
+          return require_arriere_plan().enFond(p, ctx, "dzf_leads_rattraper", fichier, async (suivi) => {
+            const exclus = new Set(R.ids(p.sauf));
+            const cible = String(p.leads || "").trim() ? { leads: R.ids(p.leads).filter((id) => !exclus.has(id)), mails: [] } : await R.trouver({ depuis: p.depuis, sauf: p.sauf });
+            const r = { trouves: { mails_jamais_traites: cible.mails.length, leads: cible.leads.length }, ...await R.rattraper(cible.leads, mode, { mails: cible.mails, suivi }) };
+            const File = require("@saltcorn/data/models/file");
+            await File.from_contents(fichier, "application/json", JSON.stringify(r, null, 1), ctx.user && ctx.user.id, 1);
+            return { fichier, ...r };
+          });
         })
       },
       {
