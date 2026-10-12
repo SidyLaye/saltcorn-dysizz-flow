@@ -1,5 +1,12 @@
 # Journal des versions
 
+## 2.15.5
+
+### Ajouté
+- « Leads : rattraper des leads » : option « Envoyer les leads devenus prêts » (décochée : le CRM est écrit, aucun
+  mail ne part) ; option « En arrière-plan » déclarée, à décocher pour un lancement en ligne de commande
+  (`saltcorn run-trigger`), où un travail de fond serait coupé à la fin du processus.
+
 ## 2.15.4
 
 ### Corrigé

@@ -40,6 +40,11 @@ Module._load = function (n, parent, ...rest) {
   r = await rattraper("", "appliquer", { mails: [120] });
   assert.deepEqual(appels, [{ mailId: 120, simulation: false }]); assert.deepEqual(envoyes, ["ld_lead-20:nego@ex.org"], "lead créé par le retraitement, envoyé une fois");
   assert.equal(r.leads[0].statut_avant, "(jamais traité)"); assert.equal(r.prets, 1);
+  /* rattrapage sans envoi : le CRM est écrit (traitement réel), aucun mail ne part */
+  appels.length = 0; envoyes.length = 0;
+  r = await rattraper("10", "appliquer", { envoyer: false });
+  assert.deepEqual(appels, [{ mailId: 110, simulation: false }]); assert.equal(envoyes.length, 0, "sans envoi : aucun mail");
+  assert.equal(r.leads[0].envoi, "non envoyé (rattrapage sans envoi)"); assert.equal(r.envoyes, 0);
   Module._load = original;
   console.log("rattrapage OK : simulation sans écriture ni envoi, application avec envoi unique des leads prêts");
 })().catch((e) => { console.error(e); process.exitCode = 1; });

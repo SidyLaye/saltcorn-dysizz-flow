@@ -277,15 +277,18 @@ module.exports = [
     params: [P_PREFIXE, { name: "mode", label: "Mode", type: "select", options: ["simuler", "appliquer"], default: "simuler" },
       { name: "depuis", label: "Recherche automatique depuis (date)", default: "", help: "Ex. 2026-10-01. Utilisé si « Numéros des leads » est vide." },
       { name: "leads", label: "…ou numéros des leads (séparés par des virgules)", default: "" },
-      { name: "sauf", label: "Leads à laisser de côté (numéros)", default: "", help: "Doublons transférés, cas à traiter à la main…" }],
+      { name: "sauf", label: "Leads à laisser de côté (numéros)", default: "", help: "Doublons transférés, cas à traiter à la main…" },
+      { name: "envoyer", label: "Envoyer les leads devenus prêts aux destinataires", type: "bool", default: true, help: "Décoché : le CRM est écrit, aucun mail ne part (rattrapage d'un ancien stock)." },
+      { name: "arriere_plan", label: "En arrière-plan (le rapport arrive dans Fichiers)", type: "bool", default: true, help: "À décocher pour un lancement en ligne de commande." }],
     run: async (p, ctx = {}) => dans(p, async () => {
       const R = require("../lib/leads/tables/rattrapage");
+      const envoyer = !(p.envoyer === false || p.envoyer === "false");
       const mode = p.mode === "appliquer" ? "appliquer" : "simuler", fichier = `rattrapage-leads-${mode}.json`;
       if (!String(p.leads || "").trim() && !String(p.depuis || "").trim()) throw new Error("donner une date « depuis » ou des numéros de leads");
       return require("../lib/arriere_plan").enFond(p, ctx, "dzf_leads_rattraper", fichier, async (suivi) => {
         const exclus = new Set(R.ids(p.sauf));
         const cible = String(p.leads || "").trim() ? { leads: R.ids(p.leads).filter((id) => !exclus.has(id)), mails: [] } : await R.trouver({ depuis: p.depuis, sauf: p.sauf });
-        const r = { trouves: { mails_jamais_traites: cible.mails.length, leads: cible.leads.length }, ...(await R.rattraper(cible.leads, mode, { mails: cible.mails, suivi })) };
+        const r = { trouves: { mails_jamais_traites: cible.mails.length, leads: cible.leads.length }, envoi_des_mails: envoyer, ...(await R.rattraper(cible.leads, mode, { mails: cible.mails, suivi, envoyer })) };
         const File = require("@saltcorn/data/models/file");
         await File.from_contents(fichier, "application/json", JSON.stringify(r, null, 1), ctx.user && ctx.user.id, 1);
         return { fichier, ...r };

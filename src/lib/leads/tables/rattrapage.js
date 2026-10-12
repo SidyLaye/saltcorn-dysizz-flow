@@ -44,7 +44,7 @@ const resume = (avant, r) => {
 };
 
 /* liste : numéros de leads ; mails : numéros de mails sans lead */
-const rattraper = async (liste, mode = "simuler", { mails = [], suivi = null } = {}) => {
+const rattraper = async (liste, mode = "simuler", { mails = [], suivi = null, envoyer = true } = {}) => {
   const { tables } = require("./schema");
   const t = await tables();
   const appliquer = mode === "appliquer";
@@ -63,12 +63,13 @@ const rattraper = async (liste, mode = "simuler", { mails = [], suivi = null } =
       const x = resume(avant, r);
       if (r.id) x.lead = r.id;
       if (r.statut === "pret") out.prets++; else if (!["ignore", "alerte", "suivi"].includes(r.statut)) out.encore_bloques++;
-      if (appliquer && r.statut === "pret") {
+      if (appliquer && r.statut === "pret" && !envoyer) x.envoi = "non envoyé (rattrapage sans envoi)";
+      else if (appliquer && r.statut === "pret") {
         const d = r.dossier; d.mail_id = d.mail_id || mailId;
         const m = await require("./envoi").messages(d, { id: r.id || w.lead, mail_id: mailId });
         if (m.liste.length) { const b = await require("../../envois").envoyer(m.liste, { simuler: m.simuler }); x.envoi = b.resume; out.envoyes++; }
         else x.envoi = m.raison;
-      } else if (!appliquer) x.envoi = r.statut === "pret" ? "serait envoyé" : "ne serait pas envoyé";
+      } else if (!appliquer) x.envoi = r.statut !== "pret" ? "ne serait pas envoyé" : envoyer ? "serait envoyé" : "prêt, sans envoi (option)";
       out.leads.push(x);
     } catch (e) { out.erreurs.push({ ...w, erreur: String(e.message || e).slice(0, 220) }); }
     if (suivi) suivi.fait++;
