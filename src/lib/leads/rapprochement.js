@@ -184,6 +184,16 @@ const rapprocher = async (lead, crm, opts = {}) => {
     const hit = await essayer(v.etape, v.valeur, exacts, litterale ? 0 : force === "faible" || v.etape === "reference_suffixe" ? Math.max(v.min, 1) : v.min, litterale ? "forte" : force);
     if (hit) return { bien: hit, methode: v.etape, etapes, alertes, confiance: force === "faible" ? "moyenne" : "haute" };
   }
+  /* 3 bis. bien du dossier déjà ouvert pour cette même référence : elle a pu changer dans le CRM depuis
+     (renumérotation). Repris seulement si un fait du mail le confirme (prix, code postal, ville…). */
+  if (opts.bienConnu) {
+    const x = await crm.bienParId(opts.bienConnu).catch(() => null);
+    const hit = await essayer("bien_deja_retenu", String(opts.bienConnu), x ? [x] : [], 1, "faible");
+    if (hit) {
+      alertes.push(`référence du mail introuvable dans le CRM : bien du dossier déjà ouvert repris (réf. actuelle ${hit.reference || hit.id})`);
+      return { bien: hit, methode: "bien_deja_retenu", etapes, alertes, confiance: "moyenne" };
+    }
+  }
   /* 4. recherche par critères : le catalogue entier est noté (le prix est obligatoire) */
   if (!opts.sansCriteres && (faits.prix || (faits.prix_candidats || []).length || faits.loyer)) {
     let cands = null;

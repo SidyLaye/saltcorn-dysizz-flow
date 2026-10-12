@@ -27,7 +27,7 @@ const T = {
   siege: { name: "ld_siege", desc: "Adresses en copie : de tout (portée « tous ») ou d'une agence, d'un groupe, de personnes choisies", fields: [["email", "String", { required: true }], ["libelle", "String"], ["actif", "Bool"],
     ["portee", "String"], ["agence", "String"], ["groupe", "Integer"], ["personnes", "String"]] },
   groupes: { name: "ld_groupes", desc: "Groupes de personnes (secteur, équipe)", fields: [["nom", "String", { required: true }], ["description", "String"]] },
-  leads: { name: "ld_leads", desc: "Leads traités (un par mail)", fields: [
+  leads: { name: "ld_leads", desc: "Leads traités (un par mail)", index: ["mail_id"], fields: [
     ["mail_id", "Integer"], ["message_id", "String"], ["recu_le", "Date"], ["traite_le", "Date"], ["expediteur", "String"], ["objet", "String"],
     ["portail", "String"], ["source", "String"], ["nature", "String"], ["statut", "String"], ["decision", "String"],
     ["contact_nom", "String"], ["contact_email", "String"], ["contact_tel", "String"], ["contact_crm", "String"], ["contact_action", "String"],

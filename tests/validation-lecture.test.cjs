@@ -54,5 +54,14 @@ const fin = (d) => T.etapeDestinataires(d, { etapes: { notification: false } });
   assert.ok(!r.bien, "suffixe sans aucun fait pour confirmer : refusé");
   r = await rapprocher({ bien: { reference: "33074" } }, crm, { texte: "Je suis intéressée par la maison (réf. 33074-excl, 179 000 €)" });
   assert.strictEqual(r.bien && r.bien.id, 61000001, "référence + suffixe écrite telle quelle dans le mail : preuve suffisante");
+  /* 8. référence changée dans le CRM depuis le premier traitement : le bien du dossier ouvert est repris si un fait le confirme */
+  const crm2 = { biensParReference: async () => [], biensParCriteres: async () => [],
+    bienParId: async (id) => (String(id) === "60000001" ? { id: 60000001, reference: "40001", prix: 480000, code_postal: "75001" } : null) };
+  r = await rapprocher({ bien: { reference: "64000000001", prix: 480000 } }, crm2, { sansCriteres: true, bienConnu: "60000001" });
+  assert.strictEqual(r.bien && r.bien.id, 60000001); assert.strictEqual(r.methode, "bien_deja_retenu"); assert.ok(/dossier déjà ouvert/.test(r.alertes.join(" ")));
+  r = await rapprocher({ bien: { reference: "64000000001", prix: 250000 } }, crm2, { sansCriteres: true, bienConnu: "60000001" });
+  assert.ok(!r.bien, "bien déjà retenu mais prix du mail différent : refusé");
+  r = await rapprocher({ bien: { reference: "64000000001" } }, crm2, { sansCriteres: true, bienConnu: "60000001" });
+  assert.ok(!r.bien, "bien déjà retenu sans aucun fait pour confirmer : refusé");
   console.log("validation automatique de la lecture OK : valeurs ancrées dans le mail, prix et code postal du bien, négociateur, autre doute ; référence + suffixe -EXCL confirmée par un fait");
 })().catch((e) => { console.error(e); process.exit(1); });

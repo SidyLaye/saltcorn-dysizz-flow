@@ -1,5 +1,19 @@
 # Journal des versions
 
+## 2.15.6
+
+### Corrigé
+- Immofacile, recherche d'un contact par e-mail : le « _ » d'une adresse y est lu comme un joker et, pour certaines
+  adresses, la recherche ne répond jamais. Le lead restait « à vérifier » (« recherche du contact CRM indisponible »)
+  et chaque reprise échouait de la même façon. Le « _ » est maintenant échappé : même contact retrouvé, en moins
+  d'une seconde.
+- Référence renumérotée dans le CRM après le premier mail d'un prospect : le bien n'était plus retrouvé au
+  retraitement. Le bien du dossier déjà ouvert pour cette même référence est repris, seulement si un fait du mail
+  le confirme (prix, code postal, ville…) ; une alerte le signale.
+
+### Amélioré
+- Table des leads : index sur le mail d'origine (les tables de lecture qui partent du mail relisaient toute la table).
+
 ## 2.15.5
 
 ### Ajouté

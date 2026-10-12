@@ -173,6 +173,9 @@ const creer = (cfg = {}) => {
   };
   /* POST /customers/search : plus récents d'abord, pagination par curseur (meta.next_cursor). */
   const chercherContacts = async (filtre) => {
+    /* Immofacile lit « _ » comme un joker dans la recherche par e-mail : pour certaines adresses elle ne répond
+       alors jamais (lead bloqué « recherche du contact CRM indisponible »). Échappé, même résultat, en moins d'1 s. */
+    if (filtre.email) filtre = { ...filtre, email: String(filtre.email).replace(/_/g, "\\_") };
     const out = [], vus = new Set(), curseurs = new Set(); let cursor = null;
     for (let page = 0; page < 20; page++) {
       const j = await appel("POST", "/customers/search", { ...filtre, per_page: 200, ...(cursor ? { cursor } : {}) });

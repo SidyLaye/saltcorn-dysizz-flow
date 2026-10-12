@@ -195,7 +195,10 @@ const etapeBien = async (d, crm, conf = {}) => {
   const r = d.extraction, cles = d.fil.cles, connus = (d.interne && d.interne.connus) || [];
   let rb = { bien: null, methode: null, etapes: [], alertes: [] };
   if (actifs(conf).bien) {
-    rb = await rapprocher(r, crm, { ...(conf.rapprochement || {}), texte: d.interne && d.interne.texte_mail });
+    /* référence renumérotée dans le CRM depuis le premier mail : le bien du dossier déjà ouvert pour cette même référence */
+    const refs = (cles.references || []).map((x) => String(x).toLowerCase());
+    const ouvert = connus.find((x) => x.bien_id && x.reference && refs.includes(String(x.reference).toLowerCase()));
+    rb = await rapprocher(r, crm, { ...(conf.rapprochement || {}), texte: d.interne && d.interne.texte_mail, bienConnu: ouvert && ouvert.bien_id });
     for (const a of rb.alertes || []) d.alertes.push(a);
   }
   d.bien = rb.bien; d.rapprochement = { methode: rb.methode, confiance: rb.confiance, motif: rb.motif, etapes: rb.etapes };

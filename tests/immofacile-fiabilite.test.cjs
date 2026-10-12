@@ -56,5 +56,17 @@ const config = (fetch) => ({ fetch, secret: async () => "fictif", site_id: "demo
   assert.equal(jetons, 1, "un seul jeton pour trois adaptateurs aux mêmes identifiants");
   await creer(cfgPartage("B")).origines();
   assert.equal(jetons, 2, "d'autres identifiants : un autre jeton");
-  console.log("Immofacile : délais auth/corps, reprises de lectures, absence de doublons d'écriture, mode ombre et jeton partagé OK");
+  /* recherche par e-mail : le « _ » part échappé (sinon Immofacile ne répond jamais pour certaines adresses) */
+  const recus = [];
+  const recherche = creer(config(async (url, options) => {
+    if (url.endsWith("/client/token/site")) return token();
+    recus.push(JSON.parse(options.body));
+    return json({ data: [{ id: 7, email: "jean_test@exemple.org" }, { id: 8, email: "jeanXtest@exemple.org" }] });
+  }));
+  const trouves = await recherche.contactsParEmail("jean_test@exemple.org");
+  assert.equal(recus[0].email, "jean\\_test@exemple.org", "tiret bas échappé dans la demande");
+  assert.deepEqual(trouves.map((c) => c.id), [7], "seule l'adresse exacte est gardée");
+  await recherche.contactsParEmail("jean.test@exemple.org");
+  assert.equal(recus[1].email, "jean.test@exemple.org", "adresse sans tiret bas : inchangée");
+  console.log("Immofacile : délais auth/corps, reprises de lectures, absence de doublons d'écriture, mode ombre, jeton partagé et recherche par e-mail échappée OK");
 })().catch(e => { console.error(e); process.exitCode = 1; });

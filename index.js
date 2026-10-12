@@ -1,4 +1,4 @@
-/* dysizz-flow 2.15.5 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.15.6 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.15.5" : "dev";
+    var VERSION2 = true ? "2.15.6" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -94069,6 +94069,14 @@ var require_rapprochement = __commonJS({
         const hit = await essayer(v.etape, v.valeur, exacts, litterale ? 0 : force === "faible" || v.etape === "reference_suffixe" ? Math.max(v.min, 1) : v.min, litterale ? "forte" : force);
         if (hit) return { bien: hit, methode: v.etape, etapes, alertes, confiance: force === "faible" ? "moyenne" : "haute" };
       }
+      if (opts.bienConnu) {
+        const x = await crm.bienParId(opts.bienConnu).catch(() => null);
+        const hit = await essayer("bien_deja_retenu", String(opts.bienConnu), x ? [x] : [], 1, "faible");
+        if (hit) {
+          alertes.push(`r\xE9f\xE9rence du mail introuvable dans le CRM : bien du dossier d\xE9j\xE0 ouvert repris (r\xE9f. actuelle ${hit.reference || hit.id})`);
+          return { bien: hit, methode: "bien_deja_retenu", etapes, alertes, confiance: "moyenne" };
+        }
+      }
       if (!opts.sansCriteres && (faits.prix || (faits.prix_candidats || []).length || faits.loyer)) {
         let cands = null;
         if (crm.tousLesBiens) cands = await crm.tousLesBiens().catch(() => null);
@@ -95449,7 +95457,9 @@ var require_traiter = __commonJS({
       const r = d.extraction, cles = d.fil.cles, connus = d.interne && d.interne.connus || [];
       let rb = { bien: null, methode: null, etapes: [], alertes: [] };
       if (actifs(conf).bien) {
-        rb = await rapprocher(r, crm, { ...conf.rapprochement || {}, texte: d.interne && d.interne.texte_mail });
+        const refs = (cles.references || []).map((x) => String(x).toLowerCase());
+        const ouvert = connus.find((x) => x.bien_id && x.reference && refs.includes(String(x.reference).toLowerCase()));
+        rb = await rapprocher(r, crm, { ...conf.rapprochement || {}, texte: d.interne && d.interne.texte_mail, bienConnu: ouvert && ouvert.bien_id });
         for (const a of rb.alertes || []) d.alertes.push(a);
       }
       d.bien = rb.bien;
@@ -96064,6 +96074,7 @@ var require_immofacile = __commonJS({
         }
       };
       const chercherContacts = async (filtre) => {
+        if (filtre.email) filtre = { ...filtre, email: String(filtre.email).replace(/_/g, "\\_") };
         const out = [], vus = /* @__PURE__ */ new Set(), curseurs = /* @__PURE__ */ new Set();
         let cursor = null;
         for (let page = 0; page < 20; page++) {
@@ -97226,7 +97237,7 @@ var require_schema = __commonJS({
         ["personnes", "String"]
       ] },
       groupes: { name: "ld_groupes", desc: "Groupes de personnes (secteur, \xE9quipe)", fields: [["nom", "String", { required: true }], ["description", "String"]] },
-      leads: { name: "ld_leads", desc: "Leads trait\xE9s (un par mail)", fields: [
+      leads: { name: "ld_leads", desc: "Leads trait\xE9s (un par mail)", index: ["mail_id"], fields: [
         ["mail_id", "Integer"],
         ["message_id", "String"],
         ["recu_le", "Date"],
