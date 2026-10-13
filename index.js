@@ -1,4 +1,4 @@
-/* dysizz-flow 2.15.7 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.16.0 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.15.7" : "dev";
+    var VERSION2 = true ? "2.16.0" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -84135,7 +84135,7 @@ var require_pdf = __commonJS({
               y = y0 - 3;
               c.forEach((l) => {
                 y -= lh;
-                const right = ri > 0 && /^-?[\d\s.,]+(%|€|\s?€)?$/.test(String(r[ci] ?? ""));
+                const right = b.chiffres_a_droite !== false && ri > 0 && /^-?[\d\s.,]+(%|€|\s?€)?$/.test(String(r[ci] ?? ""));
                 text(l, right ? M + (ci + 1) * cw - 4 - width(l, size) : M + ci * cw + 4, size, ri === 0, ri === 0 ? "1 1 1" : "0.1 0.1 0.1");
               });
             });
@@ -84183,7 +84183,7 @@ var require_pdf = __commonJS({
       });
       objs[catalog - 1] = `<< /Type /Catalog /Pages ${pagesId} 0 R >>`;
       objs[pagesId - 1] = `<< /Type /Pages /Kids [${kids.map((k) => `${k} 0 R`).join(" ")}] /Count ${kids.length} >>`;
-      const info = add(`<< /Producer (dysizz-flow) /Title ${pdfStr(opts.titre || "")} /Author ${pdfStr(opts.auteur || "")} /CreationDate (D:${(/* @__PURE__ */ new Date()).toISOString().replace(/[-:T]/g, "").slice(0, 14)}Z) >>`);
+      const info = add(`<< /Producer ${pdfStr(opts.producteur ?? "dysizz-flow")} /Title ${pdfStr(opts.titre || "")} /Author ${pdfStr(opts.auteur || "")} /CreationDate (D:${(/* @__PURE__ */ new Date()).toISOString().replace(/[-:T]/g, "").slice(0, 14)}Z) >>`);
       const parts = [Buffer.from("%PDF-1.4\n%\xE2\xE3\xCF\xD3\n", "latin1")];
       const offs = [];
       let len = parts[0].length;
@@ -96167,6 +96167,12 @@ var require_immofacile = __commonJS({
           return { ok: true, agences: agences.map((a) => ({ id: a.agency_id ?? a.id, nom: a.name, ville: a.city })) };
         },
         bienParId: detail,
+        /* Photos d'un bien en taille pleine, dans l'ordre de l'annonce, pour un dossier d'images donné (« pr_p », « pr_2 »).
+           Lecture seule ; le choix du dossier revient au client (les photos privées ne se montrent jamais). */
+        photosBien: async (id, dossier) => {
+          const p = data(await appel("GET", `/products/${Number(id)}?fetch=products_photos`)) || {};
+          return (p.products_photos || []).filter((x) => x && x.type === dossier && !x.is_red && !x.is_mid && /^https:\/\//.test(x.chemin || "")).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)).map((x) => x.chemin);
+        },
         biensParReference: async (ref) => (await recherche({ model: String(ref), count: 5 })).filter((b) => b && b.reference.toLowerCase() === String(ref).trim().toLowerCase()).slice(0, 3),
         biensParCriteres: async (q, { max = 2 } = {}) => {
           const c = [];
@@ -96275,6 +96281,11 @@ var require_immofacile = __commonJS({
           if (("user_id" in corps || "agency_id" in corps) && non_pris.some((k) => ["user_id", "agency_id"].includes(k) || k.startsWith("relecture impossible")))
             throw new Error("r\xE9affectation du contact CRM non confirm\xE9e par relecture : " + non_pris.join(", "));
           return { id, ...non_pris.length ? { non_pris } : {} };
+        },
+        /* Couleur du contact (température du projet). L'identifiant est celui de la palette du site. */
+        couleurContact: async (id, couleur) => {
+          await appel("PATCH", `/customers/${Number(id)}`, { color_id: Number(couleur) });
+          return { id };
         },
         /* Suivi (rapprochement) contact ↔ bien ; 409 = déjà suivi, c'est bon. */
         lierBien: async (contactId, bienId) => {
@@ -96513,6 +96524,7 @@ var require_memoire = __commonJS({
         nom: "memoire",
         ecritures,
         bienParId: async (id) => B.find((b) => String(b.id) === String(id)) || null,
+        photosBien: async (id) => ((B.find((b) => String(b.id) === String(id)) || {}).photos || []).slice(),
         biensParReference: async (ref) => B.filter((b) => String(b.reference || "").trim().toLowerCase() === String(ref).trim().toLowerCase()).slice(0, 5),
         tousLesBiens: async () => B,
         biensParCriteres: async (q, { max = 2 } = {}) => B.filter((b) => (q.prix_min === void 0 || +b.prix >= q.prix_min) && (q.prix_max === void 0 || +b.prix <= q.prix_max) && (q.type === void 0 || b.type === q.type) && (q.pieces === void 0 || +b.pieces === +q.pieces) && (q.surface === void 0 || Math.round(+b.surface) === Math.round(+q.surface)) && (q.prix === void 0 || +b.prix === +q.prix) && (q.lieu === void 0 || cle(b.ville + " " + b.code_postal).includes(cle(q.lieu)))).slice(0, max),
@@ -96544,6 +96556,10 @@ var require_memoire = __commonJS({
           ecritures.push({ op: "ajouterAction", contactId, a });
           return { id: "a" + ecritures.length };
         },
+        couleurContact: async (id, couleur) => {
+          ecritures.push({ op: "couleurContact", id, couleur });
+          return { id };
+        },
         contact: async (id) => C.find((c) => String(c.id) === String(id)) || null,
         ajouterConsentement: async (contactId, consent) => {
           ecritures.push({ op: "ajouterConsentement", contactId, consent: { ...consent, preuves: (consent.preuves || []).map((p) => p.nom) } });
@@ -96559,7 +96575,7 @@ var require_memoire = __commonJS({
 var require_ombre = __commonJS({
   "src/lib/leads/crm/ombre.js"(exports2, module2) {
     "use strict";
-    var ECRITURES = ["creerContact", "majContact", "lierBien", "ajouterConsentement", "creerRecherche", "majRecherche", "ajouterAction"];
+    var ECRITURES = ["creerContact", "majContact", "lierBien", "ajouterConsentement", "creerRecherche", "majRecherche", "ajouterAction", "couleurContact"];
     var ombre = (crm) => {
       const notees = [];
       const o = { ...crm, nom: crm.nom + " (ombre)", ombre: true, notees };
@@ -97193,7 +97209,8 @@ var require_schema = __commonJS({
         ["crm_a_verifier", "Bool"],
         ["adresse_non_automatise", "String"],
         ["format_envoi", "String"],
-        ["origine_defaut", "String"]
+        ["origine_defaut", "String"],
+        ["bot", "String"]
       ] },
       agences: { name: "ld_agences", desc: "Agences", fields: [["nom", "String", { required: true }], ["crm_id", "String"], ["boites", "String"], ["negociateur_defaut", "String"], ["actif", "Bool"], ["enseigne", "String"]] },
       personnes: { name: "ld_personnes", desc: "N\xE9gociateurs et assistant(e)s", fields: [
@@ -97241,7 +97258,7 @@ var require_schema = __commonJS({
         ["personnes", "String"]
       ] },
       groupes: { name: "ld_groupes", desc: "Groupes de personnes (secteur, \xE9quipe)", fields: [["nom", "String", { required: true }], ["description", "String"]] },
-      leads: { name: "ld_leads", desc: "Leads trait\xE9s (un par mail)", index: ["mail_id"], fields: [
+      leads: { name: "ld_leads", desc: "Leads trait\xE9s (un par mail)", index: ["mail_id", "dossier_id"], fields: [
         ["mail_id", "Integer"],
         ["message_id", "String"],
         ["recu_le", "Date"],
@@ -97318,6 +97335,16 @@ var require_schema = __commonJS({
         ["texte", "String"],
         ["source", "String"],
         ["empreinte", "String"]
+      ] },
+      bot: { name: "ld_bot", desc: "Bot WhatsApp : messages et \xE9v\xE9nements d'une conversation, envois de fiche, d\xE9sinscriptions", index: ["tel9", "cle"], fields: [
+        ["dossier", "Integer"],
+        ["tel9", "String", { required: true }],
+        ["type", "String"],
+        ["noeud", "String"],
+        ["quand", "Date"],
+        ["texte", "String"],
+        ["donnees", "String"],
+        ["cle", "String"]
       ] },
       biens: { name: "ld_biens", desc: "Catalogue local des biens du CRM (synchronis\xE9)", index: ["crm_id", "reference"], fields: [
         ["crm_id", "String", { required: true }],
@@ -98421,6 +98448,294 @@ var require_etapes = __commonJS({
       return { id, dossier_id: dossierId, statut: d.statut };
     };
     module2.exports = { preparer, lire, bien, contact, consentement, destinataires, ecrireCrm, conformite, ranger };
+  }
+});
+
+// src/lib/leads/bot.js
+var require_bot = __commonJS({
+  "src/lib/leads/bot.js"(exports2, module2) {
+    "use strict";
+    var { destinataires } = require_routage();
+    var CHAMPS_PUBLICS = ["type", "pieces", "chambres", "surface", "ville", "code_postal", "prix"];
+    var bienPublic = (b) => {
+      const o = {};
+      for (const k of CHAMPS_PUBLICS) if (b && b[k] != null && b[k] !== "") o[k] = k === "ville" ? nomVille(b[k]) : b[k];
+      return Object.keys(o).length ? o : null;
+    };
+    var tel9 = (t) => String(t || "").replace(/\D/g, "").slice(-9);
+    var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+    var milliers = (n) => String(Math.round(+n)).replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+    var majuscule = (s) => String(s || "").trim().toLowerCase().replace(new RegExp("(^|[\\s'\u2019-])(\\p{L})", "gu"), (m, a, b) => a + b.toUpperCase());
+    var nomVille = (v) => {
+      const s = String(v || "").trim();
+      return !s || s !== s.toUpperCase() ? s : majuscule(s).replace(/(?<=[\s-])(De|Du|Des|Le|La|Les|Sur|Sous|En|Et|Au|Aux|Lès|D(?=['’])|L(?=['’]))(?=[\s'’-])/g, (m) => m.toLowerCase());
+    };
+    var quiRecoit = (negoId, conf = {}, bien, quand = /* @__PURE__ */ new Date()) => {
+      const b = bien || {}, R = conf.routage || {};
+      const r = destinataires(negoId, quand, R, { prix: +b.prix || null, type: b.type || null, code_postal: b.code_postal || null, nature: "lead" });
+      const nego = r.liste.find((x) => x.roles.includes("negociateur"));
+      const personne = nego && (R.personnes || []).find((p) => String(p.email || "").trim().toLowerCase() === nego.email) || null;
+      return { liste: r.liste, personne };
+    };
+    var contexte = ({ dossier, lead, bien, photos = [], conf, reglages: R = {}, etat = {}, quand }) => {
+      if (!dossier) return { inconnu: true, optout: !!etat.optout };
+      const x = lead && lead.extraction || {}, c = x.contact || {}, r = x.recherche || {};
+      const { personne } = quiRecoit(dossier.negociateur || bien && bien.negociateur_id, conf, bien, quand);
+      const tel = personne ? String(personne.telephone || "").replace(/\D/g, "").replace(/^0(?=\d{9}$)/, "33") : "";
+      return {
+        dossier_id: dossier.id || null,
+        prenom: majuscule(c.prenom || dossier.prenom),
+        entite: R.entite || "",
+        source: dossier.portail || "",
+        negociateur: personne ? { prenom: "", nom: personne.nom } : null,
+        /* photos : seulement celles du dossier d'images choisi par le client (réglage « photos »), 10 au plus (un carrousel WhatsApp) */
+        bien_public: { ...bienPublic(bien), ...photos.length ? { photos_publiques: photos.filter((u) => /^https:\/\//.test(u)).slice(0, 10) } : {} },
+        /* numéro direct de la personne qui reprend : seulement si le client l'a accepté */
+        liens_whatsapp: R.liens_directs === true && tel ? { negociateur: "https://wa.me/" + tel } : {},
+        langue_ouverture: "fr",
+        deja_connu: { budget: r.budget_max || null, zone: r.localisation || null },
+        ouverture_envoyee: !!etat.ouverture,
+        fiche_annonce_envoyee: !!etat.fiche,
+        statut: etat.statut || "",
+        optout: !!etat.optout
+      };
+    };
+    var DEMANDES = {
+      "OUT-1": "Demande de visite ou de rendez-vous",
+      "OUT-2": "Demande de rappel",
+      "OUT-3": "Projet \xE0 plus long terme, \xE0 recontacter",
+      "OUT-4": "Demande \xE0 parler \xE0 un conseiller",
+      "OUT-5": "Annulation",
+      "OUT-6": "D\xE9sinscription"
+    };
+    var DELAIS = { HOT: "moins de 3 mois", WARM: "3 \xE0 12 mois", COLD: "plus de 12 mois" };
+    var AVIS = { prioritaire_vendeur: "Le prospect a un bien \xE0 vendre", annulation: "Le prospect annule sa demande", message_apres_transmission: "Nouveau message du prospect apr\xE8s transmission" };
+    var lignes = (d = {}) => {
+      const q = d.qualification || {}, etiquettes = [d.lead_prioritaire && "bien \xE0 vendre (prioritaire)", d.lead_financement && "financement", d.lead_travaux && "travaux", d.lead_relocation && "relocation"].filter(Boolean);
+      const branche = (o) => Object.entries(o || {}).filter(([, v]) => v !== "" && v != null && typeof v !== "object").map(([k, v]) => `${k} : ${v}`).join(" ; ");
+      return [
+        ["Demande", [DEMANDES[d.code] || d.code, d.motif].filter(Boolean).join(" \xB7 ")],
+        ["Cr\xE9neau souhait\xE9", [d.creneau, d.fuseau].filter(Boolean).join(" \xB7 ")],
+        ["D\xE9lai du projet", DELAIS[d.temperature]],
+        ["Projet", q.projet],
+        ["Budget", q.budget],
+        ["Zone", q.zone],
+        ["Financement", q.financement],
+        ["Bien \xE0 vendre", q.bien_a_vendre],
+        ["\xC0 signaler", etiquettes.join(", ")],
+        ["Financement (d\xE9tail)", branche(d.f)],
+        ["Travaux (d\xE9tail)", branche(d.w)],
+        ["Relocation (d\xE9tail)", branche(d.i)],
+        ["Dernier message", d.dernier_message || d.texte || d.reponse]
+      ].filter(([, v]) => v !== void 0 && v !== null && String(v).trim() !== "").map(([l, v]) => [l, String(v)]);
+    };
+    var plan = (evenements, R = {}) => {
+      const out = { crm: [], avis: [], optout: false };
+      const sortie = (evenements || []).some((e) => e && e.type === "sortie");
+      for (const e of evenements || []) {
+        const d = e && e.donnees || {};
+        if (e.type === "optout") out.optout = true;
+        else if (e.type === "sortie") {
+          const couleur = (R.couleurs || {})[d.temperature];
+          if (couleur) out.crm.push({ op: "couleurContact", couleur });
+          const action = (R.actions || {})[d.code] || (R.actions || {}).defaut;
+          if (action) out.crm.push({ op: "ajouterAction", action_id: action, texte: "WhatsApp. " + lignes(d).map(([l, v]) => `${l} : ${v}`).join("\n") });
+          if (d.code !== "OUT-6") out.avis.push({ titre: DEMANDES[d.code] || "Demande", prioritaire: !!d.lead_prioritaire, donnees: d, referents: [d.lead_financement && "f", d.lead_travaux && "w", d.lead_relocation && "i"].filter(Boolean) });
+        } else if (AVIS[e.type] && !(sortie && e.type === "prioritaire_vendeur"))
+          out.avis.push({ titre: AVIS[e.type], prioritaire: e.type === "prioritaire_vendeur", donnees: d, referents: [] });
+      }
+      return out;
+    };
+    var mailEquipe = ({ avis, dossier = {}, bien, telephone, fil = [], aurait_recu }) => {
+      const b = bien || {}, nom = dossier.nom || "Prospect";
+      const objet = `${avis.prioritaire ? "[PRIORITAIRE] " : ""}WhatsApp \xB7 ${avis.titre}${b.reference ? " \xB7 r\xE9f. " + b.reference : ""} \xB7 ${nom}`;
+      const ligne = (l, v) => v ? `<tr><td style="color:#667;padding:2px 12px 2px 0;vertical-align:top">${esc(l)}</td><td><b>${esc(v)}</b></td></tr>` : "";
+      const html = `<div style="font-family:Arial,sans-serif;font-size:14px;color:#1f2937">
+<p><b>${esc(avis.titre)}</b>, re\xE7u par l'assistant WhatsApp.</p>
+<table style="border-collapse:collapse">${ligne("Prospect", nom)}${ligne("T\xE9l\xE9phone", telephone ? "+" + telephone : "")}${ligne("E-mail", dossier.email)}
+${ligne("Bien", [b.reference && "r\xE9f. " + b.reference, b.type, b.ville, b.prix && milliers(b.prix) + " \u20AC"].filter(Boolean).join(" \xB7 "))}
+${lignes(avis.donnees).map(([l, v]) => ligne(l, v)).join("")}</table>
+${fil.length ? `<p style="margin:14px 0 4px;color:#667">L'\xE9change</p><div style="padding:10px;background:#f3f4f6;border-radius:6px">${fil.map((m) => `<p style="margin:0 0 6px;white-space:pre-wrap"><b>${m.role === "prospect" ? "Prospect" : "Assistant"} :</b> ${esc(String(m.texte || "").slice(0, 1500))}</p>`).join("")}</div>` : ""}
+${aurait_recu ? `<p style="color:#b45309;font-size:12px">Essai : en service, ce message irait \xE0 ${esc(aurait_recu.join(", ") || "personne")}.</p>` : ""}</div>`;
+      return { objet: objet.slice(0, 300), html };
+    };
+    var blocsFiche = (bien, quand = /* @__PURE__ */ new Date()) => {
+      const b = bienPublic(bien);
+      if (!b || !(b.type || b.ville)) return null;
+      const lieu = [b.ville, b.code_postal && `(${b.code_postal})`].filter(Boolean).join(" ");
+      const titre = [majuscule(b.type) || "Bien", b.pieces && `${b.pieces} pi\xE8ces`, b.ville && `\xE0 ${b.ville}`].filter(Boolean).join(" ");
+      const tableau = [
+        ["Caract\xE9ristique", "D\xE9tail"],
+        ["Type", majuscule(b.type)],
+        ["Pi\xE8ces", b.pieces],
+        ["Chambres", b.chambres],
+        ["Surface", b.surface && `${b.surface} m\xB2`],
+        ["Localisation", lieu],
+        ["Prix", b.prix && `${milliers(b.prix)} \u20AC`]
+      ].filter(([, v]) => v).map(([l, v]) => [l, String(v)]);
+      const jour = quand.toLocaleDateString("fr-FR", { timeZone: "Europe/Paris", day: "2-digit", month: "2-digit", year: "numeric" });
+      return [{ titre }, { tableau, taille: 10.5, chiffres_a_droite: false }, { petit: `Informations de l'annonce au ${jour}. Document non contractuel.` }];
+    };
+    module2.exports = { CHAMPS_PUBLICS, bienPublic, tel9, quiRecoit, contexte, plan, lignes, mailEquipe, blocsFiche, majuscule, nomVille };
+  }
+});
+
+// src/lib/leads/tables/bot.js
+var require_bot2 = __commonJS({
+  "src/lib/leads/tables/bot.js"(exports2, module2) {
+    "use strict";
+    var S = require_schema();
+    var { charger, json, liste } = require_conf();
+    var { flowApi } = require_core3();
+    var B = require_bot();
+    var perm = (m) => Object.assign(new Error(m), { permanent: true });
+    var court = (v, n) => String(v == null ? "" : v).slice(0, n);
+    var adresses = (x) => liste([].concat(x || []).join(" ")).map((a) => a.toLowerCase()).filter((a) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(a));
+    var tableBot = async (t) => t.bot || (await require_structure().assurer(S.definitions().find((d) => d.k === "bot"))).t;
+    var trouver = async (t, corps, R) => {
+      const tel = String(corps && corps.telephone || "").replace(/\D/g, "");
+      if (tel.length < 8 || tel.length > 15) throw perm("t\xE9l\xE9phone invalide");
+      const essai = (R.numeros_essai || {})[tel];
+      if (essai) return { tel, dossier: { id: null, essai: true, bien_crm: essai.bien || null, bien_ref: essai.reference || null, negociateur: essai.negociateur || null, prenom: essai.prenom || "", nom: essai.prenom || "Essai", portail: "essai" } };
+      const rows = await t.dossiers.getRows({ tel9: B.tel9(tel) }, { orderBy: "maj_le", orderDesc: true, limit: 10 });
+      const id = +corps.dossier_id || null;
+      return { tel, dossier: id && rows.find((r) => r.id === id) || rows.find((r) => r.bien_crm) || rows[0] || null };
+    };
+    var lireBien = async (crm, dossier) => {
+      try {
+        const c = flowApi().crmDepuisCoffre(crm.type, crm.reglages, crm.prefixe, "ombre");
+        if (dossier.bien_crm) return await c.bienParId(dossier.bien_crm);
+        return dossier.bien_ref ? (await c.biensParReference(dossier.bien_ref))[0] || null : null;
+      } catch (e) {
+        return null;
+      }
+    };
+    var lirePhotos = async (crm, id, dossierImages) => {
+      try {
+        const c = flowApi().crmDepuisCoffre(crm.type, crm.reglages, crm.prefixe, "ombre");
+        return c.photosBien ? await c.photosBien(id, String(dossierImages)) : [];
+      } catch (e) {
+        return [];
+      }
+    };
+    var etatDe = async (tb, tel, dossier) => {
+      const rows = await tb.getRows({ tel9: B.tel9(tel), type: { in: ["optout", "fiche_envoyee", "ouverture", "sortie"] } }, { orderBy: "id", orderDesc: true, limit: 200 });
+      const id = dossier && dossier.id || null, miens = rows.filter((r) => (r.dossier || null) === id);
+      const sortie = miens.find((r) => r.type === "sortie");
+      return { optout: rows.some((r) => r.type === "optout"), fiche: miens.some((r) => r.type === "fiche_envoyee"), ouverture: miens.some((r) => r.type === "ouverture"), statut: sortie ? json(sortie.donnees, {}).statut || "" : "" };
+    };
+    var contexte = async (corps, R) => {
+      const t = await S.tables(), tb = await tableBot(t);
+      const { tel, dossier } = await trouver(t, corps, R);
+      const etat = await etatDe(tb, tel, dossier);
+      if (!dossier) return B.contexte({ dossier: null, etat });
+      const { conf, crm } = await charger();
+      const [bien, leads] = await Promise.all([lireBien(crm, dossier), dossier.id ? t.leads.getRows({ dossier_id: dossier.id }, { orderBy: "id", orderDesc: true, limit: 1 }) : []]);
+      const photos = R.photos && bien && bien.id ? await lirePhotos(crm, bien.id, R.photos) : [];
+      return B.contexte({ dossier, lead: leads[0] ? json(leads[0].dossier, {}) : null, bien, photos, conf, reglages: R, etat });
+    };
+    var TEXTE = (d) => d.texte || d.dernier_message || d.question || d.reponse || d.mot_cle || "";
+    var evenement = async (corps, R) => {
+      const t = await S.tables(), tb = await tableBot(t);
+      const { tel, dossier } = await trouver(t, corps, R);
+      const lot = (Array.isArray(corps.evenements) ? corps.evenements : []).filter((e) => e && typeof e.type === "string").slice(0, 50);
+      const evid = court(corps.event_id, 100), tel9 = B.tel9(tel), did = dossier && dossier.id || null;
+      if (evid && lot.length && await tb.getRow({ cle: `${evid}:0:${lot[0].type}` })) return { ok: true, deja: true };
+      const noter = (type, donnees, extra = {}) => tb.insertRow({ dossier: did, tel9, type: court(type, 60), quand: /* @__PURE__ */ new Date(), donnees: court(JSON.stringify(donnees || {}), 2e4), ...extra });
+      for (const [i, e] of lot.entries()) {
+        const d = e.donnees && typeof e.donnees === "object" ? e.donnees : {}, q = new Date(e.quand);
+        await noter(e.type, d, { noeud: court(e.noeud, 60), quand: isNaN(q) ? /* @__PURE__ */ new Date() : q, texte: court(TEXTE(d), 4e3), cle: evid ? `${evid}:${i}:${court(e.type, 60)}` : null });
+      }
+      const p = B.plan(lot, R), out = { ok: true, recus: lot.length };
+      if (!p.crm.length && !p.avis.length) return out;
+      const dos = dossier || { id: null, nom: "Num\xE9ro sans dossier" };
+      const { conf, crm, reglages: RA } = await charger();
+      if (p.crm.length) {
+        const ecrire = R.ecritures_crm === true && crm.mode === "reel" && dos.contact_crm;
+        const faits = [];
+        if (ecrire) {
+          const c = flowApi().crmDepuisCoffre(crm.type, crm.reglages, crm.prefixe, "reel");
+          for (const a of p.crm) {
+            try {
+              if (a.op === "couleurContact") await c.couleurContact(dos.contact_crm, a.couleur);
+              else await c.ajouterAction(dos.contact_crm, { action_id: a.action_id, texte: a.texte, negociateur: dos.negociateur });
+              faits.push({ op: a.op, fait: true });
+            } catch (e) {
+              faits.push({ op: a.op, fait: false, erreur: court(e.message, 300) });
+            }
+          }
+        }
+        await noter("crm", { ecrit: !!ecrire, contact: dos.contact_crm || null, prevu: p.crm, resultats: faits });
+        out.crm = ecrire ? faits : "non \xE9crit";
+      }
+      if (p.avis.length) {
+        const bien = await lireBien(crm, dos);
+        const reels = B.quiRecoit(dos.negociateur || bien && bien.negociateur_id, conf, bien).liste.map((x) => x.email);
+        const essai = dos.essai || R.notifications !== "reel";
+        const fil = (await tb.getRows({ tel9, type: { in: ["inbound", "message_bot"] } }, { orderBy: "id", orderDesc: true, limit: 40 })).reverse().map((r) => ({ role: r.type === "inbound" ? "prospect" : "bot", texte: r.texte || json(r.donnees, {}).clic || "" })).filter((m) => m.texte);
+        const messages = [];
+        for (const [i, avis] of p.avis.entries()) {
+          const tous = [.../* @__PURE__ */ new Set([...reels, ...avis.referents.flatMap((k) => adresses((R.referents || {})[k]))])];
+          const a = essai ? adresses(R.adresses_essai) : tous;
+          const { objet, html } = B.mailEquipe({ avis, dossier: dos, bien, telephone: tel, fil, aurait_recu: essai ? tous : null });
+          for (const adr of a) messages.push({ cle: `${S.prefixe()}bot-${did || tel9}:${evid || Date.now()}:${i}:${adr}`, a: adr, sujet: objet, html, reference: did ? `dossier ${did}` : "essai" });
+        }
+        const simuler = R.notifications === "simuler" || !R.notifications || !essai && !RA.envoi_mails;
+        out.avis = (await require_envois().envoyer(messages, { simuler })).resume;
+      }
+      return out;
+    };
+    var envoyerDocument = async ({ phone_number_id, jeton, a, buf, nom }) => {
+      const base = `https://graph.facebook.com/v21.0/${encodeURIComponent(phone_number_id)}`, h = { Authorization: `Bearer ${jeton}` };
+      const appel = async (chemin, options) => {
+        const r = await fetch(base + chemin, { ...options, signal: AbortSignal.timeout(4e3) });
+        const j2 = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j2.error && j2.error.message || `HTTP ${r.status}`);
+        return j2;
+      };
+      const fd = new FormData();
+      fd.append("messaging_product", "whatsapp");
+      fd.append("type", "application/pdf");
+      fd.append("file", new Blob([buf], { type: "application/pdf" }), nom);
+      const media = await appel("/media", { method: "POST", headers: h, body: fd });
+      const j = await appel("/messages", { method: "POST", headers: { ...h, "Content-Type": "application/json" }, body: JSON.stringify({ messaging_product: "whatsapp", to: a, type: "document", document: { id: media.id, filename: nom } }) });
+      return j.messages && j.messages[0] && j.messages[0].id;
+    };
+    var fiche = async (corps, R) => {
+      const t = await S.tables(), tb = await tableBot(t);
+      const { tel, dossier } = await trouver(t, corps, R);
+      const echec = (raison) => ({ echec: true, raison });
+      if (!dossier) return echec("dossier inconnu");
+      return require_verrou().sous(`bot-fiche:${B.tel9(tel)}:${dossier.id || 0}`, async () => {
+        const etat = await etatDe(tb, tel, dossier);
+        if (etat.optout) return echec("d\xE9sinscrit");
+        if (etat.fiche) return { deja_envoyee: true };
+        const W = R.whatsapp || {};
+        const jeton = W.variable_jeton ? await require_garde().lireSecret(W.variable_jeton) : null;
+        if (!W.phone_number_id || !jeton) return echec("WhatsApp non r\xE9gl\xE9");
+        const blocs = B.blocsFiche(await lireBien((await charger()).crm, dossier));
+        if (!blocs) return echec("bien illisible dans le CRM");
+        const buf = await require_pdf().ecrirePdf(blocs, { titre: "Fiche annonce", pied: false, producteur: "", couleur: "#374151" });
+        let identifiant;
+        try {
+          identifiant = await envoyerDocument({ phone_number_id: W.phone_number_id, jeton, a: tel, buf, nom: "fiche-annonce.pdf" });
+        } catch (e) {
+          await tb.insertRow({ dossier: dossier.id || null, tel9: B.tel9(tel), type: "fiche_echec", quand: /* @__PURE__ */ new Date(), texte: court(e.message, 500) });
+          return echec("envoi WhatsApp refus\xE9");
+        }
+        const horaire = /* @__PURE__ */ new Date();
+        await tb.insertRow({ dossier: dossier.id || null, tel9: B.tel9(tel), type: "fiche_envoyee", quand: horaire, donnees: JSON.stringify({ identifiant }) });
+        return { envoyee: true, identifiant, horaire: horaire.toISOString() };
+      });
+    };
+    var ACTIONS2 = { contexte, evenement, fiche };
+    var repondre = async (action, corps) => {
+      const k = Object.keys(ACTIONS2).find((x) => String(action || "").toLowerCase().endsWith(x));
+      if (!k) throw perm(`action inconnue : ${action}`);
+      const R = json((await require_conf().reglages()).bot, {});
+      return ACTIONS2[k](corps && typeof corps === "object" ? corps : {}, R && typeof R === "object" ? R : {});
+    };
+    module2.exports = { repondre, contexte, evenement, fiche };
   }
 });
 
@@ -100425,6 +100740,21 @@ var require_leads_solution = __commonJS({
           const tables = await S.preparer();
           return { tables, ...R.mises_de_cote.length > n0 ? { mises_de_cote: R.mises_de_cote.slice(n0) } : {} };
         })
+      },
+      {
+        name: "dzf_leads_bot",
+        label: "Leads : r\xE9pondre au bot WhatsApp",
+        category: CAT,
+        icon: "fab fa-whatsapp",
+        output: "bot",
+        timeout: 45,
+        description: "Les trois r\xE9ponses qu'un bot WhatsApp demande \xE0 l'application, derri\xE8re un point d'API prot\xE9g\xE9 par un jeton. \xAB contexte \xBB : le dossier du num\xE9ro, les champs publics du bien lus dans le CRM \xE0 l'instant, la personne qui re\xE7oit. \xAB evenement \xBB : range la conversation, \xE9crit couleur et action dans le CRM, pr\xE9vient les \xE9quipes selon les r\xE8gles d'envoi. \xAB fiche \xBB : fabrique la fiche PDF du bien (page blanche, sans marque) et l'envoie une seule fois. R\xE9glages : champ \xAB bot \xBB des r\xE9glages du client.",
+        params: [
+          { name: "action", label: "Action", default: "{{point}}", help: "contexte, evenement ou fiche ; ou le nom du point d'API, s'il finit par l'un de ces mots" },
+          { name: "corps", label: "Corps re\xE7u", type: "json", default: "{{corps}}" },
+          P_PREFIXE
+        ],
+        run: async (p) => dans(p, () => require_bot2().repondre(p.action, lu(p.corps)))
       },
       {
         name: "dzf_leads_preparer",

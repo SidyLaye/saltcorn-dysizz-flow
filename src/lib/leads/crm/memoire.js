@@ -12,6 +12,7 @@ const creer = ({ biens = [], contacts = [] } = {}) => {
     nom: "memoire",
     ecritures,
     bienParId: async (id) => B.find((b) => String(b.id) === String(id)) || null,
+    photosBien: async (id) => ((B.find((b) => String(b.id) === String(id)) || {}).photos || []).slice(),
     biensParReference: async (ref) => B.filter((b) => String(b.reference || "").trim().toLowerCase() === String(ref).trim().toLowerCase()).slice(0, 5),
     tousLesBiens: async () => B,
     biensParCriteres: async (q, { max = 2 } = {}) => B.filter((b) =>
@@ -27,6 +28,7 @@ const creer = ({ biens = [], contacts = [] } = {}) => {
     creerRecherche: async (contactId, r) => { ecritures.push({ op: "creerRecherche", contactId, r }); return { id: "r" + ecritures.length }; },
     majRecherche: async (contactId, id, r) => { ecritures.push({ op: "majRecherche", contactId, id, r }); return { id }; },
     ajouterAction: async (contactId, a) => { ecritures.push({ op: "ajouterAction", contactId, a }); return { id: "a" + ecritures.length }; },
+    couleurContact: async (id, couleur) => { ecritures.push({ op: "couleurContact", id, couleur }); return { id }; },
     contact: async (id) => C.find((c) => String(c.id) === String(id)) || null,
     ajouterConsentement: async (contactId, consent) => { ecritures.push({ op: "ajouterConsentement", contactId, consent: { ...consent, preuves: (consent.preuves || []).map((p) => p.nom) } }); return true; },
   };

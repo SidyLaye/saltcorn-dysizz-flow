@@ -13,7 +13,7 @@ const T = {
     ["action_lead", "String"], ["catalogue_synchro_le", "Date"], ["catalogue_etat", "String"],
     ["ia_actif", "Bool"], ["ia_fournisseur", "String"], ["ia_modele", "String"], ["ia_plafond_jour", "Integer"], ["ia_url", "String"], ["gabarits_partages", "Bool"],
     ["lien_fiche", "String"], ["envoi_a_verifier", "Bool"], ["routage_tables", "String"], ["telephones_exclus", "String"], ["crm_a_verifier", "Bool"],
-    ["adresse_non_automatise", "String"], ["format_envoi", "String"], ["origine_defaut", "String"]] },
+    ["adresse_non_automatise", "String"], ["format_envoi", "String"], ["origine_defaut", "String"], ["bot", "String"]] },
   agences: { name: "ld_agences", desc: "Agences", fields: [["nom", "String", { required: true }], ["crm_id", "String"], ["boites", "String"], ["negociateur_defaut", "String"], ["actif", "Bool"], ["enseigne", "String"]] },
   personnes: { name: "ld_personnes", desc: "Négociateurs et assistant(e)s", fields: [
     ["nom", "String", { required: true }], ["email", "String"], ["role", "String"], ["crm_id", "String"], ["agence_crm_id", "String"],
@@ -27,7 +27,7 @@ const T = {
   siege: { name: "ld_siege", desc: "Adresses en copie : de tout (portée « tous ») ou d'une agence, d'un groupe, de personnes choisies", fields: [["email", "String", { required: true }], ["libelle", "String"], ["actif", "Bool"],
     ["portee", "String"], ["agence", "String"], ["groupe", "Integer"], ["personnes", "String"]] },
   groupes: { name: "ld_groupes", desc: "Groupes de personnes (secteur, équipe)", fields: [["nom", "String", { required: true }], ["description", "String"]] },
-  leads: { name: "ld_leads", desc: "Leads traités (un par mail)", index: ["mail_id"], fields: [
+  leads: { name: "ld_leads", desc: "Leads traités (un par mail)", index: ["mail_id", "dossier_id"], fields: [
     ["mail_id", "Integer"], ["message_id", "String"], ["recu_le", "Date"], ["traite_le", "Date"], ["expediteur", "String"], ["objet", "String"],
     ["portail", "String"], ["source", "String"], ["nature", "String"], ["statut", "String"], ["decision", "String"],
     ["contact_nom", "String"], ["contact_email", "String"], ["contact_tel", "String"], ["contact_crm", "String"], ["contact_action", "String"],
@@ -42,6 +42,8 @@ const T = {
     ["statut", "String"], ["premiere_demande", "Date"], ["reponse_le", "Date"], ["derniere_activite", "Date"], ["nb_mails", "Integer"], ["cree_le", "Date"], ["maj_le", "Date"]] },
   evenements: { name: "ld_evenements", desc: "Messages des dossiers (conversation)", index: ["dossier"], fields: [
     ["dossier", "Integer", { required: true }], ["mail_id", "Integer"], ["type", "String"], ["role", "String"], ["auteur", "String"], ["via", "String"], ["quand", "Date"], ["texte", "String"], ["source", "String"], ["empreinte", "String"]] },
+  bot: { name: "ld_bot", desc: "Bot WhatsApp : messages et événements d'une conversation, envois de fiche, désinscriptions", index: ["tel9", "cle"], fields: [
+    ["dossier", "Integer"], ["tel9", "String", { required: true }], ["type", "String"], ["noeud", "String"], ["quand", "Date"], ["texte", "String"], ["donnees", "String"], ["cle", "String"]] },
   biens: { name: "ld_biens", desc: "Catalogue local des biens du CRM (synchronisé)", index: ["crm_id", "reference"], fields: [
     ["crm_id", "String", { required: true }], ["reference", "String"], ["prix", "Float"], ["surface", "Float"], ["pieces", "Integer"], ["chambres", "Integer"], ["type", "String"],
     ["ville", "String"], ["code_postal", "String"], ["negociateur", "String"], ["agence", "String"], ["proprietaire", "String"], ["supprime", "Bool"], ["synchro_le", "Date"],

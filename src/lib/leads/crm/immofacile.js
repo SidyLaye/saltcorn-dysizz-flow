@@ -239,6 +239,13 @@ const creer = (cfg = {}) => {
       return { ok: true, agences: agences.map((a) => ({ id: a.agency_id ?? a.id, nom: a.name, ville: a.city })) };
     },
     bienParId: detail,
+    /* Photos d'un bien en taille pleine, dans l'ordre de l'annonce, pour un dossier d'images donné (« pr_p », « pr_2 »).
+       Lecture seule ; le choix du dossier revient au client (les photos privées ne se montrent jamais). */
+    photosBien: async (id, dossier) => {
+      const p = data(await appel("GET", `/products/${Number(id)}?fetch=products_photos`)) || {};
+      return (p.products_photos || []).filter((x) => x && x.type === dossier && !x.is_red && !x.is_mid && /^https:\/\//.test(x.chemin || ""))
+        .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)).map((x) => x.chemin);
+    },
     biensParReference: async (ref) => (await recherche({ model: String(ref), count: 5 })).filter((b) => b && b.reference.toLowerCase() === String(ref).trim().toLowerCase()).slice(0, 3),
     biensParCriteres: async (q, { max = 2 } = {}) => {
       const c = [];
@@ -340,6 +347,8 @@ const creer = (cfg = {}) => {
         throw new Error("réaffectation du contact CRM non confirmée par relecture : " + non_pris.join(", "));
       return { id, ...(non_pris.length ? { non_pris } : {}) };
     },
+    /* Couleur du contact (température du projet). L'identifiant est celui de la palette du site. */
+    couleurContact: async (id, couleur) => { await appel("PATCH", `/customers/${Number(id)}`, { color_id: Number(couleur) }); return { id }; },
     /* Suivi (rapprochement) contact ↔ bien ; 409 = déjà suivi, c'est bon. */
     lierBien: async (contactId, bienId) => {
       const r = await tolere409(() => appel("POST", `/customers/${Number(contactId)}/follow-ups/${Number(bienId)}`));

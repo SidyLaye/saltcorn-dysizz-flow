@@ -25,6 +25,13 @@ module.exports = [
     }),
   },
   {
+    name: "dzf_leads_bot", label: "Leads : répondre au bot WhatsApp", category: CAT, icon: "fab fa-whatsapp", output: "bot", timeout: 45,
+    description: "Les trois réponses qu'un bot WhatsApp demande à l'application, derrière un point d'API protégé par un jeton. « contexte » : le dossier du numéro, les champs publics du bien lus dans le CRM à l'instant, la personne qui reçoit. « evenement » : range la conversation, écrit couleur et action dans le CRM, prévient les équipes selon les règles d'envoi. « fiche » : fabrique la fiche PDF du bien (page blanche, sans marque) et l'envoie une seule fois. Réglages : champ « bot » des réglages du client.",
+    params: [{ name: "action", label: "Action", default: "{{point}}", help: "contexte, evenement ou fiche ; ou le nom du point d'API, s'il finit par l'un de ces mots" },
+      { name: "corps", label: "Corps reçu", type: "json", default: "{{corps}}" }, P_PREFIXE],
+    run: async (p) => dans(p, () => require("../lib/leads/tables/bot").repondre(p.action, lu(p.corps))),
+  },
+  {
     name: "dzf_leads_preparer", label: "Leads : préparer le mail reçu", category: CAT, icon: "fas fa-inbox", output: "lead",
     description: "Prend le mail reçu, le mode (ombre ou réel) et la personne qui écrit : deux mails d'une même personne sont traités l'un après l'autre (verrou).",
     params: [{ name: "id", label: "Id du mail reçu", default: "{{id}}", required: true }, P_PREFIXE],

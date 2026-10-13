@@ -1,5 +1,23 @@
 # Journal des versions
 
+## 2.16.0
+
+### Ajouté
+- Leads : bloc « Leads : répondre au bot WhatsApp » (`dzf_leads_bot`), à mettre derrière un point d'API protégé par un jeton.
+  - « contexte » : le dossier du numéro, les champs publics du bien lus dans le CRM à l'instant (type, pièces, chambres,
+    surface, ville, code postal, prix, rien d'autre), le nom de la personne qui reçoit vraiment (remplaçant compris) ;
+  - « evenement » : range la conversation (table `ld_bot`), écrit la couleur du contact et une action dans le CRM,
+    prévient les équipes par mail selon les règles d'envoi en service ; un tour reçu deux fois n'est pas refait ;
+  - « fiche » : fabrique la fiche PDF du bien (page blanche, sans marque) et l'envoie par WhatsApp, une seule fois par
+    dossier, jamais après une désinscription.
+  - Réglages dans le champ « bot » des réglages du client. Par défaut rien ne part : messages simulés, CRM non écrit.
+    Mode « essai » : les messages ne vont qu'aux adresses d'essai ; des numéros d'essai tiennent lieu de prospect.
+  - Photos du bien dans le contexte : seulement si le réglage « photos » nomme le dossier d'images publiques
+    (ex. `pr_p`), en taille pleine, dans l'ordre de l'annonce, 10 au plus ; sans réglage, aucune photo.
+- Immofacile : couleur du contact (`couleurContact`), notée sans être envoyée en mode ombre ; photos d'un bien
+  par dossier d'images (`photosBien`, lecture seule).
+- PDF : option `producteur` (propriété du document), vide pour un document sans marque.
+
 ## 2.15.7
 
 ### Corrigé

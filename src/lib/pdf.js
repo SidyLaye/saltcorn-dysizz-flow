@@ -85,7 +85,7 @@ const ecrirePdf = async (blocs, opts = {}, loadImage) => {
         if (ri === 0) ops.push(`${accent} rg ${M} ${(y - h).toFixed(2)} ${CW} ${h.toFixed(2)} re f`);
         else if (ri % 2 === 0) ops.push(`0.96 0.97 0.98 rg ${M} ${(y - h).toFixed(2)} ${CW} ${h.toFixed(2)} re f`);
         const y0 = y;
-        cells.forEach((c, ci) => { y = y0 - 3; c.forEach((l) => { y -= lh; const right = ri > 0 && /^-?[\d\s.,]+(%|€|\s?€)?$/.test(String(r[ci] ?? "")); text(l, right ? M + (ci + 1) * cw - 4 - width(l, size) : M + ci * cw + 4, size, ri === 0, ri === 0 ? "1 1 1" : "0.1 0.1 0.1"); }); });
+        cells.forEach((c, ci) => { y = y0 - 3; c.forEach((l) => { y -= lh; const right = b.chiffres_a_droite !== false && ri > 0 && /^-?[\d\s.,]+(%|€|\s?€)?$/.test(String(r[ci] ?? "")); text(l, right ? M + (ci + 1) * cw - 4 - width(l, size) : M + ci * cw + 4, size, ri === 0, ri === 0 ? "1 1 1" : "0.1 0.1 0.1"); }); });
         y = y0 - h;
       });
       y -= 10;
@@ -117,7 +117,7 @@ const ecrirePdf = async (blocs, opts = {}, loadImage) => {
   });
   objs[catalog - 1] = `<< /Type /Catalog /Pages ${pagesId} 0 R >>`;
   objs[pagesId - 1] = `<< /Type /Pages /Kids [${kids.map((k) => `${k} 0 R`).join(" ")}] /Count ${kids.length} >>`;
-  const info = add(`<< /Producer (dysizz-flow) /Title ${pdfStr(opts.titre || "")} /Author ${pdfStr(opts.auteur || "")} /CreationDate (D:${new Date().toISOString().replace(/[-:T]/g, "").slice(0, 14)}Z) >>`);
+  const info = add(`<< /Producer ${pdfStr(opts.producteur ?? "dysizz-flow")} /Title ${pdfStr(opts.titre || "")} /Author ${pdfStr(opts.auteur || "")} /CreationDate (D:${new Date().toISOString().replace(/[-:T]/g, "").slice(0, 14)}Z) >>`);
   const parts = [Buffer.from("%PDF-1.4\n%\xe2\xe3\xcf\xd3\n", "latin1")]; const offs = []; let len = parts[0].length;
   objs.forEach((o, i) => {
     const head = Buffer.from(`${i + 1} 0 obj\n`, "latin1");
