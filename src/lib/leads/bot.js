@@ -6,6 +6,12 @@
 const { destinataires } = require("./routage");
 
 const CHAMPS_PUBLICS = ["type", "pieces", "chambres", "surface", "ville", "code_postal", "prix"];
+/* cartes du carrousel rédigées par l'application (lib/leads/cartes.js) : seulement le titre et les lignes, par langue */
+const cartesPourBot = (b) => {
+  const c = b && b.cartes, out = {};
+  for (const l of ["fr", "en"]) if (c && c[l] && Array.isArray(c[l].lignes) && c[l].lignes.length >= 3) out[l] = { ...(c[l].titre ? { titre: c[l].titre } : {}), lignes: c[l].lignes.slice(0, 9) };
+  return Object.keys(out).length ? { cartes: out } : {};
+};
 const bienPublic = (b) => {
   const o = {};
   for (const k of CHAMPS_PUBLICS) if (b && b[k] != null && b[k] !== "") o[k] = k === "ville" ? nomVille(b[k]) : b[k];
@@ -51,6 +57,10 @@ const annonce = (a) => {
   const pieces = (a.pieces || []).map((x) => [x.piece, x.surface ? `${x.surface} m²` : "", x.niveau, nettoyer(x.commentaire, 120)].filter(Boolean).join(" · ")).filter(Boolean).slice(0, 30);
   const out = {};
   if (Object.keys(details).length) out.details = details;
+  /* prospect anglophone : les valeurs qui se traduisent entièrement (jamais de français dans une conversation anglaise) */
+  const { traduireValeur } = require("./traduction");
+  const en = Object.fromEntries(Object.entries(details).map(([k, v]) => [k, traduireValeur(v)]).filter(([, v]) => v));
+  if (Object.keys(en).length) out.details_en = en;
   const t = par("titre"), d = par("texte");
   if (Object.keys(t).length) out.titre_annonce = t;
   if (Object.keys(d).length) out.description_annonce = d;
@@ -100,7 +110,7 @@ const contexte = ({ dossier, lead, bien, photos = [], contact = null, conf, regl
     negociateur: personne ? { prenom: "", nom: personne.nom } : null,
     /* photos : seulement celles du dossier d'images choisi par le client (réglage « photos »), 10 au plus (un carrousel WhatsApp) */
     /* champs publics, contenu public de l'annonce (critères, descriptions, pièces), photos du dossier d'images choisi */
-    bien_public: { ...bienPublic(bien), ...annonce(bien && bien.annonce), ...(photos.length ? { photos_publiques: photos.filter((u) => /^https:\/\//.test(u)).slice(0, 10) } : {}) },
+    bien_public: { ...bienPublic(bien), ...annonce(bien && bien.annonce), ...(photos.length ? { photos_publiques: photos.filter((u) => /^https:\/\//.test(u)).slice(0, 10) } : {}), ...cartesPourBot(bien) },
     /* numéro direct de la personne qui reprend : seulement si le client l'a accepté */
     liens_whatsapp: R.liens_directs === true && tel ? { negociateur: "https://wa.me/" + tel } : {},
     langue_ouverture: "fr",
@@ -191,4 +201,4 @@ const blocsFiche = (bien, quand = new Date()) => {
   return [{ titre }, { tableau, taille: 10.5, chiffres_a_droite: false }, { petit: `Informations de l'annonce au ${jour}. Document non contractuel.` }];
 };
 
-module.exports = { CHAMPS_PUBLICS, bienPublic, annonce, dejaConnu, nettoyer, tel9, quiRecoit, contexte, plan, lignes, texteScores, mailEquipe, blocsFiche, majuscule, nomVille };
+module.exports = { CHAMPS_PUBLICS, cartesPourBot, bienPublic, annonce, dejaConnu, nettoyer, tel9, quiRecoit, contexte, plan, lignes, texteScores, mailEquipe, blocsFiche, majuscule, nomVille };

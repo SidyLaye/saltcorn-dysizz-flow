@@ -1,4 +1,4 @@
-/* dysizz-flow 2.20.4 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.21.0 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.20.4" : "dev";
+    var VERSION2 = true ? "2.21.0" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -94259,11 +94259,11 @@ ${String(texte || "").slice(0, max)}
     };
     var FOURNISSEURS = {
       /* plugin « large-language-model » de Saltcorn déjà réglé par le client */
-      saltcorn: () => async (prompt) => {
+      saltcorn: () => async (prompt, schema = SCHEMA, nom = "extraction") => {
         const st = require("@saltcorn/data/db/state").getState();
         const f = st.functions && st.functions.llm_generate;
         if (!f) throw new Error("plugin large-language-model absent ou non r\xE9gl\xE9");
-        const compl = await f.run(prompt, { temperature: 0, tools: [{ type: "function", function: { name: "extraction", description: "Donn\xE9es lues dans le mail", parameters: SCHEMA } }], tool_choice: { type: "function", function: { name: "extraction" } } });
+        const compl = await f.run(prompt, { temperature: 0, tools: [{ type: "function", function: { name: nom, description: nom === "extraction" ? "Donn\xE9es lues dans le mail" : "R\xE9ponse structur\xE9e", parameters: schema } }], tool_choice: { type: "function", function: { name: nom } } });
         if (typeof compl === "string") return compl;
         const tc = compl && compl.tool_calls && compl.tool_calls[0];
         if (tc) return tc.input || tc.function && tc.function.arguments;
@@ -94294,6 +94294,21 @@ ${String(texte || "").slice(0, max)}
       const essais = reglages.essais || 3;
       return {
         fournisseur: reglages.fournisseur || "test",
+        generer: async (prompt, schema, nom = "redaction") => {
+          let err;
+          for (let i = 0; i < essais; i++) {
+            try {
+              const j = lireJson(await appeler(prompt, schema, nom));
+              if (!j) throw new Error("IA : r\xE9ponse illisible");
+              return j;
+            } catch (e) {
+              err = e;
+              if (e.status && e.status < 500 && e.status !== 429) break;
+              if (i < essais - 1) await attendre(1e3 * 4 ** i);
+            }
+          }
+          throw err;
+        },
         lire: async (mail, texte) => {
           const k = crypto.createHash("sha1").update(String(mail.expediteur || "") + "\n" + String(mail.objet || "") + "\n" + String(texte || "")).digest("hex");
           if (cache.has(k)) return { ...cache.get(k), cache: true };
@@ -97485,7 +97500,9 @@ var require_schema = __commonJS({
         ["photos", "String"],
         ["fictif", "Bool"],
         /* contenu de l'annonce (JSON : critères, descriptions, pièces), trié par lib/leads/bot.js avant d'aller au bot */
-        ["details", "String"]
+        ["details", "String"],
+        /* cartes du carrousel rédigées par l'IA de l'application (JSON : empreinte, fr, en), refaites quand l'annonce change */
+        ["cartes", "String"]
       ] },
       portails: { name: "ld_portails", desc: "Portails d\xE9clar\xE9s par le client (sans code)", fields: [
         ["nom", "String", { required: true }],
@@ -97905,7 +97922,7 @@ var require_api = __commonJS({
         if (fournisseur === "saltcorn") return IA.creer({ fournisseur, cache });
         const n = String(nomCle || "LEADS_IA_CLE").replace(/[^\w]/g, "");
         let client = null;
-        return { fournisseur, lire: async (mail, texte) => {
+        const obtenir = async () => {
           if (!client) {
             let k;
             try {
@@ -97916,8 +97933,9 @@ var require_api = __commonJS({
             if (!k) throw new Error(`cl\xE9 d'IA absente (${n})`);
             client = IA.creer({ fournisseur, modele, url, cle: k, cache });
           }
-          return client.lire(mail, texte);
-        } };
+          return client;
+        };
+        return { fournisseur, lire: async (mail, texte) => (await obtenir()).lire(mail, texte), generer: async (prompt, schema, nom) => (await obtenir()).generer(prompt, schema, nom) };
       },
       /* compare une valeur reçue (en-tête d'un webhook…) à un secret, à temps constant, sans jamais le renvoyer */
       secretEgal: async (nom, valeur) => {
@@ -98084,7 +98102,7 @@ var require_catalogue = __commonJS({
         return d;
       }
     };
-    var pourBot = (r) => r ? { ...versBien(r), photos: json(r.photos, []), annonce: json(r.details, null), fictif: !!r.fictif, synchro_le: r.synchro_le || null } : null;
+    var pourBot = (r) => r ? { ...versBien(r), photos: json(r.photos, []), annonce: json(r.details, null), cartes: json(r.cartes, null), fictif: !!r.fictif, synchro_le: r.synchro_le || null } : null;
     var lignesDe = async (t, id) => t.biens.getRows({ crm_id: String(id) }, { orderBy: "id" });
     var EN_COURS = G.enCours || (G.enCours = /* @__PURE__ */ new Map());
     var TROP_LONG = Symbol("trop long");
@@ -98098,7 +98116,7 @@ var require_catalogue = __commonJS({
         else await t.biens.insertRow(ligne);
         for (const r of (await lignesDe(t, id)).slice(1)) await t.biens.deleteRows({ id: r.id });
         oublier();
-        return { ...b, photos: b.photos || [] };
+        return { ...b, photos: b.photos || [], cartes: rows[0] ? json(rows[0].cartes, null) : null };
       } catch (e) {
         if (e && (e.http === 404 || e.http === 403)) {
           for (const r of await lignesDe(t, id)) if (!r.fictif) await t.biens.updateRow({ supprime: true, synchro_le: /* @__PURE__ */ new Date() }, r.id);
@@ -98653,12 +98671,182 @@ var require_etapes = __commonJS({
   }
 });
 
+// src/lib/leads/traduction.js
+var require_traduction = __commonJS({
+  "src/lib/leads/traduction.js"(exports2, module2) {
+    "use strict";
+    var { cle } = require_texte();
+    var EXPRESSIONS = {
+      "bon etat": "good condition",
+      "tres bon etat": "very good condition",
+      "tres bon": "very good",
+      "a rafraichir": "to refresh",
+      "travaux a prevoir": "work needed",
+      "a rehabiliter": "to restore",
+      "a renover": "to renovate",
+      "pierre de taille": "dressed stone",
+      "beton cellulaire": "aerated concrete",
+      "ossature bois": "timber frame",
+      "ossature metallique": "steel frame",
+      "pompe a chaleur air eau": "air-to-water heat pump",
+      "pompe a chaleur air air": "air-to-air heat pump",
+      "pompe a chaleur": "heat pump",
+      "climatisation reversible": "reversible air conditioning",
+      "chaudiere a granules": "pellet boiler",
+      "poele a granules": "pellet stove",
+      "poele hybride bois et granules": "hybrid wood and pellet stove",
+      "gaz de ville": "mains gas",
+      "chauffe eau thermodynamique": "heat-pump water heater",
+      "chauffe eau thermodynamique solaire": "heat-pump or solar water heater",
+      "chauffe eau": "water heater",
+      "ballon electrique": "electric water heater",
+      "chauffage central": "central heating",
+      "panneaux solaires": "solar panels",
+      "collective avec compteur": "collective, metered",
+      "collectif avec comptage individuel": "collective, individually metered",
+      "tout a l egout": "mains drainage",
+      "fosse septique": "septic tank",
+      "fosse toutes eaux": "septic tank",
+      "micro station": "micro treatment plant",
+      "garage ferme": "closed garage",
+      "garageferme": "closed garage",
+      "garage double": "double garage",
+      "garagedouble": "double garage",
+      "garage simple": "single garage",
+      "garagesimple": "single garage",
+      "sous sol": "basement",
+      "soussol": "basement",
+      "exterieur et couvert": "outdoor and covered",
+      "grand standing": "luxury",
+      "sans cuisine": "no kitchen",
+      "coin repas": "dining area",
+      "semi ouverte": "semi-open",
+      "maison de maitre": "mansion",
+      "maison de ville": "town house",
+      "corps de ferme": "farmhouse",
+      "ancienne ferme": "former farm",
+      "sud est": "south-east",
+      "sud ouest": "south-west",
+      "nord est": "north-east",
+      "nord ouest": "north-west",
+      "nord sud": "north-south",
+      "est ouest": "east-west"
+    };
+    var MOTS = {
+      bois: "wood",
+      electrique: "electric",
+      fuel: "oil",
+      gaz: "gas",
+      mixte: "mixed",
+      aucun: "none",
+      sans: "none",
+      geothermie: "geothermal",
+      aerothermie: "air-source heating",
+      individuel: "individual",
+      individuelle: "individual",
+      collectif: "collective",
+      thermodynamique: "heat-pump",
+      chaudiere: "boiler",
+      pierre: "stone",
+      brique: "brick",
+      parpaing: "breeze block",
+      beton: "concrete",
+      crepis: "render",
+      enduit: "render",
+      colombages: "half-timbered",
+      terre: "earth",
+      et: "and",
+      degagee: "open",
+      campagne: "countryside",
+      jardin: "garden",
+      panoramique: "panoramic",
+      village: "village",
+      montagne: "mountain",
+      montagnes: "mountains",
+      piscine: "pool",
+      pyrenees: "Pyrenees",
+      foret: "forest",
+      riviere: "river",
+      ville: "town",
+      toits: "rooftops",
+      etang: "pond",
+      mer: "sea",
+      vignes: "vineyards",
+      lac: "lake",
+      verdure: "greenery",
+      cour: "courtyard",
+      golf: "golf course",
+      exterieur: "outdoor",
+      couvert: "covered",
+      aerien: "outdoor",
+      garage: "garage",
+      americaine: "open-plan",
+      amenagee: "fitted",
+      equipee: "equipped",
+      independante: "separate",
+      kitchenette: "kitchenette",
+      nue: "unfitted",
+      ouverte: "open",
+      meublee: "furnished",
+      simple: "basic",
+      sud: "south",
+      nord: "north",
+      est: "east",
+      ouest: "west",
+      contemporain: "contemporary",
+      moderne: "modern",
+      villa: "villa",
+      ancien: "period",
+      traditionnel: "traditional",
+      bourgeois: "bourgeois",
+      bastide: "bastide",
+      grange: "barn",
+      normal: "standard",
+      excellent: "excellent",
+      habitable: "habitable",
+      moyen: "average",
+      bon: "good",
+      mauvais: "poor",
+      oui: "yes",
+      non: "no",
+      conforme: "compliant"
+    };
+    var unMorceau = (brut) => {
+      const k = cle(brut);
+      if (!k) return null;
+      if (EXPRESSIONS[k]) return EXPRESSIONS[k];
+      if (MOTS[k]) return MOTS[k];
+      const mots = k.split(" ");
+      if (mots.some((m) => !MOTS[m])) return null;
+      return mots.map((m) => MOTS[m]).join(mots.includes("et") ? " " : ", ");
+    };
+    var traduireValeur = (valeur) => {
+      const v = String(valeur == null ? "" : valeur).trim();
+      if (!v) return null;
+      if (/^([A-G]|\d[\d\s.,]*(\s?(m²|m2|%))?)$/i.test(v)) return v;
+      const plus = v.split(/\s*\+\s*/);
+      const out = plus.map((p) => {
+        const parts = p.split(/\s*[,_]\s*/).filter(Boolean);
+        const t = parts.map(unMorceau);
+        return t.includes(null) ? null : t.join(", ");
+      });
+      return out.includes(null) ? null : out.join(" + ");
+    };
+    module2.exports = { traduireValeur };
+  }
+});
+
 // src/lib/leads/bot.js
 var require_bot = __commonJS({
   "src/lib/leads/bot.js"(exports2, module2) {
     "use strict";
     var { destinataires } = require_routage();
     var CHAMPS_PUBLICS = ["type", "pieces", "chambres", "surface", "ville", "code_postal", "prix"];
+    var cartesPourBot = (b) => {
+      const c = b && b.cartes, out = {};
+      for (const l of ["fr", "en"]) if (c && c[l] && Array.isArray(c[l].lignes) && c[l].lignes.length >= 3) out[l] = { ...c[l].titre ? { titre: c[l].titre } : {}, lignes: c[l].lignes.slice(0, 9) };
+      return Object.keys(out).length ? { cartes: out } : {};
+    };
     var bienPublic = (b) => {
       const o = {};
       for (const k of CHAMPS_PUBLICS) if (b && b[k] != null && b[k] !== "") o[k] = k === "ville" ? nomVille(b[k]) : b[k];
@@ -98779,6 +98967,9 @@ var require_bot = __commonJS({
       const pieces = (a.pieces || []).map((x) => [x.piece, x.surface ? `${x.surface} m\xB2` : "", x.niveau, nettoyer(x.commentaire, 120)].filter(Boolean).join(" \xB7 ")).filter(Boolean).slice(0, 30);
       const out = {};
       if (Object.keys(details).length) out.details = details;
+      const { traduireValeur } = require_traduction();
+      const en = Object.fromEntries(Object.entries(details).map(([k, v]) => [k, traduireValeur(v)]).filter(([, v]) => v));
+      if (Object.keys(en).length) out.details_en = en;
       const t = par("titre"), d = par("texte");
       if (Object.keys(t).length) out.titre_annonce = t;
       if (Object.keys(d).length) out.description_annonce = d;
@@ -98831,7 +99022,7 @@ var require_bot = __commonJS({
         negociateur: personne ? { prenom: "", nom: personne.nom } : null,
         /* photos : seulement celles du dossier d'images choisi par le client (réglage « photos »), 10 au plus (un carrousel WhatsApp) */
         /* champs publics, contenu public de l'annonce (critères, descriptions, pièces), photos du dossier d'images choisi */
-        bien_public: { ...bienPublic(bien), ...annonce(bien && bien.annonce), ...photos.length ? { photos_publiques: photos.filter((u) => /^https:\/\//.test(u)).slice(0, 10) } : {} },
+        bien_public: { ...bienPublic(bien), ...annonce(bien && bien.annonce), ...photos.length ? { photos_publiques: photos.filter((u) => /^https:\/\//.test(u)).slice(0, 10) } : {}, ...cartesPourBot(bien) },
         /* numéro direct de la personne qui reprend : seulement si le client l'a accepté */
         liens_whatsapp: R.liens_directs === true && tel ? { negociateur: "https://wa.me/" + tel } : {},
         langue_ouverture: "fr",
@@ -98939,7 +99130,161 @@ ${aurait_recu ? `<p style="color:#b45309;font-size:12px">Essai : en service, ce 
       const jour = quand.toLocaleDateString("fr-FR", { timeZone: "Europe/Paris", day: "2-digit", month: "2-digit", year: "numeric" });
       return [{ titre }, { tableau, taille: 10.5, chiffres_a_droite: false }, { petit: `Informations de l'annonce au ${jour}. Document non contractuel.` }];
     };
-    module2.exports = { CHAMPS_PUBLICS, bienPublic, annonce, dejaConnu, nettoyer, tel9, quiRecoit, contexte, plan, lignes, texteScores, mailEquipe, blocsFiche, majuscule, nomVille };
+    module2.exports = { CHAMPS_PUBLICS, cartesPourBot, bienPublic, annonce, dejaConnu, nettoyer, tel9, quiRecoit, contexte, plan, lignes, texteScores, mailEquipe, blocsFiche, majuscule, nomVille };
+  }
+});
+
+// src/lib/leads/cartes.js
+var require_cartes = __commonJS({
+  "src/lib/leads/cartes.js"(exports2, module2) {
+    "use strict";
+    var crypto = require("crypto");
+    var B = require_bot();
+    var { cle } = require_texte();
+    var SCHEMA = {
+      type: "object",
+      additionalProperties: false,
+      required: ["fr", "en"],
+      properties: Object.fromEntries(["fr", "en"].map((l) => [l, {
+        type: "object",
+        additionalProperties: false,
+        required: ["titre", "lignes"],
+        properties: { titre: { type: "string" }, lignes: { type: "array", items: { type: "string" } } }
+      }]))
+    };
+    var donneesPourCartes = (bien) => {
+      const pub = B.bienPublic(bien) || {}, an = B.annonce(bien && bien.annonce) || {};
+      return {
+        ...pub,
+        ...an.details ? { caracteristiques: an.details } : {},
+        ...an.titre_annonce ? { titre_annonce: an.titre_annonce } : {},
+        ...an.description_annonce ? { description: an.description_annonce } : {},
+        ...an.pieces_detail ? { pieces: an.pieces_detail } : {}
+      };
+    };
+    var empreinte = (bien) => crypto.createHash("sha1").update(JSON.stringify([donneesPourCartes(bien), (bien && bien.photos || []).length])).digest("hex");
+    var lignesVoulues = (nbPhotos) => Math.max(3, Math.min(9, (+nbPhotos || 0) - 1));
+    var consignes = (donnees, nbPhotos) => {
+      const n = lignesVoulues(nbPhotos);
+      return `Tu r\xE9diges les l\xE9gendes des photos d'un bien immobilier montr\xE9 sur WhatsApp \xE0 un acheteur qui a d\xE9j\xE0 r\xE9pondu \xE0 son annonce.
+Agence : S\xE9lection Habitat - Agence Hamilton (maisons de caract\xE8re, une exp\xE9rience immobili\xE8re \xE0 hautes valeurs humaines).
+But : donner envie de visiter, avec des faits. L'acheteur ach\xE8te une vie (le calme, la place, la pierre, la vue), pas une fiche technique.
+
+\xC9cris exactement ${n} lignes en fran\xE7ais ET exactement ${n} lignes en anglais, plus un titre court dans chaque langue (60 caract\xE8res au plus,
+le type de bien, son atout principal et la commune, sans prix).
+Chaque ligne :
+- commence par UN \xE9moji qui illustre le fait (\u{1F3E1} \u{1F333} \u{1F3CA} \u{1F304} \u{1F9F1} \u{1F525} \u{1F6C1} \u{1F37D}\uFE0F \u2600\uFE0F \u{1F697} \u{1F4CD} \u{1F4B6}\u2026), puis un espace ;
+- 100 caract\xE8res au plus, une seule phrase, sans point d'exclamation ;
+- part d'UN fait pr\xE9sent dans les DONN\xC9ES (champ, caract\xE9ristique, phrase de la description), et peut dire ce qu'il permet, au conditionnel
+  ou comme une possibilit\xE9 (\xAB de quoi recevoir \xBB, \xAB pour les soir\xE9es d'hiver \xBB) ; jamais un fait qui n'est pas dans les donn\xE9es ;
+- aucun nombre, surface, dur\xE9e, distance ou ann\xE9e qui ne soit pas \xE9crit dans les donn\xE9es, avec la m\xEAme unit\xE9 ;
+- aucun montant sauf le prix (une seule ligne de prix, vers la fin) ; aucune adresse, aucun nom, aucune information sur le vendeur, le mandat,
+  les honoraires, les frais, les travaux \xE0 pr\xE9voir ;
+- aucun superlatif inv\xE9rifiable (exceptionnel, unique, id\xE9al, rare, sublime, magnifique, parfait, superbe, incroyable ; exceptional, unique,
+  ideal, stunning, perfect, amazing, superb) ;
+- jamais \xAB pas seulement\u2026 mais \xBB, jamais de liste de n\xE9gations ; ton chaleureux, simple, vouvoiement implicite.
+Ordre : d'abord l'atout le plus fort (place, g\xEEte, terrain, vue, caract\xE8re), le prix vers la fin. Pas de ligne sur le r\xE9f\xE9rent : l'agence l'ajoute.
+En anglais : un anglais naturel (pas de mot fran\xE7ais, sauf \xAB g\xEEte \xBB), m\xEAmes faits, m\xEAmes chiffres.
+
+R\xE9ponds en JSON : {"fr": {"titre": "\u2026", "lignes": ["\u2026"]}, "en": {"titre": "\u2026", "lignes": ["\u2026"]}}
+
+DONN\xC9ES : ${JSON.stringify(donnees)}`;
+    };
+    var nombre = (s) => {
+      let t = String(s || "").replace(/[\s  ]/g, "").replace(/[.,]$/, "");
+      if (/^\d{1,3}(\.\d{3})+(,\d+)?$/.test(t)) t = t.replace(/\./g, "").replace(",", ".");
+      else if (/,\d{1,2}$/.test(t)) t = t.replace(/\./g, "").replace(",", ".");
+      else t = t.replace(/,/g, "");
+      const n = parseFloat(t);
+      return isFinite(n) ? n : null;
+    };
+    var FAMILLES = [
+      [/^(km|kilom|kilomet|miles?$|m[eè]tres?$|meters?$)/i, "distance"],
+      [/^(minutes?|min$|heures?|hours?|h$)/i, "duree"],
+      [/^(m²|m2|ha$|hectares?|sq)/i, "surface"],
+      [/^%/, "pourcent"],
+      [/^(ans$|ann[ée]es?|years?)/i, "age"],
+      [/^(chambres?|bedrooms?)/i, "chambres"],
+      [/^(pi[eè]ces?|rooms?)/i, "pieces"]
+    ];
+    var unites = (t) => {
+      const out = [], re = /(\d[\d\s.,]*?)\s*(km|kilom[eè]tres?|kilometers?|miles?|m[eè]tres?\b|meters?\b|m²|m2\b|ha\b|hectares?|sq\.? ?m|minutes?|min\b|heures?\b|hours?\b|h\b|%|ans\b|ann[ée]es?|years?|chambres?|bedrooms?|pi[eè]ces?|rooms?)/gi;
+      let m;
+      while (m = re.exec(String(t || ""))) {
+        const v = nombre(m[1]);
+        if (v === null) continue;
+        const f = FAMILLES.find(([r]) => r.test(m[2]));
+        if (f) out.push(f[1] + ":" + v);
+      }
+      return out;
+    };
+    var permisDe = (donnees) => {
+      const texte = JSON.stringify(donnees);
+      const p = unites(texte);
+      if (donnees.surface) p.push("surface:" + nombre(donnees.surface));
+      if (donnees.chambres) p.push("chambres:" + donnees.chambres);
+      if (donnees.pieces) p.push("pieces:" + donnees.pieces);
+      const annees = texte.match(/\b(1[0-9]{3}|20[0-9]{2})\b/g) || [];
+      return { unites: new Set(p), annees: new Set(annees) };
+    };
+    var SUPERLATIFS = /\b(exceptionnel(le)?s?|unique|uniques|id[ée]al(e|es)?|rare|sublime|magnifique|parfait(e|es)?|superbe|incroyable|extraordinaire|splendide|exceptional|ideal|stunning|perfect|amazing|superb|magnificent|incredible|breathtaking)\b/i;
+    var RESERVES = /honorair|commission|frais|mandat|propri[ée]taire|vendeur|cadastr|\bcl[ée]s?\b|adresse|travaux [àa] pr[ée]voir|\bseller\b|\bowner\b|\bfees?\b|\baddress\b|\bkeys?\b|agent fee/i;
+    var MOTS_FR = /\b(de|la|le|les|et|avec|chambres?|maison|bois|pierre|jardin|vue|campagne|pi[eè]ces?|terrain|chauffage|salle|charme)\b/i;
+    var verifierLigne = (ligne, donnees, langue = "fr") => {
+      const l = String(ligne || "").trim();
+      if (!new RegExp("^\\p{Extended_Pictographic}", "u").test(l)) return "\xE9moji en t\xEAte manquant";
+      if (l.length > 120) return "longueur";
+      if (/!/.test(l)) return "exclamation";
+      if (SUPERLATIFS.test(l)) return "superlatif";
+      if (/[\w.+-]+@[\w-]+\.[\w.]+|https?:\/\/|www\./i.test(l) || (l.match(/\+?\d[\d .-]{7,}\d/g) || []).some((m) => m.replace(/\D/g, "").length >= 9)) return "coordonn\xE9e";
+      if (RESERVES.test(l)) return "sujet r\xE9serv\xE9";
+      const prix = nombre(donnees && donnees.prix);
+      for (const m of l.matchAll(/(\d[\d\s.,]*)\s*(k€|€|euros?\b|eur\b)/gi)) {
+        const v = nombre(m[1]) * (m[2].toLowerCase() === "k\u20AC" ? 1e3 : 1);
+        if (!prix || Math.abs(v - prix) > 1) return "montant autre que le prix";
+      }
+      const P = permisDe(donnees || {});
+      for (const u of unites(l.replace(/(\d[\d\s.,]*)\s*(k€|€|euros?\b)/gi, ""))) if (!P.unites.has(u)) return "nombre absent des donn\xE9es : " + u;
+      for (const a of l.match(/\b(1[0-9]{3}|20[0-9]{2})\b/g) || []) if (!P.annees.has(a)) return "ann\xE9e absente des donn\xE9es : " + a;
+      if (langue === "en" && MOTS_FR.test(cle(l.replace(/g[iî]te/gi, "")))) return "mot fran\xE7ais dans une ligne anglaise";
+      return null;
+    };
+    var verifierTitre = (t) => {
+      const s = String(t || "").trim();
+      return s && s.length <= 80 && !SUPERLATIFS.test(s) && !RESERVES.test(s) && !/!|\d[\d\s.,]*\s*(€|euros?)/i.test(s) ? s : null;
+    };
+    var lireJson = (x) => {
+      if (x && typeof x === "object") return x;
+      try {
+        const s = String(x || "");
+        return JSON.parse(s.slice(s.indexOf("{"), s.lastIndexOf("}") + 1));
+      } catch (e) {
+        return null;
+      }
+    };
+    var genererCartes = async (ia, bien) => {
+      const donnees = donneesPourCartes(bien);
+      let sortie;
+      try {
+        sortie = lireJson(await ia.generer(consignes(donnees, (bien && bien.photos || []).length), SCHEMA, "cartes"));
+      } catch (e) {
+        return null;
+      }
+      if (!sortie) return null;
+      const out = { empreinte: empreinte(bien), le: (/* @__PURE__ */ new Date()).toISOString(), refus: [] };
+      for (const langue of ["fr", "en"]) {
+        const s = sortie[langue] || {};
+        const lignes = [];
+        for (const l of Array.isArray(s.lignes) ? s.lignes : []) {
+          const r = verifierLigne(l, donnees, langue);
+          if (r) out.refus.push({ langue, ligne: String(l).slice(0, 140), raison: r });
+          else lignes.push(String(l).trim());
+        }
+        if (lignes.length >= 3) out[langue] = { titre: verifierTitre(s.titre), lignes: lignes.slice(0, 9) };
+      }
+      return out.fr || out.en ? out : null;
+    };
+    module2.exports = { SCHEMA, donneesPourCartes, empreinte, consignes, lignesVoulues, verifierLigne, verifierTitre, genererCartes };
   }
 });
 
@@ -98992,6 +99337,32 @@ var require_bot2 = __commonJS({
         return null;
       }
     };
+    var CARTES_EN_COURS = /* @__PURE__ */ new Map();
+    var preparerCartes = async (bien, RA = {}) => {
+      if (!bien || bien.id == null || !RA.ia_actif) return null;
+      const Cx = require_cartes();
+      if (bien.cartes && bien.cartes.empreinte === Cx.empreinte(bien)) return bien.cartes;
+      const k = String(bien.id);
+      if (CARTES_EN_COURS.has(k)) return CARTES_EN_COURS.get(k);
+      const p = (async () => {
+        const G = require_gabarits();
+        if (await G.appelsDuJour() >= (+RA.ia_plafond_jour || 200)) return null;
+        const ia = flowApi().iaDepuisCoffre(RA.ia_fournisseur || "saltcorn", RA.ia_modele || "", "LEADS_IA_CLE", RA.ia_url || void 0);
+        const t0 = Date.now(), c = await Cx.genererCartes(ia, bien);
+        await G.noter({ ok: !!c, ms: Date.now() - t0, nature: "cartes", source: "bien " + k }).catch(() => {
+        });
+        if (!c) return null;
+        const t = await S.tables(), r = (await t.biens.getRows({ crm_id: k }, { orderBy: "id", limit: 1 }))[0];
+        if (r) await t.biens.updateRow({ cartes: JSON.stringify(c) }, r.id);
+        return c;
+      })().catch(() => null).finally(() => CARTES_EN_COURS.delete(k));
+      CARTES_EN_COURS.set(k, p);
+      return p;
+    };
+    var preparerPlusTard = (bien) => {
+      charger().then(({ reglages: RA }) => preparerCartes(bien, RA || {})).catch(() => {
+      });
+    };
     var CONTACTS = globalThis[Symbol.for("dysizz-flow.leads.bot.contacts")] || (globalThis[Symbol.for("dysizz-flow.leads.bot.contacts")] = /* @__PURE__ */ new Map());
     var lireContact = async (crm, id) => {
       if (!id || !/^\d+$/.test(String(id))) return null;
@@ -99027,6 +99398,7 @@ var require_bot2 = __commonJS({
         dossier.essai ? dossier.projet ? { prenom: null, projets: [dossier.projet] } : null : lireContact(crm, dossier.contact_crm)
       ]);
       const photos = R.photos && bien && Array.isArray(bien.photos) ? bien.photos : [];
+      if (bien) preparerPlusTard(bien);
       const lead = leads[0] ? json(leads[0].dossier, {}) : dossier.essai && dossier.message ? { extraction: { message: dossier.message, nature: "lead" } } : null;
       return B.contexte({ dossier, lead, bien, photos, contact, conf, reglages: R, etat });
     };
@@ -99042,6 +99414,11 @@ var require_bot2 = __commonJS({
         const d = e.donnees && typeof e.donnees === "object" ? e.donnees : {}, q = new Date(e.quand);
         await noter(e.type, d, { noeud: court(e.noeud, 60), quand: isNaN(q) ? /* @__PURE__ */ new Date() : q, texte: court(TEXTE(d), 4e3), cle: evid ? `${evid}:${i}:${court(e.type, 60)}` : null });
       }
+      if (dossier && lot.some((e) => e.type === "ouverture" && e.noeud === "N0"))
+        charger().then(({ crm: crm2 }) => lireBien(crm2, dossier, R)).then((b) => {
+          if (b) preparerPlusTard(b);
+        }).catch(() => {
+        });
       const p = B.plan(lot, R), out = { ok: true, recus: lot.length };
       if (p.avis.some((a) => a.type === "message_apres_stop")) {
         const l = await tb.getRows({ tel9, type: "message_apres_stop" }, { orderBy: "id", orderDesc: true, limit: lot.length + 1 });
@@ -99166,9 +99543,20 @@ var require_bot2 = __commonJS({
         }
       })().catch(() => {
       });
+      const gardees = /* @__PURE__ */ new Map();
+      for (const b of trouves) {
+        const r = (await t.biens.getRows({ crm_id: String(b.id) }, { orderBy: "id", limit: 1 }))[0];
+        if (r && r.cartes) gardees.set(String(b.id), json(r.cartes, null));
+      }
+      for (const b of trouves) if (!gardees.get(String(b.id))) preparerPlusTard(b);
       return { criteres: q, biens: trouves.map((b) => {
         const p = B.quiRecoit(b.negociateur_id, conf, b).personne;
-        return { id: b.id, reference: b.reference || "", bien_public: { ...B.bienPublic(b), ...B.annonce(b.annonce), photos_publiques: (b.photos || []).slice(0, 10) }, negociateur: p ? { nom: p.nom } : null };
+        return {
+          id: b.id,
+          reference: b.reference || "",
+          bien_public: { ...B.bienPublic(b), ...B.annonce(b.annonce), photos_publiques: (b.photos || []).slice(0, 10), ...B.cartesPourBot({ cartes: gardees.get(String(b.id)) }) },
+          negociateur: p ? { nom: p.nom } : null
+        };
       }) };
     };
     var ACTIONS2 = { contexte, evenement, fiche, biens };
@@ -99178,7 +99566,7 @@ var require_bot2 = __commonJS({
       const R = json((await require_conf().reglages()).bot, {});
       return ACTIONS2[k](corps && typeof corps === "object" ? corps : {}, R && typeof R === "object" ? R : {});
     };
-    module2.exports = { repondre, contexte, evenement, fiche };
+    module2.exports = { repondre, contexte, evenement, fiche, preparerCartes };
   }
 });
 

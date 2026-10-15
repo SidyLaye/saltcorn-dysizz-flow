@@ -25,10 +25,11 @@ module.exports = {
       if (fournisseur === "saltcorn") return IA.creer({ fournisseur, cache });
       const n = String(nomCle || "LEADS_IA_CLE").replace(/[^\w]/g, "");
       let client = null;
-      return { fournisseur, lire: async (mail, texte) => {
+      const obtenir = async () => {
         if (!client) { let k; try { k = await require("./garde").lireSecret(n); } catch (e) { k = undefined; } if (!k) throw new Error(`clé d'IA absente (${n})`); client = IA.creer({ fournisseur, modele, url, cle: k, cache }); }
-        return client.lire(mail, texte);
-      } };
+        return client;
+      };
+      return { fournisseur, lire: async (mail, texte) => (await obtenir()).lire(mail, texte), generer: async (prompt, schema, nom) => (await obtenir()).generer(prompt, schema, nom) };
     },
     /* compare une valeur reçue (en-tête d'un webhook…) à un secret, à temps constant, sans jamais le renvoyer */
     secretEgal: async (nom, valeur) => {

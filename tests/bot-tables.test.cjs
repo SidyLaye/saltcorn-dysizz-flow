@@ -32,12 +32,15 @@ crm.bienEtPhotos = async (id, ...a) => { LECTURES++; if (LENT) await new Promise
   if (CRM_CHANGE[id] && CRM_CHANGE[id].id) return { photos: [], ...CRM_CHANGE[id] };
   return { ...(await lireVrai(id, ...a)), ...(CRM_CHANGE[id] || {}) }; };
 let BOT = {}, MODE = "reel"; const mails = []; const meta = [];
+/* IA de l'application (cartes du carrousel), simulée ; journal des appels du jour */
+let IA_SORTIE = null, APPELS_IA = 0, IA_ACTIF = false; const notesIA = [];
 Module._load = function (req, parent, ...rest) {
   const de = (parent && parent.filename) || "";
   if (/tables[\\/]bot\.js$/.test(de)) {
     if (req === "./schema") return { tables: async () => T, prefixe: () => "ld_", definitions: () => [] };
-    if (req === "./conf") return { ...C, charger: async () => ({ conf: CONF, crm: { type: "memoire", mode: MODE }, reglages: { envoi_mails: true } }), reglages: async () => ({ bot: JSON.stringify(BOT) }) };
-    if (req === "./core") return { flowApi: () => ({ crmDepuisCoffre: () => crm }) };
+    if (req === "./conf") return { ...C, charger: async () => ({ conf: CONF, crm: { type: "memoire", mode: MODE }, reglages: { envoi_mails: true, ia_actif: IA_ACTIF, ia_plafond_jour: 5 } }), reglages: async () => ({ bot: JSON.stringify(BOT) }) };
+    if (req === "./core") return { flowApi: () => ({ crmDepuisCoffre: () => crm, iaDepuisCoffre: () => ({ generer: async () => { APPELS_IA++; return IA_SORTIE; } }) }) };
+    if (req === "./gabarits") return { appelsDuJour: async () => notesIA.length, noter: async (a) => notesIA.push(a) };
     if (req === "../../envois") return { envoyer: async (m, o) => { mails.push(...m.map((x) => ({ ...x, simuler: o.simuler }))); return { resume: `${m.length} message(s)` }; } };
     if (req === "../../verrou") return { sous: async (k, fn) => fn() };
     if (req === "../../../garde") return { lireSecret: async (n) => (n === "JETON_WA" ? "jeton-fictif" : undefined) };
@@ -115,6 +118,28 @@ const sortie = (code, plus = {}) => ({ type: "sortie", noeud: "TB3", quand: "202
   assert.ok(alertes.length > 0 && new Set(alertes.map((m) => m.a)).size === alertes.length, "une alerte par destinataire, une seule fois : " + JSON.stringify(alertes.map((m) => m.a)));
   assert.strictEqual((await repondre("fiche", { telephone: "33622222222" })).echec, true);
 
+  /* cartes du carrousel (revue du 15/10, § 6.1) : rédigées par l'IA de l'application une fois par bien, gardées avec lui, rendues au bot */
+  {
+    const { preparerCartes } = require("../src/lib/leads/tables/bot");
+    IA_SORTIE = { fr: { titre: "Maison de 5 pièces à Cahors", lignes: ["🏡 120 m² et 5 pièces pour toute la famille", "📍 Une maison à Cahors", "💶 245 000 € pour l'ensemble", "🏡 Une maison exceptionnelle"] },
+      en: { titre: "House in Cahors", lignes: ["🏡 120 m² and 5 rooms"] } };
+    IA_ACTIF = true; notesIA.length = 0;
+    await repondre("contexte", { telephone: "33611111111", dossier_id: 7 });   // copie du bien 99 dans ld_biens ; préparation lancée en arrière-plan
+    const bien = { ...(await require("../src/lib/leads/tables/catalogue").bienFrais(crm, 99, {})) };
+    const c = await preparerCartes(bien, { ia_actif: true, ia_plafond_jour: 5 });
+    assert.deepEqual(c.fr.lignes, ["🏡 120 m² et 5 pièces pour toute la famille", "📍 Une maison à Cahors", "💶 245 000 € pour l'ensemble"], "ligne au superlatif retirée");
+    const ligne99 = T.biens.L.find((b) => b.crm_id === "99");
+    assert.equal(JSON.parse(ligne99.cartes).fr.titre, "Maison de 5 pièces à Cahors", "cartes gardées avec le bien");
+    const appels = APPELS_IA; await preparerCartes({ ...bien, cartes: JSON.parse(ligne99.cartes) }, { ia_actif: true, ia_plafond_jour: 5 });
+    assert.equal(APPELS_IA, appels, "même annonce : l'IA n'est pas rappelée");
+    assert.equal(await preparerCartes({ ...bien, prix: 1 }, { ia_actif: false }), null, "IA coupée dans les réglages : rien");
+    notesIA.push(...Array(5).fill({ ok: true })); assert.equal(await preparerCartes({ ...bien, prix: 2 }, { ia_actif: true, ia_plafond_jour: 5 }), null, "plafond du jour atteint : rien"); notesIA.length = 0;
+    ligne99.synchro_le = new Date();   // copie fraîche : le contexte la rend telle quelle
+    const ctx = await repondre("contexte", { telephone: "33611111111", dossier_id: 7 });
+    assert.deepEqual(ctx.bien_public.cartes, { fr: { titre: "Maison de 5 pièces à Cahors", lignes: c.fr.lignes } }, "le bot reçoit les cartes, sans empreinte ni refus");
+    IA_ACTIF = false;
+  }
+
   /* le bien passe par l'application : relu dans le CRM puis enregistré (ld_biens), une ligne par bien, photos comprises */
   const cat = require("../src/lib/leads/tables/catalogue");
   const ligne99 = () => T.biens.L.filter((b) => b.crm_id === "99");
@@ -181,6 +206,12 @@ const sortie = (code, plus = {}) => ({ type: "sortie", noeud: "TB3", quand: "202
   assert.strictEqual(autres.biens[0].bien_public.details["Surface terrain"], "800 m²"); assert.ok(!/Secrète/.test(JSON.stringify(autres)), "jamais l'adresse");
   assert.deepStrictEqual(autres.biens[0].bien_public.photos_publiques, ["https://x.fr/97.jpg"]); assert.strictEqual(autres.biens[0].negociateur.nom, "Julie Autre");
   assert.strictEqual((await repondre("biens", { telephone: "33611111111", criteres: { lieu: "Figeac", prix_max: 1000000 } })).biens[0].id, 96, "critères du prospect");
+  /* autres biens : les cartes déjà rédigées pour un bien sont rendues avec lui */
+  await new Promise((r) => setTimeout(r, 20));   // copies en arrière-plan
+  const l97 = T.biens.L.find((b) => b.crm_id === "97");
+  l97.cartes = JSON.stringify({ empreinte: "x", fr: { titre: "Maison avec terrain à Cahors", lignes: ["🌳 800 m² de terrain", "🏡 110 m² et 4 pièces", "💶 210 000 €"] } });
+  const avecCartes = await repondre("sh_biens", { telephone: "33611111111" });
+  assert.deepEqual(avecCartes.biens[0].bien_public.cartes.fr.titre, "Maison avec terrain à Cahors");
   await new Promise((ok) => setTimeout(ok, 50));   // la copie se fait en arrière-plan
   assert.ok(T.biens.L.some((b) => b.crm_id === "97" && b.photos), "copie gardée pour la fiche et la visite");
   mails.length = 0;

@@ -51,7 +51,9 @@ const T = {
     /* photos publiques (JSON) ; fictif : bien d'essai saisi dans l'application, jamais relu ni supprimé par le CRM, jamais proposé au rapprochement */
     ["photos", "String"], ["fictif", "Bool"],
     /* contenu de l'annonce (JSON : critères, descriptions, pièces), trié par lib/leads/bot.js avant d'aller au bot */
-    ["details", "String"]] },
+    ["details", "String"],
+    /* cartes du carrousel rédigées par l'IA de l'application (JSON : empreinte, fr, en), refaites quand l'annonce change */
+    ["cartes", "String"]] },
   portails: { name: "ld_portails", desc: "Portails déclarés par le client (sans code)", fields: [
     ["nom", "String", { required: true }], ["domaines", "String"], ["objets_lead", "String"], ["objets_non_lead", "String"], ["libelles", "String"], ["reference", "String"], ["nature", "String"], ["actif", "Bool"], ["origine", "String"]] },
   gabarits: { name: "ld_gabarits", desc: "Gabarits de mails appris automatiquement (forme d'un type de mail, sans donnée personnelle)", index: ["statut"], fields: [

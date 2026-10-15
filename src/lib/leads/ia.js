@@ -133,12 +133,12 @@ const fetchJson = async (url, init, delai = 60000) => {
 
 const FOURNISSEURS = {
   /* plugin « large-language-model » de Saltcorn déjà réglé par le client */
-  saltcorn: () => async (prompt) => {
+  saltcorn: () => async (prompt, schema = SCHEMA, nom = "extraction") => {
     /* même appel que l'action llm_generate_json du plugin : un outil forcé, dont les arguments sont le JSON */
     const st = require("@saltcorn/data/db/state").getState();
     const f = st.functions && st.functions.llm_generate;
     if (!f) throw new Error("plugin large-language-model absent ou non réglé");
-    const compl = await f.run(prompt, { temperature: 0, tools: [{ type: "function", function: { name: "extraction", description: "Données lues dans le mail", parameters: SCHEMA } }], tool_choice: { type: "function", function: { name: "extraction" } } });
+    const compl = await f.run(prompt, { temperature: 0, tools: [{ type: "function", function: { name: nom, description: nom === "extraction" ? "Données lues dans le mail" : "Réponse structurée", parameters: schema } }], tool_choice: { type: "function", function: { name: nom } } });
     if (typeof compl === "string") return compl;
     const tc = compl && compl.tool_calls && compl.tool_calls[0];
     if (tc) return tc.input || (tc.function && tc.function.arguments);
@@ -160,7 +160,7 @@ const FOURNISSEURS = {
   },
 };
 
-/* Client IA : { lire(mail, texte) → { sortie, rejets, ms, cache } }.
+/* Client IA : { lire(mail, texte) → { sortie, rejets, ms, cache }, generer(prompt, schema, nom) → objet JSON (rédaction : cartes…) }.
    reglages = { fournisseur, cle, modele, url, appeler (tests), essais, cache (Map) } */
 const creer = (reglages = {}) => {
   const appeler = reglages.appeler || (FOURNISSEURS[reglages.fournisseur] || (() => { throw new Error("fournisseur d'IA inconnu : " + reglages.fournisseur); }))(reglages);
@@ -168,6 +168,14 @@ const creer = (reglages = {}) => {
   const essais = reglages.essais || 3;
   return {
     fournisseur: reglages.fournisseur || "test",
+    generer: async (prompt, schema, nom = "redaction") => {
+      let err;
+      for (let i = 0; i < essais; i++) {
+        try { const j = lireJson(await appeler(prompt, schema, nom)); if (!j) throw new Error("IA : réponse illisible"); return j; }
+        catch (e) { err = e; if (e.status && e.status < 500 && e.status !== 429) break; if (i < essais - 1) await attendre(1000 * 4 ** i); }
+      }
+      throw err;
+    },
     lire: async (mail, texte) => {
       const k = crypto.createHash("sha1").update(String(mail.expediteur || "") + "\n" + String(mail.objet || "") + "\n" + String(texte || "")).digest("hex");
       if (cache.has(k)) return { ...cache.get(k), cache: true };

@@ -1,5 +1,16 @@
 # Journal des versions
 
+## 2.21.0
+
+### Ajouté
+- Bot WhatsApp, cartes du carrousel rédigées par l'IA de l'application (`lib/leads/cartes.js`) : une ligne par photo, qui donne envie
+  à partir d'un fait de l'annonce ; chaque ligne est contrôlée (émoji, longueur, nombres et unités présents dans l'annonce, aucun
+  montant hors prix, aucun superlatif, rien de réservé, pas de français en anglais), une langue sans 3 lignes valides n'est pas rendue.
+  Rédigées en arrière-plan à l'envoi de l'ouverture et à la lecture du contexte, gardées avec le bien (`ld_biens.cartes`), refaites si
+  l'annonce change, plafond IA du jour respecté ; rendues au bot (`bien_public.cartes`), y compris pour les autres biens.
+- Client IA : `generer(prompt, schema, nom)` (rédaction structurée), en plus de la lecture des mails.
+- Valeurs d'annonce en anglais (`lib/leads/traduction.js`, établie sur 739 biens réels) : `details_en`, seulement ce qui se traduit entièrement.
+
 ## 2.20.4
 
 ### Corrigé
