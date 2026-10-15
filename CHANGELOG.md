@@ -1,5 +1,11 @@
 # Journal des versions
 
+## 2.20.1
+
+### Corrigé
+- Bot WhatsApp, mail « Lead qualifié » : l'échange cité ne reprend que la conversation en cours (depuis le dernier message
+  d'ouverture) ; les conversations plus anciennes du même numéro n'y entrent plus.
+
 ## 2.20.0
 
 ### Modifié

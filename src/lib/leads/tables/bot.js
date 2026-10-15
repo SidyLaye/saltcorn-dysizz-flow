@@ -139,8 +139,13 @@ const evenement = async (corps, R) => {
     const autre = autreId ? await lireBien(crm, { bien_crm: String(autreId) }, R) : null;
     if (autre) reels = [...new Set([...reels, ...B.quiRecoit(autre.negociateur_id, conf, autre).liste.map((x) => x.email)])];
     const essai = dos.essai || R.notifications !== "reel";
+    /* l'échange de CETTE conversation : depuis le dernier message d'ouverture (une conversation plus ancienne du même numéro n'y entre pas) */
+    const ouv = await tb.getRows({ tel9, type: "ouverture" }, { orderBy: "id", orderDesc: true, limit: 5 });
+    /* deux lignes par conversation : l'envoi du modèle (N0), puis le premier message du prospect ; il peut aussi écrire le premier */
+    const [o1, o2] = ouv, envoi = o1 && o1.noeud !== "N0" && o2 && o2.noeud === "N0" && new Date(o1.quand) - new Date(o2.quand) < 48 * 3600e3;
+    const debut = ((envoi ? o2 : o1) || { id: 0 }).id;
     const fil = (await tb.getRows({ tel9, type: { in: ["inbound", "message_bot"] } }, { orderBy: "id", orderDesc: true, limit: 40 })).reverse()
-      .map((r) => ({ role: r.type === "inbound" ? "prospect" : "bot", texte: r.texte || json(r.donnees, {}).clic || "" })).filter((m) => m.texte);
+      .filter((r) => r.id >= debut).map((r) => ({ role: r.type === "inbound" ? "prospect" : "bot", texte: r.texte || json(r.donnees, {}).clic || "" })).filter((m) => m.texte);
     const messages = [];
     for (const [i, avis] of p.avis.entries()) {
       const tous = [...new Set([...reels, ...avis.referents.flatMap((k) => adresses((R.referents || {})[k]))])];

@@ -1,4 +1,4 @@
-/* dysizz-flow 2.20.0 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.20.1 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.20.0" : "dev";
+    var VERSION2 = true ? "2.20.1" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -99030,7 +99030,10 @@ var require_bot2 = __commonJS({
         const autre = autreId ? await lireBien(crm, { bien_crm: String(autreId) }, R) : null;
         if (autre) reels = [.../* @__PURE__ */ new Set([...reels, ...B.quiRecoit(autre.negociateur_id, conf, autre).liste.map((x) => x.email)])];
         const essai = dos.essai || R.notifications !== "reel";
-        const fil = (await tb.getRows({ tel9, type: { in: ["inbound", "message_bot"] } }, { orderBy: "id", orderDesc: true, limit: 40 })).reverse().map((r) => ({ role: r.type === "inbound" ? "prospect" : "bot", texte: r.texte || json(r.donnees, {}).clic || "" })).filter((m) => m.texte);
+        const ouv = await tb.getRows({ tel9, type: "ouverture" }, { orderBy: "id", orderDesc: true, limit: 5 });
+        const [o1, o2] = ouv, envoi = o1 && o1.noeud !== "N0" && o2 && o2.noeud === "N0" && new Date(o1.quand) - new Date(o2.quand) < 48 * 36e5;
+        const debut = ((envoi ? o2 : o1) || { id: 0 }).id;
+        const fil = (await tb.getRows({ tel9, type: { in: ["inbound", "message_bot"] } }, { orderBy: "id", orderDesc: true, limit: 40 })).reverse().filter((r) => r.id >= debut).map((r) => ({ role: r.type === "inbound" ? "prospect" : "bot", texte: r.texte || json(r.donnees, {}).clic || "" })).filter((m) => m.texte);
         const messages = [];
         for (const [i, avis] of p.avis.entries()) {
           const tous = [.../* @__PURE__ */ new Set([...reels, ...avis.referents.flatMap((k) => adresses((R.referents || {})[k]))])];
