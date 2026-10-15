@@ -154,14 +154,15 @@ const plan = (evenements, R = {}) => {
 /* Message aux équipes. fil = [{ role: "prospect" | "bot", texte }] ; aurait_recu : adresses réelles, rappelées pendant les essais.
    Une sortie de conversation donne le « lead qualifié » : objet distinct du mail d'arrivée du lead, synthèse, score et échange,
    pour agir sans ouvrir le système. */
-const mailEquipe = ({ avis, dossier = {}, bien, telephone, fil = [], aurait_recu }) => {
+const mailEquipe = ({ avis, dossier = {}, bien, bien_initial = null, telephone, fil = [], aurait_recu }) => {
   const b = bien || {}, nom = dossier.nom || "Prospect";
   const objet = `${avis.prioritaire ? "[PRIORITAIRE] " : ""}${avis.qualifie ? "Lead qualifié WhatsApp" : "WhatsApp"} · ${avis.titre}${b.reference ? " · réf. " + b.reference : ""} · ${nom}`;
   const ligne = (l, v) => (v ? `<tr><td style="color:#667;padding:2px 12px 2px 0;vertical-align:top">${esc(l)}</td><td><b>${esc(v)}</b></td></tr>` : "");
   const html = `<div style="font-family:Arial,sans-serif;font-size:14px;color:#1f2937">
 <p>${avis.qualifie ? "Lead qualifié à l'issue de la conversation avec l'assistant WhatsApp : " : ""}<b>${esc(avis.titre)}</b>${avis.qualifie ? "." : ", reçu par l'assistant WhatsApp."}</p>
 <table style="border-collapse:collapse">${ligne("Prospect", nom)}${ligne("Téléphone", telephone ? "+" + telephone : "")}${ligne("E-mail", dossier.email)}
-${ligne("Bien", [b.reference && "réf. " + b.reference, b.type, b.ville, b.prix && milliers(b.prix) + " €"].filter(Boolean).join(" · "))}
+${ligne(bien_initial ? "Bien demandé" : "Bien", [b.reference && "réf. " + b.reference, b.type, b.ville, b.prix && milliers(b.prix) + " €"].filter(Boolean).join(" · "))}
+${bien_initial ? ligne("Bien de l'annonce d'origine", [bien_initial.reference && "réf. " + bien_initial.reference, bien_initial.type, bien_initial.ville, bien_initial.prix && milliers(bien_initial.prix) + " €"].filter(Boolean).join(" · ")) : ""}
 ${lignes(avis.donnees).map(([l, v]) => ligne(l, v)).join("")}</table>
 ${fil.length ? `<p style="margin:14px 0 4px;color:#667">L'échange</p><div style="padding:10px;background:#f3f4f6;border-radius:6px">${fil.map((m) => `<p style="margin:0 0 6px;white-space:pre-wrap"><b>${m.role === "prospect" ? "Prospect" : "Assistant"} :</b> ${esc(String(m.texte || "").slice(0, 1500))}</p>`).join("")}</div>` : ""}
 ${aurait_recu ? `<p style="color:#b45309;font-size:12px">Essai : en service, ce message irait à ${esc(aurait_recu.join(", ") || "personne")}.</p>` : ""}</div>`;

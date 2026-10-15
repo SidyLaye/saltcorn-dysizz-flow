@@ -13,7 +13,10 @@ const creer = ({ biens = [], contacts = [] } = {}) => {
     ecritures,
     bienParId: async (id) => B.find((b) => String(b.id) === String(id)) || null,
     photosBien: async (id) => ((B.find((b) => String(b.id) === String(id)) || {}).photos || []).slice(),
-    contact: async (id) => C.find((c) => String(c.id) === String(id)) || null,
+    biensCorrespondants: async (q = {}, { max = 10, exclure = [] } = {}) => B.filter((b) => !exclure.map(String).includes(String(b.id)) && (b.photos || []).length
+      && (!q.lieu || `${b.code_postal || ""} ${b.ville || ""}`.toLowerCase().includes(String(q.lieu).toLowerCase()))
+      && (!q.type || b.type === (typeBien(q.type) || q.type)) && (!(+q.prix_max) || +b.prix <= +q.prix_max) && (!(+q.prix_min) || +b.prix >= +q.prix_min))
+      .slice(0, max).map((b) => ({ ...b, photos: b.photos.slice(), annonce: b.annonce || { criteres: [], descriptions: [], pieces: [] } })),
     bienEtPhotos: async (id) => { const b = B.find((x) => String(x.id) === String(id)); if (!b) throw Object.assign(new Error("bien introuvable"), { http: 404 }); return { ...b, photos: (b.photos || []).slice(), annonce: b.annonce || { criteres: [], descriptions: [], pieces: [] } }; },
     biensParReference: async (ref) => B.filter((b) => String(b.reference || "").trim().toLowerCase() === String(ref).trim().toLowerCase()).slice(0, 5),
     tousLesBiens: async () => B,

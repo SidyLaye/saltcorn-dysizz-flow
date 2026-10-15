@@ -1,5 +1,15 @@
 # Journal des versions
 
+## 2.19.0
+
+### Ajouté
+- Leads, bot WhatsApp : action « biens » (point `sh_biens`) : les biens EN VENTE et DIFFUSÉS qui correspondent à la recherche du
+  prospect (lieu, type, budget mini et maxi, pièces, surface ; par défaut le code postal et le type du bien du dossier), avec photo,
+  sans le bien de départ ni ceux déjà montrés, une seule requête au CRM. Champs publics et contenu public de l'annonce seulement ;
+  chaque bien est copié dans l'application pour la fiche et la visite qui suivent. Adaptateur Immofacile : `biensCorrespondants`.
+- Visite demandée sur un autre bien (`autre_bien_id` dans la sortie) : le message part au négociateur du bien d'origine ET à celui
+  du nouveau bien, et cite les deux biens.
+
 ## 2.18.0
 
 ### Ajouté

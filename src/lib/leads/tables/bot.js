@@ -127,7 +127,12 @@ const evenement = async (corps, R) => {
 
   if (p.avis.length) {
     const bien = await lireBien(crm, dos, R);
-    const reels = B.quiRecoit(dos.negociateur || (bien && bien.negociateur_id), conf, bien).liste.map((x) => x.email);
+    let reels = B.quiRecoit(dos.negociateur || (bien && bien.negociateur_id), conf, bien).liste.map((x) => x.email);
+    /* visite demandée sur un autre bien que celui de l'annonce : le négociateur du bien initial ET celui du nouveau bien
+       sont prévenus (réunion du 21/07 : un prospect, plusieurs biens, plusieurs négociateurs) */
+    const autreId = (lot.find((e) => e.type === "sortie" && e.donnees && e.donnees.autre_bien_id) || { donnees: {} }).donnees.autre_bien_id;
+    const autre = autreId ? await lireBien(crm, { bien_crm: String(autreId) }, R) : null;
+    if (autre) reels = [...new Set([...reels, ...B.quiRecoit(autre.negociateur_id, conf, autre).liste.map((x) => x.email)])];
     const essai = dos.essai || R.notifications !== "reel";
     const fil = (await tb.getRows({ tel9, type: { in: ["inbound", "message_bot"] } }, { orderBy: "id", orderDesc: true, limit: 40 })).reverse()
       .map((r) => ({ role: r.type === "inbound" ? "prospect" : "bot", texte: r.texte || json(r.donnees, {}).clic || "" })).filter((m) => m.texte);
@@ -137,7 +142,7 @@ const evenement = async (corps, R) => {
       /* essai : aux adresses d'essai ; avec « essai_routage », aux vrais destinataires calculés qui sont aussi des adresses
          d'essai (le routage est testé pour de vrai, personne d'autre ne reçoit : ni siège, ni copie du client) */
       const a = essai ? (R.essai_routage === true ? tous.filter((x) => adresses(R.adresses_essai).includes(String(x).toLowerCase())) : adresses(R.adresses_essai)) : tous;
-      const { objet, html } = B.mailEquipe({ avis, dossier: dos, bien, telephone: tel, fil, aurait_recu: essai ? tous : null });
+      const { objet, html } = B.mailEquipe({ avis, dossier: dos, bien: autre && avis.qualifie ? autre : bien, bien_initial: autre && avis.qualifie ? bien : null, telephone: tel, fil, aurait_recu: essai ? tous : null });
       /* ponytail: un message par événement, sans plafond ; à regrouper si un prospect écrit beaucoup après sa demande */
       for (const adr of a) messages.push({ cle: `${S.prefixe()}bot-${did || tel9}:${evid || Date.now()}:${i}:${adr}`, a: adr, sujet: objet, html, reference: did ? `dossier ${did}` : "essai" });
     }
@@ -187,7 +192,36 @@ const fiche = async (corps, R) => {
   });
 };
 
-const ACTIONS = { contexte, evenement, fiche };
+/* Biens qui correspondent à la recherche du prospect (« avez-vous d'autres biens… ») : lus dans le CRM (en vente, diffusés,
+   avec photo), copiés dans l'application (ld_biens) pour la fiche et la visite qui suivront, rendus avec leurs seuls champs
+   publics et le contenu public de l'annonce. Sans critère donné : même code postal et même type que le bien du dossier. */
+const biens = async (corps, R) => {
+  const t = await S.tables();
+  const { dossier } = await trouver(t, corps, R);
+  const { conf, crm } = await charger();
+  const c = flowApi().crmDepuisCoffre(crm.type, crm.reglages, crm.prefixe, "ombre");
+  if (!c.biensCorrespondants) return { biens: [], raison: "recherche indisponible pour ce CRM" };
+  const initial = dossier ? await lireBien(crm, dossier, R) : null;
+  const q = { ...(corps.criteres && typeof corps.criteres === "object" ? corps.criteres : {}) };
+  if (!q.lieu && initial) q.lieu = initial.code_postal || initial.ville || null;
+  if (!q.type && initial && !corps.criteres) q.type = initial.type || null;
+  const exclure = [...new Set([...(Array.isArray(corps.exclure) ? corps.exclure : []), initial && initial.id].filter((x) => x != null).map(String))];
+  let trouves = [];
+  try { trouves = await c.biensCorrespondants(q, { max: Math.min(10, +corps.max || 10), dossier: String(R.photos || ""), exclure }); }
+  catch (e) { return { biens: [], raison: "CRM indisponible", criteres: q }; }
+  const cat = require("./catalogue");
+  await cat.enregistrerBiens(trouves).catch(() => {});
+  for (const b of trouves) {   // photos et annonce dans la copie, pour la fiche et la visite qui suivront
+    const r = (await t.biens.getRows({ crm_id: String(b.id) }, { orderBy: "id", limit: 1 }))[0];
+    if (r) await t.biens.updateRow({ photos: JSON.stringify(b.photos || []), details: JSON.stringify(b.annonce || null), synchro_le: new Date() }, r.id).catch(() => {});
+  }
+  return { criteres: q, biens: trouves.map((b) => {
+    const p = B.quiRecoit(b.negociateur_id, conf, b).personne;
+    return { id: b.id, reference: b.reference || "", bien_public: { ...B.bienPublic(b), ...B.annonce(b.annonce), photos_publiques: (b.photos || []).slice(0, 10) }, negociateur: p ? { nom: p.nom } : null };
+  }) };
+};
+
+const ACTIONS = { contexte, evenement, fiche, biens };
 /* action : « contexte », « evenement », « fiche », ou le nom du point d'API qui finit par l'un des trois */
 const repondre = async (action, corps) => {
   const k = Object.keys(ACTIONS).find((x) => String(action || "").toLowerCase().endsWith(x));

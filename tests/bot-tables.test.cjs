@@ -19,8 +19,12 @@ const T = { bot: table(), dossiers: table([{ id: 7, tel9: "611111111", bien_crm:
   { id: 8, tel9: "611111111", bien_crm: "98", negociateur: "500", nom: "Marie Test", maj_le: 1 }]),
   leads: table([{ id: 1, dossier_id: 7, dossier: JSON.stringify({ extraction: { contact: { prenom: "marie" } } }) }]),
   biens: table(), reglages: table([{ id: 1 }]) };
-const CONF = { routage: { siege: ["siege@agence-exemple.fr"], personnes: [{ id: "500", nom: "Martin Durand", email: "martin@agence-exemple.fr", role: "negociateur" }] } };
-const crm = M.creer({ biens: [{ id: 99, reference: "30123", prix: 245000, surface: 120, pieces: 5, type: "maison", ville: "Cahors", code_postal: "46000", negociateur_id: "500", adresse: "12 rue du Test", photos: ["https://x.fr/1.jpg"] }] });
+const CONF = { routage: { siege: ["siege@agence-exemple.fr"], personnes: [{ id: "500", nom: "Martin Durand", email: "martin@agence-exemple.fr", role: "negociateur" },
+  { id: "501", nom: "Julie Autre", email: "julie.autre@agence-exemple.fr", role: "negociateur" }] } };
+const crm = M.creer({ biens: [{ id: 99, reference: "30123", prix: 245000, surface: 120, pieces: 5, type: "maison", ville: "Cahors", code_postal: "46000", negociateur_id: "500", adresse: "12 rue du Test", photos: ["https://x.fr/1.jpg"] },
+  { id: 97, reference: "30777", prix: 210000, surface: 110, pieces: 4, type: "maison", ville: "Cahors", code_postal: "46000", negociateur_id: "501", adresse: "3 rue Secrète", photos: ["https://x.fr/97.jpg"],
+    annonce: { criteres: [{ id: 36, nom: "Surface terrain", valeur: 800, nature: "nombre" }, { id: 122, nom: "Adresse", valeur: "3 rue Secrète", nature: "texte" }], descriptions: [], pieces: [] } },
+  { id: 96, reference: "30666", prix: 900000, type: "maison", ville: "Figeac", code_postal: "46100", negociateur_id: "501", photos: ["https://x.fr/96.jpg"] }] });
 /* appels au CRM pour un bien, et pannes simulées */
 let LECTURES = 0, PANNE = null, LENT = 0; const lireVrai = crm.bienEtPhotos, CRM_CHANGE = {};   // CRM_CHANGE[id] : champs changés dans le CRM, ou null = bien retiré
 crm.bienEtPhotos = async (id, ...a) => { LECTURES++; if (LENT) await new Promise((r) => setTimeout(r, LENT)); if (PANNE) throw PANNE;
@@ -154,5 +158,18 @@ const sortie = (code, plus = {}) => ({ type: "sortie", noeud: "TB3", quand: "202
   BOT = { ...BOT, numeros_essai: { 221700000001: { bien: "AMBS-TEST-1", prenom: "Awa", projet: { budget_max: 300000, delai: "dans 2 mois", revente: false }, message: "Je souhaite visiter" } } };
   c = await repondre("contexte", { telephone: "221700000001" });
   assert.strictEqual(c.deja_connu.budget, 300000); assert.strictEqual(c.deja_connu.delai, "dans 2 mois"); assert.strictEqual(c.deja_connu.bien_a_vendre, false); assert.strictEqual(c.demande.message, "Je souhaite visiter");
+  /* « avez-vous d'autres biens ? » : biens en vente du même secteur, sans le bien de départ, champs publics seulement ;
+     visite demandée sur l'un d'eux : le négociateur du bien d'origine ET celui du nouveau bien sont prévenus */
+  BOT = { ...BOT, numeros_essai: {}, notifications: "reel", essai_routage: false };
+  const autres = await repondre("sh_biens", { telephone: "33611111111" });
+  assert.deepStrictEqual(autres.biens.map((b) => b.id), [97], "même code postal, sans le bien du dossier");
+  assert.strictEqual(autres.biens[0].bien_public.details["Surface terrain"], "800 m²"); assert.ok(!/Secrète/.test(JSON.stringify(autres)), "jamais l'adresse");
+  assert.deepStrictEqual(autres.biens[0].bien_public.photos_publiques, ["https://x.fr/97.jpg"]); assert.strictEqual(autres.biens[0].negociateur.nom, "Julie Autre");
+  assert.strictEqual((await repondre("biens", { telephone: "33611111111", criteres: { lieu: "Figeac", prix_max: 1000000 } })).biens[0].id, 96, "critères du prospect");
+  assert.ok(T.biens.L.some((b) => b.crm_id === "97" && b.photos), "copie gardée pour la fiche et la visite");
+  mails.length = 0;
+  await repondre("evenement", { telephone: "33611111111", event_id: "ev8", evenements: [sortie("OUT-1", { autre_bien_id: 97 })] });
+  assert.deepStrictEqual([...new Set(mails.map((m) => m.a))].sort(), ["julie.autre@agence-exemple.fr", "martin@agence-exemple.fr", "siege@agence-exemple.fr"]);
+  assert.ok(mails[0].html.includes("Bien demandé") && mails[0].html.includes("réf. 30777") && mails[0].html.includes("Bien de l&#39;annonce d&#39;origine") && mails[0].html.includes("réf. 30123"));
   console.log("bot avec tables : OK");
 })().catch((e) => { console.error(e); process.exit(1); });

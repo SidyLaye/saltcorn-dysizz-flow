@@ -281,6 +281,35 @@ const creer = (cfg = {}) => {
       return { ...(await versBien(p)), photos, annonce: { criteres, descriptions, pieces } };
     },
     biensParReference: async (ref) => (await recherche({ model: String(ref), count: 5 })).filter((b) => b && b.reference.toLowerCase() === String(ref).trim().toLowerCase()).slice(0, 3),
+    /* Biens EN VENTE et DIFFUSÉS qui correspondent à une recherche du prospect (bot : « avez-vous d'autres biens… ») :
+       q = { lieu (code postal ou commune), type, prix_min, prix_max, pieces_min, surface_min }. Une requête, photos et annonce
+       comprises (100 biens au plus par page avec fetch). Opérateurs acceptés par l'API : EGAL, CONTIENT, INFERIEUR, SUPERIEUR. */
+    biensCorrespondants: async (q = {}, { max = 10, dossier = "", exclure = [] } = {}) => {
+      const c = [{ id: await cleXml("Statut"), operator: "EGAL", value: "EnCours" }];
+      if (q.lieu) c.push({ id: await cleXml("CPVilleweb", "CPVille"), operator: "CONTIENT", value: String(q.lieu) });
+      if (q.type) { const code = await codeType(q.type).catch(() => null); if (code) c.push({ id: await cleXml("TypeBien"), operator: "EGAL", value: code }); }
+      if (+q.prix_max > 0) c.push({ id: await cleXml("Prix"), operator: "INFERIEUR", value: String(Math.round(+q.prix_max)) });
+      if (+q.prix_min > 0) c.push({ id: await cleXml("Prix"), operator: "SUPERIEUR", value: String(Math.round(+q.prix_min)) });
+      if (+q.pieces_min > 0) c.push({ id: await cleXml("NbPieces", "NbPiece"), operator: "SUPERIEUR", value: String(Math.max(0, Math.round(+q.pieces_min) - 1)) });
+      if (+q.surface_min > 0) c.push({ id: await cleXml("Surface"), operator: "SUPERIEUR", value: String(Math.round(+q.surface_min)) });
+      if (c.length < 2) return [];   // jamais tout le catalogue : un lieu, un type ou un budget au moins
+      const sans = new Set(exclure.map(String));
+      const l = data(await appel("POST", `/products/search?fetch=${FETCH},criteres_flag,descriptions,products_photos`, { criterias: c, status_web: true, count: Math.min(30, max + sans.size + 5) }));
+      const out = [];
+      for (const p of Array.isArray(l) ? l : []) {
+        if (!p || sans.has(String(p.id))) continue;
+        const photos = (p.products_photos || []).filter((x) => x && (!dossier || x.type === dossier) && !x.is_red && !x.is_mid && /^https:\/\//.test(x.chemin || ""))
+          .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)).map((x) => x.chemin);
+        if (!photos.length) continue;   // une carte de carrousel exige une image
+        const criteres = [];
+        for (const [g, nature] of [[p.criteres_text, "texte"], [p.criteres_number, "nombre"], [p.criteres_flag, "case"]])
+          for (const k of Array.isArray(g) ? g : []) if (k.critere_id != null && k.critere_name) criteres.push({ id: +k.critere_id, nom: String(k.critere_name), valeur: k.critere_value_name != null && String(k.critere_value_name).trim() ? k.critere_value_name : k.critere_value, nature });
+        const descriptions = (p.descriptions || []).filter((d) => d && (d.description || d.title)).map((d) => ({ langue: String(d.language_code || ""), titre: d.title || "", texte: d.description || "" }));
+        out.push({ ...(await versBien(p)), photos: photos.slice(0, 10), annonce: { criteres, descriptions, pieces: [] } });
+        if (out.length >= max) break;
+      }
+      return out;
+    },
     biensParCriteres: async (q, { max = 2 } = {}) => {
       const c = [];
       if (q.type) { const code = await codeType(q.type); if (code) c.push({ id: await cleXml("TypeBien"), operator: "EGAL", value: code }); }

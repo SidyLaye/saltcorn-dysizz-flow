@@ -1,4 +1,4 @@
-/* dysizz-flow 2.18.0 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.19.0 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.18.0" : "dev";
+    var VERSION2 = true ? "2.19.0" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -96213,6 +96213,37 @@ var require_immofacile = __commonJS({
           return { ...await versBien(p), photos, annonce: { criteres: criteres2, descriptions, pieces } };
         },
         biensParReference: async (ref) => (await recherche({ model: String(ref), count: 5 })).filter((b) => b && b.reference.toLowerCase() === String(ref).trim().toLowerCase()).slice(0, 3),
+        /* Biens EN VENTE et DIFFUSÉS qui correspondent à une recherche du prospect (bot : « avez-vous d'autres biens… ») :
+           q = { lieu (code postal ou commune), type, prix_min, prix_max, pieces_min, surface_min }. Une requête, photos et annonce
+           comprises (100 biens au plus par page avec fetch). Opérateurs acceptés par l'API : EGAL, CONTIENT, INFERIEUR, SUPERIEUR. */
+        biensCorrespondants: async (q = {}, { max = 10, dossier = "", exclure = [] } = {}) => {
+          const c = [{ id: await cleXml("Statut"), operator: "EGAL", value: "EnCours" }];
+          if (q.lieu) c.push({ id: await cleXml("CPVilleweb", "CPVille"), operator: "CONTIENT", value: String(q.lieu) });
+          if (q.type) {
+            const code = await codeType(q.type).catch(() => null);
+            if (code) c.push({ id: await cleXml("TypeBien"), operator: "EGAL", value: code });
+          }
+          if (+q.prix_max > 0) c.push({ id: await cleXml("Prix"), operator: "INFERIEUR", value: String(Math.round(+q.prix_max)) });
+          if (+q.prix_min > 0) c.push({ id: await cleXml("Prix"), operator: "SUPERIEUR", value: String(Math.round(+q.prix_min)) });
+          if (+q.pieces_min > 0) c.push({ id: await cleXml("NbPieces", "NbPiece"), operator: "SUPERIEUR", value: String(Math.max(0, Math.round(+q.pieces_min) - 1)) });
+          if (+q.surface_min > 0) c.push({ id: await cleXml("Surface"), operator: "SUPERIEUR", value: String(Math.round(+q.surface_min)) });
+          if (c.length < 2) return [];
+          const sans = new Set(exclure.map(String));
+          const l = data(await appel("POST", `/products/search?fetch=${FETCH},criteres_flag,descriptions,products_photos`, { criterias: c, status_web: true, count: Math.min(30, max + sans.size + 5) }));
+          const out = [];
+          for (const p of Array.isArray(l) ? l : []) {
+            if (!p || sans.has(String(p.id))) continue;
+            const photos = (p.products_photos || []).filter((x) => x && (!dossier || x.type === dossier) && !x.is_red && !x.is_mid && /^https:\/\//.test(x.chemin || "")).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)).map((x) => x.chemin);
+            if (!photos.length) continue;
+            const criteres2 = [];
+            for (const [g, nature] of [[p.criteres_text, "texte"], [p.criteres_number, "nombre"], [p.criteres_flag, "case"]])
+              for (const k of Array.isArray(g) ? g : []) if (k.critere_id != null && k.critere_name) criteres2.push({ id: +k.critere_id, nom: String(k.critere_name), valeur: k.critere_value_name != null && String(k.critere_value_name).trim() ? k.critere_value_name : k.critere_value, nature });
+            const descriptions = (p.descriptions || []).filter((d) => d && (d.description || d.title)).map((d) => ({ langue: String(d.language_code || ""), titre: d.title || "", texte: d.description || "" }));
+            out.push({ ...await versBien(p), photos: photos.slice(0, 10), annonce: { criteres: criteres2, descriptions, pieces: [] } });
+            if (out.length >= max) break;
+          }
+          return out;
+        },
         biensParCriteres: async (q, { max = 2 } = {}) => {
           const c = [];
           if (q.type) {
@@ -96564,7 +96595,7 @@ var require_memoire = __commonJS({
         ecritures,
         bienParId: async (id) => B.find((b) => String(b.id) === String(id)) || null,
         photosBien: async (id) => ((B.find((b) => String(b.id) === String(id)) || {}).photos || []).slice(),
-        contact: async (id) => C.find((c) => String(c.id) === String(id)) || null,
+        biensCorrespondants: async (q = {}, { max = 10, exclure = [] } = {}) => B.filter((b) => !exclure.map(String).includes(String(b.id)) && (b.photos || []).length && (!q.lieu || `${b.code_postal || ""} ${b.ville || ""}`.toLowerCase().includes(String(q.lieu).toLowerCase())) && (!q.type || b.type === (typeBien(q.type) || q.type)) && (!+q.prix_max || +b.prix <= +q.prix_max) && (!+q.prix_min || +b.prix >= +q.prix_min)).slice(0, max).map((b) => ({ ...b, photos: b.photos.slice(), annonce: b.annonce || { criteres: [], descriptions: [], pieces: [] } })),
         bienEtPhotos: async (id) => {
           const b = B.find((x) => String(x.id) === String(id));
           if (!b) throw Object.assign(new Error("bien introuvable"), { http: 404 });
@@ -98785,14 +98816,15 @@ var require_bot = __commonJS({
       }
       return out;
     };
-    var mailEquipe = ({ avis, dossier = {}, bien, telephone, fil = [], aurait_recu }) => {
+    var mailEquipe = ({ avis, dossier = {}, bien, bien_initial = null, telephone, fil = [], aurait_recu }) => {
       const b = bien || {}, nom = dossier.nom || "Prospect";
       const objet = `${avis.prioritaire ? "[PRIORITAIRE] " : ""}${avis.qualifie ? "Lead qualifi\xE9 WhatsApp" : "WhatsApp"} \xB7 ${avis.titre}${b.reference ? " \xB7 r\xE9f. " + b.reference : ""} \xB7 ${nom}`;
       const ligne = (l, v) => v ? `<tr><td style="color:#667;padding:2px 12px 2px 0;vertical-align:top">${esc(l)}</td><td><b>${esc(v)}</b></td></tr>` : "";
       const html = `<div style="font-family:Arial,sans-serif;font-size:14px;color:#1f2937">
 <p>${avis.qualifie ? "Lead qualifi\xE9 \xE0 l'issue de la conversation avec l'assistant WhatsApp : " : ""}<b>${esc(avis.titre)}</b>${avis.qualifie ? "." : ", re\xE7u par l'assistant WhatsApp."}</p>
 <table style="border-collapse:collapse">${ligne("Prospect", nom)}${ligne("T\xE9l\xE9phone", telephone ? "+" + telephone : "")}${ligne("E-mail", dossier.email)}
-${ligne("Bien", [b.reference && "r\xE9f. " + b.reference, b.type, b.ville, b.prix && milliers(b.prix) + " \u20AC"].filter(Boolean).join(" \xB7 "))}
+${ligne(bien_initial ? "Bien demand\xE9" : "Bien", [b.reference && "r\xE9f. " + b.reference, b.type, b.ville, b.prix && milliers(b.prix) + " \u20AC"].filter(Boolean).join(" \xB7 "))}
+${bien_initial ? ligne("Bien de l'annonce d'origine", [bien_initial.reference && "r\xE9f. " + bien_initial.reference, bien_initial.type, bien_initial.ville, bien_initial.prix && milliers(bien_initial.prix) + " \u20AC"].filter(Boolean).join(" \xB7 ")) : ""}
 ${lignes(avis.donnees).map(([l, v]) => ligne(l, v)).join("")}</table>
 ${fil.length ? `<p style="margin:14px 0 4px;color:#667">L'\xE9change</p><div style="padding:10px;background:#f3f4f6;border-radius:6px">${fil.map((m) => `<p style="margin:0 0 6px;white-space:pre-wrap"><b>${m.role === "prospect" ? "Prospect" : "Assistant"} :</b> ${esc(String(m.texte || "").slice(0, 1500))}</p>`).join("")}</div>` : ""}
 ${aurait_recu ? `<p style="color:#b45309;font-size:12px">Essai : en service, ce message irait \xE0 ${esc(aurait_recu.join(", ") || "personne")}.</p>` : ""}</div>`;
@@ -98943,14 +98975,17 @@ var require_bot2 = __commonJS({
       }
       if (p.avis.length) {
         const bien = await lireBien(crm, dos, R);
-        const reels = B.quiRecoit(dos.negociateur || bien && bien.negociateur_id, conf, bien).liste.map((x) => x.email);
+        let reels = B.quiRecoit(dos.negociateur || bien && bien.negociateur_id, conf, bien).liste.map((x) => x.email);
+        const autreId = (lot.find((e) => e.type === "sortie" && e.donnees && e.donnees.autre_bien_id) || { donnees: {} }).donnees.autre_bien_id;
+        const autre = autreId ? await lireBien(crm, { bien_crm: String(autreId) }, R) : null;
+        if (autre) reels = [.../* @__PURE__ */ new Set([...reels, ...B.quiRecoit(autre.negociateur_id, conf, autre).liste.map((x) => x.email)])];
         const essai = dos.essai || R.notifications !== "reel";
         const fil = (await tb.getRows({ tel9, type: { in: ["inbound", "message_bot"] } }, { orderBy: "id", orderDesc: true, limit: 40 })).reverse().map((r) => ({ role: r.type === "inbound" ? "prospect" : "bot", texte: r.texte || json(r.donnees, {}).clic || "" })).filter((m) => m.texte);
         const messages = [];
         for (const [i, avis] of p.avis.entries()) {
           const tous = [.../* @__PURE__ */ new Set([...reels, ...avis.referents.flatMap((k) => adresses((R.referents || {})[k]))])];
           const a = essai ? R.essai_routage === true ? tous.filter((x) => adresses(R.adresses_essai).includes(String(x).toLowerCase())) : adresses(R.adresses_essai) : tous;
-          const { objet, html } = B.mailEquipe({ avis, dossier: dos, bien, telephone: tel, fil, aurait_recu: essai ? tous : null });
+          const { objet, html } = B.mailEquipe({ avis, dossier: dos, bien: autre && avis.qualifie ? autre : bien, bien_initial: autre && avis.qualifie ? bien : null, telephone: tel, fil, aurait_recu: essai ? tous : null });
           for (const adr of a) messages.push({ cle: `${S.prefixe()}bot-${did || tel9}:${evid || Date.now()}:${i}:${adr}`, a: adr, sujet: objet, html, reference: did ? `dossier ${did}` : "essai" });
         }
         const simuler = R.notifications === "simuler" || !R.notifications || !essai && !RA.envoi_mails;
@@ -99001,7 +99036,37 @@ var require_bot2 = __commonJS({
         return { envoyee: true, identifiant, horaire: horaire.toISOString() };
       });
     };
-    var ACTIONS2 = { contexte, evenement, fiche };
+    var biens = async (corps, R) => {
+      const t = await S.tables();
+      const { dossier } = await trouver(t, corps, R);
+      const { conf, crm } = await charger();
+      const c = flowApi().crmDepuisCoffre(crm.type, crm.reglages, crm.prefixe, "ombre");
+      if (!c.biensCorrespondants) return { biens: [], raison: "recherche indisponible pour ce CRM" };
+      const initial = dossier ? await lireBien(crm, dossier, R) : null;
+      const q = { ...corps.criteres && typeof corps.criteres === "object" ? corps.criteres : {} };
+      if (!q.lieu && initial) q.lieu = initial.code_postal || initial.ville || null;
+      if (!q.type && initial && !corps.criteres) q.type = initial.type || null;
+      const exclure = [...new Set([...Array.isArray(corps.exclure) ? corps.exclure : [], initial && initial.id].filter((x) => x != null).map(String))];
+      let trouves = [];
+      try {
+        trouves = await c.biensCorrespondants(q, { max: Math.min(10, +corps.max || 10), dossier: String(R.photos || ""), exclure });
+      } catch (e) {
+        return { biens: [], raison: "CRM indisponible", criteres: q };
+      }
+      const cat = require_catalogue();
+      await cat.enregistrerBiens(trouves).catch(() => {
+      });
+      for (const b of trouves) {
+        const r = (await t.biens.getRows({ crm_id: String(b.id) }, { orderBy: "id", limit: 1 }))[0];
+        if (r) await t.biens.updateRow({ photos: JSON.stringify(b.photos || []), details: JSON.stringify(b.annonce || null), synchro_le: /* @__PURE__ */ new Date() }, r.id).catch(() => {
+        });
+      }
+      return { criteres: q, biens: trouves.map((b) => {
+        const p = B.quiRecoit(b.negociateur_id, conf, b).personne;
+        return { id: b.id, reference: b.reference || "", bien_public: { ...B.bienPublic(b), ...B.annonce(b.annonce), photos_publiques: (b.photos || []).slice(0, 10) }, negociateur: p ? { nom: p.nom } : null };
+      }) };
+    };
+    var ACTIONS2 = { contexte, evenement, fiche, biens };
     var repondre = async (action, corps) => {
       const k = Object.keys(ACTIONS2).find((x) => String(action || "").toLowerCase().endsWith(x));
       if (!k) throw perm(`action inconnue : ${action}`);
