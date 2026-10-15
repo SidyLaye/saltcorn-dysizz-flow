@@ -1,5 +1,11 @@
 # Journal des versions
 
+## 2.21.1
+
+### Corrigé
+- Cartes rédigées : nombres groupés selon la langue (5 505 m², 225 000 € ; 5,505 m², €225,000), ponctuation française ; le nom de la commune
+  n'est plus pris pour du français dans une ligne anglaise ; version des règles dans l'empreinte (cartes refaites quand les règles changent).
+
 ## 2.21.0
 
 ### Ajouté

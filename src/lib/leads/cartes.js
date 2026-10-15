@@ -20,7 +20,9 @@ const donneesPourCartes = (bien) => {
     ...(an.description_annonce ? { description: an.description_annonce } : {}), ...(an.pieces_detail ? { pieces: an.pieces_detail } : {}) };
 };
 
-const empreinte = (bien) => crypto.createHash("sha1").update(JSON.stringify([donneesPourCartes(bien), ((bien && bien.photos) || []).length])).digest("hex");
+/* VERSION : à augmenter quand les consignes ou les contrôles changent, pour que les cartes déjà rédigées soient refaites */
+const VERSION = 2;
+const empreinte = (bien) => crypto.createHash("sha1").update(JSON.stringify([VERSION, donneesPourCartes(bien), ((bien && bien.photos) || []).length])).digest("hex");
 
 const lignesVoulues = (nbPhotos) => Math.max(3, Math.min(9, (+nbPhotos || 0) - 1));
 
@@ -100,11 +102,25 @@ const verifierLigne = (ligne, donnees, langue = "fr") => {
   const P = permisDe(donnees || {});
   for (const u of unites(l.replace(/(\d[\d\s.,]*)\s*(k€|€|euros?\b)/gi, ""))) if (!P.unites.has(u)) return "nombre absent des données : " + u;
   for (const a of l.match(/\b(1[0-9]{3}|20[0-9]{2})\b/g) || []) if (!P.annees.has(a)) return "année absente des données : " + a;
-  if (langue === "en" && MOTS_FR.test(cle(l.replace(/g[iî]te/gi, "")))) return "mot français dans une ligne anglaise";
+  if (langue === "en") {   // les noms propres de l'annonce (commune) ne comptent pas comme du français
+    let sans = l.replace(/g[iî]te/gi, "");
+    for (const nomPropre of [donnees && donnees.ville].filter(Boolean)) sans = sans.split(nomPropre).join(" ");
+    if (MOTS_FR.test(cle(sans))) return "mot français dans une ligne anglaise";
+  }
   return null;
 };
 
 const verifierTitre = (t) => { const s = String(t || "").trim(); return s && s.length <= 80 && !SUPERLATIFS.test(s) && !RESERVES.test(s) && !/!|\d[\d\s.,]*\s*(€|euros?)/i.test(s) ? s : null; };
+
+/* Mise en forme d'une ligne contrôlée : nombres groupés selon la langue (5 505 m² / 5,505 m² ; 225 000 € / €225,000), jamais une année ;
+   ponctuation française (espace avant les deux-points). */
+const grouper = (n, sep) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, sep);
+const mettreEnForme = (ligne, langue = "fr") => {
+  let l = String(ligne || "").trim();
+  l = l.replace(/(\d{4,})(\s*)(m²|m2|ha\b|€)/g, (_, n, esp, u) => (u === "€" && langue === "en" ? "€" + grouper(n, ",") : grouper(n, langue === "en" ? "," : " ") + (esp || " ") + u));
+  if (langue === "fr") l = l.replace(/(\S):(\s)/g, "$1 :$2");
+  return l;
+};
 
 /* ---------- génération ---------- */
 const lireJson = (x) => { if (x && typeof x === "object") return x; try { const s = String(x || ""); return JSON.parse(s.slice(s.indexOf("{"), s.lastIndexOf("}") + 1)); } catch (e) { return null; } };
@@ -118,10 +134,10 @@ const genererCartes = async (ia, bien) => {
   for (const langue of ["fr", "en"]) {
     const s = sortie[langue] || {};
     const lignes = [];
-    for (const l of Array.isArray(s.lignes) ? s.lignes : []) { const r = verifierLigne(l, donnees, langue); if (r) out.refus.push({ langue, ligne: String(l).slice(0, 140), raison: r }); else lignes.push(String(l).trim()); }
+    for (const l of Array.isArray(s.lignes) ? s.lignes : []) { const r = verifierLigne(l, donnees, langue); if (r) out.refus.push({ langue, ligne: String(l).slice(0, 140), raison: r }); else lignes.push(mettreEnForme(l, langue)); }
     if (lignes.length >= 3) out[langue] = { titre: verifierTitre(s.titre), lignes: lignes.slice(0, 9) };
   }
   return out.fr || out.en ? out : null;
 };
 
-module.exports = { SCHEMA, donneesPourCartes, empreinte, consignes, lignesVoulues, verifierLigne, verifierTitre, genererCartes };
+module.exports = { SCHEMA, donneesPourCartes, empreinte, consignes, lignesVoulues, verifierLigne, verifierTitre, mettreEnForme, genererCartes };

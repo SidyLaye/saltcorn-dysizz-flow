@@ -25,6 +25,17 @@ assert.match(ok("🏡 Superbe maison !"), /superlatif|exclamation/);
 assert.match(ok("🔥 Heating: bois", "en"), /français/);
 assert.equal(ok("🔥 Wood heating for winter evenings", "en"), null);
 
+/* le nom de la commune n'est pas du français à refuser dans une ligne anglaise (essai réel du 15/10) */
+assert.equal(ok("📍 A quiet hamlet, 20 minutes from Villefranche", "en"), null);
+assert.equal(C.verifierLigne("📍 20 minutes from Villefranche-de-Rouergue", { ...donnees, ville: "Villefranche-de-Rouergue" }, "en"), null);
+/* mise en forme : nombres groupés selon la langue, ponctuation française */
+assert.equal(C.mettreEnForme("🌳 Terrain de 5505 m² arboré", "fr"), "🌳 Terrain de 5 505 m² arboré");
+assert.equal(C.mettreEnForme("💶 225000 €", "fr"), "💶 225 000 €");
+assert.equal(C.mettreEnForme("🧰 Dépendances: grange et four à pain", "fr"), "🧰 Dépendances : grange et four à pain");
+assert.equal(C.mettreEnForme("🌳 5505 m² of grounds", "en"), "🌳 5,505 m² of grounds");
+assert.equal(C.mettreEnForme("💶 225000 €", "en"), "💶 €225,000");
+assert.equal(C.mettreEnForme("🧱 Une maison de 1800", "fr"), "🧱 Une maison de 1800", "une année n'est jamais groupée");
+
 /* génération : lignes fautives retirées, langue gardée seulement avec 3 lignes valides au moins */
 const ia = (sortie) => ({ generer: async () => sortie });
 (async () => {

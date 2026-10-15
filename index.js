@@ -1,4 +1,4 @@
-/* dysizz-flow 2.21.0 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.21.1 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.21.0" : "dev";
+    var VERSION2 = true ? "2.21.1" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -99162,7 +99162,8 @@ var require_cartes = __commonJS({
         ...an.pieces_detail ? { pieces: an.pieces_detail } : {}
       };
     };
-    var empreinte = (bien) => crypto.createHash("sha1").update(JSON.stringify([donneesPourCartes(bien), (bien && bien.photos || []).length])).digest("hex");
+    var VERSION2 = 2;
+    var empreinte = (bien) => crypto.createHash("sha1").update(JSON.stringify([VERSION2, donneesPourCartes(bien), (bien && bien.photos || []).length])).digest("hex");
     var lignesVoulues = (nbPhotos) => Math.max(3, Math.min(9, (+nbPhotos || 0) - 1));
     var consignes = (donnees, nbPhotos) => {
       const n = lignesVoulues(nbPhotos);
@@ -99246,12 +99247,23 @@ DONN\xC9ES : ${JSON.stringify(donnees)}`;
       const P = permisDe(donnees || {});
       for (const u of unites(l.replace(/(\d[\d\s.,]*)\s*(k€|€|euros?\b)/gi, ""))) if (!P.unites.has(u)) return "nombre absent des donn\xE9es : " + u;
       for (const a of l.match(/\b(1[0-9]{3}|20[0-9]{2})\b/g) || []) if (!P.annees.has(a)) return "ann\xE9e absente des donn\xE9es : " + a;
-      if (langue === "en" && MOTS_FR.test(cle(l.replace(/g[iî]te/gi, "")))) return "mot fran\xE7ais dans une ligne anglaise";
+      if (langue === "en") {
+        let sans = l.replace(/g[iî]te/gi, "");
+        for (const nomPropre of [donnees && donnees.ville].filter(Boolean)) sans = sans.split(nomPropre).join(" ");
+        if (MOTS_FR.test(cle(sans))) return "mot fran\xE7ais dans une ligne anglaise";
+      }
       return null;
     };
     var verifierTitre = (t) => {
       const s = String(t || "").trim();
       return s && s.length <= 80 && !SUPERLATIFS.test(s) && !RESERVES.test(s) && !/!|\d[\d\s.,]*\s*(€|euros?)/i.test(s) ? s : null;
+    };
+    var grouper = (n, sep) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, sep);
+    var mettreEnForme = (ligne, langue = "fr") => {
+      let l = String(ligne || "").trim();
+      l = l.replace(/(\d{4,})(\s*)(m²|m2|ha\b|€)/g, (_, n, esp, u) => u === "\u20AC" && langue === "en" ? "\u20AC" + grouper(n, ",") : grouper(n, langue === "en" ? "," : " ") + (esp || " ") + u);
+      if (langue === "fr") l = l.replace(/(\S):(\s)/g, "$1 :$2");
+      return l;
     };
     var lireJson = (x) => {
       if (x && typeof x === "object") return x;
@@ -99278,13 +99290,13 @@ DONN\xC9ES : ${JSON.stringify(donnees)}`;
         for (const l of Array.isArray(s.lignes) ? s.lignes : []) {
           const r = verifierLigne(l, donnees, langue);
           if (r) out.refus.push({ langue, ligne: String(l).slice(0, 140), raison: r });
-          else lignes.push(String(l).trim());
+          else lignes.push(mettreEnForme(l, langue));
         }
         if (lignes.length >= 3) out[langue] = { titre: verifierTitre(s.titre), lignes: lignes.slice(0, 9) };
       }
       return out.fr || out.en ? out : null;
     };
-    module2.exports = { SCHEMA, donneesPourCartes, empreinte, consignes, lignesVoulues, verifierLigne, verifierTitre, genererCartes };
+    module2.exports = { SCHEMA, donneesPourCartes, empreinte, consignes, lignesVoulues, verifierLigne, verifierTitre, mettreEnForme, genererCartes };
   }
 });
 
