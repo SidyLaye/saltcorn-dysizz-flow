@@ -1,5 +1,11 @@
 # Journal des versions
 
+## 2.20.2
+
+### Ajouté
+- Bot WhatsApp : les équipes sont prévenues quand un prospect désinscrit réécrit (le bot reste muet, un humain décide) et quand
+  un prospect demande à négocier le prix (le bot lui propose visite ou rappel avec le négociateur).
+
 ## 2.20.1
 
 ### Corrigé

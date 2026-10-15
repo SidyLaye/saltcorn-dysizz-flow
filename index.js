@@ -1,4 +1,4 @@
-/* dysizz-flow 2.20.1 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.20.2 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.20.1" : "dev";
+    var VERSION2 = true ? "2.20.2" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -98819,7 +98819,14 @@ var require_bot = __commonJS({
       const t = Object.keys(NOMS_SCORES).filter((k) => typeof sc[k] === "number").map((k) => `${NOMS_SCORES[k]} ${sc[k]}/100`).join(" \xB7 ");
       return t && sc.provisoire ? t + " (bar\xE8me provisoire)" : t;
     };
-    var AVIS = { prioritaire_vendeur: "Le prospect a un bien \xE0 vendre", annulation: "Le prospect annule sa demande", message_apres_transmission: "Nouveau message du prospect apr\xE8s transmission" };
+    var AVIS = {
+      prioritaire_vendeur: "Le prospect a un bien \xE0 vendre",
+      annulation: "Le prospect annule sa demande",
+      message_apres_transmission: "Nouveau message du prospect apr\xE8s transmission",
+      /* le bot ne répond plus après un STOP ; un humain décide s'il recontacte */
+      message_apres_stop: "Le prospect d\xE9sinscrit a r\xE9\xE9crit",
+      engagement_demande: "Le prospect demande \xE0 n\xE9gocier le prix"
+    };
     var lignes = (d = {}) => {
       const q = d.qualification || {}, etiquettes = [d.lead_prioritaire && "bien \xE0 vendre (prioritaire)", d.lead_financement && "financement", d.lead_travaux && "travaux", d.lead_relocation && "relocation"].filter(Boolean);
       const branche = (o) => Object.entries(o || {}).filter(([, v]) => v !== "" && v != null && typeof v !== "object").map(([k, v]) => `${k} : ${v}`).join(" ; ");

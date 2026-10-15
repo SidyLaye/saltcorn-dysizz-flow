@@ -113,7 +113,8 @@ const DELAIS = { HOT: "moins de 3 mois", WARM: "3 à 12 mois", COLD: "plus de 12
 const NOMS_SCORES = { bien: "bien", financement: "financement", travaux: "travaux", international: "relocation" };
 const texteScores = (sc) => { if (!sc) return ""; const t = Object.keys(NOMS_SCORES).filter((k) => typeof sc[k] === "number").map((k) => `${NOMS_SCORES[k]} ${sc[k]}/100`).join(" · ");
   return t && sc.provisoire ? t + " (barème provisoire)" : t; };
-const AVIS = { prioritaire_vendeur: "Le prospect a un bien à vendre", annulation: "Le prospect annule sa demande", message_apres_transmission: "Nouveau message du prospect après transmission" };
+const AVIS = { prioritaire_vendeur: "Le prospect a un bien à vendre", annulation: "Le prospect annule sa demande", message_apres_transmission: "Nouveau message du prospect après transmission",
+  /* le bot ne répond plus après un STOP ; un humain décide s'il recontacte */ message_apres_stop: "Le prospect désinscrit a réécrit", engagement_demande: "Le prospect demande à négocier le prix" };
 
 /* Lignes « libellé, valeur » d'une sortie du bot : pour l'action du CRM et pour le message aux équipes. */
 const lignes = (d = {}) => {
