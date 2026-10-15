@@ -103,6 +103,12 @@ const evenement = async (corps, R) => {
     await noter(e.type, d, { noeud: court(e.noeud, 60), quand: isNaN(q) ? new Date() : q, texte: court(TEXTE(d), 4000), cle: evid ? `${evid}:${i}:${court(e.type, 60)}` : null });
   }
   const p = B.plan(lot, R), out = { ok: true, recus: lot.length };
+  /* un désinscrit qui écrit plusieurs messages : une seule alerte par 24 h (la ligne de ce tour est déjà rangée) */
+  if (p.avis.some((a) => a.type === "message_apres_stop")) {
+    const l = await tb.getRows({ tel9, type: "message_apres_stop" }, { orderBy: "id", orderDesc: true, limit: lot.length + 1 });
+    const avant = l.slice(lot.filter((e) => e.type === "message_apres_stop").length)[0];
+    if (avant && Date.now() - new Date(avant.quand) < 24 * 3600e3) p.avis = p.avis.filter((a) => a.type !== "message_apres_stop");
+  }
   if (!p.crm.length && !p.avis.length) return out;
   /* numéro sans dossier : pas de contact à écrire, mais le siège est prévenu d'une demande */
   const dos = dossier || { id: null, nom: "Numéro sans dossier" };

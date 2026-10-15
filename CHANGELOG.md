@@ -1,5 +1,10 @@
 # Journal des versions
 
+## 2.20.3
+
+### Corrigé
+- Bot WhatsApp : un prospect désinscrit qui envoie plusieurs messages ne déclenche qu'une alerte par 24 h (une par message avant).
+
 ## 2.20.2
 
 ### Ajouté

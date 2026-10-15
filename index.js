@@ -1,4 +1,4 @@
-/* dysizz-flow 2.20.2 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.20.3 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.20.2" : "dev";
+    var VERSION2 = true ? "2.20.3" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -98863,7 +98863,7 @@ var require_bot = __commonJS({
           if (action) out.crm.push({ op: "ajouterAction", action_id: action, texte: "WhatsApp. " + lignes(d).map(([l, v]) => `${l} : ${v}`).join("\n") });
           if (d.code !== "OUT-6") out.avis.push({ titre: DEMANDES[d.code] || "Demande", qualifie: true, prioritaire: !!d.lead_prioritaire, donnees: d, referents: [d.lead_financement && "f", d.lead_travaux && "w", d.lead_relocation && "i"].filter(Boolean) });
         } else if (AVIS[e.type] && !(sortie && e.type === "prioritaire_vendeur"))
-          out.avis.push({ titre: AVIS[e.type], prioritaire: e.type === "prioritaire_vendeur", donnees: d, referents: [] });
+          out.avis.push({ titre: AVIS[e.type], type: e.type, prioritaire: e.type === "prioritaire_vendeur", donnees: d, referents: [] });
       }
       return out;
     };
@@ -99004,6 +99004,11 @@ var require_bot2 = __commonJS({
         await noter(e.type, d, { noeud: court(e.noeud, 60), quand: isNaN(q) ? /* @__PURE__ */ new Date() : q, texte: court(TEXTE(d), 4e3), cle: evid ? `${evid}:${i}:${court(e.type, 60)}` : null });
       }
       const p = B.plan(lot, R), out = { ok: true, recus: lot.length };
+      if (p.avis.some((a) => a.type === "message_apres_stop")) {
+        const l = await tb.getRows({ tel9, type: "message_apres_stop" }, { orderBy: "id", orderDesc: true, limit: lot.length + 1 });
+        const avant = l.slice(lot.filter((e) => e.type === "message_apres_stop").length)[0];
+        if (avant && Date.now() - new Date(avant.quand) < 24 * 36e5) p.avis = p.avis.filter((a) => a.type !== "message_apres_stop");
+      }
       if (!p.crm.length && !p.avis.length) return out;
       const dos = dossier || { id: null, nom: "Num\xE9ro sans dossier" };
       const { conf, crm, reglages: RA } = await charger();

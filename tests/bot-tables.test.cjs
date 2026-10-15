@@ -108,6 +108,11 @@ const sortie = (code, plus = {}) => ({ type: "sortie", noeud: "TB3", quand: "202
   await repondre("evenement", { telephone: "33611111111", event_id: "ev5", evenements: [sortie("OUT-6", { temperature: "" }), { type: "optout", donnees: { mot_cle: "STOP" } }] });
   assert.deepStrictEqual(await repondre("fiche", { telephone: "33611111111" }), { echec: true, raison: "désinscrit" });
   assert.strictEqual((await repondre("contexte", { telephone: "33611111111" })).optout, true);
+  /* le désinscrit réécrit : l'équipe est prévenue une fois, pas à chaque message */
+  mails.length = 0;
+  for (const id of ["ev5a", "ev5b"]) await repondre("evenement", { telephone: "33611111111", event_id: id, evenements: [{ type: "message_apres_stop", donnees: { texte: "en fait si" } }] });
+  const alertes = mails.filter((m) => /désinscrit a réécrit/.test(m.objet || m.sujet || m.html || ""));
+  assert.ok(alertes.length > 0 && new Set(alertes.map((m) => m.a)).size === alertes.length, "une alerte par destinataire, une seule fois : " + JSON.stringify(alertes.map((m) => m.a)));
   assert.strictEqual((await repondre("fiche", { telephone: "33622222222" })).echec, true);
 
   /* le bien passe par l'application : relu dans le CRM puis enregistré (ld_biens), une ligne par bien, photos comprises */
