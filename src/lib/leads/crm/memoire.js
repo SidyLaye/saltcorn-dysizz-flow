@@ -13,6 +13,7 @@ const creer = ({ biens = [], contacts = [] } = {}) => {
     ecritures,
     bienParId: async (id) => B.find((b) => String(b.id) === String(id)) || null,
     photosBien: async (id) => ((B.find((b) => String(b.id) === String(id)) || {}).photos || []).slice(),
+    bienEtPhotos: async (id) => { const b = B.find((x) => String(x.id) === String(id)); if (!b) throw Object.assign(new Error("bien introuvable"), { http: 404 }); return { ...b, photos: (b.photos || []).slice() }; },
     biensParReference: async (ref) => B.filter((b) => String(b.reference || "").trim().toLowerCase() === String(ref).trim().toLowerCase()).slice(0, 5),
     tousLesBiens: async () => B,
     biensParCriteres: async (q, { max = 2 } = {}) => B.filter((b) =>

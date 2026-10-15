@@ -1,4 +1,4 @@
-/* dysizz-flow 2.16.1 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.17.0 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.16.1" : "dev";
+    var VERSION2 = true ? "2.17.0" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -96173,6 +96173,12 @@ var require_immofacile = __commonJS({
           const p = data(await appel("GET", `/products/${Number(id)}?fetch=products_photos`)) || {};
           return (p.products_photos || []).filter((x) => x && x.type === dossier && !x.is_red && !x.is_mid && /^https:\/\//.test(x.chemin || "")).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)).map((x) => x.chemin);
         },
+        /* Le bien et ses photos (dossier d'images donné) en UNE requête : ce que lit le bot, sous fort trafic. Bien introuvable : erreur http 404. */
+        bienEtPhotos: async (id, dossier) => {
+          const p = data(await appel("GET", `/products/${Number(id)}?fetch=${FETCH},products_photos`)) || {};
+          const photos = dossier ? (p.products_photos || []).filter((x) => x && x.type === dossier && !x.is_red && !x.is_mid && /^https:\/\//.test(x.chemin || "")).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)).map((x) => x.chemin) : [];
+          return { ...await versBien(p), photos };
+        },
         biensParReference: async (ref) => (await recherche({ model: String(ref), count: 5 })).filter((b) => b && b.reference.toLowerCase() === String(ref).trim().toLowerCase()).slice(0, 3),
         biensParCriteres: async (q, { max = 2 } = {}) => {
           const c = [];
@@ -96525,6 +96531,11 @@ var require_memoire = __commonJS({
         ecritures,
         bienParId: async (id) => B.find((b) => String(b.id) === String(id)) || null,
         photosBien: async (id) => ((B.find((b) => String(b.id) === String(id)) || {}).photos || []).slice(),
+        bienEtPhotos: async (id) => {
+          const b = B.find((x) => String(x.id) === String(id));
+          if (!b) throw Object.assign(new Error("bien introuvable"), { http: 404 });
+          return { ...b, photos: (b.photos || []).slice() };
+        },
         biensParReference: async (ref) => B.filter((b) => String(b.reference || "").trim().toLowerCase() === String(ref).trim().toLowerCase()).slice(0, 5),
         tousLesBiens: async () => B,
         biensParCriteres: async (q, { max = 2 } = {}) => B.filter((b) => (q.prix_min === void 0 || +b.prix >= q.prix_min) && (q.prix_max === void 0 || +b.prix <= q.prix_max) && (q.type === void 0 || b.type === q.type) && (q.pieces === void 0 || +b.pieces === +q.pieces) && (q.surface === void 0 || Math.round(+b.surface) === Math.round(+q.surface)) && (q.prix === void 0 || +b.prix === +q.prix) && (q.lieu === void 0 || cle(b.ville + " " + b.code_postal).includes(cle(q.lieu)))).slice(0, max),
@@ -97363,7 +97374,10 @@ var require_schema = __commonJS({
         ["synchro_le", "Date"],
         ["adresse", "String"],
         ["statut_web", "String"],
-        ["photo_url", "String"]
+        ["photo_url", "String"],
+        /* photos publiques (JSON) ; fictif : bien d'essai saisi dans l'application, jamais relu ni supprimé par le CRM, jamais proposé au rapprochement */
+        ["photos", "String"],
+        ["fictif", "Bool"]
       ] },
       portails: { name: "ld_portails", desc: "Portails d\xE9clar\xE9s par le client (sans code)", fields: [
         ["nom", "String", { required: true }],
@@ -97955,6 +97969,61 @@ var require_catalogue = __commonJS({
       synchro_le: /* @__PURE__ */ new Date()
     });
     var versBien = (r) => ({ id: isFinite(+r.crm_id) ? +r.crm_id : r.crm_id, reference: r.reference || "", prix: r.prix, surface: r.surface, pieces: r.pieces, chambres: r.chambres, type: r.type, ville: r.ville, code_postal: r.code_postal, negociateur_id: r.negociateur, agence_id: r.agence, proprietaire_id: r.proprietaire });
+    var json = (s, d) => {
+      try {
+        return s ? JSON.parse(s) : d;
+      } catch (e) {
+        return d;
+      }
+    };
+    var pourBot = (r) => r ? { ...versBien(r), photos: json(r.photos, []), fictif: !!r.fictif, synchro_le: r.synchro_le || null } : null;
+    var lignesDe = async (t, id) => t.biens.getRows({ crm_id: String(id) }, { orderBy: "id" });
+    var EN_COURS = G.enCours || (G.enCours = /* @__PURE__ */ new Map());
+    var TROP_LONG = Symbol("trop long");
+    var relire = async (client, id, dossierImages) => {
+      const t = await tables();
+      try {
+        const b = await client.bienEtPhotos(id, dossierImages);
+        const ligne = { ...versLigne(b), photos: JSON.stringify(b.photos || []) };
+        const rows = await lignesDe(t, id);
+        if (rows[0]) await t.biens.updateRow(ligne, rows[0].id);
+        else await t.biens.insertRow(ligne);
+        for (const r of (await lignesDe(t, id)).slice(1)) await t.biens.deleteRows({ id: r.id });
+        oublier();
+        return { ...b, photos: b.photos || [] };
+      } catch (e) {
+        if (e && (e.http === 404 || e.http === 403)) {
+          for (const r of await lignesDe(t, id)) if (!r.fictif) await t.biens.updateRow({ supprime: true, synchro_le: /* @__PURE__ */ new Date() }, r.id);
+          oublier();
+          return null;
+        }
+        throw e;
+      }
+    };
+    var bienFrais = async (client, id, { dossierImages = "", fraicheur_ms = 12e4, budget_ms = 3500 } = {}) => {
+      if (id == null || String(id).trim() === "") return null;
+      const t = await tables();
+      const ligne = (await lignesDe(t, id))[0] || null;
+      const garde = ligne && !ligne.supprime ? pourBot(ligne) : null;
+      if (ligne && ligne.fictif) return garde;
+      if (garde && ligne.synchro_le && Date.now() - new Date(ligne.synchro_le).getTime() < fraicheur_ms) return garde;
+      if (!isFinite(+id) || !client || !client.bienEtPhotos) return garde;
+      const k = tenant() + ":" + String(id) + ":" + dossierImages;
+      let p = EN_COURS.get(k);
+      if (!p) {
+        p = relire(client, id, dossierImages).finally(() => EN_COURS.delete(k));
+        EN_COURS.set(k, p);
+      }
+      const issue = p.then((b) => ({ b }), (e) => ({ e }));
+      let minuteur;
+      const r = await Promise.race([issue, new Promise((ok) => {
+        minuteur = setTimeout(() => ok(TROP_LONG), budget_ms);
+      })]);
+      clearTimeout(minuteur);
+      if (r === TROP_LONG) return garde ? { ...garde, perime: true } : (await issue).b || null;
+      if (r.e) return garde ? { ...garde, perime: true } : null;
+      return r.b;
+    };
     var enregistrerBiens = async (biens) => {
       const t = await tables();
       for (const b of biens) {
@@ -97988,7 +98057,7 @@ var require_catalogue = __commonJS({
         }
         if (!depuis) {
           const tous = await t.biens.getRows({ supprime: false });
-          for (const r of tous) if (!vus.has(String(r.crm_id))) await t.biens.updateRow({ supprime: true }, r.id);
+          for (const r of tous) if (!r.fictif && !vus.has(String(r.crm_id))) await t.biens.updateRow({ supprime: true }, r.id);
         }
         const etat = `${depuis ? "delta" : "complet"} : ${n} bien(s) le ${debut.toLocaleString("fr-FR", { timeZone: "Europe/Paris" })}`;
         if (R) await t.reglages.updateRow({ catalogue_synchro_le: debut, catalogue_etat: etat }, R.id);
@@ -98013,13 +98082,24 @@ var require_catalogue = __commonJS({
       const k = tenant(), c = G.cache.get(k);
       if (c && Date.now() - c.t < 6e4) return c.biens;
       const t = await tables();
-      const biens = (await t.biens.getRows({ supprime: false })).map(versBien);
+      const R = (await t.reglages.getRows({}, { orderBy: "id", limit: 1 }))[0];
+      const biens = R && R.catalogue_synchro_le ? (await t.biens.getRows({ supprime: false })).filter((r) => !r.fictif).map(versBien) : [];
       G.cache.set(k, { t: Date.now(), biens });
       return biens;
     };
+    var fictifsParReference = async (ref) => {
+      const v = String(ref || "").trim().toLowerCase();
+      if (!v) return [];
+      const t = await tables();
+      return (await t.biens.getRows({ fictif: true, supprime: false })).filter((r) => String(r.reference || "").trim().toLowerCase() === v).map(versBien);
+    };
     var avecCatalogue = async (crm) => {
       const biens = await biensLocaux().catch(() => []);
-      if (!biens.length) return crm;
+      const fictifs = (ref) => fictifsParReference(ref).catch(() => []);
+      if (!biens.length) return { ...crm, biensParReference: async (ref) => {
+        const f = await fictifs(ref);
+        return f.length ? f : crm.biensParReference(ref);
+      } };
       const api = flowApi();
       const local = api.leads.ADAPTATEURS.memoire.creer({ biens });
       return {
@@ -98027,6 +98107,8 @@ var require_catalogue = __commonJS({
         catalogue_local: biens.length,
         bienParId: async (id) => await local.bienParId(id) || crm.bienParId(id).catch(() => null),
         biensParReference: async (ref) => {
+          const f = await fictifs(ref);
+          if (f.length) return f;
           const l = await local.biensParReference(ref);
           return l.length ? l : crm.biensParReference(ref).catch(() => []);
         },
@@ -98034,7 +98116,7 @@ var require_catalogue = __commonJS({
         tousLesBiens: async () => biens
       };
     };
-    module2.exports = { synchroniser, evenementBien, avecCatalogue, biensLocaux, enregistrerBiens, oublier };
+    module2.exports = { synchroniser, evenementBien, avecCatalogue, biensLocaux, fictifsParReference, enregistrerBiens, bienFrais, oublier };
   }
 });
 
@@ -98329,6 +98411,18 @@ var require_dossier = __commonJS({
         const garder = d.dossier && !(d.statut === "a_trier" && !d.dossier.existant);
         const dossierId = garder ? await fil.enregistrer(api)(d, d.execution, new Date(mail.date_envoi || Date.now()), mail.id) : null;
         const id = await enregistrer(d, mail, dossierId);
+        if (dossierId && d.bien && d.bien.id != null) {
+          let photos = "";
+          try {
+            photos = String((JSON.parse(R && R.bot || "{}") || {}).photos || "");
+          } catch (e) {
+          }
+          try {
+            require_catalogue().bienFrais(client, d.bien.id, { dossierImages: photos, fraicheur_ms: 0, budget_ms: 1 }).catch(() => {
+            });
+          } catch (e) {
+          }
+        }
         return { id, dossier_id: dossierId, statut: d.statut, dossier: d };
       });
     };
@@ -98603,26 +98697,33 @@ var require_bot2 = __commonJS({
       const tel = String(corps && corps.telephone || "").replace(/\D/g, "");
       if (tel.length < 8 || tel.length > 15) throw perm("t\xE9l\xE9phone invalide");
       const essai = (R.numeros_essai || {})[tel];
-      if (essai) return { tel, dossier: { id: null, essai: true, bien_crm: essai.bien || null, bien_ref: essai.reference || null, negociateur: essai.negociateur || null, prenom: essai.prenom || "", nom: essai.prenom || "Essai", portail: "essai" } };
+      if (essai) return { tel, dossier: {
+        id: null,
+        essai: true,
+        bien_crm: essai.bien || null,
+        bien_ref: essai.reference || null,
+        negociateur: essai.negociateur || null,
+        prenom: essai.prenom || "",
+        nom: essai.nom || essai.prenom || "Essai",
+        email: essai.email || null,
+        portail: "essai"
+      } };
       const rows = await t.dossiers.getRows({ tel9: B.tel9(tel) }, { orderBy: "maj_le", orderDesc: true, limit: 10 });
       const id = +corps.dossier_id || null;
       return { tel, dossier: id && rows.find((r) => r.id === id) || rows.find((r) => r.bien_crm) || rows[0] || null };
     };
-    var lireBien = async (crm, dossier) => {
+    var lireBien = async (crm, dossier, R = {}) => {
       try {
+        const cat = require_catalogue();
         const c = flowApi().crmDepuisCoffre(crm.type, crm.reglages, crm.prefixe, "ombre");
-        if (dossier.bien_crm) return await c.bienParId(dossier.bien_crm);
-        return dossier.bien_ref ? (await c.biensParReference(dossier.bien_ref))[0] || null : null;
+        let id = dossier.bien_crm || null;
+        if (!id && dossier.bien_ref) {
+          const f = await cat.fictifsParReference(dossier.bien_ref);
+          id = f[0] ? f[0].id : ((await c.biensParReference(dossier.bien_ref).catch(() => []))[0] || {}).id || null;
+        }
+        return id == null ? null : await cat.bienFrais(c, id, { dossierImages: String(R.photos || ""), fraicheur_ms: (+R.fraicheur_bien_s || 120) * 1e3 });
       } catch (e) {
         return null;
-      }
-    };
-    var lirePhotos = async (crm, id, dossierImages) => {
-      try {
-        const c = flowApi().crmDepuisCoffre(crm.type, crm.reglages, crm.prefixe, "ombre");
-        return c.photosBien ? await c.photosBien(id, String(dossierImages)) : [];
-      } catch (e) {
-        return [];
       }
     };
     var etatDe = async (tb, tel, dossier) => {
@@ -98637,8 +98738,8 @@ var require_bot2 = __commonJS({
       const etat = await etatDe(tb, tel, dossier);
       if (!dossier) return B.contexte({ dossier: null, etat });
       const { conf, crm } = await charger();
-      const [bien, leads] = await Promise.all([lireBien(crm, dossier), dossier.id ? t.leads.getRows({ dossier_id: dossier.id }, { orderBy: "id", orderDesc: true, limit: 1 }) : []]);
-      const photos = R.photos && bien && bien.id ? await lirePhotos(crm, bien.id, R.photos) : [];
+      const [bien, leads] = await Promise.all([lireBien(crm, dossier, R), dossier.id ? t.leads.getRows({ dossier_id: dossier.id }, { orderBy: "id", orderDesc: true, limit: 1 }) : []]);
+      const photos = R.photos && bien && Array.isArray(bien.photos) ? bien.photos : [];
       return B.contexte({ dossier, lead: leads[0] ? json(leads[0].dossier, {}) : null, bien, photos, conf, reglages: R, etat });
     };
     var TEXTE = (d) => d.texte || d.dernier_message || d.question || d.reponse || d.mot_cle || "";
@@ -98676,14 +98777,14 @@ var require_bot2 = __commonJS({
         out.crm = ecrire ? faits : "non \xE9crit";
       }
       if (p.avis.length) {
-        const bien = await lireBien(crm, dos);
+        const bien = await lireBien(crm, dos, R);
         const reels = B.quiRecoit(dos.negociateur || bien && bien.negociateur_id, conf, bien).liste.map((x) => x.email);
         const essai = dos.essai || R.notifications !== "reel";
         const fil = (await tb.getRows({ tel9, type: { in: ["inbound", "message_bot"] } }, { orderBy: "id", orderDesc: true, limit: 40 })).reverse().map((r) => ({ role: r.type === "inbound" ? "prospect" : "bot", texte: r.texte || json(r.donnees, {}).clic || "" })).filter((m) => m.texte);
         const messages = [];
         for (const [i, avis] of p.avis.entries()) {
           const tous = [.../* @__PURE__ */ new Set([...reels, ...avis.referents.flatMap((k) => adresses((R.referents || {})[k]))])];
-          const a = essai ? adresses(R.adresses_essai) : tous;
+          const a = essai ? R.essai_routage === true ? tous.filter((x) => adresses(R.adresses_essai).includes(String(x).toLowerCase())) : adresses(R.adresses_essai) : tous;
           const { objet, html } = B.mailEquipe({ avis, dossier: dos, bien, telephone: tel, fil, aurait_recu: essai ? tous : null });
           for (const adr of a) messages.push({ cle: `${S.prefixe()}bot-${did || tel9}:${evid || Date.now()}:${i}:${adr}`, a: adr, sujet: objet, html, reference: did ? `dossier ${did}` : "essai" });
         }
@@ -98720,7 +98821,7 @@ var require_bot2 = __commonJS({
         const W = R.whatsapp || {};
         const jeton = W.variable_jeton ? await require_garde().lireSecret(W.variable_jeton) : null;
         if (!W.phone_number_id || !jeton) return echec("WhatsApp non r\xE9gl\xE9");
-        const blocs = B.blocsFiche(await lireBien((await charger()).crm, dossier));
+        const blocs = B.blocsFiche(await lireBien((await charger()).crm, dossier, R));
         if (!blocs) return echec("bien illisible dans le CRM");
         const buf = await require_pdf().ecrirePdf(blocs, { titre: "Fiche annonce", pied: false, producteur: "", couleur: "#374151" });
         let identifiant;

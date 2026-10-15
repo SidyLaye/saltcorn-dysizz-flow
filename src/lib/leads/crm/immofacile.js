@@ -246,6 +246,13 @@ const creer = (cfg = {}) => {
       return (p.products_photos || []).filter((x) => x && x.type === dossier && !x.is_red && !x.is_mid && /^https:\/\//.test(x.chemin || ""))
         .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)).map((x) => x.chemin);
     },
+    /* Le bien et ses photos (dossier d'images donné) en UNE requête : ce que lit le bot, sous fort trafic. Bien introuvable : erreur http 404. */
+    bienEtPhotos: async (id, dossier) => {
+      const p = data(await appel("GET", `/products/${Number(id)}?fetch=${FETCH},products_photos`)) || {};
+      const photos = dossier ? (p.products_photos || []).filter((x) => x && x.type === dossier && !x.is_red && !x.is_mid && /^https:\/\//.test(x.chemin || ""))
+        .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)).map((x) => x.chemin) : [];
+      return { ...(await versBien(p)), photos };
+    },
     biensParReference: async (ref) => (await recherche({ model: String(ref), count: 5 })).filter((b) => b && b.reference.toLowerCase() === String(ref).trim().toLowerCase()).slice(0, 3),
     biensParCriteres: async (q, { max = 2 } = {}) => {
       const c = [];

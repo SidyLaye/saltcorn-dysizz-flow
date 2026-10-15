@@ -1,12 +1,14 @@
 /* Bot WhatsApp des leads, côté plateforme : les trois réponses que le bot demande à l'application.
-     contexte  : qui est ce numéro, quel bien (lu dans le CRM à l'instant, champs publics seulement), qui reçoit ;
+     contexte  : qui est ce numéro, quel bien (relu dans le CRM et enregistré dans l'application, ou bien fictif de
+                 l'application ; champs publics seulement), qui reçoit ;
      evenement : range la conversation, écrit dans le CRM, prévient les équipes ;
      fiche     : fabrique la fiche PDF du bien et l'envoie par WhatsApp, une seule fois par dossier.
    Réglages : champ « bot » des réglages du client (JSON), relu à chaque appel :
      { "entite": "…", "notifications": "simuler" | "essai" | "reel", "adresses_essai": ["…"], "ecritures_crm": false,
        "couleurs": { "HOT": 0, "WARM": 0, "COLD": 0 }, "actions": { "OUT-1": 0, "defaut": 0 }, "referents": { "f": [], "w": [], "i": [] },
        "liens_directs": false, "whatsapp": { "phone_number_id": "…", "variable_jeton": "…" },
-       "numeros_essai": { "33600000000": { "bien": "id du CRM", "reference": "ou sa référence", "prenom": "…", "negociateur": "id" } } }
+       "numeros_essai": { "33600000000": { "bien": "id du CRM ou d'un bien fictif", "reference": "ou sa référence", "prenom": "…", "nom": "…", "email": "…", "negociateur": "id" } },
+       "fraicheur_bien_s": 120, "essai_routage": false }
    Un numéro d'essai n'a pas de dossier : rien n'est écrit dans le CRM, et ses messages ne vont qu'aux adresses d'essai. */
 "use strict";
 const S = require("./schema");
@@ -25,27 +27,27 @@ const trouver = async (t, corps, R) => {
   const tel = String((corps && corps.telephone) || "").replace(/\D/g, "");
   if (tel.length < 8 || tel.length > 15) throw perm("téléphone invalide");
   const essai = (R.numeros_essai || {})[tel];
-  if (essai) return { tel, dossier: { id: null, essai: true, bien_crm: essai.bien || null, bien_ref: essai.reference || null, negociateur: essai.negociateur || null, prenom: essai.prenom || "", nom: essai.prenom || "Essai", portail: "essai" } };
+  if (essai) return { tel, dossier: { id: null, essai: true, bien_crm: essai.bien || null, bien_ref: essai.reference || null, negociateur: essai.negociateur || null, prenom: essai.prenom || "",
+    nom: essai.nom || essai.prenom || "Essai", email: essai.email || null, portail: "essai" } };
   const rows = await t.dossiers.getRows({ tel9: B.tel9(tel) }, { orderBy: "maj_le", orderDesc: true, limit: 10 });
   const id = +corps.dossier_id || null;
   return { tel, dossier: (id && rows.find((r) => r.id === id)) || rows.find((r) => r.bien_crm) || rows[0] || null };
 };
 
-/* Le bien, lu dans le CRM à l'instant (jamais le catalogue local). CRM muet ou bien retiré : null. */
-const lireBien = async (crm, dossier) => {
+/* Le bien et ses photos (réglage « photos » = dossier d'images publiques, ex. « pr_p » ; vide = aucune photo) :
+   relu dans le CRM et enregistré dans l'application (ld_biens), ou pris dans l'application s'il est fictif, relu il y a
+   moins de fraicheur_bien_s, ou si le CRM est lent ou en panne (catalogue.bienFrais). Inconnu partout ou retiré : null. */
+const lireBien = async (crm, dossier, R = {}) => {
   try {
+    const cat = require("./catalogue");
     const c = flowApi().crmDepuisCoffre(crm.type, crm.reglages, crm.prefixe, "ombre");
-    if (dossier.bien_crm) return await c.bienParId(dossier.bien_crm);
-    return dossier.bien_ref ? (await c.biensParReference(dossier.bien_ref))[0] || null : null;
+    let id = dossier.bien_crm || null;
+    if (!id && dossier.bien_ref) {
+      const f = await cat.fictifsParReference(dossier.bien_ref);
+      id = f[0] ? f[0].id : ((await c.biensParReference(dossier.bien_ref).catch(() => []))[0] || {}).id || null;
+    }
+    return id == null ? null : await cat.bienFrais(c, id, { dossierImages: String(R.photos || ""), fraicheur_ms: (+R.fraicheur_bien_s || 120) * 1000 });
   } catch (e) { return null; }
-};
-
-/* Photos du bien (réglage « photos » = dossier d'images publiques, ex. « pr_p » ; vide = aucune photo). CRM muet : aucune. */
-const lirePhotos = async (crm, id, dossierImages) => {
-  try {
-    const c = flowApi().crmDepuisCoffre(crm.type, crm.reglages, crm.prefixe, "ombre");
-    return c.photosBien ? await c.photosBien(id, String(dossierImages)) : [];
-  } catch (e) { return []; }
 };
 
 const etatDe = async (tb, tel, dossier) => {
@@ -61,8 +63,8 @@ const contexte = async (corps, R) => {
   const etat = await etatDe(tb, tel, dossier);
   if (!dossier) return B.contexte({ dossier: null, etat });
   const { conf, crm } = await charger();
-  const [bien, leads] = await Promise.all([lireBien(crm, dossier), dossier.id ? t.leads.getRows({ dossier_id: dossier.id }, { orderBy: "id", orderDesc: true, limit: 1 }) : []]);
-  const photos = R.photos && bien && bien.id ? await lirePhotos(crm, bien.id, R.photos) : [];
+  const [bien, leads] = await Promise.all([lireBien(crm, dossier, R), dossier.id ? t.leads.getRows({ dossier_id: dossier.id }, { orderBy: "id", orderDesc: true, limit: 1 }) : []]);
+  const photos = R.photos && bien && Array.isArray(bien.photos) ? bien.photos : [];
   return B.contexte({ dossier, lead: leads[0] ? json(leads[0].dossier, {}) : null, bien, photos, conf, reglages: R, etat });
 };
 
@@ -104,7 +106,7 @@ const evenement = async (corps, R) => {
   }
 
   if (p.avis.length) {
-    const bien = await lireBien(crm, dos);
+    const bien = await lireBien(crm, dos, R);
     const reels = B.quiRecoit(dos.negociateur || (bien && bien.negociateur_id), conf, bien).liste.map((x) => x.email);
     const essai = dos.essai || R.notifications !== "reel";
     const fil = (await tb.getRows({ tel9, type: { in: ["inbound", "message_bot"] } }, { orderBy: "id", orderDesc: true, limit: 40 })).reverse()
@@ -112,7 +114,9 @@ const evenement = async (corps, R) => {
     const messages = [];
     for (const [i, avis] of p.avis.entries()) {
       const tous = [...new Set([...reels, ...avis.referents.flatMap((k) => adresses((R.referents || {})[k]))])];
-      const a = essai ? adresses(R.adresses_essai) : tous;
+      /* essai : aux adresses d'essai ; avec « essai_routage », aux vrais destinataires calculés qui sont aussi des adresses
+         d'essai (le routage est testé pour de vrai, personne d'autre ne reçoit : ni siège, ni copie du client) */
+      const a = essai ? (R.essai_routage === true ? tous.filter((x) => adresses(R.adresses_essai).includes(String(x).toLowerCase())) : adresses(R.adresses_essai)) : tous;
       const { objet, html } = B.mailEquipe({ avis, dossier: dos, bien, telephone: tel, fil, aurait_recu: essai ? tous : null });
       /* ponytail: un message par événement, sans plafond ; à regrouper si un prospect écrit beaucoup après sa demande */
       for (const adr of a) messages.push({ cle: `${S.prefixe()}bot-${did || tel9}:${evid || Date.now()}:${i}:${adr}`, a: adr, sujet: objet, html, reference: did ? `dossier ${did}` : "essai" });
@@ -151,7 +155,7 @@ const fiche = async (corps, R) => {
     const W = R.whatsapp || {};
     const jeton = W.variable_jeton ? await require("../../../garde").lireSecret(W.variable_jeton) : null;
     if (!W.phone_number_id || !jeton) return echec("WhatsApp non réglé");
-    const blocs = B.blocsFiche(await lireBien((await charger()).crm, dossier));
+    const blocs = B.blocsFiche(await lireBien((await charger()).crm, dossier, R));
     if (!blocs) return echec("bien illisible dans le CRM");
     const buf = await require("../../pdf").ecrirePdf(blocs, { titre: "Fiche annonce", pied: false, producteur: "", couleur: "#374151" });
     let identifiant;

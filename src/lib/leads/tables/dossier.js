@@ -103,6 +103,12 @@ const traiterMail = async (mailId, { forcerOmbre = false, actualiserConsentement
     const garder = d.dossier && !(d.statut === "a_trier" && !d.dossier.existant);
     const dossierId = garder ? await fil.enregistrer(api)(d, d.execution, new Date(mail.date_envoi || Date.now()), mail.id) : null;
     const id = await enregistrer(d, mail, dossierId);
+    /* le bot pourra contacter ce lead : copie du bien (et photos) préparée dès maintenant, sans attendre ni bloquer,
+       pour qu'au premier message le bot n'attende pas un CRM lent */
+    if (dossierId && d.bien && d.bien.id != null) {
+      let photos = ""; try { photos = String((JSON.parse((R && R.bot) || "{}") || {}).photos || ""); } catch (e) { /* réglage illisible : sans photos */ }
+      try { require("./catalogue").bienFrais(client, d.bien.id, { dossierImages: photos, fraicheur_ms: 0, budget_ms: 1 }).catch(() => {}); } catch (e) { /* jamais bloquant */ }
+    }
     return { id, dossier_id: dossierId, statut: d.statut, dossier: d };
   });
 };

@@ -1,5 +1,32 @@
 # Journal des versions
 
+## 2.17.0
+
+### Modifié
+- Leads, bot WhatsApp : le bien que montre le bot passe par l'application. À chaque demande, il est relu dans le CRM
+  (bien et photos en une seule requête) puis enregistré dans le catalogue local (`ld_biens`), et rendu depuis là.
+  - Copie de moins de `fraicheur_bien_s` secondes (120 par défaut, réglage « bot ») : rendue sans appel au CRM.
+  - Une seule relecture à la fois par bien dans un processus : une rafale d'appels = un appel au CRM.
+  - CRM lent (plus de 3,5 s) ou en panne : la copie enregistrée est rendue, la relecture finit en arrière-plan.
+  - Bien inexistant (404, ou 403 : réponse d'Immofacile pour un bien inconnu du site) : marqué supprimé.
+  - Un seul enregistrement par bien (doublon d'une course entre processus supprimé).
+- Le contexte, les mails aux équipes et la fiche PDF lisent tous le bien de cette façon.
+- Phase 1 : quand un dossier est enregistré avec son bien, la copie du bien est préparée aussitôt, en arrière-plan,
+  pour qu'au premier message du lead le bot n'attende pas un CRM lent (jusqu'à 11 s mesurés le 15/10/2026).
+
+### Ajouté
+- Biens fictifs : champ `fictif` de `ld_biens` (et `photos`, JSON). Un bien fictif n'existe que dans l'application :
+  jamais demandé au CRM, jamais marqué supprimé par une synchronisation, jamais proposé au rapprochement des mails,
+  sauf par sa référence exacte. Sert aux essais (numéros d'essai, leads d'essai).
+- Numéro d'essai : champs `nom` et `email`, repris dans le mail aux équipes.
+- Réglage « bot » `essai_routage` : pour un numéro d'essai, les mails partent aux vrais destinataires calculés (négociateur,
+  assistant(e), remplaçant…) seulement s'ils sont aussi dans `adresses_essai` : le routage est essayé pour de vrai sans
+  que le siège ni personne d'autre ne reçoive.
+
+### Corrigé
+- Le rapprochement des mails n'utilise le catalogue local qu'après une synchronisation complète : un catalogue
+  partiel (rempli bien par bien par le bot) ne remplace plus le CRM.
+
 ## 2.16.1
 
 ### Modifié

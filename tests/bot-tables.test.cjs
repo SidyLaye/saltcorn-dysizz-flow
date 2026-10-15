@@ -12,12 +12,21 @@ const vrai = (l, w) => Object.entries(w).every(([k, v]) => (v && typeof v === "o
 const table = (L = []) => ({ L,
   getRow: async (w) => L.find((l) => vrai(l, w)) || null,
   getRows: async (w, o = {}) => { const r = L.filter((l) => vrai(l, w)).sort((a, b) => (a[o.orderBy] > b[o.orderBy] ? 1 : -1) * (o.orderDesc ? -1 : 1)); return o.limit ? r.slice(0, o.limit) : r; },
-  insertRow: async (r) => { const id = L.length + 1; L.push({ ...r, id }); return id; } });
+  insertRow: async (r) => { const id = L.length ? Math.max(...L.map((l) => l.id)) + 1 : 1; L.push({ ...r, id }); return id; },
+  updateRow: async (r, id) => { const l = L.find((x) => x.id === id); if (l) Object.assign(l, r); },
+  deleteRows: async (w) => { for (let i = L.length - 1; i >= 0; i--) if (vrai(L[i], w)) L.splice(i, 1); } });
 const T = { bot: table(), dossiers: table([{ id: 7, tel9: "611111111", bien_crm: "99", contact_crm: "4242", negociateur: "500", portail: "leboncoin", nom: "Marie Test", maj_le: 2 },
   { id: 8, tel9: "611111111", bien_crm: "98", negociateur: "500", nom: "Marie Test", maj_le: 1 }]),
-  leads: table([{ id: 1, dossier_id: 7, dossier: JSON.stringify({ extraction: { contact: { prenom: "marie" } } }) }]) };
+  leads: table([{ id: 1, dossier_id: 7, dossier: JSON.stringify({ extraction: { contact: { prenom: "marie" } } }) }]),
+  biens: table(), reglages: table([{ id: 1 }]) };
 const CONF = { routage: { siege: ["siege@agence-exemple.fr"], personnes: [{ id: "500", nom: "Martin Durand", email: "martin@agence-exemple.fr", role: "negociateur" }] } };
-const crm = M.creer({ biens: [{ id: 99, reference: "30123", prix: 245000, surface: 120, pieces: 5, type: "maison", ville: "Cahors", code_postal: "46000", negociateur_id: "500", adresse: "12 rue du Test" }] });
+const crm = M.creer({ biens: [{ id: 99, reference: "30123", prix: 245000, surface: 120, pieces: 5, type: "maison", ville: "Cahors", code_postal: "46000", negociateur_id: "500", adresse: "12 rue du Test", photos: ["https://x.fr/1.jpg"] }] });
+/* appels au CRM pour un bien, et pannes simulées */
+let LECTURES = 0, PANNE = null, LENT = 0; const lireVrai = crm.bienEtPhotos, CRM_CHANGE = {};   // CRM_CHANGE[id] : champs changés dans le CRM, ou null = bien retiré
+crm.bienEtPhotos = async (id, ...a) => { LECTURES++; if (LENT) await new Promise((r) => setTimeout(r, LENT)); if (PANNE) throw PANNE;
+  if (CRM_CHANGE[id] === null || CRM_CHANGE[id] === 403) throw Object.assign(new Error("introuvable"), { http: CRM_CHANGE[id] === 403 ? 403 : 404 });
+  if (CRM_CHANGE[id] && CRM_CHANGE[id].id) return { photos: [], ...CRM_CHANGE[id] };
+  return { ...(await lireVrai(id, ...a)), ...(CRM_CHANGE[id] || {}) }; };
 let BOT = {}, MODE = "reel"; const mails = []; const meta = [];
 Module._load = function (req, parent, ...rest) {
   const de = (parent && parent.filename) || "";
@@ -28,6 +37,11 @@ Module._load = function (req, parent, ...rest) {
     if (req === "../../envois") return { envoyer: async (m, o) => { mails.push(...m.map((x) => ({ ...x, simuler: o.simuler }))); return { resume: `${m.length} message(s)` }; } };
     if (req === "../../verrou") return { sous: async (k, fn) => fn() };
     if (req === "../../../garde") return { lireSecret: async (n) => (n === "JETON_WA" ? "jeton-fictif" : undefined) };
+  }
+  if (/tables[\\/]catalogue\.js$/.test(de)) {
+    if (req === "./schema") return { tables: async () => T, prefixe: () => "ld_" };
+    if (req === "./core") return { flowApi: () => ({ crmDepuisCoffre: () => crm, leads: { ADAPTATEURS: { memoire: M } } }) };
+    if (req === "./conf") return { charger: async () => ({ conf: CONF, crm: { type: "memoire" } }) };
   }
   if (req.startsWith("@saltcorn/")) return class {};
   return orig.call(this, req, parent, ...rest);
@@ -66,9 +80,9 @@ const sortie = (code, plus = {}) => ({ type: "sortie", noeud: "TB3", quand: "202
   assert.strictEqual((await repondre("evenement", { ...tour, event_id: "ev3" })).crm, "non écrit"); assert.strictEqual(crm.ecritures.length, 0); MODE = "reel";
 
   /* numéro d'essai : pas de dossier, bien réel seulement lu, messages aux adresses d'essai même en service */
-  BOT = { ...BOT, numeros_essai: { 33699999999: { reference: "30123", prenom: "Sidy" } }, whatsapp: { phone_number_id: "123", variable_jeton: "JETON_WA" } }; mails.length = 0; crm.ecritures.length = 0;
+  BOT = { ...BOT, numeros_essai: { 33699999999: { reference: "30123", prenom: "Awa" } }, whatsapp: { phone_number_id: "123", variable_jeton: "JETON_WA" } }; mails.length = 0; crm.ecritures.length = 0;
   c = await repondre("contexte", { telephone: "33699999999" });
-  assert.strictEqual(c.dossier_id, null); assert.strictEqual(c.prenom, "Sidy"); assert.strictEqual(c.bien_public.prix, 245000);
+  assert.strictEqual(c.dossier_id, null); assert.strictEqual(c.prenom, "Awa"); assert.strictEqual(c.bien_public.prix, 245000);
   await repondre("evenement", { telephone: "33699999999", event_id: "ev4", evenements: [sortie("OUT-2")] });
   assert.deepStrictEqual(mails.map((m) => m.a), ["essai@exemple.fr"]); assert.strictEqual(crm.ecritures.length, 0);
 
@@ -81,5 +95,60 @@ const sortie = (code, plus = {}) => ({ type: "sortie", noeud: "TB3", quand: "202
   assert.deepStrictEqual(await repondre("fiche", { telephone: "33611111111" }), { echec: true, raison: "désinscrit" });
   assert.strictEqual((await repondre("contexte", { telephone: "33611111111" })).optout, true);
   assert.strictEqual((await repondre("fiche", { telephone: "33622222222" })).echec, true);
+
+  /* le bien passe par l'application : relu dans le CRM puis enregistré (ld_biens), une ligne par bien, photos comprises */
+  const cat = require("../src/lib/leads/tables/catalogue");
+  const ligne99 = () => T.biens.L.filter((b) => b.crm_id === "99");
+  assert.strictEqual(ligne99().length, 1, "le bien lu est enregistré dans l'application"); assert.strictEqual(ligne99()[0].prix, 245000);
+  BOT = { ...BOT, photos: "pr_p" }; ligne99()[0].synchro_le = new Date(0);
+  c = await repondre("contexte", { telephone: "33611111111" }); assert.deepStrictEqual(c.bien_public.photos_publiques, ["https://x.fr/1.jpg"]);
+  assert.deepStrictEqual(JSON.parse(ligne99()[0].photos), ["https://x.fr/1.jpg"]);
+  /* frais (moins de 2 min) : aucun nouvel appel au CRM */
+  LECTURES = 0; await repondre("contexte", { telephone: "33611111111" }); await repondre("contexte", { telephone: "33611111111" }); assert.strictEqual(LECTURES, 0);
+  /* une donnée modifiée dans le CRM est reprise dès que la version enregistrée n'est plus fraîche */
+  CRM_CHANGE[99] = { prix: 239000 }; ligne99()[0].synchro_le = new Date(Date.now() - 10 * 60000);
+  c = await repondre("contexte", { telephone: "33611111111" }); assert.strictEqual(c.bien_public.prix, 239000); assert.strictEqual(ligne99()[0].prix, 239000);
+  /* rafale : 20 appels en même temps sur un bien à relire = un seul appel au CRM, une seule ligne */
+  ligne99()[0].synchro_le = new Date(0); LECTURES = 0; LENT = 30;
+  const rafale = await Promise.all(Array.from({ length: 20 }, () => repondre("contexte", { telephone: "33611111111" })));
+  assert.strictEqual(LECTURES, 1); assert.ok(rafale.every((x) => x.bien_public.prix === 239000)); assert.strictEqual(ligne99().length, 1); LENT = 0;
+  /* CRM en panne ou trop lent : la version enregistrée est rendue (marquée périmée), le bot n'attend pas */
+  ligne99()[0].synchro_le = new Date(0); PANNE = Object.assign(new Error("HTTP 503"), { http: 503 });
+  assert.strictEqual((await repondre("contexte", { telephone: "33611111111" })).bien_public.prix, 239000); PANNE = null;
+  ligne99()[0].synchro_le = new Date(0); LENT = 300; const t0 = Date.now();
+  const lent = await cat.bienFrais(crm, 99, { budget_ms: 50 }); assert.ok(lent.perime && Date.now() - t0 < 250, "au-delà du délai : version enregistrée"); LENT = 0;
+  await new Promise((r) => setTimeout(r, 350)); assert.ok(Date.now() - new Date(ligne99()[0].synchro_le).getTime() < 2000, "la relecture finit en arrière-plan");
+  /* doublon laissé par deux processus : nettoyé à la relecture suivante */
+  T.biens.L.push({ ...ligne99()[0], id: 999 }); ligne99()[0].synchro_le = new Date(0); await cat.bienFrais(crm, 99, {}); assert.strictEqual(ligne99().length, 1);
+  /* bien retiré du CRM (404) : marqué supprimé, plus montré */
+  CRM_CHANGE[77] = { id: 77, reference: "R77", prix: 100000, type: "maison", ville: "Figeac", negociateur_id: "500" };
+  assert.strictEqual((await cat.bienFrais(crm, 77, {})).ville, "Figeac");
+  CRM_CHANGE[77] = null; T.biens.L.find((b) => b.crm_id === "77").synchro_le = new Date(0);
+  assert.strictEqual(await cat.bienFrais(crm, 77, {}), null); assert.strictEqual(T.biens.L.find((b) => b.crm_id === "77").supprime, true);
+  /* Immofacile répond 403 (pas 404) pour un bien inexistant ou hors du site : même effet */
+  CRM_CHANGE[78] = { id: 78, reference: "R78", prix: 90000, type: "maison", ville: "Rodez" }; await cat.bienFrais(crm, 78, {});
+  CRM_CHANGE[78] = 403; T.biens.L.find((b) => b.crm_id === "78").synchro_le = new Date(0);
+  assert.strictEqual(await cat.bienFrais(crm, 78, {}), null); assert.strictEqual(T.biens.L.find((b) => b.crm_id === "78").supprime, true);
+
+  /* bien fictif (essai) : saisi dans l'application, jamais demandé au CRM, jamais marqué supprimé ; nom et mail du numéro d'essai */
+  T.biens.L.push({ id: 500, crm_id: "AMBS-TEST-1", reference: "AMBS-TEST-1", fictif: true, supprime: false, type: "maison", pieces: 6, chambres: 4, surface: 180, ville: "Salles-la-Source", code_postal: "12330", prix: 285000, negociateur: "500", photos: JSON.stringify(["https://x.fr/f1.jpg", "https://x.fr/f2.jpg"]) });
+  BOT = { ...BOT, numeros_essai: { 221700000001: { bien: "AMBS-TEST-1", prenom: "Awa", nom: "Awa Diop", email: "awa@exemple.fr", negociateur: "500" } } }; LECTURES = 0;
+  c = await repondre("contexte", { telephone: "+221 70 000 00 01" });
+  assert.strictEqual(c.bien_public.ville, "Salles-la-Source"); assert.deepStrictEqual(c.bien_public.photos_publiques, ["https://x.fr/f1.jpg", "https://x.fr/f2.jpg"]); assert.strictEqual(LECTURES, 0, "un bien fictif n'est jamais demandé au CRM");
+  assert.strictEqual(c.negociateur.nom, "Martin Durand"); assert.strictEqual(c.prenom, "Awa");
+  mails.length = 0; await repondre("evenement", { telephone: "221700000001", event_id: "ev6", evenements: [sortie("OUT-1")] });
+  assert.ok(mails[0].sujet.includes("Awa Diop") && mails[0].html.includes("awa@exemple.fr") && mails[0].html.includes("Salles-la-Source"), "mail lead qualifié : nom, mail, bien fictif");
+  /* essai_routage : les vrais destinataires calculés, filtrés par les adresses d'essai (ni siège ni personne d'autre) */
+  BOT = { ...BOT, essai_routage: true, adresses_essai: ["martin@agence-exemple.fr", "awa@exemple.fr"] }; mails.length = 0;
+  await repondre("evenement", { telephone: "221700000001", event_id: "ev7", evenements: [sortie("OUT-1")] });
+  assert.deepStrictEqual(mails.map((m) => m.a), ["martin@agence-exemple.fr"], "le négociateur calculé reçoit, le siège non");
+  BOT = { ...BOT, essai_routage: false };
+  BOT = { ...BOT, numeros_essai: { 221700000001: { reference: "AMBS-TEST-1", prenom: "Awa" } } };
+  assert.strictEqual((await repondre("contexte", { telephone: "221700000001" })).bien_public.prix, 285000, "bien fictif retrouvé par sa référence");
+  /* rapprochement des mails : catalogue local ignoré tant qu'il n'y a pas eu de synchronisation complète ; biens fictifs jamais proposés */
+  cat.oublier(); assert.deepStrictEqual(await cat.biensLocaux(), [], "catalogue partiel (rempli par le bot) : le rapprochement passe au CRM");
+  T.reglages.L[0].catalogue_synchro_le = new Date(); cat.oublier();
+  assert.ok(!(await cat.biensLocaux()).some((b) => b.id === "AMBS-TEST-1"), "un bien fictif n'est jamais proposé au rapprochement");
+  assert.strictEqual((await (await cat.avecCatalogue(crm)).biensParReference("AMBS-TEST-1"))[0].id, "AMBS-TEST-1", "sauf par sa référence exacte");
   console.log("bot avec tables : OK");
 })().catch((e) => { console.error(e); process.exit(1); });

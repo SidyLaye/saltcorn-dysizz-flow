@@ -47,7 +47,9 @@ const T = {
   biens: { name: "ld_biens", desc: "Catalogue local des biens du CRM (synchronisé)", index: ["crm_id", "reference"], fields: [
     ["crm_id", "String", { required: true }], ["reference", "String"], ["prix", "Float"], ["surface", "Float"], ["pieces", "Integer"], ["chambres", "Integer"], ["type", "String"],
     ["ville", "String"], ["code_postal", "String"], ["negociateur", "String"], ["agence", "String"], ["proprietaire", "String"], ["supprime", "Bool"], ["synchro_le", "Date"],
-    ["adresse", "String"], ["statut_web", "String"], ["photo_url", "String"]] },
+    ["adresse", "String"], ["statut_web", "String"], ["photo_url", "String"],
+    /* photos publiques (JSON) ; fictif : bien d'essai saisi dans l'application, jamais relu ni supprimé par le CRM, jamais proposé au rapprochement */
+    ["photos", "String"], ["fictif", "Bool"]] },
   portails: { name: "ld_portails", desc: "Portails déclarés par le client (sans code)", fields: [
     ["nom", "String", { required: true }], ["domaines", "String"], ["objets_lead", "String"], ["objets_non_lead", "String"], ["libelles", "String"], ["reference", "String"], ["nature", "String"], ["actif", "Bool"], ["origine", "String"]] },
   gabarits: { name: "ld_gabarits", desc: "Gabarits de mails appris automatiquement (forme d'un type de mail, sans donnée personnelle)", index: ["statut"], fields: [
