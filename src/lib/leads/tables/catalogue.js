@@ -21,7 +21,7 @@ const versLigne = (b) => ({ crm_id: String(b.id), reference: b.reference || null
 const versBien = (r) => ({ id: isFinite(+r.crm_id) ? +r.crm_id : r.crm_id, reference: r.reference || "", prix: r.prix, surface: r.surface, pieces: r.pieces, chambres: r.chambres, type: r.type, ville: r.ville, code_postal: r.code_postal, negociateur_id: r.negociateur, agence_id: r.agence, proprietaire_id: r.proprietaire });
 
 const json = (s, d) => { try { return s ? JSON.parse(s) : d; } catch (e) { return d; } };
-const pourBot = (r) => (r ? { ...versBien(r), photos: json(r.photos, []), fictif: !!r.fictif, synchro_le: r.synchro_le || null } : null);
+const pourBot = (r) => (r ? { ...versBien(r), photos: json(r.photos, []), annonce: json(r.details, null), fictif: !!r.fictif, synchro_le: r.synchro_le || null } : null);
 const lignesDe = async (t, id) => t.biens.getRows({ crm_id: String(id) }, { orderBy: "id" });
 const EN_COURS = G.enCours || (G.enCours = new Map());
 const TROP_LONG = Symbol("trop long");
@@ -32,7 +32,7 @@ const relire = async (client, id, dossierImages) => {
   const t = await tables();
   try {
     const b = await client.bienEtPhotos(id, dossierImages);
-    const ligne = { ...versLigne(b), photos: JSON.stringify(b.photos || []) };
+    const ligne = { ...versLigne(b), photos: JSON.stringify(b.photos || []), details: b.annonce ? JSON.stringify(b.annonce) : null };
     const rows = await lignesDe(t, id);
     if (rows[0]) await t.biens.updateRow(ligne, rows[0].id); else await t.biens.insertRow(ligne);
     /* deux processus ont pu insérer en même temps : on garde le premier */

@@ -1,5 +1,21 @@
 # Journal des versions
 
+## 2.18.0
+
+### Ajouté
+- Leads, bot WhatsApp : tout le contenu public de l'annonce va au bot, lu dans le CRM avec le bien (même requête, même copie) :
+  toutes les caractéristiques (terrain, salles d'eau, chauffage, DPE/GES et dépenses d'énergie, construction, vue,
+  stationnement, distances, taxe foncière, charges…), titre et description (français, anglais), détail des pièces.
+  Sauf les informations réservées au négociateur et les données internes : mandat, références, adresse, géolocalisation,
+  cadastre, secteur, statut, honoraires, prix net vendeur, de départ, estimé, au m², vendeur et cause de la vente,
+  occupation et bail, codes d'accès, points forts / faibles, documents et diagnostics, procédures, dates de fiche.
+  Dans les textes, toute phrase avec un mail, un lien, un téléphone, une adresse ou un de ces sujets est retirée.
+  La fiche PDF reprend jusqu'à 12 caractéristiques publiques.
+- Projet connu du lead : en plus de son mail (phase 1), ses recherches actives dans le CRM (budget mini et maxi,
+  surface, terrain, pièces, chambres, commune et rayon, délai, bien à revendre, usage, motif), jamais les notes internes
+  ni les commentaires ; lecture limitée à 2,5 s et gardée 2 min. Le message du lead au portail est aussi transmis.
+  Numéro d'essai : champs `projet` et `message`.
+
 ## 2.17.0
 
 ### Modifié

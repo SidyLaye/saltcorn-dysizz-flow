@@ -150,5 +150,9 @@ const sortie = (code, plus = {}) => ({ type: "sortie", noeud: "TB3", quand: "202
   T.reglages.L[0].catalogue_synchro_le = new Date(); cat.oublier();
   assert.ok(!(await cat.biensLocaux()).some((b) => b.id === "AMBS-TEST-1"), "un bien fictif n'est jamais proposé au rapprochement");
   assert.strictEqual((await (await cat.avecCatalogue(crm)).biensParReference("AMBS-TEST-1"))[0].id, "AMBS-TEST-1", "sauf par sa référence exacte");
+  /* lead d'essai : projet et message fournis par le réglage, repris dans le contexte */
+  BOT = { ...BOT, numeros_essai: { 221700000001: { bien: "AMBS-TEST-1", prenom: "Awa", projet: { budget_max: 300000, delai: "dans 2 mois", revente: false }, message: "Je souhaite visiter" } } };
+  c = await repondre("contexte", { telephone: "221700000001" });
+  assert.strictEqual(c.deja_connu.budget, 300000); assert.strictEqual(c.deja_connu.delai, "dans 2 mois"); assert.strictEqual(c.deja_connu.bien_a_vendre, false); assert.strictEqual(c.demande.message, "Je souhaite visiter");
   console.log("bot avec tables : OK");
 })().catch((e) => { console.error(e); process.exit(1); });

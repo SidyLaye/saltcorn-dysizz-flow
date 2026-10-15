@@ -56,6 +56,37 @@ const QUAND = new Date("2026-10-13T10:00:00Z");
   const alerte = B.mailEquipe({ avis: B.plan([{ type: "prioritaire_vendeur", donnees: {} }], {}).avis[0], dossier, bien: BIEN });
   assert.ok(alerte.objet.startsWith("[PRIORITAIRE] WhatsApp · Le prospect a un bien à vendre"), "une alerte en cours de conversation n'est pas un lead qualifié");
 
+  /* annonce : tout ce qui est public sort ; jamais mandat, adresse, cadastre, honoraires, estimation, secteur, coordonnées, documents */
+  const brute = { criteres: [
+    { id: 36, nom: "Surface terrain", valeur: 5505, nature: "nombre" }, { id: 43, nom: "Salle(s) de bains", valeur: 1, nature: "nombre" }, { id: 39, nom: "Etage", valeur: 0, nature: "nombre" },
+    { id: 1831, nom: "Consommation énergie primaire", valeur: "D", nature: "texte" }, { id: 99, nom: "Mode Chauffage", valeur: "Bois", nature: "texte" },
+    { id: 246, nom: "ADSL possible", valeur: true, nature: "case" }, { id: 2188, nom: "Biens d'exception", valeur: false, nature: "case" },
+    { id: 26, nom: "N° Mandat", valeur: "99001", nature: "texte" }, { id: 122, nom: "Adresse", valeur: "12 chemin des Essais", nature: "texte" }, { id: 207, nom: "Numéro cadastre", valeur: "zo", nature: "texte" },
+    { id: 1929, nom: "Honoraires Vendeur", valeur: 23000, nature: "nombre" }, { id: 2019, nom: "Prix Estimé", valeur: 315000, nature: "nombre" }, { id: 123, nom: "Secteur", valeur: "AGENCE EXEMPLE", nature: "texte" },
+    { id: 9999, nom: "Date de mise en vente", valeur: "01/01/2026", nature: "texte" }, { id: 2645, nom: "Justificatif d'identité", valeur: 1, nature: "nombre" },
+    { id: 30, nom: "Prix", valeur: 313000, nature: "nombre" }, { id: 501, nom: "Cause vente/location", valeur: "Divorce", nature: "texte" },
+    { id: 502, nom: "N° Digicode", valeur: "1234A", nature: "texte" }, { id: 503, nom: "Points faibles", valeur: "Route passante", nature: "texte" },
+    { id: 504, nom: "Diagnostic Plomb", valeur: true, nature: "case" }, { id: 505, nom: "Bien occupé", valeur: true, nature: "case" },
+    { id: 2736, nom: "Montant minimum estimé des dépenses annuelles d'énergie pour un usage standard", valeur: 3060, nature: "nombre" }],
+    descriptions: [{ langue: "fr", titre: "Ensemble de charme", texte: "Belle maison au calme. Située au 12 rue des Lilas. Honoraires à la charge du vendeur. Appelez le 06 11 22 33 44 ou agent@agence.fr. Vue dégagée." },
+      { langue: "es", titre: "Casa", texte: "Bonita casa." }],
+    pieces: [{ piece: "Séjour", surface: 27, niveau: "RDC", commentaire: "Tomettes" }] };
+  const an = B.annonce(brute);
+  assert.deepStrictEqual(an.details, { "Surface terrain": "5505 m²", "Salle(s) de bains": "1", "Consommation énergie primaire": "D", "Mode Chauffage": "Bois", "ADSL possible": "oui",
+    "Montant minimum estimé des dépenses annuelles d'énergie pour un usage standard": "3060 €" });
+  assert.ok(!/Divorce|1234A|passante|Plomb|occupé/.test(JSON.stringify(an)), "ni cause de vente, ni code d'accès, ni point faible, ni état des documents, ni occupation");
+  assert.strictEqual(an.description_annonce.fr, "Belle maison au calme. Vue dégagée.", "ni adresse, ni honoraires, ni téléphone, ni mail");
+  assert.ok(!an.description_annonce.es, "français et anglais seulement"); assert.deepStrictEqual(an.pieces_detail, ["Séjour · 27 m² · RDC · Tomettes"]);
+  assert.ok(!/99001|Essais|zo"|23000|315000|EXEMPLE|2026|Justificatif/.test(JSON.stringify(an)));
+  assert.deepStrictEqual(B.annonce(null), {});
+  /* projet connu du lead : mail de la phase 1 d'abord, puis recherches du CRM (sans commentaire) */
+  assert.deepStrictEqual(B.dejaConnu({ recherche: { budget_max: 200000 } }, { projets: [{ budget_min: 85000, budget_max: 160000, zone: "09000 FOIX", rayon_km: 20, terrain_min: 500, delai: "3 à 6 mois", revente: true }] }),
+    { budget: 200000, budget_min: 85000, zone: "09000 FOIX", rayon_km: 20, surface_min: null, terrain_min: 500, pieces_min: null, delai: "3 à 6 mois", bien_a_vendre: true, usage: null, motif: null });
+  const cx = B.contexte({ dossier, bien: { ...BIEN, annonce: brute }, conf: CONF, quand: QUAND, lead: { extraction: { message: "Je voudrais visiter samedi", nature: "lead" } } });
+  assert.strictEqual(cx.bien_public.details["Surface terrain"], "5505 m²"); assert.strictEqual(cx.demande.message, "Je voudrais visiter samedi");
+  assert.ok(!/99001|Essais|23000/.test(JSON.stringify(cx)), "rien de réservé dans le contexte");
+  assert.ok(B.blocsFiche({ ...BIEN, annonce: brute }).some((x) => x.tableau && x.tableau.some(([l, v]) => l === "Surface terrain" && v === "5505 m²")), "la fiche PDF reprend les caractéristiques publiques");
+
   /* fiche PDF : champs publics, aucune marque */
   assert.strictEqual(B.blocsFiche(null), null);
   const blocs = B.blocsFiche(BIEN, QUAND);

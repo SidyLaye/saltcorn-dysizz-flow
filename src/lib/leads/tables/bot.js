@@ -28,7 +28,9 @@ const trouver = async (t, corps, R) => {
   if (tel.length < 8 || tel.length > 15) throw perm("téléphone invalide");
   const essai = (R.numeros_essai || {})[tel];
   if (essai) return { tel, dossier: { id: null, essai: true, bien_crm: essai.bien || null, bien_ref: essai.reference || null, negociateur: essai.negociateur || null, prenom: essai.prenom || "",
-    nom: essai.nom || essai.prenom || "Essai", email: essai.email || null, portail: "essai" } };
+    nom: essai.nom || essai.prenom || "Essai", email: essai.email || null, portail: "essai",
+    /* lead d'essai : son projet (mêmes clés que les recherches du CRM) et son message au portail, facultatifs */
+    projet: essai.projet && typeof essai.projet === "object" ? essai.projet : null, message: essai.message || "" } };
   const rows = await t.dossiers.getRows({ tel9: B.tel9(tel) }, { orderBy: "maj_le", orderDesc: true, limit: 10 });
   const id = +corps.dossier_id || null;
   return { tel, dossier: (id && rows.find((r) => r.id === id)) || rows.find((r) => r.bien_crm) || rows[0] || null };
@@ -50,6 +52,22 @@ const lireBien = async (crm, dossier, R = {}) => {
   } catch (e) { return null; }
 };
 
+/* Le contact du lead dans le CRM (prénom, projets de ses recherches), pour revalider sans redemander. Une lecture au plus
+   toutes les 2 min par contact ; au-delà de 2,5 s ou en cas d'erreur, le bot continue avec ce que la phase 1 a lu. */
+const CONTACTS = globalThis[Symbol.for("dysizz-flow.leads.bot.contacts")] || (globalThis[Symbol.for("dysizz-flow.leads.bot.contacts")] = new Map());
+const lireContact = async (crm, id) => {
+  if (!id || !/^\d+$/.test(String(id))) return null;
+  const k = `${S.prefixe()}:${id}`, m = CONTACTS.get(k);
+  if (m && Date.now() - m.t < 120000) return m.p;
+  const c = flowApi().crmDepuisCoffre(crm.type, crm.reglages, crm.prefixe, "ombre");
+  if (!c.contact) return null;
+  const p = c.contact(id).then((x) => (x ? { prenom: x.prenom || null, projets: x.projets || [] } : null), () => null);
+  CONTACTS.set(k, { t: Date.now(), p });
+  if (CONTACTS.size > 5000) CONTACTS.delete(CONTACTS.keys().next().value);
+  let minuteur; const r = await Promise.race([p, new Promise((ok) => { minuteur = setTimeout(() => ok(null), 2500); })]); clearTimeout(minuteur);
+  return r;
+};
+
 const etatDe = async (tb, tel, dossier) => {
   const rows = await tb.getRows({ tel9: B.tel9(tel), type: { in: ["optout", "fiche_envoyee", "ouverture", "sortie"] } }, { orderBy: "id", orderDesc: true, limit: 200 });
   const id = (dossier && dossier.id) || null, miens = rows.filter((r) => (r.dossier || null) === id);
@@ -63,9 +81,11 @@ const contexte = async (corps, R) => {
   const etat = await etatDe(tb, tel, dossier);
   if (!dossier) return B.contexte({ dossier: null, etat });
   const { conf, crm } = await charger();
-  const [bien, leads] = await Promise.all([lireBien(crm, dossier, R), dossier.id ? t.leads.getRows({ dossier_id: dossier.id }, { orderBy: "id", orderDesc: true, limit: 1 }) : []]);
+  const [bien, leads, contact] = await Promise.all([lireBien(crm, dossier, R), dossier.id ? t.leads.getRows({ dossier_id: dossier.id }, { orderBy: "id", orderDesc: true, limit: 1 }) : [],
+    dossier.essai ? (dossier.projet ? { prenom: null, projets: [dossier.projet] } : null) : lireContact(crm, dossier.contact_crm)]);
   const photos = R.photos && bien && Array.isArray(bien.photos) ? bien.photos : [];
-  return B.contexte({ dossier, lead: leads[0] ? json(leads[0].dossier, {}) : null, bien, photos, conf, reglages: R, etat });
+  const lead = leads[0] ? json(leads[0].dossier, {}) : dossier.essai && dossier.message ? { extraction: { message: dossier.message, nature: "lead" } } : null;
+  return B.contexte({ dossier, lead, bien, photos, contact, conf, reglages: R, etat });
 };
 
 const TEXTE = (d) => d.texte || d.dernier_message || d.question || d.reponse || d.mot_cle || "";

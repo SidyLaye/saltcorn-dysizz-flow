@@ -1,4 +1,4 @@
-/* dysizz-flow 2.17.0 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.18.0 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.17.0" : "dev";
+    var VERSION2 = true ? "2.18.0" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -96121,6 +96121,27 @@ var require_immofacile = __commonJS({
         if (r.pieces_min) c.push({ id: await cleRecherche("NbPieces", "NbPiece"), operator: "SUPERIEUR", value: String(r.pieces_min) });
         return c;
       };
+      const projetDe = (x) => {
+        const o = {}, num = (v) => isFinite(+v) ? Math.round(+v) : null;
+        for (const c of x.criteria || []) {
+          const id = +c.id, op = String(c.operator || "").toUpperCase(), v = Array.isArray(c.value) ? c.value : c.value;
+          const borne = (k) => {
+            if (num(v) != null) o[k + (op === "INFERIEUR" ? "_max" : op === "SUPERIEUR" ? "_min" : "")] = num(v);
+          };
+          if (id === 30) borne("budget");
+          else if (id === 34) borne("surface");
+          else if (id === 36) borne("terrain");
+          else if (id === 33) borne("pieces");
+          else if (id === 38) borne("chambres");
+          else if (id === 64 && num(v) != null) o.rayon_km = num(v);
+          else if (id === 65 && v) o.zone = String(v);
+        }
+        for (const [k, n] of [["timeframe", "delai"], ["intended_use", "usage"], ["reason_for_purchase", "motif"], ["current_resale", "revente"]]) {
+          const v = x[k];
+          if (v != null && v !== "") o[n] = typeof v === "object" ? v.label || v.name || v.value || JSON.stringify(v) : v;
+        }
+        return o;
+      };
       const lireContact = async (id) => {
         const c = data(await appel("GET", `/customers/${Number(id)}?include=origin,groups,user,agency,searchRequests,consent,rgpd`));
         if (!c || !c.id) return null;
@@ -96128,6 +96149,8 @@ var require_immofacile = __commonJS({
         return {
           ...versContact(c),
           recherches: (c.searchRequests || []).map((x) => ({ id: x.id, comment: x.comment || "" })),
+          /* projet du contact, tiré de ses recherches actives (critères, délai, revente…), sans les commentaires (notes internes) */
+          projets: (c.searchRequests || c.search_requests || []).filter((x) => x && (x.is_active ?? x.isActive) !== false).map(projetDe),
           consentement_detail: k ? {
             raison: k.reason ?? null,
             date: k.consentDate ?? k.consent_date ?? null,
@@ -96173,11 +96196,21 @@ var require_immofacile = __commonJS({
           const p = data(await appel("GET", `/products/${Number(id)}?fetch=products_photos`)) || {};
           return (p.products_photos || []).filter((x) => x && x.type === dossier && !x.is_red && !x.is_mid && /^https:\/\//.test(x.chemin || "")).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)).map((x) => x.chemin);
         },
-        /* Le bien et ses photos (dossier d'images donné) en UNE requête : ce que lit le bot, sous fort trafic. Bien introuvable : erreur http 404. */
+        /* Le bien, ses photos (dossier d'images donné) et le contenu brut de l'annonce (tous les critères avec leur libellé,
+           descriptions, pièces) en UNE requête : ce que lit le bot, sous fort trafic. Le tri de ce qui peut être dit est fait
+           par lib/leads/bot.js (annonce). Bien introuvable : erreur http 404 (ou 403 chez Immofacile). */
         bienEtPhotos: async (id, dossier) => {
-          const p = data(await appel("GET", `/products/${Number(id)}?fetch=${FETCH},products_photos`)) || {};
+          const p = data(await appel("GET", `/products/${Number(id)}?fetch=${FETCH},criteres_flag,descriptions,rooms,products_photos`)) || {};
           const photos = dossier ? (p.products_photos || []).filter((x) => x && x.type === dossier && !x.is_red && !x.is_mid && /^https:\/\//.test(x.chemin || "")).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)).map((x) => x.chemin) : [];
-          return { ...await versBien(p), photos };
+          const criteres2 = [];
+          for (const [g, nature] of [[p.criteres_text, "texte"], [p.criteres_number, "nombre"], [p.criteres_flag, "case"]])
+            for (const c of Array.isArray(g) ? g : []) {
+              const valeur = c.critere_value_name != null && String(c.critere_value_name).trim() ? c.critere_value_name : c.critere_value;
+              if (c.critere_id != null && c.critere_name) criteres2.push({ id: +c.critere_id, nom: String(c.critere_name), valeur, nature });
+            }
+          const descriptions = (p.descriptions || []).filter((d) => d && (d.description || d.title)).map((d) => ({ langue: String(d.language_code || ""), titre: d.title || "", texte: d.description || "" }));
+          const pieces = (p.rooms || []).filter((r) => r && r.piece).map((r) => ({ piece: r.piece, surface: +r.surface || null, niveau: r.niveau || "", commentaire: r.commentaires || "" }));
+          return { ...await versBien(p), photos, annonce: { criteres: criteres2, descriptions, pieces } };
         },
         biensParReference: async (ref) => (await recherche({ model: String(ref), count: 5 })).filter((b) => b && b.reference.toLowerCase() === String(ref).trim().toLowerCase()).slice(0, 3),
         biensParCriteres: async (q, { max = 2 } = {}) => {
@@ -96531,10 +96564,11 @@ var require_memoire = __commonJS({
         ecritures,
         bienParId: async (id) => B.find((b) => String(b.id) === String(id)) || null,
         photosBien: async (id) => ((B.find((b) => String(b.id) === String(id)) || {}).photos || []).slice(),
+        contact: async (id) => C.find((c) => String(c.id) === String(id)) || null,
         bienEtPhotos: async (id) => {
           const b = B.find((x) => String(x.id) === String(id));
           if (!b) throw Object.assign(new Error("bien introuvable"), { http: 404 });
-          return { ...b, photos: (b.photos || []).slice() };
+          return { ...b, photos: (b.photos || []).slice(), annonce: b.annonce || { criteres: [], descriptions: [], pieces: [] } };
         },
         biensParReference: async (ref) => B.filter((b) => String(b.reference || "").trim().toLowerCase() === String(ref).trim().toLowerCase()).slice(0, 5),
         tousLesBiens: async () => B,
@@ -97377,7 +97411,9 @@ var require_schema = __commonJS({
         ["photo_url", "String"],
         /* photos publiques (JSON) ; fictif : bien d'essai saisi dans l'application, jamais relu ni supprimé par le CRM, jamais proposé au rapprochement */
         ["photos", "String"],
-        ["fictif", "Bool"]
+        ["fictif", "Bool"],
+        /* contenu de l'annonce (JSON : critères, descriptions, pièces), trié par lib/leads/bot.js avant d'aller au bot */
+        ["details", "String"]
       ] },
       portails: { name: "ld_portails", desc: "Portails d\xE9clar\xE9s par le client (sans code)", fields: [
         ["nom", "String", { required: true }],
@@ -97976,7 +98012,7 @@ var require_catalogue = __commonJS({
         return d;
       }
     };
-    var pourBot = (r) => r ? { ...versBien(r), photos: json(r.photos, []), fictif: !!r.fictif, synchro_le: r.synchro_le || null } : null;
+    var pourBot = (r) => r ? { ...versBien(r), photos: json(r.photos, []), annonce: json(r.details, null), fictif: !!r.fictif, synchro_le: r.synchro_le || null } : null;
     var lignesDe = async (t, id) => t.biens.getRows({ crm_id: String(id) }, { orderBy: "id" });
     var EN_COURS = G.enCours || (G.enCours = /* @__PURE__ */ new Map());
     var TROP_LONG = Symbol("trop long");
@@ -97984,7 +98020,7 @@ var require_catalogue = __commonJS({
       const t = await tables();
       try {
         const b = await client.bienEtPhotos(id, dossierImages);
-        const ligne = { ...versLigne(b), photos: JSON.stringify(b.photos || []) };
+        const ligne = { ...versLigne(b), photos: JSON.stringify(b.photos || []), details: b.annonce ? JSON.stringify(b.annonce) : null };
         const rows = await lignesDe(t, id);
         if (rows[0]) await t.biens.updateRow(ligne, rows[0].id);
         else await t.biens.insertRow(ligne);
@@ -98556,6 +98592,105 @@ var require_bot = __commonJS({
       for (const k of CHAMPS_PUBLICS) if (b && b[k] != null && b[k] !== "") o[k] = k === "ville" ? nomVille(b[k]) : b[k];
       return Object.keys(o).length ? o : null;
     };
+    var CRITERES_EXCLUS = /* @__PURE__ */ new Set([26, 52, 54, 57, 64, 65, 66, 121, 122, 123, 124, 131, 163, 207, 223, 1924, 1929, 1934, 1935, 2019, 2171, 2777]);
+    var CRITERES_PRINCIPAUX = /* @__PURE__ */ new Set([27, 28, 30, 33, 34, 38, 1861, 1933]);
+    var NOM_EXCLU = new RegExp([
+      "mandat",
+      "honorair",
+      "commission",
+      "cadastr",
+      "adresse",
+      "rayon",
+      "g[\xE9e]oloc",
+      "secteur",
+      "r[\xE9e]f[\xE9e]rence",
+      "num[\xE9e]ro",
+      "\\bn\xB0",
+      "statut",
+      "prix estim",
+      "estimation",
+      "net vendeur",
+      "de d[\xE9e]part",
+      "propri[\xE9e]taire",
+      "vendeur",
+      "\\bcl[\xE9e]s?\\b",
+      "visite",
+      "notaire",
+      "\\bdate",
+      "mise [\xE0a] jour",
+      "justificatif",
+      "ventes? priv",
+      "prix au m",
+      "^autres$",
+      /* vendeur, occupation, accès, données internes, documents et juridique */
+      "cause vente",
+      "occup[\xE9e]",
+      "\\bbail\\b",
+      "digicode",
+      "^t[\xE9e]l[\xE9e]phone$",
+      "accord de commercialisation",
+      "^panneau$",
+      "points? (forts?|faibles?)",
+      "^syndic$",
+      "nom r[\xE9e]sidence",
+      "ademe",
+      "^diagnostic",
+      "organisation diagnostic",
+      "proc[\xE9e]dure",
+      "certificat",
+      "^titre"
+    ].join("|"), "i");
+    var PHRASE_EXCLUE = /honorair|frais d.agence|mandat|propri[ée]taire|vendeur|cadastr|\bcl[ée]s\b|adresse|\b\d+\s*,?\s*(rue|route|chemin|avenue|av\.|bd|boulevard|impasse|all[ée]e|place|lieu-dit)\b/i;
+    var COORDONNEE = (x) => /[\w.+-]+@[\w-]+\.[\w.]+|https?:\/\/|www\./i.test(x) || (String(x).match(/\+?\d[\d .-]{7,}\d/g) || []).some((m) => m.replace(/\D/g, "").length >= 9);
+    var nettoyer = (t, max = 2500) => String(t || "").split(/(?<=[.!?\n])\s+/).filter((x) => x.trim() && !PHRASE_EXCLUE.test(x) && !COORDONNEE(x)).join(" ").replace(/[ \t]+/g, " ").trim().slice(0, max);
+    var UNITE = (nom) => /^surface|surface (s[ée]jour|terrain|habitable)/i.test(nom) ? " m\xB2" : /taxe|d[ée]penses|montant|charges/i.test(nom) ? " \u20AC" : "";
+    var annonce = (a) => {
+      if (!a || typeof a !== "object") return {};
+      const details = {};
+      for (const c of a.criteres || []) {
+        const id = +c.id, nom = String(c.nom || "").trim();
+        if (!nom || CRITERES_EXCLUS.has(id) || CRITERES_PRINCIPAUX.has(id) || id >= 2631 && id <= 2714 || NOM_EXCLU.test(nom)) continue;
+        let v = c.valeur;
+        if (c.nature === "case") {
+          if (v === true || /^(true|1|oui)$/i.test(String(v))) v = "oui";
+          else continue;
+        } else if (c.nature === "nombre") {
+          if (!isFinite(+v) || +v === 0) continue;
+          v = String(+(+v).toFixed(2)) + UNITE(nom);
+        } else {
+          v = nettoyer(v, 400);
+          if (!v) continue;
+        }
+        details[nom] = v;
+      }
+      const par = (champ) => Object.fromEntries((a.descriptions || []).filter((d2) => ["fr", "en"].includes(d2.langue)).map((d2) => [d2.langue, nettoyer(d2[champ], champ === "titre" ? 160 : 2500)]).filter(([, v]) => v));
+      const pieces = (a.pieces || []).map((x) => [x.piece, x.surface ? `${x.surface} m\xB2` : "", x.niveau, nettoyer(x.commentaire, 120)].filter(Boolean).join(" \xB7 ")).filter(Boolean).slice(0, 30);
+      const out = {};
+      if (Object.keys(details).length) out.details = details;
+      const t = par("titre"), d = par("texte");
+      if (Object.keys(t).length) out.titre_annonce = t;
+      if (Object.keys(d).length) out.description_annonce = d;
+      if (pieces.length) out.pieces_detail = pieces;
+      return out;
+    };
+    var dejaConnu = (x = {}, contact = null) => {
+      const r = x.recherche || {}, projets = contact && contact.projets || [];
+      const p = projets.find((o2) => o2.budget_max || o2.zone || o2.delai) || projets[0] || {};
+      const o = {
+        budget: r.budget_max || p.budget_max || null,
+        budget_min: p.budget_min || null,
+        zone: r.localisation || p.zone || null,
+        rayon_km: p.rayon_km || null,
+        surface_min: r.surface_min || p.surface_min || null,
+        terrain_min: p.terrain_min || null,
+        pieces_min: r.pieces_min || p.pieces_min || null,
+        delai: p.delai || null,
+        bien_a_vendre: p.revente != null ? p.revente : null,
+        usage: p.usage || null,
+        motif: p.motif || null
+      };
+      return o;
+    };
     var tel9 = (t) => String(t || "").replace(/\D/g, "").slice(-9);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
     var milliers = (n) => String(Math.round(+n)).replace(/\B(?=(\d{3})+(?!\d))/g, " ");
@@ -98571,23 +98706,26 @@ var require_bot = __commonJS({
       const personne = nego && (R.personnes || []).find((p) => String(p.email || "").trim().toLowerCase() === nego.email) || null;
       return { liste: r.liste, personne };
     };
-    var contexte = ({ dossier, lead, bien, photos = [], conf, reglages: R = {}, etat = {}, quand }) => {
+    var contexte = ({ dossier, lead, bien, photos = [], contact = null, conf, reglages: R = {}, etat = {}, quand }) => {
       if (!dossier) return { inconnu: true, optout: !!etat.optout };
       const x = lead && lead.extraction || {}, c = x.contact || {}, r = x.recherche || {};
       const { personne } = quiRecoit(dossier.negociateur || bien && bien.negociateur_id, conf, bien, quand);
       const tel = personne ? String(personne.telephone || "").replace(/\D/g, "").replace(/^0(?=\d{9}$)/, "33") : "";
       return {
         dossier_id: dossier.id || null,
-        prenom: majuscule(c.prenom || dossier.prenom),
+        prenom: majuscule(c.prenom || dossier.prenom || contact && contact.prenom),
         entite: R.entite || "",
         source: dossier.portail || "",
         negociateur: personne ? { prenom: "", nom: personne.nom } : null,
         /* photos : seulement celles du dossier d'images choisi par le client (réglage « photos »), 10 au plus (un carrousel WhatsApp) */
-        bien_public: { ...bienPublic(bien), ...photos.length ? { photos_publiques: photos.filter((u) => /^https:\/\//.test(u)).slice(0, 10) } : {} },
+        /* champs publics, contenu public de l'annonce (critères, descriptions, pièces), photos du dossier d'images choisi */
+        bien_public: { ...bienPublic(bien), ...annonce(bien && bien.annonce), ...photos.length ? { photos_publiques: photos.filter((u) => /^https:\/\//.test(u)).slice(0, 10) } : {} },
         /* numéro direct de la personne qui reprend : seulement si le client l'a accepté */
         liens_whatsapp: R.liens_directs === true && tel ? { negociateur: "https://wa.me/" + tel } : {},
         langue_ouverture: "fr",
-        deja_connu: { budget: r.budget_max || null, zone: r.localisation || null },
+        deja_connu: dejaConnu(x, contact),
+        /* la demande du lead telle qu'il l'a écrite au portail : le bot s'en sert pour comprendre, sans la redemander */
+        demande: { message: String(x.message || "").slice(0, 1500), nature: x.nature || "", portail: dossier.portail || "" },
         ouverture_envoyee: !!etat.ouverture,
         fiche_annonce_envoyee: !!etat.fiche,
         statut: etat.statut || "",
@@ -98672,12 +98810,14 @@ ${aurait_recu ? `<p style="color:#b45309;font-size:12px">Essai : en service, ce 
         ["Chambres", b.chambres],
         ["Surface", b.surface && `${b.surface} m\xB2`],
         ["Localisation", lieu],
-        ["Prix", b.prix && `${milliers(b.prix)} \u20AC`]
+        ["Prix", b.prix && `${milliers(b.prix)} \u20AC`],
+        /* contenu public de l'annonce : 12 caractéristiques au plus, dans l'ordre du CRM */
+        ...Object.entries(annonce(bien && bien.annonce).details || {}).slice(0, 12)
       ].filter(([, v]) => v).map(([l, v]) => [l, String(v)]);
       const jour = quand.toLocaleDateString("fr-FR", { timeZone: "Europe/Paris", day: "2-digit", month: "2-digit", year: "numeric" });
       return [{ titre }, { tableau, taille: 10.5, chiffres_a_droite: false }, { petit: `Informations de l'annonce au ${jour}. Document non contractuel.` }];
     };
-    module2.exports = { CHAMPS_PUBLICS, bienPublic, tel9, quiRecoit, contexte, plan, lignes, texteScores, mailEquipe, blocsFiche, majuscule, nomVille };
+    module2.exports = { CHAMPS_PUBLICS, bienPublic, annonce, dejaConnu, nettoyer, tel9, quiRecoit, contexte, plan, lignes, texteScores, mailEquipe, blocsFiche, majuscule, nomVille };
   }
 });
 
@@ -98706,7 +98846,10 @@ var require_bot2 = __commonJS({
         prenom: essai.prenom || "",
         nom: essai.nom || essai.prenom || "Essai",
         email: essai.email || null,
-        portail: "essai"
+        portail: "essai",
+        /* lead d'essai : son projet (mêmes clés que les recherches du CRM) et son message au portail, facultatifs */
+        projet: essai.projet && typeof essai.projet === "object" ? essai.projet : null,
+        message: essai.message || ""
       } };
       const rows = await t.dossiers.getRows({ tel9: B.tel9(tel) }, { orderBy: "maj_le", orderDesc: true, limit: 10 });
       const id = +corps.dossier_id || null;
@@ -98726,6 +98869,23 @@ var require_bot2 = __commonJS({
         return null;
       }
     };
+    var CONTACTS = globalThis[Symbol.for("dysizz-flow.leads.bot.contacts")] || (globalThis[Symbol.for("dysizz-flow.leads.bot.contacts")] = /* @__PURE__ */ new Map());
+    var lireContact = async (crm, id) => {
+      if (!id || !/^\d+$/.test(String(id))) return null;
+      const k = `${S.prefixe()}:${id}`, m = CONTACTS.get(k);
+      if (m && Date.now() - m.t < 12e4) return m.p;
+      const c = flowApi().crmDepuisCoffre(crm.type, crm.reglages, crm.prefixe, "ombre");
+      if (!c.contact) return null;
+      const p = c.contact(id).then((x) => x ? { prenom: x.prenom || null, projets: x.projets || [] } : null, () => null);
+      CONTACTS.set(k, { t: Date.now(), p });
+      if (CONTACTS.size > 5e3) CONTACTS.delete(CONTACTS.keys().next().value);
+      let minuteur;
+      const r = await Promise.race([p, new Promise((ok) => {
+        minuteur = setTimeout(() => ok(null), 2500);
+      })]);
+      clearTimeout(minuteur);
+      return r;
+    };
     var etatDe = async (tb, tel, dossier) => {
       const rows = await tb.getRows({ tel9: B.tel9(tel), type: { in: ["optout", "fiche_envoyee", "ouverture", "sortie"] } }, { orderBy: "id", orderDesc: true, limit: 200 });
       const id = dossier && dossier.id || null, miens = rows.filter((r) => (r.dossier || null) === id);
@@ -98738,9 +98898,14 @@ var require_bot2 = __commonJS({
       const etat = await etatDe(tb, tel, dossier);
       if (!dossier) return B.contexte({ dossier: null, etat });
       const { conf, crm } = await charger();
-      const [bien, leads] = await Promise.all([lireBien(crm, dossier, R), dossier.id ? t.leads.getRows({ dossier_id: dossier.id }, { orderBy: "id", orderDesc: true, limit: 1 }) : []]);
+      const [bien, leads, contact] = await Promise.all([
+        lireBien(crm, dossier, R),
+        dossier.id ? t.leads.getRows({ dossier_id: dossier.id }, { orderBy: "id", orderDesc: true, limit: 1 }) : [],
+        dossier.essai ? dossier.projet ? { prenom: null, projets: [dossier.projet] } : null : lireContact(crm, dossier.contact_crm)
+      ]);
       const photos = R.photos && bien && Array.isArray(bien.photos) ? bien.photos : [];
-      return B.contexte({ dossier, lead: leads[0] ? json(leads[0].dossier, {}) : null, bien, photos, conf, reglages: R, etat });
+      const lead = leads[0] ? json(leads[0].dossier, {}) : dossier.essai && dossier.message ? { extraction: { message: dossier.message, nature: "lead" } } : null;
+      return B.contexte({ dossier, lead, bien, photos, contact, conf, reglages: R, etat });
     };
     var TEXTE = (d) => d.texte || d.dernier_message || d.question || d.reponse || d.mot_cle || "";
     var evenement = async (corps, R) => {

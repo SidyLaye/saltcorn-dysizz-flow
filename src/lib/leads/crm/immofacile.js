@@ -207,6 +207,21 @@ const creer = (cfg = {}) => {
     if (r.pieces_min) c.push({ id: await cleRecherche("NbPieces", "NbPiece"), operator: "SUPERIEUR", value: String(r.pieces_min) });
     return c;
   };
+  /* Recherche Immofacile → projet lisible. Identifiants de critères du référentiel produit : 30 prix, 33 pièces, 34 surface,
+     36 terrain, 38 chambres, 64 rayon (km), 65 commune ; INFERIEUR = maximum, SUPERIEUR = minimum. */
+  const projetDe = (x) => {
+    const o = {}, num = (v) => (isFinite(+v) ? Math.round(+v) : null);
+    for (const c of x.criteria || []) {
+      const id = +c.id, op = String(c.operator || "").toUpperCase(), v = Array.isArray(c.value) ? c.value : c.value;
+      const borne = (k) => { if (num(v) != null) o[k + (op === "INFERIEUR" ? "_max" : op === "SUPERIEUR" ? "_min" : "")] = num(v); };
+      if (id === 30) borne("budget"); else if (id === 34) borne("surface"); else if (id === 36) borne("terrain"); else if (id === 33) borne("pieces"); else if (id === 38) borne("chambres");
+      else if (id === 64 && num(v) != null) o.rayon_km = num(v); else if (id === 65 && v) o.zone = String(v);
+    }
+    for (const [k, n] of [["timeframe", "delai"], ["intended_use", "usage"], ["reason_for_purchase", "motif"], ["current_resale", "revente"]]) {
+      const v = x[k]; if (v != null && v !== "") o[n] = typeof v === "object" ? v.label || v.name || v.value || JSON.stringify(v) : v;
+    }
+    return o;
+  };
   /* Contact avec ses relations : sans « include », origine et groupes ne reviennent pas
      (c'est pour ça que l'ancien service ne les retrouvait jamais à la relecture). */
   const lireContact = async (id) => {
@@ -214,6 +229,8 @@ const creer = (cfg = {}) => {
     if (!c || !c.id) return null;
     const k = c.consent && !(c.consent.revokedAt || c.consent.revoked_at) ? c.consent : null;
     return { ...versContact(c), recherches: (c.searchRequests || []).map((x) => ({ id: x.id, comment: x.comment || "" })),
+      /* projet du contact, tiré de ses recherches actives (critères, délai, revente…), sans les commentaires (notes internes) */
+      projets: (c.searchRequests || c.search_requests || []).filter((x) => x && (x.is_active ?? x.isActive) !== false).map(projetDe),
       consentement_detail: k ? { raison: k.reason ?? null, date: k.consentDate ?? k.consent_date ?? null, hors_horaires: k.acceptOutsideHours ?? k.accept_outside_hours ?? null,
         preuves: Array.isArray(k.proofs) ? k.proofs.length : k.proofs ? 1 : 0 } : null };
   };
@@ -246,12 +263,22 @@ const creer = (cfg = {}) => {
       return (p.products_photos || []).filter((x) => x && x.type === dossier && !x.is_red && !x.is_mid && /^https:\/\//.test(x.chemin || ""))
         .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)).map((x) => x.chemin);
     },
-    /* Le bien et ses photos (dossier d'images donné) en UNE requête : ce que lit le bot, sous fort trafic. Bien introuvable : erreur http 404. */
+    /* Le bien, ses photos (dossier d'images donné) et le contenu brut de l'annonce (tous les critères avec leur libellé,
+       descriptions, pièces) en UNE requête : ce que lit le bot, sous fort trafic. Le tri de ce qui peut être dit est fait
+       par lib/leads/bot.js (annonce). Bien introuvable : erreur http 404 (ou 403 chez Immofacile). */
     bienEtPhotos: async (id, dossier) => {
-      const p = data(await appel("GET", `/products/${Number(id)}?fetch=${FETCH},products_photos`)) || {};
+      const p = data(await appel("GET", `/products/${Number(id)}?fetch=${FETCH},criteres_flag,descriptions,rooms,products_photos`)) || {};
       const photos = dossier ? (p.products_photos || []).filter((x) => x && x.type === dossier && !x.is_red && !x.is_mid && /^https:\/\//.test(x.chemin || ""))
         .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)).map((x) => x.chemin) : [];
-      return { ...(await versBien(p)), photos };
+      const criteres = [];
+      for (const [g, nature] of [[p.criteres_text, "texte"], [p.criteres_number, "nombre"], [p.criteres_flag, "case"]])
+        for (const c of Array.isArray(g) ? g : []) {
+          const valeur = c.critere_value_name != null && String(c.critere_value_name).trim() ? c.critere_value_name : c.critere_value;
+          if (c.critere_id != null && c.critere_name) criteres.push({ id: +c.critere_id, nom: String(c.critere_name), valeur, nature });
+        }
+      const descriptions = (p.descriptions || []).filter((d) => d && (d.description || d.title)).map((d) => ({ langue: String(d.language_code || ""), titre: d.title || "", texte: d.description || "" }));
+      const pieces = (p.rooms || []).filter((r) => r && r.piece).map((r) => ({ piece: r.piece, surface: +r.surface || null, niveau: r.niveau || "", commentaire: r.commentaires || "" }));
+      return { ...(await versBien(p)), photos, annonce: { criteres, descriptions, pieces } };
     },
     biensParReference: async (ref) => (await recherche({ model: String(ref), count: 5 })).filter((b) => b && b.reference.toLowerCase() === String(ref).trim().toLowerCase()).slice(0, 3),
     biensParCriteres: async (q, { max = 2 } = {}) => {
