@@ -1,5 +1,13 @@
 # Journal des versions
 
+## 2.16.1
+
+### Modifié
+- Leads, bot WhatsApp : le message envoyé aux équipes quand une conversation aboutit est un « lead qualifié » :
+  objet « Lead qualifié WhatsApp · … » (distinct du message d'arrivée du lead), phrase d'introduction, et ligne « Score »
+  (scores /100 du bien et, s'il y a lieu, du financement, des travaux et de la relocation ; barème signalé provisoire).
+  Les alertes en cours de conversation (bien à vendre, annulation, message après transmission) gardent l'objet « WhatsApp · … ».
+
 ## 2.16.0
 
 ### Ajouté

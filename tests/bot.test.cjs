@@ -37,7 +37,7 @@ const QUAND = new Date("2026-10-13T10:00:00Z");
 
   /* événements → écritures CRM et messages */
   const R = { couleurs: { HOT: 5 }, actions: { "OUT-1": 111, defaut: 222 } };
-  const sortie = { type: "sortie", donnees: { code: "OUT-1", temperature: "HOT", lead_prioritaire: true, lead_financement: true, creneau: "samedi matin", qualification: { budget: "250 000", projet: "résidence principale" }, dernier_message: "Je veux visiter" } };
+  const sortie = { type: "sortie", donnees: { code: "OUT-1", temperature: "HOT", lead_prioritaire: true, lead_financement: true, creneau: "samedi matin", scores: { provisoire: true, bien: 85, financement: 50, travaux: null, international: null }, qualification: { budget: "250 000", projet: "résidence principale" }, dernier_message: "Je veux visiter" } };
   const p = B.plan([{ type: "inbound", donnees: { texte: "bonjour" } }, { type: "prioritaire_vendeur", donnees: {} }, sortie], R);
   assert.deepStrictEqual(p.crm.map((a) => [a.op, a.couleur || a.action_id]), [["couleurContact", 5], ["ajouterAction", 111]]);
   assert.strictEqual(p.avis.length, 1, "un seul message quand la sortie porte déjà le caractère prioritaire");
@@ -48,8 +48,13 @@ const QUAND = new Date("2026-10-13T10:00:00Z");
   assert.deepStrictEqual(B.plan([sortie], {}).crm, [], "sans identifiants réglés, rien n'est écrit dans le CRM");
 
   const m = B.mailEquipe({ avis: p.avis[0], dossier, bien: BIEN, telephone: "33611111111", fil: [{ role: "prospect", texte: "<b>Je veux visiter</b>" }], aurait_recu: ["martin@agence-exemple.fr"] });
-  assert.ok(m.objet.startsWith("[PRIORITAIRE] WhatsApp · Demande de visite") && m.objet.includes("réf. 30123") && m.objet.includes("Marie Test"));
+  /* réunion du 21/07 : le lead qualifié a un objet distinct du mail d'arrivée, avec synthèse, score et échange */
+  assert.ok(m.objet.startsWith("[PRIORITAIRE] Lead qualifié WhatsApp · Demande de visite") && m.objet.includes("réf. 30123") && m.objet.includes("Marie Test"));
   assert.ok(m.html.includes("samedi matin") && m.html.includes("&lt;b&gt;Je veux visiter") && m.html.includes("moins de 3 mois") && m.html.includes("Essai : en service"));
+  assert.ok(m.html.includes("Lead qualifié à l'issue de la conversation") && m.html.includes("bien 85/100 · financement 50/100 (barème provisoire)"));
+  assert.strictEqual(B.texteScores(null), "");
+  const alerte = B.mailEquipe({ avis: B.plan([{ type: "prioritaire_vendeur", donnees: {} }], {}).avis[0], dossier, bien: BIEN });
+  assert.ok(alerte.objet.startsWith("[PRIORITAIRE] WhatsApp · Le prospect a un bien à vendre"), "une alerte en cours de conversation n'est pas un lead qualifié");
 
   /* fiche PDF : champs publics, aucune marque */
   assert.strictEqual(B.blocsFiche(null), null);

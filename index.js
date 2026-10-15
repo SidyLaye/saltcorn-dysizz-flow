@@ -1,4 +1,4 @@
-/* dysizz-flow 2.16.0 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.16.1 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.16.0" : "dev";
+    var VERSION2 = true ? "2.16.1" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -98509,6 +98509,12 @@ var require_bot = __commonJS({
       "OUT-6": "D\xE9sinscription"
     };
     var DELAIS = { HOT: "moins de 3 mois", WARM: "3 \xE0 12 mois", COLD: "plus de 12 mois" };
+    var NOMS_SCORES = { bien: "bien", financement: "financement", travaux: "travaux", international: "relocation" };
+    var texteScores = (sc) => {
+      if (!sc) return "";
+      const t = Object.keys(NOMS_SCORES).filter((k) => typeof sc[k] === "number").map((k) => `${NOMS_SCORES[k]} ${sc[k]}/100`).join(" \xB7 ");
+      return t && sc.provisoire ? t + " (bar\xE8me provisoire)" : t;
+    };
     var AVIS = { prioritaire_vendeur: "Le prospect a un bien \xE0 vendre", annulation: "Le prospect annule sa demande", message_apres_transmission: "Nouveau message du prospect apr\xE8s transmission" };
     var lignes = (d = {}) => {
       const q = d.qualification || {}, etiquettes = [d.lead_prioritaire && "bien \xE0 vendre (prioritaire)", d.lead_financement && "financement", d.lead_travaux && "travaux", d.lead_relocation && "relocation"].filter(Boolean);
@@ -98517,6 +98523,7 @@ var require_bot = __commonJS({
         ["Demande", [DEMANDES[d.code] || d.code, d.motif].filter(Boolean).join(" \xB7 ")],
         ["Cr\xE9neau souhait\xE9", [d.creneau, d.fuseau].filter(Boolean).join(" \xB7 ")],
         ["D\xE9lai du projet", DELAIS[d.temperature]],
+        ["Score", texteScores(d.scores)],
         ["Projet", q.projet],
         ["Budget", q.budget],
         ["Zone", q.zone],
@@ -98540,7 +98547,7 @@ var require_bot = __commonJS({
           if (couleur) out.crm.push({ op: "couleurContact", couleur });
           const action = (R.actions || {})[d.code] || (R.actions || {}).defaut;
           if (action) out.crm.push({ op: "ajouterAction", action_id: action, texte: "WhatsApp. " + lignes(d).map(([l, v]) => `${l} : ${v}`).join("\n") });
-          if (d.code !== "OUT-6") out.avis.push({ titre: DEMANDES[d.code] || "Demande", prioritaire: !!d.lead_prioritaire, donnees: d, referents: [d.lead_financement && "f", d.lead_travaux && "w", d.lead_relocation && "i"].filter(Boolean) });
+          if (d.code !== "OUT-6") out.avis.push({ titre: DEMANDES[d.code] || "Demande", qualifie: true, prioritaire: !!d.lead_prioritaire, donnees: d, referents: [d.lead_financement && "f", d.lead_travaux && "w", d.lead_relocation && "i"].filter(Boolean) });
         } else if (AVIS[e.type] && !(sortie && e.type === "prioritaire_vendeur"))
           out.avis.push({ titre: AVIS[e.type], prioritaire: e.type === "prioritaire_vendeur", donnees: d, referents: [] });
       }
@@ -98548,10 +98555,10 @@ var require_bot = __commonJS({
     };
     var mailEquipe = ({ avis, dossier = {}, bien, telephone, fil = [], aurait_recu }) => {
       const b = bien || {}, nom = dossier.nom || "Prospect";
-      const objet = `${avis.prioritaire ? "[PRIORITAIRE] " : ""}WhatsApp \xB7 ${avis.titre}${b.reference ? " \xB7 r\xE9f. " + b.reference : ""} \xB7 ${nom}`;
+      const objet = `${avis.prioritaire ? "[PRIORITAIRE] " : ""}${avis.qualifie ? "Lead qualifi\xE9 WhatsApp" : "WhatsApp"} \xB7 ${avis.titre}${b.reference ? " \xB7 r\xE9f. " + b.reference : ""} \xB7 ${nom}`;
       const ligne = (l, v) => v ? `<tr><td style="color:#667;padding:2px 12px 2px 0;vertical-align:top">${esc(l)}</td><td><b>${esc(v)}</b></td></tr>` : "";
       const html = `<div style="font-family:Arial,sans-serif;font-size:14px;color:#1f2937">
-<p><b>${esc(avis.titre)}</b>, re\xE7u par l'assistant WhatsApp.</p>
+<p>${avis.qualifie ? "Lead qualifi\xE9 \xE0 l'issue de la conversation avec l'assistant WhatsApp : " : ""}<b>${esc(avis.titre)}</b>${avis.qualifie ? "." : ", re\xE7u par l'assistant WhatsApp."}</p>
 <table style="border-collapse:collapse">${ligne("Prospect", nom)}${ligne("T\xE9l\xE9phone", telephone ? "+" + telephone : "")}${ligne("E-mail", dossier.email)}
 ${ligne("Bien", [b.reference && "r\xE9f. " + b.reference, b.type, b.ville, b.prix && milliers(b.prix) + " \u20AC"].filter(Boolean).join(" \xB7 "))}
 ${lignes(avis.donnees).map(([l, v]) => ligne(l, v)).join("")}</table>
@@ -98576,7 +98583,7 @@ ${aurait_recu ? `<p style="color:#b45309;font-size:12px">Essai : en service, ce 
       const jour = quand.toLocaleDateString("fr-FR", { timeZone: "Europe/Paris", day: "2-digit", month: "2-digit", year: "numeric" });
       return [{ titre }, { tableau, taille: 10.5, chiffres_a_droite: false }, { petit: `Informations de l'annonce au ${jour}. Document non contractuel.` }];
     };
-    module2.exports = { CHAMPS_PUBLICS, bienPublic, tel9, quiRecoit, contexte, plan, lignes, mailEquipe, blocsFiche, majuscule, nomVille };
+    module2.exports = { CHAMPS_PUBLICS, bienPublic, tel9, quiRecoit, contexte, plan, lignes, texteScores, mailEquipe, blocsFiche, majuscule, nomVille };
   }
 });
 

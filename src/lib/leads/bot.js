@@ -54,6 +54,10 @@ const contexte = ({ dossier, lead, bien, photos = [], conf, reglages: R = {}, et
 const DEMANDES = { "OUT-1": "Demande de visite ou de rendez-vous", "OUT-2": "Demande de rappel", "OUT-3": "Projet à plus long terme, à recontacter",
   "OUT-4": "Demande à parler à un conseiller", "OUT-5": "Annulation", "OUT-6": "Désinscription" };
 const DELAIS = { HOT: "moins de 3 mois", WARM: "3 à 12 mois", COLD: "plus de 12 mois" };
+/* Scores /100 produits par la conversation (provisoires tant que le client n'a pas validé les poids) : « bien 75/100 · financement 50/100 » */
+const NOMS_SCORES = { bien: "bien", financement: "financement", travaux: "travaux", international: "relocation" };
+const texteScores = (sc) => { if (!sc) return ""; const t = Object.keys(NOMS_SCORES).filter((k) => typeof sc[k] === "number").map((k) => `${NOMS_SCORES[k]} ${sc[k]}/100`).join(" · ");
+  return t && sc.provisoire ? t + " (barème provisoire)" : t; };
 const AVIS = { prioritaire_vendeur: "Le prospect a un bien à vendre", annulation: "Le prospect annule sa demande", message_apres_transmission: "Nouveau message du prospect après transmission" };
 
 /* Lignes « libellé, valeur » d'une sortie du bot : pour l'action du CRM et pour le message aux équipes. */
@@ -64,6 +68,7 @@ const lignes = (d = {}) => {
     ["Demande", [DEMANDES[d.code] || d.code, d.motif].filter(Boolean).join(" · ")],
     ["Créneau souhaité", [d.creneau, d.fuseau].filter(Boolean).join(" · ")],
     ["Délai du projet", DELAIS[d.temperature]],
+    ["Score", texteScores(d.scores)],
     ["Projet", q.projet], ["Budget", q.budget], ["Zone", q.zone], ["Financement", q.financement], ["Bien à vendre", q.bien_a_vendre],
     ["À signaler", etiquettes.join(", ")],
     ["Financement (détail)", branche(d.f)], ["Travaux (détail)", branche(d.w)], ["Relocation (détail)", branche(d.i)],
@@ -84,20 +89,22 @@ const plan = (evenements, R = {}) => {
       if (couleur) out.crm.push({ op: "couleurContact", couleur });
       const action = (R.actions || {})[d.code] || (R.actions || {}).defaut;
       if (action) out.crm.push({ op: "ajouterAction", action_id: action, texte: "WhatsApp. " + lignes(d).map(([l, v]) => `${l} : ${v}`).join("\n") });
-      if (d.code !== "OUT-6") out.avis.push({ titre: DEMANDES[d.code] || "Demande", prioritaire: !!d.lead_prioritaire, donnees: d, referents: [d.lead_financement && "f", d.lead_travaux && "w", d.lead_relocation && "i"].filter(Boolean) });
+      if (d.code !== "OUT-6") out.avis.push({ titre: DEMANDES[d.code] || "Demande", qualifie: true, prioritaire: !!d.lead_prioritaire, donnees: d, referents: [d.lead_financement && "f", d.lead_travaux && "w", d.lead_relocation && "i"].filter(Boolean) });
     } else if (AVIS[e.type] && !(sortie && e.type === "prioritaire_vendeur"))
       out.avis.push({ titre: AVIS[e.type], prioritaire: e.type === "prioritaire_vendeur", donnees: d, referents: [] });
   }
   return out;
 };
 
-/* Message aux équipes. fil = [{ role: "prospect" | "bot", texte }] ; aurait_recu : adresses réelles, rappelées pendant les essais. */
+/* Message aux équipes. fil = [{ role: "prospect" | "bot", texte }] ; aurait_recu : adresses réelles, rappelées pendant les essais.
+   Une sortie de conversation donne le « lead qualifié » : objet distinct du mail d'arrivée du lead, synthèse, score et échange,
+   pour agir sans ouvrir le système. */
 const mailEquipe = ({ avis, dossier = {}, bien, telephone, fil = [], aurait_recu }) => {
   const b = bien || {}, nom = dossier.nom || "Prospect";
-  const objet = `${avis.prioritaire ? "[PRIORITAIRE] " : ""}WhatsApp · ${avis.titre}${b.reference ? " · réf. " + b.reference : ""} · ${nom}`;
+  const objet = `${avis.prioritaire ? "[PRIORITAIRE] " : ""}${avis.qualifie ? "Lead qualifié WhatsApp" : "WhatsApp"} · ${avis.titre}${b.reference ? " · réf. " + b.reference : ""} · ${nom}`;
   const ligne = (l, v) => (v ? `<tr><td style="color:#667;padding:2px 12px 2px 0;vertical-align:top">${esc(l)}</td><td><b>${esc(v)}</b></td></tr>` : "");
   const html = `<div style="font-family:Arial,sans-serif;font-size:14px;color:#1f2937">
-<p><b>${esc(avis.titre)}</b>, reçu par l'assistant WhatsApp.</p>
+<p>${avis.qualifie ? "Lead qualifié à l'issue de la conversation avec l'assistant WhatsApp : " : ""}<b>${esc(avis.titre)}</b>${avis.qualifie ? "." : ", reçu par l'assistant WhatsApp."}</p>
 <table style="border-collapse:collapse">${ligne("Prospect", nom)}${ligne("Téléphone", telephone ? "+" + telephone : "")}${ligne("E-mail", dossier.email)}
 ${ligne("Bien", [b.reference && "réf. " + b.reference, b.type, b.ville, b.prix && milliers(b.prix) + " €"].filter(Boolean).join(" · "))}
 ${lignes(avis.donnees).map(([l, v]) => ligne(l, v)).join("")}</table>
@@ -118,4 +125,4 @@ const blocsFiche = (bien, quand = new Date()) => {
   return [{ titre }, { tableau, taille: 10.5, chiffres_a_droite: false }, { petit: `Informations de l'annonce au ${jour}. Document non contractuel.` }];
 };
 
-module.exports = { CHAMPS_PUBLICS, bienPublic, tel9, quiRecoit, contexte, plan, lignes, mailEquipe, blocsFiche, majuscule, nomVille };
+module.exports = { CHAMPS_PUBLICS, bienPublic, tel9, quiRecoit, contexte, plan, lignes, texteScores, mailEquipe, blocsFiche, majuscule, nomVille };
