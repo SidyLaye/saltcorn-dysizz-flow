@@ -17,8 +17,8 @@ const tenant = () => { let t = "public"; try { t = require("@saltcorn/data/db").
 const oublier = () => G.cache.delete(tenant());
 
 const versLigne = (b) => ({ crm_id: String(b.id), reference: b.reference || null, prix: +b.prix || null, surface: +b.surface || null, pieces: +b.pieces || null, chambres: +b.chambres || null,
-  type: b.type || null, ville: b.ville || null, code_postal: b.code_postal || null, negociateur: b.negociateur_id != null ? String(b.negociateur_id) : null, agence: b.agence_id != null ? String(b.agence_id) : null, proprietaire: b.proprietaire_id != null ? String(b.proprietaire_id) : null, supprime: false, synchro_le: new Date() });
-const versBien = (r) => ({ id: isFinite(+r.crm_id) ? +r.crm_id : r.crm_id, reference: r.reference || "", prix: r.prix, surface: r.surface, pieces: r.pieces, chambres: r.chambres, type: r.type, ville: r.ville, code_postal: r.code_postal, negociateur_id: r.negociateur, agence_id: r.agence, proprietaire_id: r.proprietaire });
+  type: b.type || null, ville: b.ville || null, code_postal: b.code_postal || null, negociateur: b.negociateur_id != null ? String(b.negociateur_id) : null, agence: b.agence_id != null ? String(b.agence_id) : null, proprietaire: b.proprietaire_id != null ? String(b.proprietaire_id) : null, supprime: false, synchro_le: new Date(), statut_web: b.diffuse === false ? "NonDiffuse" : (b.statut || null) });
+const versBien = (r) => ({ id: isFinite(+r.crm_id) ? +r.crm_id : r.crm_id, reference: r.reference || "", prix: r.prix, surface: r.surface, pieces: r.pieces, chambres: r.chambres, type: r.type, ville: r.ville, code_postal: r.code_postal, negociateur_id: r.negociateur, agence_id: r.agence, proprietaire_id: r.proprietaire, statut: r.statut_web || null });
 
 const json = (s, d) => { try { return s ? JSON.parse(s) : d; } catch (e) { return d; } };
 const pourBot = (r) => (r ? { ...versBien(r), photos: json(r.photos, []), annonce: json(r.details, null), cartes: json(r.cartes, null), fictif: !!r.fictif, synchro_le: r.synchro_le || null } : null);
@@ -38,7 +38,7 @@ const relire = async (client, id, dossierImages) => {
     /* deux processus ont pu insérer en même temps : on garde le premier */
     for (const r of (await lignesDe(t, id)).slice(1)) await t.biens.deleteRows({ id: r.id });
     oublier();
-    return { ...b, photos: b.photos || [], cartes: rows[0] ? json(rows[0].cartes, null) : null };   // cartes déjà rédigées : gardées
+    return { ...b, photos: b.photos || [], cartes: rows[0] ? json(rows[0].cartes, null) : null, synchro_le: new Date() };   // cartes déjà rédigées : gardées
   } catch (e) {
     if (e && (e.http === 404 || e.http === 403)) {   /* Immofacile répond 403 pour un bien inexistant ou hors du périmètre du site */
       for (const r of await lignesDe(t, id)) if (!r.fictif) await t.biens.updateRow({ supprime: true, synchro_le: new Date() }, r.id);

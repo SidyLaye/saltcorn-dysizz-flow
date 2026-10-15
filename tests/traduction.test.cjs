@@ -22,3 +22,15 @@ const an = B.annonce({ criteres: [{ id: 1, nom: "Mode Chauffage", valeur: "Bois"
   { id: 3, nom: "Commentaire vue", valeur: "vue sur cours depuis le séjour", nature: "texte" }] });
 assert.deepEqual(an.details_en, { "Mode Chauffage": "wood", "Vue": "garden, pond" }, "details_en : seulement ce qui se traduit entièrement");
 console.log("traduction des valeurs d'annonce OK");
+/* statut de vente (tâche 4) : un bien fictif vit seulement dans l'application, son statut vaut lecture du moment */
+{
+  const { enVente } = require("../src/lib/leads/bot");
+  const vieux = new Date(Date.now() - 86400000);
+  assert.equal(enVente({ statut: "EnCours", synchro_le: vieux }).statut_lu_le, vieux.toISOString(), "bien du CRM : date de sa lecture");
+  assert.ok(Date.now() - new Date(enVente({ statut: "EnCours", fictif: true, synchro_le: vieux }).statut_lu_le) < 5000, "bien fictif : maintenant");
+  assert.equal(enVente({ statut: "NonDiffuse" }).en_vente, false);
+  assert.deepEqual(enVente({}), { en_vente: null });
+  const B2 = require("../src/lib/leads/bot");
+  assert.ok(B2.plan([{ type: "bien_plus_en_vente", donnees: { reference: "X" } }], {}).avis.length === 1, "l'équipe est prévenue d'un intérêt pour un bien plus en vente");
+  console.log("statut de vente OK");
+}

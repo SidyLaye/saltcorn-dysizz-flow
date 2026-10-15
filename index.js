@@ -1,4 +1,4 @@
-/* dysizz-flow 2.21.1 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.22.0 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.21.1" : "dev";
+    var VERSION2 = true ? "2.22.0" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -96078,6 +96078,8 @@ var require_immofacile = __commonJS({
           ville: v.villeweb || v.ville_web || v.ville || null,
           code_postal: (String(v.codepostalweb || v.cpvilleweb || v.codepostal || v.cpville || "").match(/\d{5}/) || [])[0] || null,
           /* adresse réelle, quand l'annonce affiche une commune voisine : un mail peut citer l'une ou l'autre */
+          statut: v.statut != null ? String(v.statut) : null,
+          diffuse: typeof p.status_web === "boolean" ? p.status_web : null,
           ville_reelle: v.ville || null,
           code_postal_reel: (String(v.codepostal || v.cpville || "").match(/\d{5}/) || [])[0] || null,
           negociateur_id: a.id ?? a.user_id ?? p.userId ?? p.user_id ?? null,
@@ -98092,9 +98094,10 @@ var require_catalogue = __commonJS({
       agence: b.agence_id != null ? String(b.agence_id) : null,
       proprietaire: b.proprietaire_id != null ? String(b.proprietaire_id) : null,
       supprime: false,
-      synchro_le: /* @__PURE__ */ new Date()
+      synchro_le: /* @__PURE__ */ new Date(),
+      statut_web: b.diffuse === false ? "NonDiffuse" : b.statut || null
     });
-    var versBien = (r) => ({ id: isFinite(+r.crm_id) ? +r.crm_id : r.crm_id, reference: r.reference || "", prix: r.prix, surface: r.surface, pieces: r.pieces, chambres: r.chambres, type: r.type, ville: r.ville, code_postal: r.code_postal, negociateur_id: r.negociateur, agence_id: r.agence, proprietaire_id: r.proprietaire });
+    var versBien = (r) => ({ id: isFinite(+r.crm_id) ? +r.crm_id : r.crm_id, reference: r.reference || "", prix: r.prix, surface: r.surface, pieces: r.pieces, chambres: r.chambres, type: r.type, ville: r.ville, code_postal: r.code_postal, negociateur_id: r.negociateur, agence_id: r.agence, proprietaire_id: r.proprietaire, statut: r.statut_web || null });
     var json = (s, d) => {
       try {
         return s ? JSON.parse(s) : d;
@@ -98116,7 +98119,7 @@ var require_catalogue = __commonJS({
         else await t.biens.insertRow(ligne);
         for (const r of (await lignesDe(t, id)).slice(1)) await t.biens.deleteRows({ id: r.id });
         oublier();
-        return { ...b, photos: b.photos || [], cartes: rows[0] ? json(rows[0].cartes, null) : null };
+        return { ...b, photos: b.photos || [], cartes: rows[0] ? json(rows[0].cartes, null) : null, synchro_le: /* @__PURE__ */ new Date() };
       } catch (e) {
         if (e && (e.http === 404 || e.http === 403)) {
           for (const r of await lignesDe(t, id)) if (!r.fictif) await t.biens.updateRow({ supprime: true, synchro_le: /* @__PURE__ */ new Date() }, r.id);
@@ -98847,6 +98850,11 @@ var require_bot = __commonJS({
       for (const l of ["fr", "en"]) if (c && c[l] && Array.isArray(c[l].lignes) && c[l].lignes.length >= 3) out[l] = { ...c[l].titre ? { titre: c[l].titre } : {}, lignes: c[l].lignes.slice(0, 9) };
       return Object.keys(out).length ? { cartes: out } : {};
     };
+    var enVente = (b) => {
+      if (!b || b.statut == null || b.statut === "") return { en_vente: null };
+      const oui = /^encours$/i.test(String(b.statut)) && b.diffuse !== false;
+      return { en_vente: oui, statut_lu_le: new Date(b.fictif ? Date.now() : b.synchro_le || Date.now()).toISOString() };
+    };
     var bienPublic = (b) => {
       const o = {};
       for (const k of CHAMPS_PUBLICS) if (b && b[k] != null && b[k] !== "") o[k] = k === "ville" ? nomVille(b[k]) : b[k];
@@ -99022,7 +99030,7 @@ var require_bot = __commonJS({
         negociateur: personne ? { prenom: "", nom: personne.nom } : null,
         /* photos : seulement celles du dossier d'images choisi par le client (réglage « photos »), 10 au plus (un carrousel WhatsApp) */
         /* champs publics, contenu public de l'annonce (critères, descriptions, pièces), photos du dossier d'images choisi */
-        bien_public: { ...bienPublic(bien), ...annonce(bien && bien.annonce), ...photos.length ? { photos_publiques: photos.filter((u) => /^https:\/\//.test(u)).slice(0, 10) } : {}, ...cartesPourBot(bien) },
+        bien_public: { ...bienPublic(bien), ...annonce(bien && bien.annonce), ...photos.length ? { photos_publiques: photos.filter((u) => /^https:\/\//.test(u)).slice(0, 10) } : {}, ...cartesPourBot(bien), ...enVente(bien) },
         /* numéro direct de la personne qui reprend : seulement si le client l'a accepté */
         liens_whatsapp: R.liens_directs === true && tel ? { negociateur: "https://wa.me/" + tel } : {},
         langue_ouverture: "fr",
@@ -99055,7 +99063,8 @@ var require_bot = __commonJS({
       annulation: "Le prospect annule sa demande",
       message_apres_transmission: "Nouveau message du prospect apr\xE8s transmission",
       /* le bot ne répond plus après un STOP ; un humain décide s'il recontacte */
-      message_apres_stop: "Le prospect d\xE9sinscrit a r\xE9\xE9crit"
+      message_apres_stop: "Le prospect d\xE9sinscrit a r\xE9\xE9crit",
+      bien_plus_en_vente: "Le prospect s'int\xE9resse \xE0 un bien qui n'est plus en vente"
     };
     var lignes = (d = {}) => {
       const q = d.qualification || {}, etiquettes = [d.lead_prioritaire && "bien \xE0 vendre (prioritaire)", d.lead_financement && "financement", d.lead_travaux && "travaux", d.lead_relocation && "relocation"].filter(Boolean);
@@ -99130,7 +99139,7 @@ ${aurait_recu ? `<p style="color:#b45309;font-size:12px">Essai : en service, ce 
       const jour = quand.toLocaleDateString("fr-FR", { timeZone: "Europe/Paris", day: "2-digit", month: "2-digit", year: "numeric" });
       return [{ titre }, { tableau, taille: 10.5, chiffres_a_droite: false }, { petit: `Informations de l'annonce au ${jour}. Document non contractuel.` }];
     };
-    module2.exports = { CHAMPS_PUBLICS, cartesPourBot, bienPublic, annonce, dejaConnu, nettoyer, tel9, quiRecoit, contexte, plan, lignes, texteScores, mailEquipe, blocsFiche, majuscule, nomVille };
+    module2.exports = { CHAMPS_PUBLICS, cartesPourBot, enVente, bienPublic, annonce, dejaConnu, nettoyer, tel9, quiRecoit, contexte, plan, lignes, texteScores, mailEquipe, blocsFiche, majuscule, nomVille };
   }
 });
 

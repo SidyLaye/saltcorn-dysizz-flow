@@ -12,6 +12,13 @@ const cartesPourBot = (b) => {
   for (const l of ["fr", "en"]) if (c && c[l] && Array.isArray(c[l].lignes) && c[l].lignes.length >= 3) out[l] = { ...(c[l].titre ? { titre: c[l].titre } : {}), lignes: c[l].lignes.slice(0, 9) };
   return Object.keys(out).length ? { cartes: out } : {};
 };
+/* le bien est-il encore en vente ? statut du CRM lu à l'instant : « EnCours » et diffusé → oui ; autre statut ou non diffusé → non ;
+   statut inconnu → null : le bot n'affirme rien */
+const enVente = (b) => {
+  if (!b || b.statut == null || b.statut === "") return { en_vente: null };
+  const oui = /^encours$/i.test(String(b.statut)) && b.diffuse !== false;
+  return { en_vente: oui, statut_lu_le: new Date(b.fictif ? Date.now() : b.synchro_le || Date.now()).toISOString() };   // fictif : l'application est la source
+};
 const bienPublic = (b) => {
   const o = {};
   for (const k of CHAMPS_PUBLICS) if (b && b[k] != null && b[k] !== "") o[k] = k === "ville" ? nomVille(b[k]) : b[k];
@@ -110,7 +117,7 @@ const contexte = ({ dossier, lead, bien, photos = [], contact = null, conf, regl
     negociateur: personne ? { prenom: "", nom: personne.nom } : null,
     /* photos : seulement celles du dossier d'images choisi par le client (réglage « photos »), 10 au plus (un carrousel WhatsApp) */
     /* champs publics, contenu public de l'annonce (critères, descriptions, pièces), photos du dossier d'images choisi */
-    bien_public: { ...bienPublic(bien), ...annonce(bien && bien.annonce), ...(photos.length ? { photos_publiques: photos.filter((u) => /^https:\/\//.test(u)).slice(0, 10) } : {}), ...cartesPourBot(bien) },
+    bien_public: { ...bienPublic(bien), ...annonce(bien && bien.annonce), ...(photos.length ? { photos_publiques: photos.filter((u) => /^https:\/\//.test(u)).slice(0, 10) } : {}), ...cartesPourBot(bien), ...enVente(bien) },
     /* numéro direct de la personne qui reprend : seulement si le client l'a accepté */
     liens_whatsapp: R.liens_directs === true && tel ? { negociateur: "https://wa.me/" + tel } : {},
     langue_ouverture: "fr",
@@ -129,7 +136,8 @@ const NOMS_SCORES = { bien: "bien", financement: "financement", travaux: "travau
 const texteScores = (sc) => { if (!sc) return ""; const t = Object.keys(NOMS_SCORES).filter((k) => typeof sc[k] === "number").map((k) => `${NOMS_SCORES[k]} ${sc[k]}/100`).join(" · ");
   return t && sc.provisoire ? t + " (barème provisoire)" : t; };
 const AVIS = { prioritaire_vendeur: "Le prospect a un bien à vendre", annulation: "Le prospect annule sa demande", message_apres_transmission: "Nouveau message du prospect après transmission",
-  /* le bot ne répond plus après un STOP ; un humain décide s'il recontacte */ message_apres_stop: "Le prospect désinscrit a réécrit" };
+  /* le bot ne répond plus après un STOP ; un humain décide s'il recontacte */ message_apres_stop: "Le prospect désinscrit a réécrit",
+  bien_plus_en_vente: "Le prospect s'intéresse à un bien qui n'est plus en vente" };
 
 /* Lignes « libellé, valeur » d'une sortie du bot : pour l'action du CRM et pour le message aux équipes. */
 const lignes = (d = {}) => {
@@ -201,4 +209,4 @@ const blocsFiche = (bien, quand = new Date()) => {
   return [{ titre }, { tableau, taille: 10.5, chiffres_a_droite: false }, { petit: `Informations de l'annonce au ${jour}. Document non contractuel.` }];
 };
 
-module.exports = { CHAMPS_PUBLICS, cartesPourBot, bienPublic, annonce, dejaConnu, nettoyer, tel9, quiRecoit, contexte, plan, lignes, texteScores, mailEquipe, blocsFiche, majuscule, nomVille };
+module.exports = { CHAMPS_PUBLICS, cartesPourBot, enVente, bienPublic, annonce, dejaConnu, nettoyer, tel9, quiRecoit, contexte, plan, lignes, texteScores, mailEquipe, blocsFiche, majuscule, nomVille };

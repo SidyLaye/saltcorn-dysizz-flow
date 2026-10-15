@@ -140,6 +140,21 @@ const sortie = (code, plus = {}) => ({ type: "sortie", noeud: "TB3", quand: "202
     IA_ACTIF = false;
   }
 
+  /* bien encore en vente (revue du 15/10, tâche 4) : statut lu à l'instant dans le CRM ; inconnu → null (le bot ne dit rien) */
+  {
+    const vieillir = () => { for (const b of T.biens.L.filter((x) => x.crm_id === "99")) b.synchro_le = new Date(0); };
+    vieillir(); CRM_CHANGE[99] = { statut: "EnCours", diffuse: true };
+    let c1 = await repondre("contexte", { telephone: "33611111111", dossier_id: 7 });
+    assert.equal(c1.bien_public.en_vente, true); assert.ok(Date.now() - new Date(c1.bien_public.statut_lu_le) < 5000, "lecture du statut datée");
+    vieillir(); CRM_CHANGE[99] = { statut: "Vendu", diffuse: true };
+    c1 = await repondre("contexte", { telephone: "33611111111", dossier_id: 7 }); assert.equal(c1.bien_public.en_vente, false, "vendu : plus en vente");
+    vieillir(); CRM_CHANGE[99] = { statut: "EnCours", diffuse: false };
+    c1 = await repondre("contexte", { telephone: "33611111111", dossier_id: 7 }); assert.equal(c1.bien_public.en_vente, false, "plus diffusé : plus en vente");
+    vieillir(); CRM_CHANGE[99] = {};
+    c1 = await repondre("contexte", { telephone: "33611111111", dossier_id: 7 }); assert.equal(c1.bien_public.en_vente, null, "statut inconnu : rien");
+    delete CRM_CHANGE[99];
+  }
+
   /* le bien passe par l'application : relu dans le CRM puis enregistré (ld_biens), une ligne par bien, photos comprises */
   const cat = require("../src/lib/leads/tables/catalogue");
   const ligne99 = () => T.biens.L.filter((b) => b.crm_id === "99");

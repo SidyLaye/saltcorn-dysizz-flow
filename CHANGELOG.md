@@ -1,5 +1,12 @@
 # Journal des versions
 
+## 2.22.0
+
+### Ajouté
+- Bot WhatsApp, bien encore en vente : statut du CRM (critère « Statut », diffusion web) lu à l'instant, gardé dans la copie locale
+  (`statut_web`), rendu au bot (`en_vente` vrai / faux / inconnu, `statut_lu_le`) ; bien fictif : statut de l'application.
+- Équipes prévenues quand un prospect s'intéresse à un bien qui n'est plus en vente.
+
 ## 2.21.1
 
 ### Corrigé
