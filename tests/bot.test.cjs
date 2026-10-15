@@ -72,8 +72,8 @@ const QUAND = new Date("2026-10-13T10:00:00Z");
       { langue: "es", titre: "Casa", texte: "Bonita casa." }],
     pieces: [{ piece: "Séjour", surface: 27, niveau: "RDC", commentaire: "Tomettes" }] };
   const an = B.annonce(brute);
-  assert.deepStrictEqual(an.details, { "Surface terrain": "5505 m²", "Salle(s) de bains": "1", "Consommation énergie primaire": "D", "Mode Chauffage": "Bois", "ADSL possible": "oui",
-    "Montant minimum estimé des dépenses annuelles d'énergie pour un usage standard": "3060 €" });
+  assert.deepStrictEqual(an.details, { "Surface terrain": "5505 m²", "Salle(s) de bains": "1", "Consommation énergie primaire": "D", "Mode Chauffage": "Bois", "ADSL possible": "oui" },
+    "slide 07 : seul le prix de l'annonce est communicable, aucun autre montant (dépenses d'énergie, taxe, charges)");
   assert.ok(!/Divorce|1234A|passante|Plomb|occupé/.test(JSON.stringify(an)), "ni cause de vente, ni code d'accès, ni point faible, ni état des documents, ni occupation");
   assert.strictEqual(an.description_annonce.fr, "Belle maison au calme. Vue dégagée.", "ni adresse, ni honoraires, ni téléphone, ni mail");
   assert.ok(!an.description_annonce.es, "français et anglais seulement"); assert.deepStrictEqual(an.pieces_detail, ["Séjour · 27 m² · RDC · Tomettes"]);

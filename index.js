@@ -1,4 +1,4 @@
-/* dysizz-flow 2.20.3 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.20.4 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.20.3" : "dev";
+    var VERSION2 = true ? "2.20.4" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -98664,7 +98664,39 @@ var require_bot = __commonJS({
       for (const k of CHAMPS_PUBLICS) if (b && b[k] != null && b[k] !== "") o[k] = k === "ville" ? nomVille(b[k]) : b[k];
       return Object.keys(o).length ? o : null;
     };
-    var CRITERES_EXCLUS = /* @__PURE__ */ new Set([26, 52, 54, 57, 64, 65, 66, 121, 122, 123, 124, 131, 163, 207, 223, 1924, 1929, 1934, 1935, 2019, 2171, 2777]);
+    var CRITERES_EXCLUS = /* @__PURE__ */ new Set([
+      26,
+      52,
+      54,
+      57,
+      64,
+      65,
+      66,
+      121,
+      122,
+      123,
+      124,
+      131,
+      163,
+      207,
+      223,
+      1924,
+      1929,
+      1934,
+      1935,
+      2019,
+      2171,
+      2777,
+      /* distances (train, aéroport, autoroute, commerces, mer, piscine, voie express) : le CRM ne donne aucune unité ; « Piscine » (273) est une distance */
+      105,
+      106,
+      107,
+      108,
+      215,
+      273,
+      1881,
+      2335
+    ]);
     var CRITERES_PRINCIPAUX = /* @__PURE__ */ new Set([27, 28, 30, 33, 34, 38, 1861, 1933]);
     var NOM_EXCLU = new RegExp([
       "mandat",
@@ -98710,9 +98742,17 @@ var require_bot = __commonJS({
       "organisation diagnostic",
       "proc[\xE9e]dure",
       "certificat",
-      "^titre"
+      "^titre",
+      /* slide 07 : « seul le prix de l'annonce est communicable » — aucun autre montant (taxe, charges, dépenses d'énergie, travaux, loyer) */
+      "taxe",
+      "charges",
+      "d[\xE9e]penses",
+      "montant",
+      "\\bco[u\xFB]ts?\\b",
+      "loyer",
+      "\\bprix\\b"
     ].join("|"), "i");
-    var PHRASE_EXCLUE = /honorair|frais d.agence|mandat|propri[ée]taire|vendeur|cadastr|\bcl[ée]s\b|adresse|\b\d+\s*,?\s*(rue|route|chemin|avenue|av\.|bd|boulevard|impasse|all[ée]e|place|lieu-dit)\b/i;
+    var PHRASE_EXCLUE = /\d[\d\s.,]*\s?(€|euros?\b|k€|eur\b)|honorair|frais d.agence|mandat|propri[ée]taire|vendeur|cadastr|\bcl[ée]s\b|adresse|\b\d+\s*,?\s*(rue|route|chemin|avenue|av\.|bd|boulevard|impasse|all[ée]e|place|lieu-dit)\b/i;
     var COORDONNEE = (x) => /[\w.+-]+@[\w-]+\.[\w.]+|https?:\/\/|www\./i.test(x) || (String(x).match(/\+?\d[\d .-]{7,}\d/g) || []).some((m) => m.replace(/\D/g, "").length >= 9);
     var nettoyer = (t, max = 2500) => String(t || "").split(/(?<=[.!?\n])\s+/).filter((x) => x.trim() && !PHRASE_EXCLUE.test(x) && !COORDONNEE(x)).join(" ").replace(/[ \t]+/g, " ").trim().slice(0, max);
     var UNITE = (nom) => /^surface|surface (s[ée]jour|terrain|habitable)/i.test(nom) ? " m\xB2" : /taxe|d[ée]penses|montant|charges/i.test(nom) ? " \u20AC" : "";
@@ -98824,8 +98864,7 @@ var require_bot = __commonJS({
       annulation: "Le prospect annule sa demande",
       message_apres_transmission: "Nouveau message du prospect apr\xE8s transmission",
       /* le bot ne répond plus après un STOP ; un humain décide s'il recontacte */
-      message_apres_stop: "Le prospect d\xE9sinscrit a r\xE9\xE9crit",
-      engagement_demande: "Le prospect demande \xE0 n\xE9gocier le prix"
+      message_apres_stop: "Le prospect d\xE9sinscrit a r\xE9\xE9crit"
     };
     var lignes = (d = {}) => {
       const q = d.qualification || {}, etiquettes = [d.lead_prioritaire && "bien \xE0 vendre (prioritaire)", d.lead_financement && "financement", d.lead_travaux && "travaux", d.lead_relocation && "relocation"].filter(Boolean);

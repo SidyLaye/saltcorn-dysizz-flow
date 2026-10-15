@@ -12,10 +12,13 @@ const bienPublic = (b) => {
   return Object.keys(o).length ? o : null;
 };
 
-/* Ce que le bot peut dire de l'annonce : tout ce qui est public, sauf les informations réservées au négociateur
+/* Ce que le bot peut dire de l'annonce : tout ce qui est public, sauf les informations réservées au négociateur et tout montant
+   autre que le prix (une phrase de la description qui cite un montant est retirée entière)
    (slide 07 du script : adresse, cadastre, vendeur, mandat, honoraires, estimation, historique, statistiques, clés,
    visites, documents) et les données internes (secteur, statut, références, géolocalisation, pièces justificatives). */
-const CRITERES_EXCLUS = new Set([26, 52, 54, 57, 64, 65, 66, 121, 122, 123, 124, 131, 163, 207, 223, 1924, 1929, 1934, 1935, 2019, 2171, 2777]);
+const CRITERES_EXCLUS = new Set([26, 52, 54, 57, 64, 65, 66, 121, 122, 123, 124, 131, 163, 207, 223, 1924, 1929, 1934, 1935, 2019, 2171, 2777,
+  /* distances (train, aéroport, autoroute, commerces, mer, piscine, voie express) : le CRM ne donne aucune unité ; « Piscine » (273) est une distance */
+  105, 106, 107, 108, 215, 273, 1881, 2335]);
 const CRITERES_PRINCIPAUX = new Set([27, 28, 30, 33, 34, 38, 1861, 1933]);   // déjà dans les champs publics
 const NOM_EXCLU = new RegExp([
   "mandat", "honorair", "commission", "cadastr", "adresse", "rayon", "g[ée]oloc", "secteur", "r[ée]f[ée]rence", "num[ée]ro", "\\bn°", "statut",
@@ -23,8 +26,10 @@ const NOM_EXCLU = new RegExp([
   "justificatif", "ventes? priv", "prix au m", "^autres$",
   /* vendeur, occupation, accès, données internes, documents et juridique */
   "cause vente", "occup[ée]", "\\bbail\\b", "digicode", "^t[ée]l[ée]phone$", "accord de commercialisation", "^panneau$", "points? (forts?|faibles?)",
-  "^syndic$", "nom r[ée]sidence", "ademe", "^diagnostic", "organisation diagnostic", "proc[ée]dure", "certificat", "^titre"].join("|"), "i");   // titre : rendu à part (titre_annonce)
-const PHRASE_EXCLUE = /honorair|frais d.agence|mandat|propri[ée]taire|vendeur|cadastr|\bcl[ée]s\b|adresse|\b\d+\s*,?\s*(rue|route|chemin|avenue|av\.|bd|boulevard|impasse|all[ée]e|place|lieu-dit)\b/i;
+  "^syndic$", "nom r[ée]sidence", "ademe", "^diagnostic", "organisation diagnostic", "proc[ée]dure", "certificat", "^titre",
+  /* slide 07 : « seul le prix de l'annonce est communicable » — aucun autre montant (taxe, charges, dépenses d'énergie, travaux, loyer) */
+  "taxe", "charges", "d[ée]penses", "montant", "\\bco[uû]ts?\\b", "loyer", "\\bprix\\b"].join("|"), "i");   // titre : rendu à part (titre_annonce)
+const PHRASE_EXCLUE = /\d[\d\s.,]*\s?(€|euros?\b|k€|eur\b)|honorair|frais d.agence|mandat|propri[ée]taire|vendeur|cadastr|\bcl[ée]s\b|adresse|\b\d+\s*,?\s*(rue|route|chemin|avenue|av\.|bd|boulevard|impasse|all[ée]e|place|lieu-dit)\b/i;
 /* texte libre de l'annonce : une phrase qui contient un mail, un lien, un téléphone ou une information réservée est retirée entière */
 const COORDONNEE = (x) => /[\w.+-]+@[\w-]+\.[\w.]+|https?:\/\/|www\./i.test(x) || (String(x).match(/\+?\d[\d .-]{7,}\d/g) || []).some((m) => m.replace(/\D/g, "").length >= 9);
 const nettoyer = (t, max = 2500) => String(t || "").split(/(?<=[.!?\n])\s+/)
@@ -114,7 +119,7 @@ const NOMS_SCORES = { bien: "bien", financement: "financement", travaux: "travau
 const texteScores = (sc) => { if (!sc) return ""; const t = Object.keys(NOMS_SCORES).filter((k) => typeof sc[k] === "number").map((k) => `${NOMS_SCORES[k]} ${sc[k]}/100`).join(" · ");
   return t && sc.provisoire ? t + " (barème provisoire)" : t; };
 const AVIS = { prioritaire_vendeur: "Le prospect a un bien à vendre", annulation: "Le prospect annule sa demande", message_apres_transmission: "Nouveau message du prospect après transmission",
-  /* le bot ne répond plus après un STOP ; un humain décide s'il recontacte */ message_apres_stop: "Le prospect désinscrit a réécrit", engagement_demande: "Le prospect demande à négocier le prix" };
+  /* le bot ne répond plus après un STOP ; un humain décide s'il recontacte */ message_apres_stop: "Le prospect désinscrit a réécrit" };
 
 /* Lignes « libellé, valeur » d'une sortie du bot : pour l'action du CRM et pour le message aux équipes. */
 const lignes = (d = {}) => {

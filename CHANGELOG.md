@@ -1,5 +1,13 @@
 # Journal des versions
 
+## 2.20.4
+
+### Corrigé
+- Bot WhatsApp, contenu de l'annonce : aucun montant autre que le prix ne sort (taxe foncière, charges, dépenses d'énergie,
+  coûts, loyer ; une phrase de la description qui cite un montant est retirée entière) — slide 07 du script : « seul le prix de
+  l'annonce est communicable ». Distances retirées : le CRM ne donne aucune unité, et « Piscine » (273) y est une distance.
+- Retrait de l'alerte « demande à négocier le prix » : la demande d'engagement repart en escalade, comme le prévoit le script.
+
 ## 2.20.3
 
 ### Corrigé
