@@ -209,12 +209,15 @@ const biens = async (corps, R) => {
   let trouves = [];
   try { trouves = await c.biensCorrespondants(q, { max: Math.min(10, +corps.max || 10), dossier: String(R.photos || ""), exclure }); }
   catch (e) { return { biens: [], raison: "CRM indisponible", criteres: q }; }
+  /* copies (photos et annonce) pour la fiche et la visite qui suivront : en arrière-plan, la réponse au bot n'attend pas */
   const cat = require("./catalogue");
-  await cat.enregistrerBiens(trouves).catch(() => {});
-  for (const b of trouves) {   // photos et annonce dans la copie, pour la fiche et la visite qui suivront
-    const r = (await t.biens.getRows({ crm_id: String(b.id) }, { orderBy: "id", limit: 1 }))[0];
-    if (r) await t.biens.updateRow({ photos: JSON.stringify(b.photos || []), details: JSON.stringify(b.annonce || null), synchro_le: new Date() }, r.id).catch(() => {});
-  }
+  (async () => {
+    await cat.enregistrerBiens(trouves);
+    for (const b of trouves) {
+      const r = (await t.biens.getRows({ crm_id: String(b.id) }, { orderBy: "id", limit: 1 }))[0];
+      if (r) await t.biens.updateRow({ photos: JSON.stringify(b.photos || []), details: JSON.stringify(b.annonce || null), synchro_le: new Date() }, r.id);
+    }
+  })().catch(() => {});
   return { criteres: q, biens: trouves.map((b) => {
     const p = B.quiRecoit(b.negociateur_id, conf, b).personne;
     return { id: b.id, reference: b.reference || "", bien_public: { ...B.bienPublic(b), ...B.annonce(b.annonce), photos_publiques: (b.photos || []).slice(0, 10) }, negociateur: p ? { nom: p.nom } : null };

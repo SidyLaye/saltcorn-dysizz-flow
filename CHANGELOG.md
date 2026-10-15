@@ -1,5 +1,10 @@
 # Journal des versions
 
+## 2.19.1
+
+### Modifié
+- Bot WhatsApp, biens correspondants : les copies des biens trouvés sont enregistrées en arrière-plan ; la réponse au bot n'attend plus (7,8 s mesurées avant).
+
 ## 2.19.0
 
 ### Ajouté
