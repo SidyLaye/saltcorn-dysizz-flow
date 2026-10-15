@@ -1,5 +1,19 @@
 # Journal des versions
 
+## 2.20.0
+
+### Modifié
+- Bot WhatsApp, biens correspondants : le lieu dit par le prospect est compris. Une région (« région parisienne », « Île-de-France »,
+  « Occitanie », « Pays basque »…) devient ses départements ; un département (« le 91 ») ne garde que les codes postaux qui
+  commencent par son numéro (« contient 91 » ramenait aussi 19100) ; une commune est cherchée avec et sans traits d'union ni accents
+  (« Onet-le-Château » ne trouvait rien). Recherche légère par terme (sans photos), puis chargement complet des seuls biens montrés ;
+  départements mélangés dans le carrousel. Fonction `zonesDe` exportée par l'adaptateur Immofacile.
+- Bot WhatsApp, couleur du contact : écrite dès que le délai du projet est connu ou change (événement `temperature`), sans attendre
+  une sortie ; jamais réécrite si elle est déjà posée (le lead s'arrête et reprend quand il veut). Chaque écriture tentée reste
+  dans une ligne « crm » (prévu, fait, déjà posée, erreur).
+- `ecritures_crm` accepte une liste de numéros : seuls ces numéros sont écrits dans le CRM (essais sur un vrai contact).
+  Un numéro d'essai peut porter `contact_crm`.
+
 ## 2.19.1
 
 ### Modifié

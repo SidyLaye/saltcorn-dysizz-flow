@@ -10,6 +10,25 @@ const { completer, recent, PRENOM_MANQUANT, NOM_MANQUANT, emailTelephone } = req
 
 /* Jetons gardés d'un adaptateur à l'autre (un workflow en étapes en crée un par étape) :
    clé = empreinte de l'adresse, du site et des identifiants, jamais les identifiants eux-mêmes. */
+/* Lieu dit par un prospect → termes du critère « C.P. ou ville » (CONTIENT, seul critère de lieu cherchable) et, pour un département
+   ou une région, débuts de code postal à garder. Les noms de département sont traduits en numéro par l'IA du bot. */
+const REGIONS = [
+  [/parisien|ile de france|\bidf\b|paris et (sa )?region/, "75 77 78 91 92 93 94 95"],
+  [/occitanie/, "09 11 12 30 31 32 34 46 48 65 66 81 82"], [/nouvelle aquitaine/, "16 17 19 23 24 33 40 47 64 79 86 87"],
+  [/pays basque|cote basque/, "64"], [/provence|paca|cote d azur/, "04 05 06 13 83 84"], [/bretagne/, "22 29 35 56"], [/normandie/, "14 27 50 61 76"],
+  [/hauts de france/, "02 59 60 62 80"], [/grand est|alsace|lorraine/, "08 10 51 52 54 55 57 67 68 88"], [/bourgogne|franche comte/, "21 25 39 58 70 71 89 90"],
+  [/auvergne|rhone alpes/, "01 03 07 15 26 38 42 43 63 69 73 74"], [/centre val de loire/, "18 28 36 37 41 45"], [/pays de (la )?loire/, "44 49 53 72 85"], [/corse/, "20"],
+];
+const zonesDe = (lieu) => {
+  const k = cle(lieu), r = REGIONS.find(([re]) => re.test(k));
+  if (r) { const d = r[1].split(" "); return { termes: d, prefixes: d }; }
+  const dep = k.match(/^(?:(?:dans|en|sur|vers|secteur|departement|le|du)\s+)*(\d{2}|2a|2b)$/);
+  if (dep) { const d = /^2[ab]$/.test(dep[1]) ? "20" : dep[1]; return { termes: [d], prefixes: [d] }; }
+  const t = String(lieu).trim().replace(/^(?:(?:pr[eè]s de|autour de|aux alentours de|du c[oô]t[eé] de|secteur( de)?|vers|sur|dans|à|a)\s+)+/i, "").trim();
+  /* le CRM écrit « ONET LE CHATEAU » ou « Roquefort-les-Pins » selon l'origine de l'annonce : les deux écritures sont cherchées */
+  return { termes: [...new Set([cle(t), t].filter(Boolean))], prefixes: null };
+};
+
 const JETONS = new Map();
 const empreinte = (...x) => require("crypto").createHash("sha256").update(x.map(String).join("\n")).digest("hex");
 
@@ -286,15 +305,29 @@ const creer = (cfg = {}) => {
        comprises (100 biens au plus par page avec fetch). Opérateurs acceptés par l'API : EGAL, CONTIENT, INFERIEUR, SUPERIEUR. */
     biensCorrespondants: async (q = {}, { max = 10, dossier = "", exclure = [] } = {}) => {
       const c = [{ id: await cleXml("Statut"), operator: "EGAL", value: "EnCours" }];
-      if (q.lieu) c.push({ id: await cleXml("CPVilleweb", "CPVille"), operator: "CONTIENT", value: String(q.lieu) });
+      const CPV = await cleXml("CPVilleweb", "CPVille"), z = q.lieu ? zonesDe(q.lieu) : null;
       if (q.type) { const code = await codeType(q.type).catch(() => null); if (code) c.push({ id: await cleXml("TypeBien"), operator: "EGAL", value: code }); }
       if (+q.prix_max > 0) c.push({ id: await cleXml("Prix"), operator: "INFERIEUR", value: String(Math.round(+q.prix_max)) });
       if (+q.prix_min > 0) c.push({ id: await cleXml("Prix"), operator: "SUPERIEUR", value: String(Math.round(+q.prix_min)) });
       if (+q.pieces_min > 0) c.push({ id: await cleXml("NbPieces", "NbPiece"), operator: "SUPERIEUR", value: String(Math.max(0, Math.round(+q.pieces_min) - 1)) });
       if (+q.surface_min > 0) c.push({ id: await cleXml("Surface"), operator: "SUPERIEUR", value: String(Math.round(+q.surface_min)) });
-      if (c.length < 2) return [];   // jamais tout le catalogue : un lieu, un type ou un budget au moins
+      if (c.length < 2 && !(z && z.termes.length)) return [];   // jamais tout le catalogue : un lieu, un type ou un budget au moins
       const sans = new Set(exclure.map(String));
-      const l = data(await appel("POST", `/products/search?fetch=${FETCH},criteres_flag,descriptions,products_photos`, { criterias: c, status_web: true, count: Math.min(30, max + sans.size + 5) }));
+      const COMPLET = `${FETCH},criteres_flag,descriptions,products_photos`, avec = (t) => [...c, { id: CPV, operator: "CONTIENT", value: t }];
+      let l;
+      if (z) {
+        /* Lieu : recherche légère par terme (sans photos : 5 fois plus rapide), tri sur le début du code postal pour un département
+           (« contient 91 » ramène aussi 19100), puis chargement complet des seuls biens retenus, un par un, en parallèle. */
+        // ponytail: un appel par département en parallèle (13 pour l'Occitanie) ; un catalogue local complet le remplacera
+        const lots = await Promise.all(z.termes.map((t) => appel("POST", "/products/search?fetch=criteres_text", { criterias: avec(t), status_web: true, count: 100 }).then(data).catch(() => [])));
+        const gardes = [];
+        for (const [j, lot] of lots.entries()) for (const p of Array.isArray(lot) ? lot : []) {
+          const b = p && !sans.has(String(p.id)) && !gardes.some((g) => g.id === p.id) ? await versBien(p) : null;
+          if (b && (!z.prefixes || (b.code_postal || "").startsWith(z.prefixes[j]))) gardes.push({ id: p.id, j, n: gardes.filter((g) => g.j === j).length });
+        }
+        gardes.sort((a, b) => a.n - b.n || a.j - b.j);   // départements mélangés : pas dix fois Paris
+        l = await Promise.all(gardes.slice(0, max + 3).map((g) => appel("GET", `/products/${Number(g.id)}?fetch=${COMPLET}`).then(data).catch(() => null)));
+      } else l = data(await appel("POST", `/products/search?fetch=${COMPLET}`, { criterias: c, status_web: true, count: Math.min(30, max + sans.size + 5) }));
       const out = [];
       for (const p of Array.isArray(l) ? l : []) {
         if (!p || sans.has(String(p.id))) continue;
@@ -501,4 +534,4 @@ const creer = (cfg = {}) => {
   };
 };
 
-module.exports = { creer };
+module.exports = { creer, zonesDe };

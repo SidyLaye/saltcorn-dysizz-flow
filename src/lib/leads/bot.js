@@ -139,9 +139,11 @@ const plan = (evenements, R = {}) => {
   for (const e of evenements || []) {
     const d = (e && e.donnees) || {};
     if (e.type === "optout") out.optout = true;
+    /* la couleur suit le délai dès qu'il est connu ou qu'il change, sans attendre une sortie : le lead peut s'arrêter à tout moment */
+    else if (e.type === "temperature") { const couleur = (R.couleurs || {})[d.temperature]; if (couleur && !out.crm.some((x) => x.op === "couleurContact" && x.couleur === couleur)) out.crm.push({ op: "couleurContact", couleur }); }
     else if (e.type === "sortie") {
       const couleur = (R.couleurs || {})[d.temperature];
-      if (couleur) out.crm.push({ op: "couleurContact", couleur });
+      if (couleur && !out.crm.some((x) => x.op === "couleurContact" && x.couleur === couleur)) out.crm.push({ op: "couleurContact", couleur });
       const action = (R.actions || {})[d.code] || (R.actions || {}).defaut;
       if (action) out.crm.push({ op: "ajouterAction", action_id: action, texte: "WhatsApp. " + lignes(d).map(([l, v]) => `${l} : ${v}`).join("\n") });
       if (d.code !== "OUT-6") out.avis.push({ titre: DEMANDES[d.code] || "Demande", qualifie: true, prioritaire: !!d.lead_prioritaire, donnees: d, referents: [d.lead_financement && "f", d.lead_travaux && "w", d.lead_relocation && "i"].filter(Boolean) });

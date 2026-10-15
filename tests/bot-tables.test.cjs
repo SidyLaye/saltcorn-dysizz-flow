@@ -83,6 +83,16 @@ const sortie = (code, plus = {}) => ({ type: "sortie", noeud: "TB3", quand: "202
   MODE = "ombre"; crm.ecritures.length = 0;
   assert.strictEqual((await repondre("evenement", { ...tour, event_id: "ev3" })).crm, "non écrit"); assert.strictEqual(crm.ecritures.length, 0); MODE = "reel";
 
+  /* couleur dès que le délai est connu (sans sortie), une seule fois tant qu'elle ne change pas ; écritures limitées aux numéros listés */
+  const BOT0 = BOT; BOT = { ...BOT, ecritures_crm: ["33688888888"], couleurs: { HOT: 5, WARM: 8 }, numeros_essai: { 33688888888: { reference: "30123", prenom: "Awa", contact_crm: "777" } } };
+  const temp = (id, t) => repondre("evenement", { telephone: "33688888888", event_id: id, evenements: [{ type: "temperature", donnees: { temperature: t } }] });
+  crm.ecritures.length = 0; await temp("ev3a", "HOT");
+  assert.deepStrictEqual(crm.ecritures.map((e) => [e.op, e.id]), [["couleurContact", "777"]]);
+  await temp("ev3b", "HOT"); assert.strictEqual(crm.ecritures.length, 1, "même couleur : pas réécrite quand le lead reprend");
+  await temp("ev3c", "WARM"); assert.strictEqual(crm.ecritures.length, 2, "couleur changée : réécrite");
+  assert.strictEqual((await repondre("evenement", { ...tour, event_id: "ev3d" })).crm, "non écrit", "numéro hors liste : CRM non écrit");
+  BOT = BOT0;
+
   /* numéro d'essai : pas de dossier, bien réel seulement lu, messages aux adresses d'essai même en service */
   BOT = { ...BOT, numeros_essai: { 33699999999: { reference: "30123", prenom: "Awa" } }, whatsapp: { phone_number_id: "123", variable_jeton: "JETON_WA" } }; mails.length = 0; crm.ecritures.length = 0;
   c = await repondre("contexte", { telephone: "33699999999" });

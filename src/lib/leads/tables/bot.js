@@ -28,7 +28,7 @@ const trouver = async (t, corps, R) => {
   if (tel.length < 8 || tel.length > 15) throw perm("téléphone invalide");
   const essai = (R.numeros_essai || {})[tel];
   if (essai) return { tel, dossier: { id: null, essai: true, bien_crm: essai.bien || null, bien_ref: essai.reference || null, negociateur: essai.negociateur || null, prenom: essai.prenom || "",
-    nom: essai.nom || essai.prenom || "Essai", email: essai.email || null, portail: "essai",
+    nom: essai.nom || essai.prenom || "Essai", email: essai.email || null, portail: "essai", contact_crm: essai.contact_crm || null,
     /* lead d'essai : son projet (mêmes clés que les recherches du CRM) et son message au portail, facultatifs */
     projet: essai.projet && typeof essai.projet === "object" ? essai.projet : null, message: essai.message || "" } };
   const rows = await t.dossiers.getRows({ tel9: B.tel9(tel) }, { orderBy: "maj_le", orderDesc: true, limit: 10 });
@@ -109,16 +109,21 @@ const evenement = async (corps, R) => {
   const { conf, crm, reglages: RA } = await charger();
 
   if (p.crm.length) {
-    const ecrire = R.ecritures_crm === true && crm.mode === "reel" && dos.contact_crm;
+    /* ecritures_crm : true = tous les leads ; liste de numéros = ces numéros seulement (essais sur un vrai contact) */
+    const ecrire = (R.ecritures_crm === true || (Array.isArray(R.ecritures_crm) && R.ecritures_crm.map(String).includes(tel))) && crm.mode === "reel" && dos.contact_crm;
     const faits = [];
     if (ecrire) {
       const c = flowApi().crmDepuisCoffre(crm.type, crm.reglages, crm.prefixe, "reel");
+      /* couleur déjà posée par un tour précédent (le lead s'arrête et reprend quand il veut) : pas de réécriture */
+      const avant = (await tb.getRows({ tel9, type: "crm" }, { orderBy: "id", orderDesc: true, limit: 20 })).map((r) => json(r.donnees, {}))
+        .flatMap((d) => (d.resultats || []).filter((x) => x.op === "couleurContact" && x.fait).map((x) => x.couleur))[0];
       for (const a of p.crm) {
+        if (a.op === "couleurContact" && String(a.couleur) === String(avant)) { faits.push({ op: a.op, couleur: a.couleur, fait: true, deja: true }); continue; }
         try {
           if (a.op === "couleurContact") await c.couleurContact(dos.contact_crm, a.couleur);
           else await c.ajouterAction(dos.contact_crm, { action_id: a.action_id, texte: a.texte, negociateur: dos.negociateur });
-          faits.push({ op: a.op, fait: true });
-        } catch (e) { faits.push({ op: a.op, fait: false, erreur: court(e.message, 300) }); }
+          faits.push({ op: a.op, couleur: a.couleur, fait: true });
+        } catch (e) { faits.push({ op: a.op, couleur: a.couleur, fait: false, erreur: court(e.message, 300) }); }
       }
     }
     await noter("crm", { ecrit: !!ecrire, contact: dos.contact_crm || null, prevu: p.crm, resultats: faits });

@@ -1,4 +1,4 @@
-/* dysizz-flow 2.19.1 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.20.0 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.19.1" : "dev";
+    var VERSION2 = true ? "2.20.0" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -95867,6 +95867,36 @@ var require_immofacile = __commonJS({
     var { typeBien } = require_valeurs();
     var { cle } = require_texte();
     var { completer, recent, PRENOM_MANQUANT, NOM_MANQUANT, emailTelephone } = require_contact();
+    var REGIONS = [
+      [/parisien|ile de france|\bidf\b|paris et (sa )?region/, "75 77 78 91 92 93 94 95"],
+      [/occitanie/, "09 11 12 30 31 32 34 46 48 65 66 81 82"],
+      [/nouvelle aquitaine/, "16 17 19 23 24 33 40 47 64 79 86 87"],
+      [/pays basque|cote basque/, "64"],
+      [/provence|paca|cote d azur/, "04 05 06 13 83 84"],
+      [/bretagne/, "22 29 35 56"],
+      [/normandie/, "14 27 50 61 76"],
+      [/hauts de france/, "02 59 60 62 80"],
+      [/grand est|alsace|lorraine/, "08 10 51 52 54 55 57 67 68 88"],
+      [/bourgogne|franche comte/, "21 25 39 58 70 71 89 90"],
+      [/auvergne|rhone alpes/, "01 03 07 15 26 38 42 43 63 69 73 74"],
+      [/centre val de loire/, "18 28 36 37 41 45"],
+      [/pays de (la )?loire/, "44 49 53 72 85"],
+      [/corse/, "20"]
+    ];
+    var zonesDe = (lieu) => {
+      const k = cle(lieu), r = REGIONS.find(([re]) => re.test(k));
+      if (r) {
+        const d = r[1].split(" ");
+        return { termes: d, prefixes: d };
+      }
+      const dep = k.match(/^(?:(?:dans|en|sur|vers|secteur|departement|le|du)\s+)*(\d{2}|2a|2b)$/);
+      if (dep) {
+        const d = /^2[ab]$/.test(dep[1]) ? "20" : dep[1];
+        return { termes: [d], prefixes: [d] };
+      }
+      const t = String(lieu).trim().replace(/^(?:(?:pr[eè]s de|autour de|aux alentours de|du c[oô]t[eé] de|secteur( de)?|vers|sur|dans|à|a)\s+)+/i, "").trim();
+      return { termes: [...new Set([cle(t), t].filter(Boolean))], prefixes: null };
+    };
     var JETONS = /* @__PURE__ */ new Map();
     var empreinte = (...x) => require("crypto").createHash("sha256").update(x.map(String).join("\n")).digest("hex");
     var creer = (cfg = {}) => {
@@ -96218,7 +96248,7 @@ var require_immofacile = __commonJS({
            comprises (100 biens au plus par page avec fetch). Opérateurs acceptés par l'API : EGAL, CONTIENT, INFERIEUR, SUPERIEUR. */
         biensCorrespondants: async (q = {}, { max = 10, dossier = "", exclure = [] } = {}) => {
           const c = [{ id: await cleXml("Statut"), operator: "EGAL", value: "EnCours" }];
-          if (q.lieu) c.push({ id: await cleXml("CPVilleweb", "CPVille"), operator: "CONTIENT", value: String(q.lieu) });
+          const CPV = await cleXml("CPVilleweb", "CPVille"), z = q.lieu ? zonesDe(q.lieu) : null;
           if (q.type) {
             const code = await codeType(q.type).catch(() => null);
             if (code) c.push({ id: await cleXml("TypeBien"), operator: "EGAL", value: code });
@@ -96227,9 +96257,20 @@ var require_immofacile = __commonJS({
           if (+q.prix_min > 0) c.push({ id: await cleXml("Prix"), operator: "SUPERIEUR", value: String(Math.round(+q.prix_min)) });
           if (+q.pieces_min > 0) c.push({ id: await cleXml("NbPieces", "NbPiece"), operator: "SUPERIEUR", value: String(Math.max(0, Math.round(+q.pieces_min) - 1)) });
           if (+q.surface_min > 0) c.push({ id: await cleXml("Surface"), operator: "SUPERIEUR", value: String(Math.round(+q.surface_min)) });
-          if (c.length < 2) return [];
+          if (c.length < 2 && !(z && z.termes.length)) return [];
           const sans = new Set(exclure.map(String));
-          const l = data(await appel("POST", `/products/search?fetch=${FETCH},criteres_flag,descriptions,products_photos`, { criterias: c, status_web: true, count: Math.min(30, max + sans.size + 5) }));
+          const COMPLET = `${FETCH},criteres_flag,descriptions,products_photos`, avec = (t) => [...c, { id: CPV, operator: "CONTIENT", value: t }];
+          let l;
+          if (z) {
+            const lots = await Promise.all(z.termes.map((t) => appel("POST", "/products/search?fetch=criteres_text", { criterias: avec(t), status_web: true, count: 100 }).then(data).catch(() => [])));
+            const gardes = [];
+            for (const [j, lot] of lots.entries()) for (const p of Array.isArray(lot) ? lot : []) {
+              const b = p && !sans.has(String(p.id)) && !gardes.some((g) => g.id === p.id) ? await versBien(p) : null;
+              if (b && (!z.prefixes || (b.code_postal || "").startsWith(z.prefixes[j]))) gardes.push({ id: p.id, j, n: gardes.filter((g) => g.j === j).length });
+            }
+            gardes.sort((a, b) => a.n - b.n || a.j - b.j);
+            l = await Promise.all(gardes.slice(0, max + 3).map((g) => appel("GET", `/products/${Number(g.id)}?fetch=${COMPLET}`).then(data).catch(() => null)));
+          } else l = data(await appel("POST", `/products/search?fetch=${COMPLET}`, { criterias: c, status_web: true, count: Math.min(30, max + sans.size + 5) }));
           const out = [];
           for (const p of Array.isArray(l) ? l : []) {
             if (!p || sans.has(String(p.id))) continue;
@@ -96447,7 +96488,7 @@ var require_immofacile = __commonJS({
         }
       };
     };
-    module2.exports = { creer };
+    module2.exports = { creer, zonesDe };
   }
 });
 
@@ -98805,9 +98846,12 @@ var require_bot = __commonJS({
       for (const e of evenements || []) {
         const d = e && e.donnees || {};
         if (e.type === "optout") out.optout = true;
-        else if (e.type === "sortie") {
+        else if (e.type === "temperature") {
           const couleur = (R.couleurs || {})[d.temperature];
-          if (couleur) out.crm.push({ op: "couleurContact", couleur });
+          if (couleur && !out.crm.some((x) => x.op === "couleurContact" && x.couleur === couleur)) out.crm.push({ op: "couleurContact", couleur });
+        } else if (e.type === "sortie") {
+          const couleur = (R.couleurs || {})[d.temperature];
+          if (couleur && !out.crm.some((x) => x.op === "couleurContact" && x.couleur === couleur)) out.crm.push({ op: "couleurContact", couleur });
           const action = (R.actions || {})[d.code] || (R.actions || {}).defaut;
           if (action) out.crm.push({ op: "ajouterAction", action_id: action, texte: "WhatsApp. " + lignes(d).map(([l, v]) => `${l} : ${v}`).join("\n") });
           if (d.code !== "OUT-6") out.avis.push({ titre: DEMANDES[d.code] || "Demande", qualifie: true, prioritaire: !!d.lead_prioritaire, donnees: d, referents: [d.lead_financement && "f", d.lead_travaux && "w", d.lead_relocation && "i"].filter(Boolean) });
@@ -98879,6 +98923,7 @@ var require_bot2 = __commonJS({
         nom: essai.nom || essai.prenom || "Essai",
         email: essai.email || null,
         portail: "essai",
+        contact_crm: essai.contact_crm || null,
         /* lead d'essai : son projet (mêmes clés que les recherches du CRM) et son message au portail, facultatifs */
         projet: essai.projet && typeof essai.projet === "object" ? essai.projet : null,
         message: essai.message || ""
@@ -98956,17 +99001,22 @@ var require_bot2 = __commonJS({
       const dos = dossier || { id: null, nom: "Num\xE9ro sans dossier" };
       const { conf, crm, reglages: RA } = await charger();
       if (p.crm.length) {
-        const ecrire = R.ecritures_crm === true && crm.mode === "reel" && dos.contact_crm;
+        const ecrire = (R.ecritures_crm === true || Array.isArray(R.ecritures_crm) && R.ecritures_crm.map(String).includes(tel)) && crm.mode === "reel" && dos.contact_crm;
         const faits = [];
         if (ecrire) {
           const c = flowApi().crmDepuisCoffre(crm.type, crm.reglages, crm.prefixe, "reel");
+          const avant = (await tb.getRows({ tel9, type: "crm" }, { orderBy: "id", orderDesc: true, limit: 20 })).map((r) => json(r.donnees, {})).flatMap((d) => (d.resultats || []).filter((x) => x.op === "couleurContact" && x.fait).map((x) => x.couleur))[0];
           for (const a of p.crm) {
+            if (a.op === "couleurContact" && String(a.couleur) === String(avant)) {
+              faits.push({ op: a.op, couleur: a.couleur, fait: true, deja: true });
+              continue;
+            }
             try {
               if (a.op === "couleurContact") await c.couleurContact(dos.contact_crm, a.couleur);
               else await c.ajouterAction(dos.contact_crm, { action_id: a.action_id, texte: a.texte, negociateur: dos.negociateur });
-              faits.push({ op: a.op, fait: true });
+              faits.push({ op: a.op, couleur: a.couleur, fait: true });
             } catch (e) {
-              faits.push({ op: a.op, fait: false, erreur: court(e.message, 300) });
+              faits.push({ op: a.op, couleur: a.couleur, fait: false, erreur: court(e.message, 300) });
             }
           }
         }
