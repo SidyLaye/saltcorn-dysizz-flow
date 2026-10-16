@@ -1,4 +1,4 @@
-/* dysizz-flow 2.22.0 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.23.0 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.22.0" : "dev";
+    var VERSION2 = true ? "2.23.0" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -98835,7 +98835,64 @@ var require_traduction = __commonJS({
       });
       return out.includes(null) ? null : out.join(" + ");
     };
-    module2.exports = { traduireValeur };
+    var NOMS = {
+      "mode chauffage": "Heating",
+      "type chauffage": "Heating system",
+      "surface terrain": "Land",
+      "salle s de bains": "Bathrooms",
+      "salle s d eau": "Shower rooms",
+      "consommation energie primaire": "Energy rating (DPE)",
+      "gaz effet de serre": "Greenhouse gas (GES)",
+      "annee construction": "Year built",
+      "construction": "Construction",
+      "vue": "View",
+      "type de stationnement": "Parking",
+      "piscine": "Pool",
+      "etat general": "General condition",
+      "etat exterieur": "Exterior condition",
+      "exposition": "Aspect",
+      "cuisine": "Kitchen",
+      "standing": "Standing",
+      "style": "Style",
+      "eau chaude": "Hot water",
+      "assainissement": "Drainage",
+      "nombre etages": "Floors",
+      "nombre de niveaux": "Levels",
+      "surface sejour": "Living room",
+      "terrasse": "Terrace",
+      "balcon": "Balcony",
+      "cave": "Cellar",
+      "garage": "Garage",
+      "jardin": "Garden",
+      "nombre de wc": "Toilets",
+      "wc": "Toilets",
+      "adsl possible": "Broadband available",
+      "fibre": "Fibre",
+      "cheminee": "Fireplace",
+      "climatisation": "Air conditioning"
+    };
+    var traduireNom = (nom) => NOMS[cle(nom)] || null;
+    var TYPES2 = {
+      maison: "House",
+      appartement: "Apartment",
+      terrain: "Plot of land",
+      propriete: "Property",
+      immeuble: "Building",
+      local: "Commercial premises",
+      villa: "Villa",
+      chateau: "Ch\xE2teau",
+      ferme: "Farmhouse",
+      grange: "Barn",
+      parking: "Parking",
+      bureau: "Office",
+      commerce: "Business"
+    };
+    var typeEn = (t) => {
+      const k = cle(t);
+      const x = Object.keys(TYPES2).find((m) => k.startsWith(m));
+      return x ? TYPES2[x] : null;
+    };
+    module2.exports = { traduireValeur, traduireNom, typeEn };
   }
 });
 
@@ -99120,24 +99177,38 @@ ${fil.length ? `<p style="margin:14px 0 4px;color:#667">L'\xE9change</p><div sty
 ${aurait_recu ? `<p style="color:#b45309;font-size:12px">Essai : en service, ce message irait \xE0 ${esc(aurait_recu.join(", ") || "personne")}.</p>` : ""}</div>`;
       return { objet: objet.slice(0, 300), html };
     };
-    var blocsFiche = (bien, quand = /* @__PURE__ */ new Date()) => {
+    var blocsFiche = (bien, quand = /* @__PURE__ */ new Date(), langue = "fr", photos = []) => {
       const b = bienPublic(bien);
       if (!b || !(b.type || b.ville)) return null;
+      const en = langue === "en", T = require_traduction(), an = annonce(bien && bien.annonce);
       const lieu = [b.ville, b.code_postal && `(${b.code_postal})`].filter(Boolean).join(" ");
-      const titre = [majuscule(b.type) || "Bien", b.pieces && `${b.pieces} pi\xE8ces`, b.ville && `\xE0 ${b.ville}`].filter(Boolean).join(" ");
+      const typeAff = en ? T.typeEn(b.type) || "Property" : majuscule(b.type) || "Bien";
+      const titre = en ? [typeAff, b.pieces && `${b.pieces} rooms`, b.ville].filter(Boolean).join(", ") : [typeAff, b.pieces && `${b.pieces} pi\xE8ces`, b.ville && `\xE0 ${b.ville}`].filter(Boolean).join(" ");
+      const L = en ? ["Feature", "Details", "Type", "Rooms", "Bedrooms", "Living area", "Location", "Price"] : ["Caract\xE9ristique", "D\xE9tail", "Type", "Pi\xE8ces", "Chambres", "Surface", "Localisation", "Prix"];
+      const details = en ? Object.entries(an.details_en || {}).map(([k, v]) => [T.traduireNom(k), v]).filter(([k]) => k) : Object.entries(an.details || {});
       const tableau = [
-        ["Caract\xE9ristique", "D\xE9tail"],
-        ["Type", majuscule(b.type)],
-        ["Pi\xE8ces", b.pieces],
-        ["Chambres", b.chambres],
-        ["Surface", b.surface && `${b.surface} m\xB2`],
-        ["Localisation", lieu],
-        ["Prix", b.prix && `${milliers(b.prix)} \u20AC`],
-        /* contenu public de l'annonce : 12 caractéristiques au plus, dans l'ordre du CRM */
-        ...Object.entries(annonce(bien && bien.annonce).details || {}).slice(0, 12)
+        [L[0], L[1]],
+        [L[2], typeAff],
+        [L[3], b.pieces],
+        [L[4], b.chambres],
+        [L[5], b.surface && `${b.surface} m\xB2`],
+        [L[6], lieu],
+        [L[7], b.prix && (en ? `\u20AC${String(b.prix).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}` : `${milliers(b.prix)} \u20AC`)],
+        ...details.slice(0, 14)
       ].filter(([, v]) => v).map(([l, v]) => [l, String(v)]);
+      const dans = (o) => o && (o[en ? "en" : "fr"] || !en && o.en || "") || "";
+      const accroche = dans(an.titre_annonce), description = String(dans(an.description_annonce)).slice(0, 1800);
+      const ph = (photos || []).filter((u) => /^https:\/\//.test(u)).slice(0, 4);
       const jour = quand.toLocaleDateString("fr-FR", { timeZone: "Europe/Paris", day: "2-digit", month: "2-digit", year: "numeric" });
-      return [{ titre }, { tableau, taille: 10.5, chiffres_a_droite: false }, { petit: `Informations de l'annonce au ${jour}. Document non contractuel.` }];
+      return [
+        { titre },
+        ...accroche ? [{ t2: accroche }] : [],
+        ...ph[0] ? [{ image: ph[0] }] : [],
+        { tableau, taille: 10.5, chiffres_a_droite: false },
+        ...description ? [{ texte: description }] : [],
+        ...ph.slice(1).map((u) => ({ image: u, largeur: 380 })),
+        { petit: en ? `Listing information as of ${jour}. Not a contractual document.` : `Informations de l'annonce au ${jour}. Document non contractuel.` }
+      ];
     };
     module2.exports = { CHAMPS_PUBLICS, cartesPourBot, enVente, bienPublic, annonce, dejaConnu, nettoyer, tel9, quiRecoit, contexte, plan, lignes, texteScores, mailEquipe, blocsFiche, majuscule, nomVille };
   }
@@ -99511,6 +99582,22 @@ var require_bot2 = __commonJS({
       const j = await appel("/messages", { method: "POST", headers: { ...h, "Content-Type": "application/json" }, body: JSON.stringify({ messaging_product: "whatsapp", to: a, type: "document", document: { id: media.id, filename: nom } }) });
       return j.messages && j.messages[0] && j.messages[0].id;
     };
+    var telechargerPhotos = async (urls, f = globalThis.fetch, { max = 4, octets = 3e6, delai = 6e3 } = {}) => {
+      const out = /* @__PURE__ */ new Map();
+      await Promise.all((urls || []).filter((u) => /^https:\/\//.test(String(u))).slice(0, max).map(async (u) => {
+        const c = new AbortController(), minuteur = setTimeout(() => c.abort(), delai);
+        try {
+          const r = await f(u, { signal: c.signal });
+          if (!r.ok || !/image\/(jpe?g|png)/i.test(r.headers && r.headers.get("content-type") || "")) return;
+          const b = Buffer.from(await r.arrayBuffer());
+          if (b.length && b.length <= octets) out.set(u, b);
+        } catch (e) {
+        } finally {
+          clearTimeout(minuteur);
+        }
+      }));
+      return new Map([...urls].filter((u) => out.has(u)).map((u) => [u, out.get(u)]));
+    };
     var fiche = async (corps, R) => {
       const t = await S.tables(), tb = await tableBot(t);
       const { tel, dossier } = await trouver(t, corps, R);
@@ -99523,12 +99610,15 @@ var require_bot2 = __commonJS({
         const W = R.whatsapp || {};
         const jeton = W.variable_jeton ? await require_garde().lireSecret(W.variable_jeton) : null;
         if (!W.phone_number_id || !jeton) return echec("WhatsApp non r\xE9gl\xE9");
-        const blocs = B.blocsFiche(await lireBien((await charger()).crm, dossier, R));
+        const bien = await lireBien((await charger()).crm, dossier, R), en = corps.langue === "en";
+        const urls = R.photos && bien && Array.isArray(bien.photos) ? bien.photos : [];
+        const ph = await telechargerPhotos(urls);
+        const blocs = B.blocsFiche(bien, /* @__PURE__ */ new Date(), en ? "en" : "fr", urls.filter((u) => ph.has(u)));
         if (!blocs) return echec("bien illisible dans le CRM");
-        const buf = await require_pdf().ecrirePdf(blocs, { titre: "Fiche annonce", pied: false, producteur: "", couleur: "#374151" });
+        const buf = await require_pdf().ecrirePdf(blocs, { titre: en ? "Property sheet" : "Fiche annonce", pied: false, producteur: "", couleur: "#374151" }, async (u) => ph.get(u));
         let identifiant;
         try {
-          identifiant = await envoyerDocument({ phone_number_id: W.phone_number_id, jeton, a: tel, buf, nom: "fiche-annonce.pdf" });
+          identifiant = await envoyerDocument({ phone_number_id: W.phone_number_id, jeton, a: tel, buf, nom: en ? "property-sheet.pdf" : "fiche-annonce.pdf" });
         } catch (e) {
           await tb.insertRow({ dossier: dossier.id || null, tel9: B.tel9(tel), type: "fiche_echec", quand: /* @__PURE__ */ new Date(), texte: court(e.message, 500) });
           return echec("envoi WhatsApp refus\xE9");
@@ -99587,7 +99677,7 @@ var require_bot2 = __commonJS({
       const R = json((await require_conf().reglages()).bot, {});
       return ACTIONS2[k](corps && typeof corps === "object" ? corps : {}, R && typeof R === "object" ? R : {});
     };
-    module2.exports = { repondre, contexte, evenement, fiche, preparerCartes };
+    module2.exports = { repondre, contexte, evenement, fiche, preparerCartes, telechargerPhotos };
   }
 });
 

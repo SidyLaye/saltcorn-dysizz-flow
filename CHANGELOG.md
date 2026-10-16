@@ -1,5 +1,12 @@
 # Journal des versions
 
+## 2.23.0
+
+### Ajouté
+- Fiche annonce PDF : photos autorisées (4 au plus, téléchargées d'abord, une photo en échec n'apparaît pas), accroche et description
+  nettoyée de l'annonce, caractéristiques ; dans la langue du lead (noms et valeurs traduits, prix au format anglais) ; nom du fichier selon
+  la langue. Toujours page blanche, sans marque, une seule fois.
+
 ## 2.22.0
 
 ### Ajouté

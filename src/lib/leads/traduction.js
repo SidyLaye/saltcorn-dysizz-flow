@@ -66,4 +66,19 @@ const traduireValeur = (valeur) => {
   return out.includes(null) ? null : out.join(" + ");
 };
 
-module.exports = { traduireValeur };
+/* noms de caractéristiques (critères Immofacile) en anglais ; un nom absent d'ici n'est pas montré en anglais */
+const NOMS = {
+  "mode chauffage": "Heating", "type chauffage": "Heating system", "surface terrain": "Land", "salle s de bains": "Bathrooms",
+  "salle s d eau": "Shower rooms", "consommation energie primaire": "Energy rating (DPE)", "gaz effet de serre": "Greenhouse gas (GES)",
+  "annee construction": "Year built", "construction": "Construction", "vue": "View", "type de stationnement": "Parking", "piscine": "Pool",
+  "etat general": "General condition", "etat exterieur": "Exterior condition", "exposition": "Aspect", "cuisine": "Kitchen", "standing": "Standing",
+  "style": "Style", "eau chaude": "Hot water", "assainissement": "Drainage", "nombre etages": "Floors", "nombre de niveaux": "Levels",
+  "surface sejour": "Living room", "terrasse": "Terrace", "balcon": "Balcony", "cave": "Cellar", "garage": "Garage", "jardin": "Garden",
+  "nombre de wc": "Toilets", "wc": "Toilets", "adsl possible": "Broadband available", "fibre": "Fibre", "cheminee": "Fireplace", "climatisation": "Air conditioning",
+};
+const traduireNom = (nom) => NOMS[cle(nom)] || null;
+const TYPES = { maison: "House", appartement: "Apartment", terrain: "Plot of land", propriete: "Property", immeuble: "Building", local: "Commercial premises",
+  villa: "Villa", chateau: "Château", ferme: "Farmhouse", grange: "Barn", parking: "Parking", bureau: "Office", commerce: "Business" };
+const typeEn = (t) => { const k = cle(t); const x = Object.keys(TYPES).find((m) => k.startsWith(m)); return x ? TYPES[x] : null; };
+
+module.exports = { traduireValeur, traduireNom, typeEn };

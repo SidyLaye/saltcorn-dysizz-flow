@@ -214,6 +214,21 @@ const envoyerDocument = async ({ phone_number_id, jeton, a, buf, nom }) => {
   return j.messages && j.messages[0] && j.messages[0].id;
 };
 
+/* photos de la fiche : https, JPEG ou PNG, 3 Mo au plus chacune, 4 au plus, 6 s au plus ; une erreur = photo absente */
+const telechargerPhotos = async (urls, f = globalThis.fetch, { max = 4, octets = 3e6, delai = 6000 } = {}) => {
+  const out = new Map();
+  await Promise.all((urls || []).filter((u) => /^https:\/\//.test(String(u))).slice(0, max).map(async (u) => {
+    const c = new AbortController(), minuteur = setTimeout(() => c.abort(), delai);
+    try {
+      const r = await f(u, { signal: c.signal });
+      if (!r.ok || !/image\/(jpe?g|png)/i.test((r.headers && r.headers.get("content-type")) || "")) return;
+      const b = Buffer.from(await r.arrayBuffer());
+      if (b.length && b.length <= octets) out.set(u, b);
+    } catch (e) { /* photo absente */ } finally { clearTimeout(minuteur); }
+  }));
+  return new Map([...urls].filter((u) => out.has(u)).map((u) => [u, out.get(u)]));   // ordre des photos gardé
+};
+
 const fiche = async (corps, R) => {
   const t = await S.tables(), tb = await tableBot(t);
   const { tel, dossier } = await trouver(t, corps, R);
@@ -226,11 +241,15 @@ const fiche = async (corps, R) => {
     const W = R.whatsapp || {};
     const jeton = W.variable_jeton ? await require("../../../garde").lireSecret(W.variable_jeton) : null;
     if (!W.phone_number_id || !jeton) return echec("WhatsApp non réglé");
-    const blocs = B.blocsFiche(await lireBien((await charger()).crm, dossier, R));
+    const bien = await lireBien((await charger()).crm, dossier, R), en = corps.langue === "en";
+    /* photos autorisées (dossier public du réglage « photos ») téléchargées d'abord : une photo qui échoue n'apparaît pas */
+    const urls = R.photos && bien && Array.isArray(bien.photos) ? bien.photos : [];
+    const ph = await telechargerPhotos(urls);
+    const blocs = B.blocsFiche(bien, new Date(), en ? "en" : "fr", urls.filter((u) => ph.has(u)));
     if (!blocs) return echec("bien illisible dans le CRM");
-    const buf = await require("../../pdf").ecrirePdf(blocs, { titre: "Fiche annonce", pied: false, producteur: "", couleur: "#374151" });
+    const buf = await require("../../pdf").ecrirePdf(blocs, { titre: en ? "Property sheet" : "Fiche annonce", pied: false, producteur: "", couleur: "#374151" }, async (u) => ph.get(u));
     let identifiant;
-    try { identifiant = await envoyerDocument({ phone_number_id: W.phone_number_id, jeton, a: tel, buf, nom: "fiche-annonce.pdf" }); }
+    try { identifiant = await envoyerDocument({ phone_number_id: W.phone_number_id, jeton, a: tel, buf, nom: en ? "property-sheet.pdf" : "fiche-annonce.pdf" }); }
     catch (e) { await tb.insertRow({ dossier: dossier.id || null, tel9: B.tel9(tel), type: "fiche_echec", quand: new Date(), texte: court(e.message, 500) }); return echec("envoi WhatsApp refusé"); }
     const horaire = new Date();
     await tb.insertRow({ dossier: dossier.id || null, tel9: B.tel9(tel), type: "fiche_envoyee", quand: horaire, donnees: JSON.stringify({ identifiant }) });
@@ -284,4 +303,4 @@ const repondre = async (action, corps) => {
   return ACTIONS[k](corps && typeof corps === "object" ? corps : {}, R && typeof R === "object" ? R : {});
 };
 
-module.exports = { repondre, contexte, evenement, fiche, preparerCartes };
+module.exports = { repondre, contexte, evenement, fiche, preparerCartes, telechargerPhotos };

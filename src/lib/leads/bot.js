@@ -196,17 +196,28 @@ ${aurait_recu ? `<p style="color:#b45309;font-size:12px">Essai : en service, ce 
 };
 
 /* Fiche du bien, en blocs pour ecrirePdf : page blanche, champs publics seulement, aucune marque. */
-const blocsFiche = (bien, quand = new Date()) => {
+/* Fiche annonce PDF (slides 04 à 22, R09 ; parcours page 15) : page blanche, sans marque ni nom d'agence, dans la langue du lead.
+   photos : adresses des photos autorisées DÉJÀ téléchargées par l'appelant (une photo absente n'apparaît pas, jamais d'erreur imprimée). */
+const blocsFiche = (bien, quand = new Date(), langue = "fr", photos = []) => {
   const b = bienPublic(bien);
   if (!b || !(b.type || b.ville)) return null;
+  const en = langue === "en", T = require("./traduction"), an = annonce(bien && bien.annonce);
   const lieu = [b.ville, b.code_postal && `(${b.code_postal})`].filter(Boolean).join(" ");
-  const titre = [majuscule(b.type) || "Bien", b.pieces && `${b.pieces} pièces`, b.ville && `à ${b.ville}`].filter(Boolean).join(" ");
-  const tableau = [["Caractéristique", "Détail"], ["Type", majuscule(b.type)], ["Pièces", b.pieces], ["Chambres", b.chambres], ["Surface", b.surface && `${b.surface} m²`],
-    ["Localisation", lieu], ["Prix", b.prix && `${milliers(b.prix)} €`],
-    /* contenu public de l'annonce : 12 caractéristiques au plus, dans l'ordre du CRM */
-    ...Object.entries(annonce(bien && bien.annonce).details || {}).slice(0, 12)].filter(([, v]) => v).map(([l, v]) => [l, String(v)]);
+  const typeAff = en ? (T.typeEn(b.type) || "Property") : majuscule(b.type) || "Bien";
+  const titre = en ? [typeAff, b.pieces && `${b.pieces} rooms`, b.ville].filter(Boolean).join(", ")
+    : [typeAff, b.pieces && `${b.pieces} pièces`, b.ville && `à ${b.ville}`].filter(Boolean).join(" ");
+  const L = en ? ["Feature", "Details", "Type", "Rooms", "Bedrooms", "Living area", "Location", "Price"] : ["Caractéristique", "Détail", "Type", "Pièces", "Chambres", "Surface", "Localisation", "Prix"];
+  const details = en ? Object.entries(an.details_en || {}).map(([k, v]) => [T.traduireNom(k), v]).filter(([k]) => k) : Object.entries(an.details || {});
+  const tableau = [[L[0], L[1]], [L[2], typeAff], [L[3], b.pieces], [L[4], b.chambres], [L[5], b.surface && `${b.surface} m²`], [L[6], lieu],
+    [L[7], b.prix && (en ? `€${String(b.prix).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}` : `${milliers(b.prix)} €`)], ...details.slice(0, 14)].filter(([, v]) => v).map(([l, v]) => [l, String(v)]);
+  const dans = (o) => (o && (o[en ? "en" : "fr"] || (!en && o.en) || "")) || "";
+  const accroche = dans(an.titre_annonce), description = String(dans(an.description_annonce)).slice(0, 1800);
+  const ph = (photos || []).filter((u) => /^https:\/\//.test(u)).slice(0, 4);
   const jour = quand.toLocaleDateString("fr-FR", { timeZone: "Europe/Paris", day: "2-digit", month: "2-digit", year: "numeric" });
-  return [{ titre }, { tableau, taille: 10.5, chiffres_a_droite: false }, { petit: `Informations de l'annonce au ${jour}. Document non contractuel.` }];
+  return [{ titre }, ...(accroche ? [{ t2: accroche }] : []), ...(ph[0] ? [{ image: ph[0] }] : []),
+    { tableau, taille: 10.5, chiffres_a_droite: false }, ...(description ? [{ texte: description }] : []),
+    ...ph.slice(1).map((u) => ({ image: u, largeur: 380 })),
+    { petit: en ? `Listing information as of ${jour}. Not a contractual document.` : `Informations de l'annonce au ${jour}. Document non contractuel.` }];
 };
 
 module.exports = { CHAMPS_PUBLICS, cartesPourBot, enVente, bienPublic, annonce, dejaConnu, nettoyer, tel9, quiRecoit, contexte, plan, lignes, texteScores, mailEquipe, blocsFiche, majuscule, nomVille };
