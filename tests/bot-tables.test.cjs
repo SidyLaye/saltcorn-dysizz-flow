@@ -137,6 +137,8 @@ const sortie = (code, plus = {}) => ({ type: "sortie", noeud: "TB3", quand: "202
     BOT = { ...BOT, notifications: "essai" }; meta.length = 0;
     await repondre("evenement", { telephone: "33611111111", dossier_id: 7, event_id: "ev13d", evenements: [sortie("OUT-1")] });
     assert.strictEqual(alertes().length, 0, "essai : personne hors des numéros d'essai");
+    const trace = T.bot.L.filter((l) => l.type === "alerte_whatsapp").pop();
+    assert.ok(trace && /aucun numéro/.test(JSON.parse(trace.donnees).raison || ""), "alerte sans destinataire : la raison est notée, jamais un silence");
     BOT = { ...BOT, numeros_essai: { ...BOT.numeros_essai, 33600000500: { reference: "30123" } } }; meta.length = 0;
     await repondre("evenement", { telephone: "33611111111", dossier_id: 7, event_id: "ev13e", evenements: [sortie("OUT-1")] });
     assert.deepStrictEqual(alertes().map((m) => m.to), ["33600000500"], "essai : le négociateur d'essai est alerté");

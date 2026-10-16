@@ -8,7 +8,7 @@ const autreJour = (jourIso % 7) + 1;
 const plus = (j) => new Date(Date.parse(auj + "T12:00:00Z") + j * 864e5);
 const DONNEES = {
   equipe: [
-    { id: 1, nom: "Alice", email: "alice@ex.org", role: "negociateur", actif: true, assistante: 3, temps: "plein", groupe: 7, crm: "500", agency_id: 405 },
+    { id: 1, nom: "Alice", email: "alice@ex.org", role: "negociateur", actif: true, assistante: 3, temps: "plein", groupe: 7, crm: "500", agency_id: 405, telephone: "+33 6 00 00 00 01" },
     { id: 2, nom: "Bruno", email: "bruno@ex.org", role: "negociateur", actif: true, temps: "mi_temps", jours: String(autreJour), remplacant_hors_jours: 1 },
     { id: 3, nom: "Chloé", email: "chloe@ex.org", role: "assistante", actif: true },
     { id: 4, nom: "Denis", email: "denis@ex.org", role: "negociateur", actif: false, remplacant_inactif: 1 },
@@ -59,6 +59,7 @@ const B = (n) => BLOCKS.find((b) => b.name === n);
 (async () => {
   const conf = await lireRoutage();
   assert.strictEqual(conf.personnes.length, 6);
+  assert.strictEqual(conf.personnes.find((p) => p.email === "alice@ex.org").telephone, "+33 6 00 00 00 01", "téléphone de l'équipe gardé (alerte WhatsApp au négociateur)");
   assert.deepStrictEqual(conf.regles[0].cible, { negociateurs: ["5", "6"] }, "règle de groupe");
   assert.deepStrictEqual(conf.siege, ["siege@ex.org"]);
   const qui = async (id) => (await B("dzf_lead_destinataires").run({ negociateur: String(id), routage: "tables", tables: {} })).liste.map((d) => d.email);

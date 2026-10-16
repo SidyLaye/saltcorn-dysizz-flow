@@ -222,7 +222,8 @@ const evenement = async (corps, R) => {
       const W = R.whatsapp || {}, envoyees = [];
       for (const avis of p.avis) {
         const valeurs = B.alerteNego({ avis, dossier: dos, bien: autre && avis.qualifie ? autre : bien, telephone: tel });
-        if (!valeurs || !tels.length) continue;
+        if (!valeurs) continue;
+        if (!tels.length) { await noter("alerte_whatsapp", { envoyee: false, raison: "aucun numéro : négociateur et assistante sans téléphone dans l'équipe" + (essai ? ", ou hors des numéros d'essai" : "") }); continue; }
         try {
           const jeton = W.variable_jeton ? await require("../../../garde").lireSecret(W.variable_jeton) : null;
           if (!W.phone_number_id || !jeton) throw new Error("WhatsApp non réglé");

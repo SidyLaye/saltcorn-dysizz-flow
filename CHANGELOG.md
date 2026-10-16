@@ -1,5 +1,12 @@
 # Journal des versions
 
+## 2.24.1
+
+### Corrigé
+- Équipe lue dans d'autres tables (écrans Gestion) : le téléphone de chaque personne est gardé ; sans lui, l'alerte WhatsApp au
+  négociateur ne trouvait aucun numéro (essai réel du 16/10).
+- Alerte WhatsApp sans destinataire : la raison est notée dans la conversation au lieu de rien.
+
 ## 2.24.0
 
 ### Ajouté

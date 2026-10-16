@@ -1,4 +1,4 @@
-/* dysizz-flow 2.24.0 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.24.1 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.24.0" : "dev";
+    var VERSION2 = true ? "2.24.1" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -95826,6 +95826,7 @@ var require_routage_tables = __commonJS({
           id: p.id,
           nom: p.nom,
           email: p.email,
+          telephone: p.telephone || null,
           role: p.role,
           actif: p.actif !== false,
           assistante_id: p.assistante || null,
@@ -99653,7 +99654,11 @@ var require_bot2 = __commonJS({
           const W = R.whatsapp || {}, envoyees = [];
           for (const avis of p.avis) {
             const valeurs = B.alerteNego({ avis, dossier: dos, bien: autre && avis.qualifie ? autre : bien, telephone: tel });
-            if (!valeurs || !tels.length) continue;
+            if (!valeurs) continue;
+            if (!tels.length) {
+              await noter("alerte_whatsapp", { envoyee: false, raison: "aucun num\xE9ro : n\xE9gociateur et assistante sans t\xE9l\xE9phone dans l'\xE9quipe" + (essai ? ", ou hors des num\xE9ros d'essai" : "") });
+              continue;
+            }
             try {
               const jeton = W.variable_jeton ? await require_garde().lireSecret(W.variable_jeton) : null;
               if (!W.phone_number_id || !jeton) throw new Error("WhatsApp non r\xE9gl\xE9");
