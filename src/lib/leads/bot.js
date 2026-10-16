@@ -129,7 +129,7 @@ const contexte = ({ dossier, lead, bien, photos = [], contact = null, conf, regl
 };
 
 const DEMANDES = { "OUT-1": "Demande de visite ou de rendez-vous", "OUT-2": "Demande de rappel", "OUT-3": "Projet à plus long terme, à recontacter",
-  "OUT-4": "Demande à parler à un conseiller", "OUT-5": "Annulation", "OUT-6": "Désinscription" };
+  "OUT-4": "Demande à parler à un conseiller", "OUT-5": "Le prospect n'est plus intéressé", "OUT-6": "Désinscription" };
 const DELAIS = { HOT: "moins de 3 mois", WARM: "3 à 12 mois", COLD: "plus de 12 mois" };
 /* Scores /100 produits par la conversation (provisoires tant que le client n'a pas validé les poids) : « bien 75/100 · financement 50/100 » */
 const NOMS_SCORES = { bien: "bien", financement: "financement", travaux: "travaux", international: "relocation" };
@@ -190,7 +190,7 @@ const plan = (evenements, R = {}) => {
         if (q.zone) criteres.localisation = String(q.zone).slice(0, 80);
         if (!out.crm.some((x) => x.op === "creerRecherche")) out.crm.push({ op: "creerRecherche", une_fois: "recherche", criteres });
       }
-      if (d.code !== "OUT-6") out.avis.push({ titre: DEMANDES[d.code] || "Demande", qualifie: true, prioritaire: !!d.lead_prioritaire, donnees: d, referents: [d.lead_financement && "f", d.lead_travaux && "w", d.lead_relocation && "i"].filter(Boolean) });
+      if (d.code !== "OUT-6") out.avis.push({ titre: DEMANDES[d.code] || "Demande", qualifie: d.code !== "OUT-5", prioritaire: !!d.lead_prioritaire, donnees: d, referents: [d.lead_financement && "f", d.lead_travaux && "w", d.lead_relocation && "i"].filter(Boolean) });
     } else if (AVIS[e.type] && !(sortie && e.type === "prioritaire_vendeur"))
       out.avis.push({ titre: AVIS[e.type], type: e.type, prioritaire: e.type === "prioritaire_vendeur", donnees: d, referents: [] });
   }
@@ -204,7 +204,7 @@ const alerteNego = ({ avis, dossier = {}, bien, telephone }) => {
   const d = avis.donnees || {}, visite = avis.qualifie && d.code === "OUT-1", vendeur = avis.type === "prioritaire_vendeur";
   if (!visite && !vendeur) return null;
   const b = bien || {}, t = String(telephone || "").replace(/\D/g, "");
-  const demande = vendeur ? ["bien à vendre déclaré"] : ["demande de visite", d.lead_prioritaire && "bien à vendre", PROJET[d.temperature]];
+  const demande = vendeur ? ["bien à vendre déclaré"] : ["visite", d.lead_prioritaire && "bien à vendre", PROJET[d.temperature]];   // « Demande : visite, projet à moins de 3 mois »
   return [vendeur || d.lead_prioritaire ? "prioritaire" : "qualifié", String(dossier.nom || "Un prospect").slice(0, 60),
     [b.reference && "réf. " + b.reference, b.ville && "à " + b.ville].filter(Boolean).join(" ") || "de l'annonce", demande.filter(Boolean).join(", "),
     /^33\d{9}$/.test(t) ? "+33 " + t.slice(2).replace(/(\d)(\d{2})(\d{2})(\d{2})(\d{2})/, "$1 $2 $3 $4 $5") : "+" + t];

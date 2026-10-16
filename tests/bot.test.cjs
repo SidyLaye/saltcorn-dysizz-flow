@@ -45,6 +45,8 @@ const QUAND = new Date("2026-10-13T10:00:00Z");
   const stop = B.plan([{ type: "sortie", donnees: { code: "OUT-6" } }, { type: "optout", donnees: {} }], R);
   assert.ok(stop.optout && !stop.avis.length && stop.crm.length === 1, "désinscription : notée, sans message aux équipes ni couleur");
   assert.strictEqual(B.plan([{ type: "prioritaire_vendeur", donnees: { reponse: "oui" } }], {}).avis.length, 1);
+  const plusInteresse = B.plan([{ type: "sortie", donnees: { code: "OUT-5", motif: "le prospect n'est plus intéressé : déjà acheté" } }], R).avis[0];
+  assert.deepStrictEqual([plusInteresse.titre, plusInteresse.qualifie], ["Le prospect n'est plus intéressé", false], "OUT-5 : information, pas un lead qualifié");
   assert.deepStrictEqual(B.plan([sortie], {}).crm, [], "sans identifiants réglés, rien n'est écrit dans le CRM");
   /* parcours page 14 (tâche 12) : recherche du prospect liée au bien, lien avec l'autre bien visité, lead vendeur ; seulement si réglés */
   const R12 = { ...R, recherches: true, actions: { ...R.actions, VENDEUR: 333 } };

@@ -1,4 +1,4 @@
-/* dysizz-flow 2.24.2 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.24.3 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.24.2" : "dev";
+    var VERSION2 = true ? "2.24.3" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -99106,7 +99106,7 @@ var require_bot = __commonJS({
       "OUT-2": "Demande de rappel",
       "OUT-3": "Projet \xE0 plus long terme, \xE0 recontacter",
       "OUT-4": "Demande \xE0 parler \xE0 un conseiller",
-      "OUT-5": "Annulation",
+      "OUT-5": "Le prospect n'est plus int\xE9ress\xE9",
       "OUT-6": "D\xE9sinscription"
     };
     var DELAIS = { HOT: "moins de 3 mois", WARM: "3 \xE0 12 mois", COLD: "plus de 12 mois" };
@@ -99175,7 +99175,7 @@ Sa r\xE9ponse : ${String(d.reponse).slice(0, 300)}` : "") });
             if (q.zone) criteres.localisation = String(q.zone).slice(0, 80);
             if (!out.crm.some((x) => x.op === "creerRecherche")) out.crm.push({ op: "creerRecherche", une_fois: "recherche", criteres });
           }
-          if (d.code !== "OUT-6") out.avis.push({ titre: DEMANDES[d.code] || "Demande", qualifie: true, prioritaire: !!d.lead_prioritaire, donnees: d, referents: [d.lead_financement && "f", d.lead_travaux && "w", d.lead_relocation && "i"].filter(Boolean) });
+          if (d.code !== "OUT-6") out.avis.push({ titre: DEMANDES[d.code] || "Demande", qualifie: d.code !== "OUT-5", prioritaire: !!d.lead_prioritaire, donnees: d, referents: [d.lead_financement && "f", d.lead_travaux && "w", d.lead_relocation && "i"].filter(Boolean) });
         } else if (AVIS[e.type] && !(sortie && e.type === "prioritaire_vendeur"))
           out.avis.push({ titre: AVIS[e.type], type: e.type, prioritaire: e.type === "prioritaire_vendeur", donnees: d, referents: [] });
       }
@@ -99186,7 +99186,7 @@ Sa r\xE9ponse : ${String(d.reponse).slice(0, 300)}` : "") });
       const d = avis.donnees || {}, visite = avis.qualifie && d.code === "OUT-1", vendeur = avis.type === "prioritaire_vendeur";
       if (!visite && !vendeur) return null;
       const b = bien || {}, t = String(telephone || "").replace(/\D/g, "");
-      const demande = vendeur ? ["bien \xE0 vendre d\xE9clar\xE9"] : ["demande de visite", d.lead_prioritaire && "bien \xE0 vendre", PROJET[d.temperature]];
+      const demande = vendeur ? ["bien \xE0 vendre d\xE9clar\xE9"] : ["visite", d.lead_prioritaire && "bien \xE0 vendre", PROJET[d.temperature]];
       return [
         vendeur || d.lead_prioritaire ? "prioritaire" : "qualifi\xE9",
         String(dossier.nom || "Un prospect").slice(0, 60),
@@ -99425,7 +99425,7 @@ var require_relances = __commonJS({
       const conv = h.slice(iOuv);
       if (conv.some((e) => e.type === "optout")) return null;
       const sorties = conv.filter((e) => e.type === "sortie").map((e) => (e.donnees || {}).code);
-      if (sorties.some((c) => c === "OUT-1" || c === "OUT-4" || c === "OUT-6")) return null;
+      if (sorties.some((c) => c === "OUT-1" || c === "OUT-4" || c === "OUT-5" || c === "OUT-6")) return null;
       const faites = conv.filter((e) => e.type === "relance").map((e) => (e.donnees || {}).code);
       const n = ORDRE.findIndex((c) => !faites.includes(c));
       if (n < 0) return null;
@@ -99539,7 +99539,9 @@ var require_bot2 = __commonJS({
       const rows = await tb.getRows({ tel9: B.tel9(tel), type: { in: ["optout", "fiche_envoyee", "ouverture", "sortie"] } }, { orderBy: "id", orderDesc: true, limit: 200 });
       const id = dossier && dossier.id || null, miens = rows.filter((r) => (r.dossier || null) === id);
       const sortie = miens.find((r) => r.type === "sortie");
-      return { optout: rows.some((r) => r.type === "optout"), fiche: miens.some((r) => r.type === "fiche_envoyee"), ouverture: miens.some((r) => r.type === "ouverture"), statut: sortie ? json(sortie.donnees, {}).statut || "" : "" };
+      const dernier = (await tb.getRows({ tel9: B.tel9(tel), type: { in: ["inbound", "relance"] } }, { orderBy: "id", orderDesc: true, limit: 10 })).find((r) => r.type === "inbound" || !json(r.donnees, {}).saute && json(r.donnees, {}).code !== "cloture");
+      const statut = dernier && dernier.type === "relance" ? "relance" : sortie ? json(sortie.donnees, {}).statut || "" : "";
+      return { optout: rows.some((r) => r.type === "optout"), fiche: miens.some((r) => r.type === "fiche_envoyee"), ouverture: miens.some((r) => r.type === "ouverture"), statut };
     };
     var contexte = async (corps, R) => {
       const t = await S.tables(), tb = await tableBot(t);
@@ -99649,7 +99651,7 @@ var require_bot2 = __commonJS({
         }
         const simuler = R.notifications === "simuler" || !R.notifications || !essai && !RA.envoi_mails;
         out.avis = (await require_envois().envoyer(messages, { simuler })).resume;
-        if (R.alerte_whatsapp === true) {
+        if (R.alerte_whatsapp === true && R.notifications !== "simuler" && R.notifications) {
           const tels = [...new Set([...qui, ...quiAutre].filter((x) => x.roles.some((r) => r === "negociateur" || r === "assistante")).map((x) => (conf.routage && conf.routage.personnes || []).find((p2) => String(p2.email || "").toLowerCase() === x.email)).map((p2) => String(p2 && p2.telephone || "").replace(/\D/g, "")).filter((n) => n.length >= 9))].filter((n) => !essai || Object.keys(R.numeros_essai || {}).includes(n));
           const W = R.whatsapp || {}, envoyees = [];
           for (const avis of p.avis) {

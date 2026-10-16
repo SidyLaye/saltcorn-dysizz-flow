@@ -1,7 +1,7 @@
 "use strict";
 /* Calendrier des relances du bot WhatsApp (script V1.3, slide 21 « OUT-5 sans réponse » ; parcours du 13/10, page 11).
    Le lead ne répond plus : R1, puis R2 (seulement si le bien est encore en vente : vérifié à l'envoi), puis R3, puis clôture sans message.
-   Jamais après un STOP, une visite transmise (OUT-1) ou une reprise humaine (OUT-4) ; après un rappel demandé (OUT-2), R1 seulement
+   Jamais après un STOP, une visite transmise (OUT-1), une reprise humaine (OUT-4) ou un « plus intéressé » (OUT-5) ; après un rappel demandé (OUT-2), R1 seulement
    (slide 18) ; une seule relance de chaque sorte par conversation. Le silence se compte depuis le dernier message du bot.
    Délais réglables (bot.relances.delais_jours, cumulés depuis le dernier message du bot avant la première relance) : 2, 5, 10 jours. */
 const ORDRE = ["r1", "r2", "r3", "cloture"];
@@ -14,7 +14,7 @@ const planifier = (historique, maintenant = Date.now(), reglages = {}) => {
   const conv = h.slice(iOuv);
   if (conv.some((e) => e.type === "optout")) return null;
   const sorties = conv.filter((e) => e.type === "sortie").map((e) => (e.donnees || {}).code);
-  if (sorties.some((c) => c === "OUT-1" || c === "OUT-4" || c === "OUT-6")) return null;
+  if (sorties.some((c) => c === "OUT-1" || c === "OUT-4" || c === "OUT-5" || c === "OUT-6")) return null;   // OUT-5 : plus intéressé
   const faites = conv.filter((e) => e.type === "relance").map((e) => (e.donnees || {}).code);
   const n = ORDRE.findIndex((c) => !faites.includes(c));
   if (n < 0) return null;

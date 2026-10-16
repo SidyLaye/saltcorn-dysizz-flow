@@ -104,7 +104,12 @@ const etatDe = async (tb, tel, dossier) => {
   const rows = await tb.getRows({ tel9: B.tel9(tel), type: { in: ["optout", "fiche_envoyee", "ouverture", "sortie"] } }, { orderBy: "id", orderDesc: true, limit: 200 });
   const id = (dossier && dossier.id) || null, miens = rows.filter((r) => (r.dossier || null) === id);
   const sortie = miens.find((r) => r.type === "sortie");
-  return { optout: rows.some((r) => r.type === "optout"), fiche: miens.some((r) => r.type === "fiche_envoyee"), ouverture: miens.some((r) => r.type === "ouverture"), statut: sortie ? json(sortie.donnees, {}).statut || "" : "" };
+  /* slide 21 : une relance envoyée (pas sautée, pas la clôture) est le dernier échange → « relance » : le bot reprend à l'action proposée.
+     Lu à part : les messages du prospect ne doivent pas faire sortir un STOP ou une fiche envoyée de la fenêtre ci-dessus */
+  const dernier = (await tb.getRows({ tel9: B.tel9(tel), type: { in: ["inbound", "relance"] } }, { orderBy: "id", orderDesc: true, limit: 10 }))
+    .find((r) => r.type === "inbound" || (!json(r.donnees, {}).saute && json(r.donnees, {}).code !== "cloture"));
+  const statut = dernier && dernier.type === "relance" ? "relance" : sortie ? json(sortie.donnees, {}).statut || "" : "";
+  return { optout: rows.some((r) => r.type === "optout"), fiche: miens.some((r) => r.type === "fiche_envoyee"), ouverture: miens.some((r) => r.type === "ouverture"), statut };
 };
 
 const contexte = async (corps, R) => {
@@ -214,7 +219,7 @@ const evenement = async (corps, R) => {
     const simuler = R.notifications === "simuler" || !R.notifications || (!essai && !RA.envoi_mails);
     out.avis = (await require("../../envois").envoyer(messages, { simuler })).resume;
     /* alerte WhatsApp au négociateur et à son assistante (numéros de l'équipe) ; en essai, seulement aux numéros d'essai */
-    if (R.alerte_whatsapp === true) {
+    if (R.alerte_whatsapp === true && R.notifications !== "simuler" && R.notifications) {   // mode simuler : rien ne part
       const tels = [...new Set([...qui, ...quiAutre].filter((x) => x.roles.some((r) => r === "negociateur" || r === "assistante"))
         .map((x) => ((conf.routage && conf.routage.personnes) || []).find((p) => String(p.email || "").toLowerCase() === x.email))
         .map((p) => String((p && p.telephone) || "").replace(/\D/g, "")).filter((n) => n.length >= 9))]

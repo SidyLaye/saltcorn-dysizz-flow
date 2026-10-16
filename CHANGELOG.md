@@ -1,5 +1,14 @@
 # Journal des versions
 
+## 2.24.3
+
+### Corrigé
+- Contexte du bot : statut « relance » quand une relance est le dernier échange, pour que le prospect qui répond après une relance
+  reprenne à l'action proposée (slide 21).
+- Alerte WhatsApp au négociateur : jamais en mode « simuler » (rien ne part, comme les mails) ; valeur « Demande » sans répétition
+  (« visite, projet à moins de 3 mois »).
+- Prospect plus intéressé (sortie OUT-5) : aucune relance ensuite ; l'équipe reçoit une information, pas un « lead qualifié ».
+
 ## 2.24.2
 
 ### Corrigé

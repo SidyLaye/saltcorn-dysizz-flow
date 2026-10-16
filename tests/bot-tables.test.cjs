@@ -129,7 +129,7 @@ const sortie = (code, plus = {}) => ({ type: "sortie", noeud: "TB3", quand: "202
     await repondre("evenement", { telephone: "33611111111", dossier_id: 7, event_id: "ev13a", evenements: [sortie("OUT-1")] });
     assert.deepStrictEqual(alertes().map((m) => m.to), ["33600000500"], "visite : le négociateur est alerté");
     const v = alertes()[0].corps.template.components[0].parameters.map((x) => x.text);
-    assert.deepStrictEqual(v, ["qualifié", "Marie Test", "réf. 30123 à Cahors", "demande de visite, projet à moins de 3 mois", "+33 6 11 11 11 11"]);
+    assert.deepStrictEqual(v, ["qualifié", "Marie Test", "réf. 30123 à Cahors", "visite, projet à moins de 3 mois", "+33 6 11 11 11 11"]);
     meta.length = 0; await repondre("evenement", { telephone: "33611111111", dossier_id: 7, event_id: "ev13b", evenements: [{ type: "prioritaire_vendeur", donnees: { reponse: "oui" } }] });
     assert.deepStrictEqual(alertes().map((m) => alertes()[0].corps.template.components[0].parameters[0].text), ["prioritaire"], "bien à vendre : alerte prioritaire");
     meta.length = 0; await repondre("evenement", { telephone: "33611111111", dossier_id: 7, event_id: "ev13c", evenements: [sortie("OUT-2")] });
@@ -142,7 +142,10 @@ const sortie = (code, plus = {}) => ({ type: "sortie", noeud: "TB3", quand: "202
     BOT = { ...BOT, numeros_essai: { ...BOT.numeros_essai, 33600000500: { reference: "30123" } } }; meta.length = 0;
     await repondre("evenement", { telephone: "33611111111", dossier_id: 7, event_id: "ev13e", evenements: [sortie("OUT-1")] });
     assert.deepStrictEqual(alertes().map((m) => m.to), ["33600000500"], "essai : le négociateur d'essai est alerté");
-    BOT = { ...BOT, alerte_whatsapp: false }; meta.length = 0;
+    BOT = { ...BOT, notifications: "simuler" }; meta.length = 0;
+    await repondre("evenement", { telephone: "33611111111", dossier_id: 7, event_id: "ev13s", evenements: [sortie("OUT-1")] });
+    assert.strictEqual(alertes().length, 0, "mode simuler : rien ne part, pas plus l'alerte que les mails");
+    BOT = { ...BOT, notifications: "essai", alerte_whatsapp: false }; meta.length = 0;
     await repondre("evenement", { telephone: "33611111111", dossier_id: 7, event_id: "ev13f", evenements: [sortie("OUT-1")] });
     assert.strictEqual(alertes().length, 0, "réglage coupé : rien");
     delete martin.telephone; marie.nom = nomMarie; BOT = BOTa; meta.length = 0;
@@ -233,6 +236,8 @@ const sortie = (code, plus = {}) => ({ type: "sortie", noeud: "TB3", quand: "202
       ["WHATSAPP_MESSAGE", "SH", "outbound", "template", "33677777777", "123", "wamid.1", "accepted"]);
     assert.equal(j[0].corps.payload.template.name, "sh_relance_r1"); assert.ok(/^sh\|/.test(j[0].corps.tracking_id));
     assert.equal((await relancer({ maintenant: mer10h })).envoyees.length, 0, "jamais deux fois");
+    /* slide 21 : le lead qui répond après une relance reprend à l'action proposée ; le bot le sait par le statut du contexte */
+    assert.equal((await repondre("contexte", { telephone: "33677777777" })).statut, "relance", "dernier événement = relance : statut « relance »");
     r = await relancer({ maintenant: new Date("2026-10-18T11:00:00+02:00").getTime() });   // R2 due depuis samedi 10 h, mais dimanche
     assert.equal(r.envoyees.length + r.sautees.length, 0, "dimanche : rien");
     r = await relancer({ maintenant: mer10h + 3 * J });
@@ -251,6 +256,8 @@ const sortie = (code, plus = {}) => ({ type: "sortie", noeud: "TB3", quand: "202
       { id: 9005, tel9: "655555555", type: "message_bot", quand: new Date(mer10h - 3 * J), donnees: JSON.stringify({ texte: "Sure", langue: "en" }) });
     r = await relancer({ maintenant: mer10h });
     assert.deepEqual(meta.filter((m) => /messages$/.test(m.url)).map((m) => [m.to, m.modele, m.langue]), [["33655555555", "sh_relance_r1_en", "en"]]);
+    await repondre("evenement", { telephone: "33677777777", event_id: "evrel", evenements: [{ type: "inbound", donnees: { texte: "oui, toujours intéressée" } }] });
+    assert.notEqual((await repondre("contexte", { telephone: "33677777777" })).statut, "relance", "le lead a répondu : plus « relance »");
     BOT = { ...BOT, relances: { actif: false } }; assert.deepEqual(await relancer({ maintenant: mer10h + 30 * J }), { actif: false });
     BOT = BOTr;
   }

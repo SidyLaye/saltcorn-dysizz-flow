@@ -20,6 +20,7 @@ assert.deepEqual(planifier([ouverture, ev("inbound", 1), ev("message_bot", 1)], 
 assert.equal(planifier([ouverture, ev("optout", 1)], T0 + 5 * J), null);
 assert.equal(planifier([ouverture, ev("sortie", 1, { code: "OUT-1" })], T0 + 5 * J), null);
 assert.equal(planifier([ouverture, ev("sortie", 1, { code: "OUT-4" })], T0 + 5 * J), null);
+assert.equal(planifier([ouverture, ev("sortie", 1, { code: "OUT-5" })], T0 + 5 * J), null, "plus intéressé : aucune relance");
 /* rappel demandé (OUT-2) : R1 seulement (slide 18 : « pas de messages spontanés, sauf relance R1 ») ; documentation (OUT-3) : séquence complète */
 assert.equal(planifier([ouverture, ev("sortie", 1, { code: "OUT-2" })], T0 + 4 * J).code, "r1");
 assert.equal(planifier([ouverture, ev("sortie", 1, { code: "OUT-2" }), ev("relance", 3, { code: "r1" })], T0 + 9 * J), null);
