@@ -57,32 +57,35 @@ const lireBien = async (crm, dossier, R = {}) => {
   } catch (e) { return null; }
 };
 
-/* Cartes du carrousel du bien, rédigées par l'IA de l'application (lib/leads/cartes.js) et gardées avec le bien dans ld_biens.
-   Refaites seulement si l'annonce change (empreinte) ; une seule rédaction à la fois par bien ; IA coupée ou plafond du jour
-   atteint (ia_plafond_jour, compté avec la lecture des mails) : rien, et le bot reprend ses lignes de secours. Jamais bloquant. */
-const CARTES_EN_COURS = new Map();
-const preparerCartes = async (bien, RA = {}) => {
-  if (!bien || bien.id == null || !RA.ia_actif) return null;
-  const Cx = require("../cartes");
-  if (bien.cartes && bien.cartes.empreinte === Cx.empreinte(bien)) return bien.cartes;
-  const k = String(bien.id);
-  if (CARTES_EN_COURS.has(k)) return CARTES_EN_COURS.get(k);
-  const p = (async () => {
-    const G = require("./gabarits");
-    if ((await G.appelsDuJour()) >= (+RA.ia_plafond_jour || 200)) return null;
-    const ia = flowApi().iaDepuisCoffre(RA.ia_fournisseur || "saltcorn", RA.ia_modele || "", "LEADS_IA_CLE", RA.ia_url || undefined);
-    const t0 = Date.now(), c = await Cx.genererCartes(ia, bien);
-    await G.noter({ ok: !!c, ms: Date.now() - t0, nature: "cartes", source: "bien " + k }).catch(() => {});
-    if (!c) return null;
-    const t = await S.tables(), r = (await t.biens.getRows({ crm_id: k }, { orderBy: "id", limit: 1 }))[0];
-    if (r) await t.biens.updateRow({ cartes: JSON.stringify(c) }, r.id);
-    return c;
-  })().catch(() => null).finally(() => CARTES_EN_COURS.delete(k));
-  CARTES_EN_COURS.set(k, p);
-  return p;
+/* Cartes du carrousel du bien (demande de Sidy du 16/10) : un texte par photo, rédigé par l'IA de Botpress — le bot s'en charge après
+   avoir répondu au lead, jamais pendant qu'il attend — puis contrôlé et gardé ici avec le bien (ld_biens.cartes, lib/leads/cartes.js).
+   Le contexte confie le travail au bot quand les textes manquent ou ne suivent plus l'annonce (empreinte) ; un seul bot à la fois par
+   bien (5 min) ; plafond du jour : bot.cartes_plafond_jour (60 par défaut) ; bot.cartes_bot = false coupe tout. */
+const CONFIEES = globalThis[Symbol.for("dysizz-flow.leads.bot.cartes")] || (globalThis[Symbol.for("dysizz-flow.leads.bot.cartes")] = { biens: new Map(), jour: "", n: 0 });
+const travailCartes = (bien, R = {}) => {
+  if (!bien || bien.id == null || R.cartes_bot === false) return null;
+  const Cx = require("../cartes"), k = String(bien.id), t = CONFIEES.biens.get(k), jour = new Date().toISOString().slice(0, 10);
+  if (bien.cartes && bien.cartes.empreinte === Cx.empreinte(bien)) return null;
+  if (t && Date.now() - t < 5 * 60e3) return null;
+  if (CONFIEES.jour !== jour) { CONFIEES.jour = jour; CONFIEES.n = 0; }
+  if (CONFIEES.n >= (+R.cartes_plafond_jour || 60)) return null;   // ponytail: compteur en mémoire, par processus
+  const job = Cx.travail(bien);
+  if (job) { CONFIEES.biens.set(k, Date.now()); CONFIEES.n++; }
+  return job;
 };
-/* en arrière-plan : le bot n'attend jamais la rédaction */
-const preparerPlusTard = (bien) => { charger().then(({ reglages: RA }) => preparerCartes(bien, RA || {})).catch(() => {}); };
+/* les textes rédigés par le bot : contrôlés, gardés avec le bien si l'annonce n'a pas changé entre-temps, rendus au bot tout de suite */
+const recevoirCartes = async (d, R) => {
+  if (!d || d.bien_id == null) return null;
+  const Cx = require("../cartes"), { crm } = await charger();
+  const bien = await lireBien(crm, { bien_crm: String(d.bien_id) }, R);
+  if (!bien || Cx.empreinte(bien) !== d.empreinte) return null;
+  const c = Cx.recevoirCartes(bien, d.sortie);
+  CONFIEES.biens.delete(String(d.bien_id));
+  if (!c) return null;
+  const t = await S.tables(), r = (await t.biens.getRows({ crm_id: String(bien.id) }, { orderBy: "id", limit: 1 }))[0];
+  if (r) await t.biens.updateRow({ cartes: JSON.stringify(c) }, r.id);
+  return B.cartesPourBot({ cartes: c }).cartes || null;
+};
 
 /* Le contact du lead dans le CRM (prénom, projets de ses recherches), pour revalider sans redemander. Une lecture au plus
    toutes les 2 min par contact ; au-delà de 2,5 s ou en cas d'erreur, le bot continue avec ce que la phase 1 a lu. */
@@ -112,7 +115,7 @@ const etatDe = async (tb, tel, dossier) => {
   return { optout: rows.some((r) => r.type === "optout"), fiche: miens.some((r) => r.type === "fiche_envoyee"), ouverture: miens.some((r) => r.type === "ouverture"), statut };
 };
 
-const contexte = async (corps, R) => {
+const contexte = async (corps, R, { travail = true } = {}) => {   // travail : confier la rédaction des cartes au bot (pas pour les relances)
   const t = await S.tables(), tb = await tableBot(t);
   const { tel, dossier } = await trouver(t, corps, R);
   const etat = await etatDe(tb, tel, dossier);
@@ -121,9 +124,9 @@ const contexte = async (corps, R) => {
   const [bien, leads, contact] = await Promise.all([lireBien(crm, dossier, R), dossier.id ? t.leads.getRows({ dossier_id: dossier.id }, { orderBy: "id", orderDesc: true, limit: 1 }) : [],
     dossier.essai ? (dossier.projet ? { prenom: null, projets: [dossier.projet] } : null) : lireContact(crm, dossier.contact_crm)]);
   const photos = R.photos && bien && Array.isArray(bien.photos) ? bien.photos : [];
-  if (bien) preparerPlusTard(bien);
   const lead = leads[0] ? json(leads[0].dossier, {}) : dossier.essai && dossier.message ? { extraction: { message: dossier.message, nature: "lead" } } : null;
-  return B.contexte({ dossier, lead, bien, photos, contact, conf, reglages: R, etat });
+  const job = travail ? travailCartes(bien, R) : null;
+  return { ...B.contexte({ dossier, lead, bien, photos, contact, conf, reglages: R, etat }), ...(job ? { cartes_a_rediger: job } : {}) };
 };
 
 const TEXTE = (d) => d.texte || d.dernier_message || d.question || d.reponse || d.mot_cle || "";
@@ -140,9 +143,9 @@ const evenement = async (corps, R) => {
     const d = e.donnees && typeof e.donnees === "object" ? e.donnees : {}, q = new Date(e.quand);
     await noter(e.type, d, { noeud: court(e.noeud, 60), quand: isNaN(q) ? new Date() : q, texte: court(TEXTE(d), 4000), cle: evid ? `${evid}:${i}:${court(e.type, 60)}` : null });
   }
-  if (dossier && lot.some((e) => e.type === "ouverture" && e.noeud === "N0"))
-    charger().then(({ crm }) => lireBien(crm, dossier, R)).then((b) => { if (b) preparerPlusTard(b); }).catch(() => {});
   const p = B.plan(lot, R), out = { ok: true, recus: lot.length };
+  const redigees = lot.find((e) => e.type === "cartes_redigees");
+  if (redigees) { const c = await recevoirCartes(redigees.donnees, R).catch(() => null); if (c) out.cartes = c; }
   /* un désinscrit qui écrit plusieurs messages : une seule alerte par 24 h (la ligne de ce tour est déjà rangée) */
   if (p.avis.some((a) => a.type === "message_apres_stop")) {
     const l = await tb.getRows({ tel9, type: "message_apres_stop" }, { orderBy: "id", orderDesc: true, limit: lot.length + 1 });
@@ -334,7 +337,6 @@ const biens = async (corps, R) => {
   /* cartes déjà rédigées pour ces biens (ld_biens) ; les manquantes sont préparées en arrière-plan pour la prochaine fois */
   const gardees = new Map();
   for (const b of trouves) { const r = (await t.biens.getRows({ crm_id: String(b.id) }, { orderBy: "id", limit: 1 }))[0]; if (r && r.cartes) gardees.set(String(b.id), json(r.cartes, null)); }
-  for (const b of trouves) if (!gardees.get(String(b.id))) preparerPlusTard(b);
   return { criteres: q, biens: trouves.map((b) => {
     const p = B.quiRecoit(b.negociateur_id, conf, b).personne;
     return { id: b.id, reference: b.reference || "", bien_public: { ...B.bienPublic(b), ...B.annonce(b.annonce), photos_publiques: (b.photos || []).slice(0, 10), ...B.cartesPourBot({ cartes: gardees.get(String(b.id)) }) },
@@ -395,7 +397,7 @@ const relancer = async ({ maintenant = Date.now() } = {}) => {
       if (!plan || plan.quand.getTime() > maintenant) continue;
       const noter = (donnees) => tb.insertRow({ dossier: null, tel9, type: "relance", noeud: "", quand: new Date(maintenant), donnees: JSON.stringify(donnees) });
       if (plan.code === "cloture") { await noter({ code: "cloture", motif: "sans réponse après R3 (OUT-5)" }); out.envoyees.push({ tel9, code: "cloture" }); continue; }
-      const ctx = await contexte({ telephone: tel }, R), bp = (ctx && ctx.bien_public) || {};
+      const ctx = await contexte({ telephone: tel }, R, { travail: false }), bp = (ctx && ctx.bien_public) || {};
       if (ctx.optout) continue;
       if (plan.code === "r2" && !(bp.en_vente === true && bp.statut_lu_le && maintenant - new Date(bp.statut_lu_le) < 300000)) {
         await noter({ code: "r2", saute: true, motif: "bien non confirmé en vente à l'instant" }); out.sautees.push({ tel9, code: "r2" }); continue;
@@ -430,4 +432,4 @@ const repondre = async (action, corps) => {
   return ACTIONS[k](corps && typeof corps === "object" ? corps : {}, R && typeof R === "object" ? R : {});
 };
 
-module.exports = { repondre, contexte, evenement, fiche, preparerCartes, telechargerPhotos, relancer };
+module.exports = { repondre, contexte, evenement, fiche, telechargerPhotos, relancer };

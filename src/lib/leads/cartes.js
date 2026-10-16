@@ -1,7 +1,8 @@
 "use strict";
-/* Cartes du carrousel du bien, rédigées par l'IA de l'application une fois par bien (et refaites si l'annonce change).
-   Une ligne par photo, qui donne envie à partir d'un fait de l'annonce, jamais autre chose. Chaque ligne est contrôlée :
-   une ligne fautive est retirée ; une langue avec moins de 3 lignes valides n'est pas rendue (le bot reprend ses lignes de secours).
+/* Cartes du carrousel du bien : un texte par carte (demande de Sidy du 16/10), rédigé par l'IA de Botpress (le bot, après avoir répondu
+   au lead : jamais pendant qu'il attend) à partir de la consigne et des photos préparées ici (travail). L'IA voit chaque photo et met en
+   valeur ce qu'elle montre, en 2 lignes avec émojis, à partir des faits de l'annonce. L'application contrôle chaque texte (recevoirCartes) :
+   un texte fautif est retiré ; une langue avec moins de 3 textes valides n'est pas rendue (le bot reprend ses lignes de secours).
    Les données envoyées à l'IA sont celles que le bot a le droit de dire (bienPublic + annonce() : rien de la slide 07, aucun montant
    autre que le prix, aucune distance sans unité). */
 const crypto = require("crypto");
@@ -10,8 +11,9 @@ const { cle } = require("./texte");
 
 const SCHEMA = {
   type: "object", additionalProperties: false, required: ["fr", "en"],
-  properties: Object.fromEntries(["fr", "en"].map((l) => [l, { type: "object", additionalProperties: false, required: ["titre", "lignes"],
-    properties: { titre: { type: "string" }, lignes: { type: "array", items: { type: "string" } } } }])),
+  properties: Object.fromEntries(["fr", "en"].map((l) => [l, { type: "object", additionalProperties: false, required: ["titre", "cartes"],
+    properties: { titre: { type: "string" }, cartes: { type: "array", items: { type: "object", additionalProperties: false, required: ["photo", "texte"],
+      properties: { photo: { type: "integer" }, texte: { type: "string" } } } } } }])),
 };
 
 const donneesPourCartes = (bien) => {
@@ -21,38 +23,39 @@ const donneesPourCartes = (bien) => {
 };
 
 /* VERSION : à augmenter quand les consignes ou les contrôles changent, pour que les cartes déjà rédigées soient refaites */
-const VERSION = 2;
-const empreinte = (bien) => crypto.createHash("sha1").update(JSON.stringify([VERSION, donneesPourCartes(bien), ((bien && bien.photos) || []).length])).digest("hex");
+const VERSION = 3;
+const empreinte = (bien) => crypto.createHash("sha1").update(JSON.stringify([VERSION, donneesPourCartes(bien), (bien && bien.photos) || []])).digest("hex");
 
-const lignesVoulues = (nbPhotos) => Math.max(3, Math.min(9, (+nbPhotos || 0) - 1));
+/* photos rédigées : 9 au plus, la dernière photo est gardée pour la carte du référent (ajoutée par le bot) */
+const photosACommenter = (photos) => (Array.isArray(photos) ? photos : []).filter((u) => /^https:\/\//.test(String(u))).slice(0, 10).slice(0, -1).slice(0, 9);
 
-const consignes = (donnees, nbPhotos) => {
-  const n = lignesVoulues(nbPhotos);
-  return `Tu rédiges les légendes des photos d'un bien immobilier montré sur WhatsApp à un acheteur qui a déjà répondu à son annonce.
+/* La consigne et les photos, dans un seul message : « Photo 1 », image, « Photo 2 », image… */
+const consignesPhotos = (donnees, n) => `Tu écris le texte de chaque carte d'un carrousel WhatsApp qui présente un bien immobilier à un acheteur qui a déjà répondu à son annonce.
 Agence : Sélection Habitat - Agence Hamilton (maisons de caractère, une expérience immobilière à hautes valeurs humaines).
-But : donner envie de visiter, avec des faits. L'acheteur achète une vie (le calme, la place, la pierre, la vue), pas une fiche technique.
+Chaque carte montre une photo du bien ; sous la photo, ton texte doit donner envie d'acheter en mettant en valeur ce que montre CETTE photo.
+L'acheteur achète une vie (le calme, la place, la pierre, la vue, recevoir), pas une fiche technique.
 
-Écris exactement ${n} lignes en français ET exactement ${n} lignes en anglais, plus un titre court dans chaque langue (60 caractères au plus,
-le type de bien, son atout principal et la commune, sans prix).
-Chaque ligne :
-- commence par UN émoji qui illustre le fait (🏡 🌳 🏊 🌄 🧱 🔥 🛁 🍽️ ☀️ 🚗 📍 💶…), puis un espace ;
-- 100 caractères au plus, une seule phrase, sans point d'exclamation ;
-- part d'UN fait présent dans les DONNÉES (champ, caractéristique, phrase de la description), et peut dire ce qu'il permet, au conditionnel
-  ou comme une possibilité (« de quoi recevoir », « pour les soirées d'hiver ») ; jamais un fait qui n'est pas dans les données ;
-- aucun nombre, surface, durée, distance ou année qui ne soit pas écrit dans les données, avec la même unité ;
-- aucun montant sauf le prix (une seule ligne de prix, vers la fin) ; aucune adresse, aucun nom, aucune information sur le vendeur, le mandat,
+Pour chaque photo, de Photo 1 à Photo ${n}, écris un texte en français ET en anglais :
+- regarde la photo et mets en valeur l'attribut qu'elle montre (façade, pièce, cuisine, chambre, jardin, terrain, vue, piscine, dépendance, matériaux…),
+  relié à un fait des DONNÉES quand il y en a un (surface, nombre de chambres, terrain, chauffage, construction, vue…) ;
+- 2 lignes, séparées par un saut de ligne : la 1re ligne met l'attribut en valeur, la 2e dit ce qu'il permet de vivre, comme une possibilité
+  (« de quoi recevoir », « pour les soirées d'hiver ») ;
+- chaque ligne commence par UN émoji qui illustre son propos (🏡 🌳 🌿 🏊 🌄 🧱 🔥 🛋️ 🍽️ 🛏️ 🛁 ☀️ 🚗 👨‍👩‍👧 🐓 📍…), et seulement là ;
+- 160 caractères au plus pour le texte entier, phrases courtes, sans point d'exclamation, vouvoiement implicite ;
+- ne dis que ce qui se voit sur la photo ou ce qui est écrit dans les DONNÉES ; si la photo est ambiguë, mets en valeur un fait des DONNÉES
+  qui s'y rapporte ; jamais un équipement ni une qualité que tu ne vois pas et qui n'est pas dans les données ;
+- aucun nombre, surface, durée, distance ou année qui ne soit pas écrit dans les DONNÉES, avec la même unité ;
+- aucun montant, pas même le prix (il est donné au-dessus du carrousel) ; aucune adresse, aucun nom, rien sur le vendeur, le mandat,
   les honoraires, les frais, les travaux à prévoir ;
 - aucun superlatif invérifiable (exceptionnel, unique, idéal, rare, sublime, magnifique, parfait, superbe, incroyable ; exceptional, unique,
-  ideal, stunning, perfect, amazing, superb) ;
-- jamais « pas seulement… mais », jamais de liste de négations ; ton chaleureux, simple, vouvoiement implicite.
-Ordre : d'abord l'atout le plus fort (place, gîte, terrain, vue, caractère), le prix vers la fin. Pas de ligne sur le référent : l'agence l'ajoute.
+  ideal, stunning, perfect, amazing, superb) ; jamais « pas seulement… mais », jamais de liste de négations ;
+- deux cartes ne mettent pas en valeur le même attribut.
+Un titre court dans chaque langue (60 caractères au plus : le type de bien, son atout principal et la commune, sans prix).
 En anglais : un anglais naturel (pas de mot français, sauf « gîte »), mêmes faits, mêmes chiffres.
 
-Réponds en JSON : {"fr": {"titre": "…", "lignes": ["…"]}, "en": {"titre": "…", "lignes": ["…"]}}
+Réponds en JSON : {"fr": {"titre": "…", "cartes": [{"photo": 1, "texte": "…\\n…"}]}, "en": {"titre": "…", "cartes": [{"photo": 1, "texte": "…\\n…"}]}}
 
 DONNÉES : ${JSON.stringify(donnees)}`;
-};
-
 /* ---------- contrôle d'une ligne ---------- */
 const nombre = (s) => {
   let t = String(s || "").replace(/[\s  ]/g, "").replace(/[.,]$/, "");
@@ -82,14 +85,14 @@ const permisDe = (donnees) => {
   return { unites: new Set(p), annees: new Set(annees) };
 };
 const SUPERLATIFS = /\b(exceptionnel(le)?s?|unique|uniques|id[ée]al(e|es)?|rare|sublime|magnifique|parfait(e|es)?|superbe|incroyable|extraordinaire|splendide|exceptional|ideal|stunning|perfect|amazing|superb|magnificent|incredible|breathtaking)\b/i;
-const RESERVES = /honorair|commission|frais|mandat|propri[ée]taire|vendeur|cadastr|\bcl[ée]s?\b|adresse|travaux [àa] pr[ée]voir|\bseller\b|\bowner\b|\bfees?\b|\baddress\b|\bkeys?\b|agent fee/i;
+const RESERVES = /honorair|commission|frais (d['e]|de |du |des |inclus|compris|en sus)|mandat|propri[ée]taire|vendeur|cadastr|\bcl[ée]s?\b|adresse|travaux [àa] pr[ée]voir|\bseller\b|\bowner\b|\bfees?\b|\baddress\b|\bkeys?\b|agent fee/i;
 const MOTS_FR = /\b(de|la|le|les|et|avec|chambres?|maison|bois|pierre|jardin|vue|campagne|pi[eè]ces?|terrain|chauffage|salle|charme)\b/i;
 
 /* null = ligne valide ; sinon la raison du refus */
-const verifierLigne = (ligne, donnees, langue = "fr") => {
+const verifierLigne = (ligne, donnees, langue = "fr", max = 120) => {
   const l = String(ligne || "").trim();
   if (!/^\p{Extended_Pictographic}/u.test(l)) return "émoji en tête manquant";
-  if (l.length > 120) return "longueur";
+  if (l.length > max) return "longueur";
   if (/!/.test(l)) return "exclamation";
   if (SUPERLATIFS.test(l)) return "superlatif";
   if (/[\w.+-]+@[\w-]+\.[\w.]+|https?:\/\/|www\./i.test(l) || (l.match(/\+?\d[\d .-]{7,}\d/g) || []).some((m) => m.replace(/\D/g, "").length >= 9)) return "coordonnée";
@@ -110,6 +113,16 @@ const verifierLigne = (ligne, donnees, langue = "fr") => {
   return null;
 };
 
+/* texte d'une carte : 160 caractères (Meta), 3 lignes au plus (2 sauts de ligne), 2 émojis au moins, mêmes contrôles qu'une ligne */
+const verifierTexte = (texte, donnees, langue = "fr") => {
+  const t = String(texte || "").trim();
+  if (t.split("\n").length > 3) return "trop de lignes";
+  if (t.length > 160) return "longueur";
+  if ((t.match(/\p{Extended_Pictographic}/gu) || []).length < 2) return "pas assez d'émojis";
+  for (const l of t.split("\n")) { const r = l.trim() && verifierLigne(l, donnees, langue, 160); if (r) return r; }
+  return null;
+};
+
 const verifierTitre = (t) => { const s = String(t || "").trim(); return s && s.length <= 80 && !SUPERLATIFS.test(s) && !RESERVES.test(s) && !/!|\d[\d\s.,]*\s*(€|euros?)/i.test(s) ? s : null; };
 
 /* Mise en forme d'une ligne contrôlée : nombres groupés selon la langue (5 505 m² / 5,505 m² ; 225 000 € / €225,000), jamais une année ;
@@ -125,19 +138,31 @@ const mettreEnForme = (ligne, langue = "fr") => {
 /* ---------- génération ---------- */
 const lireJson = (x) => { if (x && typeof x === "object") return x; try { const s = String(x || ""); return JSON.parse(s.slice(s.indexOf("{"), s.lastIndexOf("}") + 1)); } catch (e) { return null; } };
 
-const genererCartes = async (ia, bien) => {
-  const donnees = donneesPourCartes(bien);
-  let sortie;
-  try { sortie = lireJson(await ia.generer(consignes(donnees, ((bien && bien.photos) || []).length), SCHEMA, "cartes")); } catch (e) { return null; }
-  if (!sortie) return null;
+/* Le travail confié au bot : la consigne (avec les données triées) et les photos à commenter ; null si moins de 3 photos */
+const travail = (bien) => {
+  const photos = photosACommenter(bien && bien.photos);
+  if (!bien || bien.id == null || photos.length < 2) return null;
+  return { bien_id: String(bien.id), empreinte: empreinte(bien), photos, consigne: consignesPhotos(donneesPourCartes(bien), photos.length) };
+};
+
+/* La réponse de l'IA (texte JSON ou objet), contrôlée texte par texte : chaque texte reste sous SA photo */
+const recevoirCartes = (bien, sortieBrute) => {
+  const sortie = lireJson(sortieBrute), photos = photosACommenter(bien && bien.photos), donnees = donneesPourCartes(bien);
+  if (!sortie || photos.length < 2) return null;
   const out = { empreinte: empreinte(bien), le: new Date().toISOString(), refus: [] };
   for (const langue of ["fr", "en"]) {
-    const s = sortie[langue] || {};
-    const lignes = [];
-    for (const l of Array.isArray(s.lignes) ? s.lignes : []) { const r = verifierLigne(l, donnees, langue); if (r) out.refus.push({ langue, ligne: String(l).slice(0, 140), raison: r }); else lignes.push(mettreEnForme(l, langue)); }
-    if (lignes.length >= 3) out[langue] = { titre: verifierTitre(s.titre), lignes: lignes.slice(0, 9) };
+    const s = sortie[langue] || {}, parPhoto = new Map();
+    for (const c of Array.isArray(s.cartes) ? s.cartes : []) {
+      const n = Math.round(+(c && c.photo)), texte = String((c && c.texte) || "").replace(/\r/g, "").trim();
+      if (!(n >= 1 && n <= photos.length) || parPhoto.has(n)) continue;
+      const r = verifierTexte(texte, donnees, langue);
+      if (r) out.refus.push({ langue, photo: n, texte: texte.slice(0, 170), raison: r });
+      else parPhoto.set(n, texte.split("\n").map((l) => mettreEnForme(l, langue)).join("\n"));
+    }
+    const cartes = [...parPhoto.keys()].sort((x, y) => x - y).map((n) => ({ image: photos[n - 1], texte: parPhoto.get(n) }));
+    if (cartes.length >= Math.min(3, photos.length)) out[langue] = { titre: verifierTitre(s.titre), cartes };
   }
   return out.fr || out.en ? out : null;
 };
 
-module.exports = { SCHEMA, donneesPourCartes, empreinte, consignes, lignesVoulues, verifierLigne, verifierTitre, mettreEnForme, genererCartes };
+module.exports = { SCHEMA, VERSION, donneesPourCartes, empreinte, consignesPhotos, photosACommenter, verifierLigne, verifierTexte, verifierTitre, mettreEnForme, travail, recevoirCartes };

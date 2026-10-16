@@ -9,7 +9,12 @@ const CHAMPS_PUBLICS = ["type", "pieces", "chambres", "surface", "ville", "code_
 /* cartes du carrousel rédigées par l'application (lib/leads/cartes.js) : seulement le titre et les lignes, par langue */
 const cartesPourBot = (b) => {
   const c = b && b.cartes, out = {};
-  for (const l of ["fr", "en"]) if (c && c[l] && Array.isArray(c[l].lignes) && c[l].lignes.length >= 3) out[l] = { ...(c[l].titre ? { titre: c[l].titre } : {}), lignes: c[l].lignes.slice(0, 9) };
+  for (const l of ["fr", "en"]) {
+    const x = c && c[l], titre = x && x.titre ? { titre: x.titre } : {};
+    /* un texte par photo (depuis le 16/10) ; les anciennes cartes (une ligne par photo) restent lisibles jusqu'à leur réécriture */
+    if (x && Array.isArray(x.cartes) && x.cartes.length >= 2) out[l] = { ...titre, cartes: x.cartes.slice(0, 9).map((k) => ({ image: k.image, texte: k.texte })) };
+    else if (x && Array.isArray(x.lignes) && x.lignes.length >= 3) out[l] = { ...titre, lignes: x.lignes.slice(0, 9) };
+  }
   return Object.keys(out).length ? { cartes: out } : {};
 };
 /* le bien est-il encore en vente ? statut du CRM lu à l'instant : « EnCours » et diffusé → oui ; autre statut ou non diffusé → non ;

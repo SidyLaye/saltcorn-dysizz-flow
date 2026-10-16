@@ -1,4 +1,4 @@
-/* dysizz-flow 2.24.3 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.25.0 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.24.3" : "dev";
+    var VERSION2 = true ? "2.25.0" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -98905,7 +98905,11 @@ var require_bot = __commonJS({
     var CHAMPS_PUBLICS = ["type", "pieces", "chambres", "surface", "ville", "code_postal", "prix"];
     var cartesPourBot = (b) => {
       const c = b && b.cartes, out = {};
-      for (const l of ["fr", "en"]) if (c && c[l] && Array.isArray(c[l].lignes) && c[l].lignes.length >= 3) out[l] = { ...c[l].titre ? { titre: c[l].titre } : {}, lignes: c[l].lignes.slice(0, 9) };
+      for (const l of ["fr", "en"]) {
+        const x = c && c[l], titre = x && x.titre ? { titre: x.titre } : {};
+        if (x && Array.isArray(x.cartes) && x.cartes.length >= 2) out[l] = { ...titre, cartes: x.cartes.slice(0, 9).map((k) => ({ image: k.image, texte: k.texte })) };
+        else if (x && Array.isArray(x.lignes) && x.lignes.length >= 3) out[l] = { ...titre, lignes: x.lignes.slice(0, 9) };
+      }
       return Object.keys(out).length ? { cartes: out } : {};
     };
     var enVente = (b) => {
@@ -99260,8 +99264,13 @@ var require_cartes = __commonJS({
       properties: Object.fromEntries(["fr", "en"].map((l) => [l, {
         type: "object",
         additionalProperties: false,
-        required: ["titre", "lignes"],
-        properties: { titre: { type: "string" }, lignes: { type: "array", items: { type: "string" } } }
+        required: ["titre", "cartes"],
+        properties: { titre: { type: "string" }, cartes: { type: "array", items: {
+          type: "object",
+          additionalProperties: false,
+          required: ["photo", "texte"],
+          properties: { photo: { type: "integer" }, texte: { type: "string" } }
+        } } }
       }]))
     };
     var donneesPourCartes = (bien) => {
@@ -99274,35 +99283,35 @@ var require_cartes = __commonJS({
         ...an.pieces_detail ? { pieces: an.pieces_detail } : {}
       };
     };
-    var VERSION2 = 2;
-    var empreinte = (bien) => crypto.createHash("sha1").update(JSON.stringify([VERSION2, donneesPourCartes(bien), (bien && bien.photos || []).length])).digest("hex");
-    var lignesVoulues = (nbPhotos) => Math.max(3, Math.min(9, (+nbPhotos || 0) - 1));
-    var consignes = (donnees, nbPhotos) => {
-      const n = lignesVoulues(nbPhotos);
-      return `Tu r\xE9diges les l\xE9gendes des photos d'un bien immobilier montr\xE9 sur WhatsApp \xE0 un acheteur qui a d\xE9j\xE0 r\xE9pondu \xE0 son annonce.
+    var VERSION2 = 3;
+    var empreinte = (bien) => crypto.createHash("sha1").update(JSON.stringify([VERSION2, donneesPourCartes(bien), bien && bien.photos || []])).digest("hex");
+    var photosACommenter = (photos) => (Array.isArray(photos) ? photos : []).filter((u) => /^https:\/\//.test(String(u))).slice(0, 10).slice(0, -1).slice(0, 9);
+    var consignesPhotos = (donnees, n) => `Tu \xE9cris le texte de chaque carte d'un carrousel WhatsApp qui pr\xE9sente un bien immobilier \xE0 un acheteur qui a d\xE9j\xE0 r\xE9pondu \xE0 son annonce.
 Agence : S\xE9lection Habitat - Agence Hamilton (maisons de caract\xE8re, une exp\xE9rience immobili\xE8re \xE0 hautes valeurs humaines).
-But : donner envie de visiter, avec des faits. L'acheteur ach\xE8te une vie (le calme, la place, la pierre, la vue), pas une fiche technique.
+Chaque carte montre une photo du bien ; sous la photo, ton texte doit donner envie d'acheter en mettant en valeur ce que montre CETTE photo.
+L'acheteur ach\xE8te une vie (le calme, la place, la pierre, la vue, recevoir), pas une fiche technique.
 
-\xC9cris exactement ${n} lignes en fran\xE7ais ET exactement ${n} lignes en anglais, plus un titre court dans chaque langue (60 caract\xE8res au plus,
-le type de bien, son atout principal et la commune, sans prix).
-Chaque ligne :
-- commence par UN \xE9moji qui illustre le fait (\u{1F3E1} \u{1F333} \u{1F3CA} \u{1F304} \u{1F9F1} \u{1F525} \u{1F6C1} \u{1F37D}\uFE0F \u2600\uFE0F \u{1F697} \u{1F4CD} \u{1F4B6}\u2026), puis un espace ;
-- 100 caract\xE8res au plus, une seule phrase, sans point d'exclamation ;
-- part d'UN fait pr\xE9sent dans les DONN\xC9ES (champ, caract\xE9ristique, phrase de la description), et peut dire ce qu'il permet, au conditionnel
-  ou comme une possibilit\xE9 (\xAB de quoi recevoir \xBB, \xAB pour les soir\xE9es d'hiver \xBB) ; jamais un fait qui n'est pas dans les donn\xE9es ;
-- aucun nombre, surface, dur\xE9e, distance ou ann\xE9e qui ne soit pas \xE9crit dans les donn\xE9es, avec la m\xEAme unit\xE9 ;
-- aucun montant sauf le prix (une seule ligne de prix, vers la fin) ; aucune adresse, aucun nom, aucune information sur le vendeur, le mandat,
+Pour chaque photo, de Photo 1 \xE0 Photo ${n}, \xE9cris un texte en fran\xE7ais ET en anglais :
+- regarde la photo et mets en valeur l'attribut qu'elle montre (fa\xE7ade, pi\xE8ce, cuisine, chambre, jardin, terrain, vue, piscine, d\xE9pendance, mat\xE9riaux\u2026),
+  reli\xE9 \xE0 un fait des DONN\xC9ES quand il y en a un (surface, nombre de chambres, terrain, chauffage, construction, vue\u2026) ;
+- 2 lignes, s\xE9par\xE9es par un saut de ligne : la 1re ligne met l'attribut en valeur, la 2e dit ce qu'il permet de vivre, comme une possibilit\xE9
+  (\xAB de quoi recevoir \xBB, \xAB pour les soir\xE9es d'hiver \xBB) ;
+- chaque ligne commence par UN \xE9moji qui illustre son propos (\u{1F3E1} \u{1F333} \u{1F33F} \u{1F3CA} \u{1F304} \u{1F9F1} \u{1F525} \u{1F6CB}\uFE0F \u{1F37D}\uFE0F \u{1F6CF}\uFE0F \u{1F6C1} \u2600\uFE0F \u{1F697} \u{1F468}\u200D\u{1F469}\u200D\u{1F467} \u{1F413} \u{1F4CD}\u2026), et seulement l\xE0 ;
+- 160 caract\xE8res au plus pour le texte entier, phrases courtes, sans point d'exclamation, vouvoiement implicite ;
+- ne dis que ce qui se voit sur la photo ou ce qui est \xE9crit dans les DONN\xC9ES ; si la photo est ambigu\xEB, mets en valeur un fait des DONN\xC9ES
+  qui s'y rapporte ; jamais un \xE9quipement ni une qualit\xE9 que tu ne vois pas et qui n'est pas dans les donn\xE9es ;
+- aucun nombre, surface, dur\xE9e, distance ou ann\xE9e qui ne soit pas \xE9crit dans les DONN\xC9ES, avec la m\xEAme unit\xE9 ;
+- aucun montant, pas m\xEAme le prix (il est donn\xE9 au-dessus du carrousel) ; aucune adresse, aucun nom, rien sur le vendeur, le mandat,
   les honoraires, les frais, les travaux \xE0 pr\xE9voir ;
 - aucun superlatif inv\xE9rifiable (exceptionnel, unique, id\xE9al, rare, sublime, magnifique, parfait, superbe, incroyable ; exceptional, unique,
-  ideal, stunning, perfect, amazing, superb) ;
-- jamais \xAB pas seulement\u2026 mais \xBB, jamais de liste de n\xE9gations ; ton chaleureux, simple, vouvoiement implicite.
-Ordre : d'abord l'atout le plus fort (place, g\xEEte, terrain, vue, caract\xE8re), le prix vers la fin. Pas de ligne sur le r\xE9f\xE9rent : l'agence l'ajoute.
+  ideal, stunning, perfect, amazing, superb) ; jamais \xAB pas seulement\u2026 mais \xBB, jamais de liste de n\xE9gations ;
+- deux cartes ne mettent pas en valeur le m\xEAme attribut.
+Un titre court dans chaque langue (60 caract\xE8res au plus : le type de bien, son atout principal et la commune, sans prix).
 En anglais : un anglais naturel (pas de mot fran\xE7ais, sauf \xAB g\xEEte \xBB), m\xEAmes faits, m\xEAmes chiffres.
 
-R\xE9ponds en JSON : {"fr": {"titre": "\u2026", "lignes": ["\u2026"]}, "en": {"titre": "\u2026", "lignes": ["\u2026"]}}
+R\xE9ponds en JSON : {"fr": {"titre": "\u2026", "cartes": [{"photo": 1, "texte": "\u2026\\n\u2026"}]}, "en": {"titre": "\u2026", "cartes": [{"photo": 1, "texte": "\u2026\\n\u2026"}]}}
 
 DONN\xC9ES : ${JSON.stringify(donnees)}`;
-    };
     var nombre = (s) => {
       let t = String(s || "").replace(/[\s  ]/g, "").replace(/[.,]$/, "");
       if (/^\d{1,3}(\.\d{3})+(,\d+)?$/.test(t)) t = t.replace(/\./g, "").replace(",", ".");
@@ -99341,12 +99350,12 @@ DONN\xC9ES : ${JSON.stringify(donnees)}`;
       return { unites: new Set(p), annees: new Set(annees) };
     };
     var SUPERLATIFS = /\b(exceptionnel(le)?s?|unique|uniques|id[ée]al(e|es)?|rare|sublime|magnifique|parfait(e|es)?|superbe|incroyable|extraordinaire|splendide|exceptional|ideal|stunning|perfect|amazing|superb|magnificent|incredible|breathtaking)\b/i;
-    var RESERVES = /honorair|commission|frais|mandat|propri[ée]taire|vendeur|cadastr|\bcl[ée]s?\b|adresse|travaux [àa] pr[ée]voir|\bseller\b|\bowner\b|\bfees?\b|\baddress\b|\bkeys?\b|agent fee/i;
+    var RESERVES = /honorair|commission|frais (d['e]|de |du |des |inclus|compris|en sus)|mandat|propri[ée]taire|vendeur|cadastr|\bcl[ée]s?\b|adresse|travaux [àa] pr[ée]voir|\bseller\b|\bowner\b|\bfees?\b|\baddress\b|\bkeys?\b|agent fee/i;
     var MOTS_FR = /\b(de|la|le|les|et|avec|chambres?|maison|bois|pierre|jardin|vue|campagne|pi[eè]ces?|terrain|chauffage|salle|charme)\b/i;
-    var verifierLigne = (ligne, donnees, langue = "fr") => {
+    var verifierLigne = (ligne, donnees, langue = "fr", max = 120) => {
       const l = String(ligne || "").trim();
       if (!new RegExp("^\\p{Extended_Pictographic}", "u").test(l)) return "\xE9moji en t\xEAte manquant";
-      if (l.length > 120) return "longueur";
+      if (l.length > max) return "longueur";
       if (/!/.test(l)) return "exclamation";
       if (SUPERLATIFS.test(l)) return "superlatif";
       if (/[\w.+-]+@[\w-]+\.[\w.]+|https?:\/\/|www\./i.test(l) || (l.match(/\+?\d[\d .-]{7,}\d/g) || []).some((m) => m.replace(/\D/g, "").length >= 9)) return "coordonn\xE9e";
@@ -99363,6 +99372,17 @@ DONN\xC9ES : ${JSON.stringify(donnees)}`;
         let sans = l.replace(/g[iî]te/gi, "");
         for (const nomPropre of [donnees && donnees.ville].filter(Boolean)) sans = sans.split(nomPropre).join(" ");
         if (MOTS_FR.test(cle(sans))) return "mot fran\xE7ais dans une ligne anglaise";
+      }
+      return null;
+    };
+    var verifierTexte = (texte, donnees, langue = "fr") => {
+      const t = String(texte || "").trim();
+      if (t.split("\n").length > 3) return "trop de lignes";
+      if (t.length > 160) return "longueur";
+      if ((t.match(new RegExp("\\p{Extended_Pictographic}", "gu")) || []).length < 2) return "pas assez d'\xE9mojis";
+      for (const l of t.split("\n")) {
+        const r = l.trim() && verifierLigne(l, donnees, langue, 160);
+        if (r) return r;
       }
       return null;
     };
@@ -99386,29 +99406,30 @@ DONN\xC9ES : ${JSON.stringify(donnees)}`;
         return null;
       }
     };
-    var genererCartes = async (ia, bien) => {
-      const donnees = donneesPourCartes(bien);
-      let sortie;
-      try {
-        sortie = lireJson(await ia.generer(consignes(donnees, (bien && bien.photos || []).length), SCHEMA, "cartes"));
-      } catch (e) {
-        return null;
-      }
-      if (!sortie) return null;
+    var travail = (bien) => {
+      const photos = photosACommenter(bien && bien.photos);
+      if (!bien || bien.id == null || photos.length < 2) return null;
+      return { bien_id: String(bien.id), empreinte: empreinte(bien), photos, consigne: consignesPhotos(donneesPourCartes(bien), photos.length) };
+    };
+    var recevoirCartes = (bien, sortieBrute) => {
+      const sortie = lireJson(sortieBrute), photos = photosACommenter(bien && bien.photos), donnees = donneesPourCartes(bien);
+      if (!sortie || photos.length < 2) return null;
       const out = { empreinte: empreinte(bien), le: (/* @__PURE__ */ new Date()).toISOString(), refus: [] };
       for (const langue of ["fr", "en"]) {
-        const s = sortie[langue] || {};
-        const lignes = [];
-        for (const l of Array.isArray(s.lignes) ? s.lignes : []) {
-          const r = verifierLigne(l, donnees, langue);
-          if (r) out.refus.push({ langue, ligne: String(l).slice(0, 140), raison: r });
-          else lignes.push(mettreEnForme(l, langue));
+        const s = sortie[langue] || {}, parPhoto = /* @__PURE__ */ new Map();
+        for (const c of Array.isArray(s.cartes) ? s.cartes : []) {
+          const n = Math.round(+(c && c.photo)), texte = String(c && c.texte || "").replace(/\r/g, "").trim();
+          if (!(n >= 1 && n <= photos.length) || parPhoto.has(n)) continue;
+          const r = verifierTexte(texte, donnees, langue);
+          if (r) out.refus.push({ langue, photo: n, texte: texte.slice(0, 170), raison: r });
+          else parPhoto.set(n, texte.split("\n").map((l) => mettreEnForme(l, langue)).join("\n"));
         }
-        if (lignes.length >= 3) out[langue] = { titre: verifierTitre(s.titre), lignes: lignes.slice(0, 9) };
+        const cartes = [...parPhoto.keys()].sort((x, y) => x - y).map((n) => ({ image: photos[n - 1], texte: parPhoto.get(n) }));
+        if (cartes.length >= Math.min(3, photos.length)) out[langue] = { titre: verifierTitre(s.titre), cartes };
       }
       return out.fr || out.en ? out : null;
     };
-    module2.exports = { SCHEMA, donneesPourCartes, empreinte, consignes, lignesVoulues, verifierLigne, verifierTitre, mettreEnForme, genererCartes };
+    module2.exports = { SCHEMA, VERSION: VERSION2, donneesPourCartes, empreinte, consignesPhotos, photosACommenter, verifierLigne, verifierTexte, verifierTitre, mettreEnForme, travail, recevoirCartes };
   }
 });
 
@@ -99492,31 +99513,35 @@ var require_bot2 = __commonJS({
         return null;
       }
     };
-    var CARTES_EN_COURS = /* @__PURE__ */ new Map();
-    var preparerCartes = async (bien, RA = {}) => {
-      if (!bien || bien.id == null || !RA.ia_actif) return null;
-      const Cx = require_cartes();
-      if (bien.cartes && bien.cartes.empreinte === Cx.empreinte(bien)) return bien.cartes;
-      const k = String(bien.id);
-      if (CARTES_EN_COURS.has(k)) return CARTES_EN_COURS.get(k);
-      const p = (async () => {
-        const G = require_gabarits();
-        if (await G.appelsDuJour() >= (+RA.ia_plafond_jour || 200)) return null;
-        const ia = flowApi().iaDepuisCoffre(RA.ia_fournisseur || "saltcorn", RA.ia_modele || "", "LEADS_IA_CLE", RA.ia_url || void 0);
-        const t0 = Date.now(), c = await Cx.genererCartes(ia, bien);
-        await G.noter({ ok: !!c, ms: Date.now() - t0, nature: "cartes", source: "bien " + k }).catch(() => {
-        });
-        if (!c) return null;
-        const t = await S.tables(), r = (await t.biens.getRows({ crm_id: k }, { orderBy: "id", limit: 1 }))[0];
-        if (r) await t.biens.updateRow({ cartes: JSON.stringify(c) }, r.id);
-        return c;
-      })().catch(() => null).finally(() => CARTES_EN_COURS.delete(k));
-      CARTES_EN_COURS.set(k, p);
-      return p;
+    var CONFIEES = globalThis[Symbol.for("dysizz-flow.leads.bot.cartes")] || (globalThis[Symbol.for("dysizz-flow.leads.bot.cartes")] = { biens: /* @__PURE__ */ new Map(), jour: "", n: 0 });
+    var travailCartes = (bien, R = {}) => {
+      if (!bien || bien.id == null || R.cartes_bot === false) return null;
+      const Cx = require_cartes(), k = String(bien.id), t = CONFIEES.biens.get(k), jour = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+      if (bien.cartes && bien.cartes.empreinte === Cx.empreinte(bien)) return null;
+      if (t && Date.now() - t < 5 * 6e4) return null;
+      if (CONFIEES.jour !== jour) {
+        CONFIEES.jour = jour;
+        CONFIEES.n = 0;
+      }
+      if (CONFIEES.n >= (+R.cartes_plafond_jour || 60)) return null;
+      const job = Cx.travail(bien);
+      if (job) {
+        CONFIEES.biens.set(k, Date.now());
+        CONFIEES.n++;
+      }
+      return job;
     };
-    var preparerPlusTard = (bien) => {
-      charger().then(({ reglages: RA }) => preparerCartes(bien, RA || {})).catch(() => {
-      });
+    var recevoirCartes = async (d, R) => {
+      if (!d || d.bien_id == null) return null;
+      const Cx = require_cartes(), { crm } = await charger();
+      const bien = await lireBien(crm, { bien_crm: String(d.bien_id) }, R);
+      if (!bien || Cx.empreinte(bien) !== d.empreinte) return null;
+      const c = Cx.recevoirCartes(bien, d.sortie);
+      CONFIEES.biens.delete(String(d.bien_id));
+      if (!c) return null;
+      const t = await S.tables(), r = (await t.biens.getRows({ crm_id: String(bien.id) }, { orderBy: "id", limit: 1 }))[0];
+      if (r) await t.biens.updateRow({ cartes: JSON.stringify(c) }, r.id);
+      return B.cartesPourBot({ cartes: c }).cartes || null;
     };
     var CONTACTS = globalThis[Symbol.for("dysizz-flow.leads.bot.contacts")] || (globalThis[Symbol.for("dysizz-flow.leads.bot.contacts")] = /* @__PURE__ */ new Map());
     var lireContact = async (crm, id) => {
@@ -99543,7 +99568,7 @@ var require_bot2 = __commonJS({
       const statut = dernier && dernier.type === "relance" ? "relance" : sortie ? json(sortie.donnees, {}).statut || "" : "";
       return { optout: rows.some((r) => r.type === "optout"), fiche: miens.some((r) => r.type === "fiche_envoyee"), ouverture: miens.some((r) => r.type === "ouverture"), statut };
     };
-    var contexte = async (corps, R) => {
+    var contexte = async (corps, R, { travail = true } = {}) => {
       const t = await S.tables(), tb = await tableBot(t);
       const { tel, dossier } = await trouver(t, corps, R);
       const etat = await etatDe(tb, tel, dossier);
@@ -99555,9 +99580,9 @@ var require_bot2 = __commonJS({
         dossier.essai ? dossier.projet ? { prenom: null, projets: [dossier.projet] } : null : lireContact(crm, dossier.contact_crm)
       ]);
       const photos = R.photos && bien && Array.isArray(bien.photos) ? bien.photos : [];
-      if (bien) preparerPlusTard(bien);
       const lead = leads[0] ? json(leads[0].dossier, {}) : dossier.essai && dossier.message ? { extraction: { message: dossier.message, nature: "lead" } } : null;
-      return B.contexte({ dossier, lead, bien, photos, contact, conf, reglages: R, etat });
+      const job = travail ? travailCartes(bien, R) : null;
+      return { ...B.contexte({ dossier, lead, bien, photos, contact, conf, reglages: R, etat }), ...job ? { cartes_a_rediger: job } : {} };
     };
     var TEXTE = (d) => d.texte || d.dernier_message || d.question || d.reponse || d.mot_cle || "";
     var evenement = async (corps, R) => {
@@ -99571,12 +99596,12 @@ var require_bot2 = __commonJS({
         const d = e.donnees && typeof e.donnees === "object" ? e.donnees : {}, q = new Date(e.quand);
         await noter(e.type, d, { noeud: court(e.noeud, 60), quand: isNaN(q) ? /* @__PURE__ */ new Date() : q, texte: court(TEXTE(d), 4e3), cle: evid ? `${evid}:${i}:${court(e.type, 60)}` : null });
       }
-      if (dossier && lot.some((e) => e.type === "ouverture" && e.noeud === "N0"))
-        charger().then(({ crm: crm2 }) => lireBien(crm2, dossier, R)).then((b) => {
-          if (b) preparerPlusTard(b);
-        }).catch(() => {
-        });
       const p = B.plan(lot, R), out = { ok: true, recus: lot.length };
+      const redigees = lot.find((e) => e.type === "cartes_redigees");
+      if (redigees) {
+        const c = await recevoirCartes(redigees.donnees, R).catch(() => null);
+        if (c) out.cartes = c;
+      }
       if (p.avis.some((a) => a.type === "message_apres_stop")) {
         const l = await tb.getRows({ tel9, type: "message_apres_stop" }, { orderBy: "id", orderDesc: true, limit: lot.length + 1 });
         const avant = l.slice(lot.filter((e) => e.type === "message_apres_stop").length)[0];
@@ -99772,7 +99797,6 @@ var require_bot2 = __commonJS({
         const r = (await t.biens.getRows({ crm_id: String(b.id) }, { orderBy: "id", limit: 1 }))[0];
         if (r && r.cartes) gardees.set(String(b.id), json(r.cartes, null));
       }
-      for (const b of trouves) if (!gardees.get(String(b.id))) preparerPlusTard(b);
       return { criteres: q, biens: trouves.map((b) => {
         const p = B.quiRecoit(b.negociateur_id, conf, b).personne;
         return {
@@ -99847,7 +99871,7 @@ var require_bot2 = __commonJS({
             out.envoyees.push({ tel9, code: "cloture" });
             continue;
           }
-          const ctx = await contexte({ telephone: tel }, R), bp = ctx && ctx.bien_public || {};
+          const ctx = await contexte({ telephone: tel }, R, { travail: false }), bp = ctx && ctx.bien_public || {};
           if (ctx.optout) continue;
           if (plan.code === "r2" && !(bp.en_vente === true && bp.statut_lu_le && maintenant - new Date(bp.statut_lu_le) < 3e5)) {
             await noter({ code: "r2", saute: true, motif: "bien non confirm\xE9 en vente \xE0 l'instant" });
@@ -99904,7 +99928,7 @@ var require_bot2 = __commonJS({
       const R = json((await require_conf().reglages()).bot, {});
       return ACTIONS2[k](corps && typeof corps === "object" ? corps : {}, R && typeof R === "object" ? R : {});
     };
-    module2.exports = { repondre, contexte, evenement, fiche, preparerCartes, telechargerPhotos, relancer };
+    module2.exports = { repondre, contexte, evenement, fiche, telechargerPhotos, relancer };
   }
 });
 

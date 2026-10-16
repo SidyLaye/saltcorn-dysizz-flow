@@ -36,28 +36,47 @@ assert.equal(C.mettreEnForme("🌳 5505 m² of grounds", "en"), "🌳 5,505 m² 
 assert.equal(C.mettreEnForme("💶 225000 €", "en"), "💶 €225,000");
 assert.equal(C.mettreEnForme("🧱 Une maison de 1800", "fr"), "🧱 Une maison de 1800", "une année n'est jamais groupée");
 
-/* génération : lignes fautives retirées, langue gardée seulement avec 3 lignes valides au moins */
-const ia = (sortie) => ({ generer: async () => sortie });
 (async () => {
-  const bon = { fr: { titre: "Maison de charme avec gîte, à Villefranche-de-Rouergue", lignes: ["🏡 140 m², 3 chambres et un gîte : de la place pour recevoir", "🌳 5 505 m² de jardin au calme d'un hameau",
-      "🏊 Une piscine naturelle avec vue sur la campagne", "📍 À 30 minutes de Rodez", "💶 225 000 € pour l'ensemble"] },
-    en: { titre: "Charming house with a gîte", lignes: ["🏡 140 m², 3 bedrooms and a gîte", "🌳 5,505 m² of garden"] } };
-  const c = await C.genererCartes(ia(bon), BIEN);
-  assert.equal(c.fr.lignes.length, 4, "la ligne inventée (30 minutes de Rodez) est retirée");
-  assert.ok(!c.fr.lignes.some((l) => /Rodez/.test(l)));
-  assert.equal(c.en, undefined, "moins de 3 lignes valides en anglais : le bot reprend ses lignes de secours");
-  assert.equal(c.empreinte, C.empreinte(BIEN));
-  assert.equal(await C.genererCartes({ generer: async () => { throw new Error("IA en panne"); } }, BIEN), null, "IA en panne : rien, jamais d'erreur");
-  /* le nombre de lignes demandé suit le nombre de photos (une ligne par photo, la dernière carte est le référent) */
-  assert.match(C.consignes(donnees, 6), /exactement 5 lignes/);
-  assert.match(C.consignes(donnees, 30), /exactement 9 lignes/);
-  /* l'empreinte change quand l'annonce change, pas autrement */
+  /* l'empreinte change quand l'annonce ou ses photos changent, pas autrement */
   assert.equal(C.empreinte(BIEN), C.empreinte({ ...BIEN }));
   assert.notEqual(C.empreinte(BIEN), C.empreinte({ ...BIEN, prix: 219000 }));
-  /* client IA de l'application : rédaction générique (schéma JSON fourni), en plus de la lecture des mails */
-  let recu;
-  const client = require("../src/lib/leads/ia").creer({ fournisseur: "test", appeler: async (prompt, schema, nom) => { recu = { prompt, schema, nom }; return '{"fr":{"titre":"T","lignes":[]}}'; } });
-  assert.deepEqual(await client.generer("p", C.SCHEMA, "cartes"), { fr: { titre: "T", lignes: [] } });
-  assert.equal(recu.nom, "cartes"); assert.equal(recu.schema, C.SCHEMA);
-  console.log("cartes rédigées par l'application OK");
+  assert.notEqual(C.empreinte(BIEN), C.empreinte({ ...BIEN, photos: ["z", ...BIEN.photos] }), "nouvelle photo : textes refaits");
+  /* revue du 16/10 (Sidy) : un TEXTE par carte, qui met en valeur ce que montre SA photo, avec des émojis ; l'IA voit chaque photo */
+  const okT = (t, langue = "fr") => C.verifierTexte(t, donnees, langue);
+  assert.equal(okT("🌳 5 505 m² de jardin au calme d'un hameau.\n☀️ De quoi déjeuner dehors dès les beaux jours."), null);
+  assert.match(okT("🌳 Un jardin au calme d'un hameau."), /émojis/, "un seul émoji : le texte doit en avoir plusieurs");
+  assert.match(okT("🌳 a\n🏡 b\n🔥 c\n☀️ d"), /lignes/, "Meta : 2 sauts de ligne au plus");
+  assert.match(okT("🌳 " + "a".repeat(160) + "\n🏡 b"), /longueur/, "160 caractères au plus (Meta)");
+  assert.match(okT("🌳 Un jardin au calme.\n📍 À 30 minutes de Rodez."), /nombre/, "les contrôles des lignes valent pour chaque texte");
+  assert.match(okT("🏡 Une maison magnifique.\n🌳 Un grand jardin."), /superlatif/);
+  const P6 = ["https://x.fr/1.jpg", "https://x.fr/2.jpg", "https://x.fr/3.jpg", "https://x.fr/4.jpg", "https://x.fr/5.jpg", "https://x.fr/6.jpg"];
+  /* le travail confié au bot (IA de Botpress, demande de Sidy du 16/10) : la consigne et les photos ; rien si moins de 3 photos */
+  const P6B = { ...BIEN, photos: P6 };
+  const job = C.travail(P6B);
+  assert.deepEqual(Object.keys(job).sort(), ["bien_id", "consigne", "empreinte", "photos"]);
+  assert.deepEqual(job.photos, P6.slice(0, 5), "la dernière photo est gardée pour la carte du référent");
+  assert.equal(job.empreinte, C.empreinte(P6B)); assert.match(job.consigne, /Photo 1 à Photo 5/); assert.match(job.consigne, /2 lignes/);
+  assert.match(job.consigne, /aucun montant/i, "le prix est dans le message du carrousel, pas sous les photos");
+  assert.ok(!/Honoraires|vendeur/.test(job.consigne.split("DONNÉES")[1]), "données triées");
+  assert.equal(C.travail({ ...BIEN, photos: P6.slice(0, 2) }), null, "moins de 3 photos : lignes de secours du bot");
+  const sortieIA = {
+    fr: { titre: "Maison de charme avec gîte, à Villefranche-de-Rouergue", cartes: [
+      { photo: 2, texte: "🌳 5 505 m² de jardin au calme d'un hameau.\n☀️ De quoi déjeuner dehors dès les beaux jours." },
+      { photo: 1, texte: "🏡 140 m² et 3 chambres sous un même toit.\n👨‍👩‍👧 De la place pour toute la famille." },
+      { photo: 3, texte: "🏊 Une piscine naturelle face à la campagne.\n🌄 Pour se baigner au calme." },
+      { photo: 4, texte: "🔥 Un chauffage au bois.\n📍 À 30 minutes de Rodez." },
+      { photo: 5, texte: "🛏️ 3 chambres pour la famille.\n🌙 Chacun son espace pour se reposer." }] },
+    en: { titre: "Charming house with a gîte", cartes: [{ photo: 1, texte: "🏡 140 m² and 3 bedrooms.\n👨‍👩‍👧 Room for the whole family." }] } };
+  const cv = C.recevoirCartes(P6B, JSON.stringify(sortieIA));
+  assert.deepEqual(cv.fr.cartes.map((x) => x.image), [P6[0], P6[1], P6[2], P6[4]], "chaque texte reste sous SA photo, dans l'ordre des photos ; le texte fautif (photo 4) est retiré");
+  assert.equal(cv.empreinte, C.empreinte(P6B)); assert.ok(cv.refus.some((r) => r.photo === 4));
+  assert.equal(cv.fr.cartes[1].texte, "🌳 5 505 m² de jardin au calme d'un hameau.\n☀️ De quoi déjeuner dehors dès les beaux jours.");
+  assert.equal(cv.en, undefined, "moins de 3 textes valides : la langue n'est pas rendue");
+  assert.equal(C.recevoirCartes(P6B, "pas du JSON"), null, "réponse illisible : rien");
+  assert.equal(okT("🌿 Un coin frais à l'ombre du figuier.\n☀️ Pour déjeuner dehors."), null, "« frais » au sens de fraîcheur n'est pas un sujet réservé (essai du 16/10)");
+  assert.match(okT("🏡 Frais d'agence inclus.\n🌳 Un grand terrain."), /réservé/, "les frais d'agence le restent");
+  /* le bot reçoit les textes avec leur photo */
+  const B = require("../src/lib/leads/bot");
+  assert.deepEqual(B.cartesPourBot({ cartes: cv }).cartes.fr.cartes[0], { image: P6[0], texte: "🏡 140 m² et 3 chambres sous un même toit.\n👨‍👩‍👧 De la place pour toute la famille." });
+  console.log("cartes du carrousel (rédigées par l'IA de Botpress, contrôlées par l'application) OK");
 })().catch((e) => { console.error(e); process.exitCode = 1; });

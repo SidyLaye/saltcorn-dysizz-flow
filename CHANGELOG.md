@@ -1,5 +1,18 @@
 # Journal des versions
 
+## 2.25.0
+
+### Modifié
+- Carrousel du bien (demande de Sidy du 16/10) : un texte par carte, qui met en valeur ce que montre SA photo, sur 2 lignes avec émojis
+  (160 caractères), rédigé par l'IA de Botpress — le bot s'en charge après avoir répondu au lead — et non plus par l'IA de l'application.
+  L'application prépare la consigne et les photos (contexte : `cartes_a_rediger`, un seul bot à la fois par bien, plafond du jour
+  `cartes_plafond_jour`, `cartes_bot: false` pour couper), contrôle chaque texte (chiffres, années, superlatifs, sujets réservés, aucun
+  montant, français dans l'anglais) et le garde avec le bien (événement `cartes_redigees`) ; une réponse pour une annonce qui a changé
+  est ignorée. Les anciennes cartes (une ligne par photo) restent lisibles jusqu'à leur réécriture.
+
+### Corrigé
+- Cartes : « un coin frais » n'est plus pris pour des frais (seuls « frais d'agence, de notaire… » sont réservés).
+
 ## 2.24.3
 
 ### Corrigé

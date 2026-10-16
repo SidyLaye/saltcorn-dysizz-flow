@@ -173,26 +173,31 @@ const sortie = (code, plus = {}) => ({ type: "sortie", noeud: "TB3", quand: "202
   assert.ok(alertes.length > 0 && new Set(alertes.map((m) => m.a)).size === alertes.length, "une alerte par destinataire, une seule fois : " + JSON.stringify(alertes.map((m) => m.a)));
   assert.strictEqual((await repondre("fiche", { telephone: "33622222222" })).echec, true);
 
-  /* cartes du carrousel (revue du 15/10, § 6.1) : rédigées par l'IA de l'application une fois par bien, gardées avec lui, rendues au bot */
+  /* cartes du carrousel (demande de Sidy du 16/10) : un texte par photo, rédigé par l'IA de Botpress (le bot, après sa réponse au lead),
+     contrôlé et gardé ici avec le bien ; le contexte confie le travail au bot quand les textes manquent ou ne suivent plus l'annonce */
   {
-    const { preparerCartes } = require("../src/lib/leads/tables/bot");
-    IA_SORTIE = { fr: { titre: "Maison de 5 pièces à Cahors", lignes: ["🏡 120 m² et 5 pièces pour toute la famille", "📍 Une maison à Cahors", "💶 245 000 € pour l'ensemble", "🏡 Une maison exceptionnelle"] },
-      en: { titre: "House in Cahors", lignes: ["🏡 120 m² and 5 rooms"] } };
-    IA_ACTIF = true; notesIA.length = 0;
-    await repondre("contexte", { telephone: "33611111111", dossier_id: 7 });   // copie du bien 99 dans ld_biens ; préparation lancée en arrière-plan
-    const bien = { ...(await require("../src/lib/leads/tables/catalogue").bienFrais(crm, 99, {})) };
-    const c = await preparerCartes(bien, { ia_actif: true, ia_plafond_jour: 5 });
-    assert.deepEqual(c.fr.lignes, ["🏡 120 m² et 5 pièces pour toute la famille", "📍 Une maison à Cahors", "💶 245 000 € pour l'ensemble"], "ligne au superlatif retirée");
-    const ligne99 = T.biens.L.find((b) => b.crm_id === "99");
-    assert.equal(JSON.parse(ligne99.cartes).fr.titre, "Maison de 5 pièces à Cahors", "cartes gardées avec le bien");
-    const appels = APPELS_IA; await preparerCartes({ ...bien, cartes: JSON.parse(ligne99.cartes) }, { ia_actif: true, ia_plafond_jour: 5 });
-    assert.equal(APPELS_IA, appels, "même annonce : l'IA n'est pas rappelée");
-    assert.equal(await preparerCartes({ ...bien, prix: 1 }, { ia_actif: false }), null, "IA coupée dans les réglages : rien");
-    notesIA.push(...Array(5).fill({ ok: true })); assert.equal(await preparerCartes({ ...bien, prix: 2 }, { ia_actif: true, ia_plafond_jour: 5 }), null, "plafond du jour atteint : rien"); notesIA.length = 0;
-    ligne99.synchro_le = new Date();   // copie fraîche : le contexte la rend telle quelle
-    const ctx = await repondre("contexte", { telephone: "33611111111", dossier_id: 7 });
-    assert.deepEqual(ctx.bien_public.cartes, { fr: { titre: "Maison de 5 pièces à Cahors", lignes: c.fr.lignes } }, "le bot reçoit les cartes, sans empreinte ni refus");
-    IA_ACTIF = false;
+    const BOTc = BOT; BOT = { ...BOT, photos: "pr_p" };
+    const P4 = ["https://x.fr/c1.jpg", "https://x.fr/c2.jpg", "https://x.fr/c3.jpg", "https://x.fr/c4.jpg"];
+    CRM_CHANGE[99] = { photos: P4 }; for (const x of T.biens.L.filter((y) => y.crm_id === "99")) x.synchro_le = new Date(0);
+    let ctx = await repondre("contexte", { telephone: "33611111111", dossier_id: 7 });
+    const job = ctx.cartes_a_rediger;
+    assert.ok(job && job.bien_id === "99" && job.photos.length === 3 && /Photo 1 à Photo 3/.test(job.consigne), "textes absents : le travail est confié au bot");
+    assert.equal((await repondre("contexte", { telephone: "33611111111", dossier_id: 7 })).cartes_a_rediger, undefined, "un seul bot à la fois pour un même bien");
+    const sortie = { fr: { titre: "Maison de 5 pièces à Cahors", cartes: [{ photo: 1, texte: "🏡 120 m² et 5 pièces.\n👨‍👩‍👧 De la place pour toute la famille." },
+      { photo: 2, texte: "🌳 Un extérieur au calme.\n☀️ Pour profiter des beaux jours." }, { photo: 3, texte: "🛏️ Des chambres au calme.\n🌙 Pour bien se reposer." },
+      { photo: 3, texte: "doublon" }] }, en: { titre: "House in Cahors", cartes: [] } };
+    const lot = (id, empreinte) => repondre("evenement", { telephone: "33611111111", dossier_id: 7, event_id: id,
+      evenements: [{ type: "cartes_redigees", donnees: { bien_id: "99", empreinte, sortie: JSON.stringify(sortie) } }] });
+    const r = await lot("evc1", job.empreinte);
+    assert.deepEqual(r.cartes.fr.cartes.map((x) => x.image), P4.slice(0, 3), "le bot reçoit aussitôt les textes contrôlés, chacun avec sa photo");
+    const l99 = T.biens.L.find((y) => y.crm_id === "99");
+    assert.equal(JSON.parse(l99.cartes).fr.cartes.length, 3, "textes gardés avec le bien");
+    l99.synchro_le = new Date();
+    ctx = await repondre("contexte", { telephone: "33611111111", dossier_id: 7 });
+    assert.equal(ctx.cartes_a_rediger, undefined, "textes à jour : plus rien à rédiger");
+    assert.equal(ctx.bien_public.cartes.fr.cartes[0].texte, "🏡 120 m² et 5 pièces.\n👨‍👩‍👧 De la place pour toute la famille.");
+    assert.equal((await lot("evc2", "empreinte-ancienne")).cartes, undefined, "réponse pour une annonce qui a changé entre-temps : ignorée");
+    delete CRM_CHANGE[99]; BOT = BOTc;
   }
 
   /* bien encore en vente (revue du 15/10, tâche 4) : statut lu à l'instant dans le CRM ; inconnu → null (le bot ne dit rien) */
