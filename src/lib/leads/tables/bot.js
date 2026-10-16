@@ -143,7 +143,10 @@ const evenement = async (corps, R) => {
     const d = e.donnees && typeof e.donnees === "object" ? e.donnees : {}, q = new Date(e.quand);
     await noter(e.type, d, { noeud: court(e.noeud, 60), quand: isNaN(q) ? new Date() : q, texte: court(TEXTE(d), 4000), cle: evid ? `${evid}:${i}:${court(e.type, 60)}` : null });
   }
-  const p = B.plan(lot, R), out = { ok: true, recus: lot.length };
+  /* vendeur déjà déclaré dans cette conversation (depuis la dernière ouverture) : il reste en rouge */
+  const derniereOuverture = ((await tb.getRows({ tel9, type: "ouverture" }, { orderBy: "id", orderDesc: true, limit: 1 }))[0] || { id: 0 }).id;
+  const vendeur = (await tb.getRows({ tel9, type: "prioritaire_vendeur" }, { orderBy: "id", orderDesc: true, limit: 1 })).some((r) => r.id >= derniereOuverture);
+  const p = B.plan(lot, R, { vendeur }), out = { ok: true, recus: lot.length };
   const redigees = lot.find((e) => e.type === "cartes_redigees");
   if (redigees) { const c = await recevoirCartes(redigees.donnees, R).catch(() => null); if (c) out.cartes = c; }
   /* un désinscrit qui écrit plusieurs messages : une seule alerte par 24 h (la ligne de ce tour est déjà rangée) */

@@ -173,19 +173,23 @@ const montant = (v) => {
    du client : R.couleurs = { HOT, WARM, COLD }, R.actions = { "OUT-1": id, …, defaut: id, VENDEUR: id }.
    R.recherches = true : à une sortie qualifiée (visite, rappel, documentation), recherche du prospect liée au bien et lien avec
    l'autre bien visité (parcours page 14). « une_fois » : écriture faite une seule fois par contact, même si le lead reprend. */
-const plan = (evenements, R = {}) => {
+const plan = (evenements, R = {}, { vendeur: dejaVendeur = false } = {}) => {
   const out = { crm: [], avis: [], optout: false };
   const sortie = (evenements || []).some((e) => e && e.type === "sortie");
+  /* lead vendeur = urgence (Sidy, 16/10) : rouge dans le CRM quel que soit son délai d'achat, et il le reste dans la conversation */
+  const vendeur = dejaVendeur || (evenements || []).some((e) => e && (e.type === "prioritaire_vendeur" || (e.type === "sortie" && e.donnees && e.donnees.lead_prioritaire)));
+  const couleurDe = (t) => (R.couleurs || {})[vendeur ? "HOT" : t];
+  const poserCouleur = (couleur) => { if (couleur && !out.crm.some((x) => x.op === "couleurContact" && x.couleur === couleur)) out.crm.push({ op: "couleurContact", couleur }); };
   for (const e of evenements || []) {
     const d = (e && e.donnees) || {};
     if (e.type === "optout") out.optout = true;
+    if (e.type === "prioritaire_vendeur") poserCouleur(couleurDe("HOT"));
     if (e.type === "prioritaire_vendeur" && (R.actions || {}).VENDEUR && !out.crm.some((x) => x.une_fois === "vendeur"))
       out.crm.push({ op: "ajouterAction", action_id: R.actions.VENDEUR, une_fois: "vendeur", texte: "WhatsApp. Bien à vendre déclaré par le prospect (lead prioritaire)." + (d.reponse ? `\nSa réponse : ${String(d.reponse).slice(0, 300)}` : "") });
     /* la couleur suit le délai dès qu'il est connu ou qu'il change, sans attendre une sortie : le lead peut s'arrêter à tout moment */
-    else if (e.type === "temperature") { const couleur = (R.couleurs || {})[d.temperature]; if (couleur && !out.crm.some((x) => x.op === "couleurContact" && x.couleur === couleur)) out.crm.push({ op: "couleurContact", couleur }); }
+    else if (e.type === "temperature") poserCouleur(couleurDe(d.temperature));
     else if (e.type === "sortie") {
-      const couleur = (R.couleurs || {})[d.temperature];
-      if (couleur && !out.crm.some((x) => x.op === "couleurContact" && x.couleur === couleur)) out.crm.push({ op: "couleurContact", couleur });
+      if (d.temperature || vendeur) poserCouleur(couleurDe(d.temperature));
       const action = (R.actions || {})[d.code] || (R.actions || {}).defaut;
       if (action) out.crm.push({ op: "ajouterAction", action_id: action, texte: "WhatsApp. " + lignes(d).map(([l, v]) => `${l} : ${v}`).join("\n") });
       if (R.recherches === true && ["OUT-1", "OUT-2", "OUT-3"].includes(d.code)) {

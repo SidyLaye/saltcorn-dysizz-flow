@@ -45,18 +45,24 @@ const QUAND = new Date("2026-10-13T10:00:00Z");
   const stop = B.plan([{ type: "sortie", donnees: { code: "OUT-6" } }, { type: "optout", donnees: {} }], R);
   assert.ok(stop.optout && !stop.avis.length && stop.crm.length === 1, "désinscription : notée, sans message aux équipes ni couleur");
   assert.strictEqual(B.plan([{ type: "prioritaire_vendeur", donnees: { reponse: "oui" } }], {}).avis.length, 1);
+  /* lead vendeur = urgence (Sidy, 16/10) : rouge dans le CRM quel que soit son délai d'achat */
+  const RV = { couleurs: { HOT: 5, WARM: 8, COLD: 3 } };
+  assert.deepStrictEqual(B.plan([{ type: "prioritaire_vendeur", donnees: { reponse: "oui" } }], RV).crm, [{ op: "couleurContact", couleur: 5 }], "vendeur déclaré : rouge tout de suite");
+  assert.deepStrictEqual(B.plan([{ type: "sortie", donnees: { code: "OUT-2", temperature: "COLD", lead_prioritaire: true } }], RV).crm.filter((a) => a.op === "couleurContact"), [{ op: "couleurContact", couleur: 5 }], "vendeur à plus de 12 mois : rouge quand même");
+  assert.deepStrictEqual(B.plan([{ type: "temperature", donnees: { temperature: "WARM" } }], RV, { vendeur: true }).crm, [{ op: "couleurContact", couleur: 5 }], "délai donné après coup : le vendeur reste rouge");
+  assert.deepStrictEqual(B.plan([{ type: "temperature", donnees: { temperature: "WARM" } }], RV).crm, [{ op: "couleurContact", couleur: 8 }], "acheteur seul : la couleur suit le délai");
   const plusInteresse = B.plan([{ type: "sortie", donnees: { code: "OUT-5", motif: "le prospect n'est plus intéressé : déjà acheté" } }], R).avis[0];
   assert.deepStrictEqual([plusInteresse.titre, plusInteresse.qualifie], ["Le prospect n'est plus intéressé", false], "OUT-5 : information, pas un lead qualifié");
   assert.deepStrictEqual(B.plan([sortie], {}).crm, [], "sans identifiants réglés, rien n'est écrit dans le CRM");
   /* parcours page 14 (tâche 12) : recherche du prospect liée au bien, lien avec l'autre bien visité, lead vendeur ; seulement si réglés */
   const R12 = { ...R, recherches: true, actions: { ...R.actions, VENDEUR: 333 } };
   const p12 = B.plan([{ type: "prioritaire_vendeur", donnees: { reponse: "oui, une maison à Rodez" } }, { ...sortie, donnees: { ...sortie.donnees, autre_bien_id: 97, qualification: { budget: "Environ 250 000 €", zone: "Cahors" } } }], R12);
-  assert.deepStrictEqual(p12.crm.map((a) => [a.op, a.une_fois || ""]), [["ajouterAction", "vendeur"], ["couleurContact", ""], ["ajouterAction", ""], ["lierBien", "lien-97"], ["creerRecherche", "recherche"]]);
-  assert.strictEqual(p12.crm[0].action_id, 333); assert.ok(/bien à vendre/i.test(p12.crm[0].texte) && p12.crm[0].texte.includes("une maison à Rodez"));
+  assert.deepStrictEqual(p12.crm.map((a) => [a.op, a.une_fois || ""]), [["couleurContact", ""], ["ajouterAction", "vendeur"], ["ajouterAction", ""], ["lierBien", "lien-97"], ["creerRecherche", "recherche"]], "vendeur : rouge d'abord (16/10), puis l'action « bien à vendre »");
+  assert.strictEqual(p12.crm[1].action_id, 333); assert.ok(/bien à vendre/i.test(p12.crm[1].texte) && p12.crm[1].texte.includes("une maison à Rodez"));
   assert.deepStrictEqual(p12.crm[4].criteres, { budget_max: 250000, localisation: "Cahors" });
   assert.ok(!B.plan([{ type: "sortie", donnees: { code: "OUT-6" } }], R12).crm.some((a) => a.op === "creerRecherche"), "STOP : pas de recherche");
   assert.ok(!B.plan([{ type: "sortie", donnees: { code: "OUT-4" } }], R12).crm.some((a) => a.op === "creerRecherche"), "reprise humaine : pas de recherche");
-  assert.deepStrictEqual(B.plan([{ type: "prioritaire_vendeur", donnees: {} }], R).crm, [], "type d'action vendeur non réglé : rien");
+  assert.deepStrictEqual(B.plan([{ type: "prioritaire_vendeur", donnees: {} }], R).crm, [{ op: "couleurContact", couleur: 5 }], "type d'action vendeur non réglé : pas d'action, seulement le rouge");
   assert.ok(!B.plan([sortie], R).crm.some((a) => a.op === "creerRecherche" || a.op === "lierBien"), "recherches non réglées : rien");
 
   const m = B.mailEquipe({ avis: p.avis[0], dossier, bien: BIEN, telephone: "33611111111", fil: [{ role: "prospect", texte: "<b>Je veux visiter</b>" }], aurait_recu: ["martin@agence-exemple.fr"] });

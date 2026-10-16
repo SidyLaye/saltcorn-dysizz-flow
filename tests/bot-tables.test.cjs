@@ -97,6 +97,11 @@ const sortie = (code, plus = {}) => ({ type: "sortie", noeud: "TB3", quand: "202
   assert.deepStrictEqual(crm.ecritures.map((e) => [e.op, e.id]), [["couleurContact", "777"]]);
   await temp("ev3b", "HOT"); assert.strictEqual(crm.ecritures.length, 1, "même couleur : pas réécrite quand le lead reprend");
   await temp("ev3c", "WARM"); assert.strictEqual(crm.ecritures.length, 2, "couleur changée : réécrite");
+  /* vendeur déclaré dans la conversation (Sidy, 16/10 : c'est une urgence) : rouge, et le reste même si un délai lointain arrive ensuite */
+  await repondre("evenement", { telephone: "33688888888", event_id: "ev3v", evenements: [{ type: "prioritaire_vendeur", donnees: { reponse: "oui" } }] });
+  assert.deepStrictEqual(crm.ecritures.slice(-1).map((e) => [e.op, e.couleur]), [["couleurContact", 5]], "vendeur : rouge tout de suite");
+  const n3 = crm.ecritures.length; await temp("ev3w", "WARM");
+  assert.ok(!crm.ecritures.slice(n3).some((e) => e.op === "couleurContact" && e.couleur === 8), "le vendeur ne repasse pas en orange");
   assert.strictEqual((await repondre("evenement", { ...tour, event_id: "ev3d" })).crm, "non écrit", "numéro hors liste : CRM non écrit");
   BOT = BOT0;
 

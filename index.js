@@ -1,4 +1,4 @@
-/* dysizz-flow 2.25.0 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.25.1 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.25.0" : "dev";
+    var VERSION2 = true ? "2.25.1" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -99155,21 +99155,24 @@ var require_bot = __commonJS({
       const n = parseFloat(m[1].replace(",", ".")) * (m[2] === "k" ? 1e3 : m[2] ? 1e6 : 1);
       return n >= 1e4 && n < 1e8 ? Math.round(n) : null;
     };
-    var plan = (evenements, R = {}) => {
+    var plan = (evenements, R = {}, { vendeur: dejaVendeur = false } = {}) => {
       const out = { crm: [], avis: [], optout: false };
       const sortie = (evenements || []).some((e) => e && e.type === "sortie");
+      const vendeur = dejaVendeur || (evenements || []).some((e) => e && (e.type === "prioritaire_vendeur" || e.type === "sortie" && e.donnees && e.donnees.lead_prioritaire));
+      const couleurDe = (t) => (R.couleurs || {})[vendeur ? "HOT" : t];
+      const poserCouleur = (couleur) => {
+        if (couleur && !out.crm.some((x) => x.op === "couleurContact" && x.couleur === couleur)) out.crm.push({ op: "couleurContact", couleur });
+      };
       for (const e of evenements || []) {
         const d = e && e.donnees || {};
         if (e.type === "optout") out.optout = true;
+        if (e.type === "prioritaire_vendeur") poserCouleur(couleurDe("HOT"));
         if (e.type === "prioritaire_vendeur" && (R.actions || {}).VENDEUR && !out.crm.some((x) => x.une_fois === "vendeur"))
           out.crm.push({ op: "ajouterAction", action_id: R.actions.VENDEUR, une_fois: "vendeur", texte: "WhatsApp. Bien \xE0 vendre d\xE9clar\xE9 par le prospect (lead prioritaire)." + (d.reponse ? `
 Sa r\xE9ponse : ${String(d.reponse).slice(0, 300)}` : "") });
-        else if (e.type === "temperature") {
-          const couleur = (R.couleurs || {})[d.temperature];
-          if (couleur && !out.crm.some((x) => x.op === "couleurContact" && x.couleur === couleur)) out.crm.push({ op: "couleurContact", couleur });
-        } else if (e.type === "sortie") {
-          const couleur = (R.couleurs || {})[d.temperature];
-          if (couleur && !out.crm.some((x) => x.op === "couleurContact" && x.couleur === couleur)) out.crm.push({ op: "couleurContact", couleur });
+        else if (e.type === "temperature") poserCouleur(couleurDe(d.temperature));
+        else if (e.type === "sortie") {
+          if (d.temperature || vendeur) poserCouleur(couleurDe(d.temperature));
           const action = (R.actions || {})[d.code] || (R.actions || {}).defaut;
           if (action) out.crm.push({ op: "ajouterAction", action_id: action, texte: "WhatsApp. " + lignes(d).map(([l, v]) => `${l} : ${v}`).join("\n") });
           if (R.recherches === true && ["OUT-1", "OUT-2", "OUT-3"].includes(d.code)) {
@@ -99596,7 +99599,9 @@ var require_bot2 = __commonJS({
         const d = e.donnees && typeof e.donnees === "object" ? e.donnees : {}, q = new Date(e.quand);
         await noter(e.type, d, { noeud: court(e.noeud, 60), quand: isNaN(q) ? /* @__PURE__ */ new Date() : q, texte: court(TEXTE(d), 4e3), cle: evid ? `${evid}:${i}:${court(e.type, 60)}` : null });
       }
-      const p = B.plan(lot, R), out = { ok: true, recus: lot.length };
+      const derniereOuverture = ((await tb.getRows({ tel9, type: "ouverture" }, { orderBy: "id", orderDesc: true, limit: 1 }))[0] || { id: 0 }).id;
+      const vendeur = (await tb.getRows({ tel9, type: "prioritaire_vendeur" }, { orderBy: "id", orderDesc: true, limit: 1 })).some((r) => r.id >= derniereOuverture);
+      const p = B.plan(lot, R, { vendeur }), out = { ok: true, recus: lot.length };
       const redigees = lot.find((e) => e.type === "cartes_redigees");
       if (redigees) {
         const c = await recevoirCartes(redigees.donnees, R).catch(() => null);

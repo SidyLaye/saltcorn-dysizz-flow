@@ -1,5 +1,11 @@
 # Journal des versions
 
+## 2.25.1
+
+### Modifié
+- Lead vendeur = urgence (décision de Sidy du 16/10) : couleur rouge (réglage `couleurs.HOT`) dans le CRM dès qu'il se déclare vendeur, quel
+  que soit son délai d'achat, et elle ne redescend pas tant que la conversation dure ; le mail aux équipes garde le vrai délai du projet.
+
 ## 2.25.0
 
 ### Modifié
