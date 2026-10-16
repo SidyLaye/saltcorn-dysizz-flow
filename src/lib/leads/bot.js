@@ -155,14 +155,27 @@ const lignes = (d = {}) => {
   ].filter(([, v]) => v !== undefined && v !== null && String(v).trim() !== "").map(([l, v]) => [l, String(v)]);
 };
 
+/* « Environ 250 000 € », « 250k », « 250000 » → 250000 ; rien de sûr → null */
+const montant = (v) => {
+  const t = String(v == null ? "" : v).toLowerCase().replace(/(\d)[\s\u00a0.](?=\d{3}\b)/g, "$1");
+  const m = t.match(/(\d+(?:[.,]\d+)?)\s*(k|m|millions?)?/);
+  if (!m) return null;
+  const n = parseFloat(m[1].replace(",", ".")) * (m[2] === "k" ? 1e3 : m[2] ? 1e6 : 1);
+  return n >= 10000 && n < 1e8 ? Math.round(n) : null;
+};
+
 /* Ce qu'un lot d'événements déclenche. Les identifiants de couleur et de type d'action sont ceux du CRM
-   du client : R.couleurs = { HOT, WARM, COLD }, R.actions = { "OUT-1": id, …, defaut: id }. */
+   du client : R.couleurs = { HOT, WARM, COLD }, R.actions = { "OUT-1": id, …, defaut: id, VENDEUR: id }.
+   R.recherches = true : à une sortie qualifiée (visite, rappel, documentation), recherche du prospect liée au bien et lien avec
+   l'autre bien visité (parcours page 14). « une_fois » : écriture faite une seule fois par contact, même si le lead reprend. */
 const plan = (evenements, R = {}) => {
   const out = { crm: [], avis: [], optout: false };
   const sortie = (evenements || []).some((e) => e && e.type === "sortie");
   for (const e of evenements || []) {
     const d = (e && e.donnees) || {};
     if (e.type === "optout") out.optout = true;
+    if (e.type === "prioritaire_vendeur" && (R.actions || {}).VENDEUR && !out.crm.some((x) => x.une_fois === "vendeur"))
+      out.crm.push({ op: "ajouterAction", action_id: R.actions.VENDEUR, une_fois: "vendeur", texte: "WhatsApp. Bien à vendre déclaré par le prospect (lead prioritaire)." + (d.reponse ? `\nSa réponse : ${String(d.reponse).slice(0, 300)}` : "") });
     /* la couleur suit le délai dès qu'il est connu ou qu'il change, sans attendre une sortie : le lead peut s'arrêter à tout moment */
     else if (e.type === "temperature") { const couleur = (R.couleurs || {})[d.temperature]; if (couleur && !out.crm.some((x) => x.op === "couleurContact" && x.couleur === couleur)) out.crm.push({ op: "couleurContact", couleur }); }
     else if (e.type === "sortie") {
@@ -170,11 +183,31 @@ const plan = (evenements, R = {}) => {
       if (couleur && !out.crm.some((x) => x.op === "couleurContact" && x.couleur === couleur)) out.crm.push({ op: "couleurContact", couleur });
       const action = (R.actions || {})[d.code] || (R.actions || {}).defaut;
       if (action) out.crm.push({ op: "ajouterAction", action_id: action, texte: "WhatsApp. " + lignes(d).map(([l, v]) => `${l} : ${v}`).join("\n") });
+      if (R.recherches === true && ["OUT-1", "OUT-2", "OUT-3"].includes(d.code)) {
+        if (d.autre_bien_id) out.crm.push({ op: "lierBien", bien_id: String(d.autre_bien_id), une_fois: `lien-${d.autre_bien_id}` });
+        const q = d.qualification || {}, criteres = {};
+        if (montant(q.budget)) criteres.budget_max = montant(q.budget);
+        if (q.zone) criteres.localisation = String(q.zone).slice(0, 80);
+        if (!out.crm.some((x) => x.op === "creerRecherche")) out.crm.push({ op: "creerRecherche", une_fois: "recherche", criteres });
+      }
       if (d.code !== "OUT-6") out.avis.push({ titre: DEMANDES[d.code] || "Demande", qualifie: true, prioritaire: !!d.lead_prioritaire, donnees: d, referents: [d.lead_financement && "f", d.lead_travaux && "w", d.lead_relocation && "i"].filter(Boolean) });
     } else if (AVIS[e.type] && !(sortie && e.type === "prioritaire_vendeur"))
       out.avis.push({ titre: AVIS[e.type], type: e.type, prioritaire: e.type === "prioritaire_vendeur", donnees: d, referents: [] });
   }
   return out;
+};
+
+/* Alerte WhatsApp au négociateur (modèle sh_alerte_nego ; slides 02, 08, 16, 17, R05) : visite demandée ou bien à vendre déclaré.
+   Rend les 5 valeurs du modèle, ou null si l'événement n'appelle pas d'alerte (un rappel ou une documentation : le mail suffit). */
+const PROJET = { HOT: "projet à moins de 3 mois", WARM: "projet entre 3 et 12 mois", COLD: "projet à plus de 12 mois" };
+const alerteNego = ({ avis, dossier = {}, bien, telephone }) => {
+  const d = avis.donnees || {}, visite = avis.qualifie && d.code === "OUT-1", vendeur = avis.type === "prioritaire_vendeur";
+  if (!visite && !vendeur) return null;
+  const b = bien || {}, t = String(telephone || "").replace(/\D/g, "");
+  const demande = vendeur ? ["bien à vendre déclaré"] : ["demande de visite", d.lead_prioritaire && "bien à vendre", PROJET[d.temperature]];
+  return [vendeur || d.lead_prioritaire ? "prioritaire" : "qualifié", String(dossier.nom || "Un prospect").slice(0, 60),
+    [b.reference && "réf. " + b.reference, b.ville && "à " + b.ville].filter(Boolean).join(" ") || "de l'annonce", demande.filter(Boolean).join(", "),
+    /^33\d{9}$/.test(t) ? "+33 " + t.slice(2).replace(/(\d)(\d{2})(\d{2})(\d{2})(\d{2})/, "$1 $2 $3 $4 $5") : "+" + t];
 };
 
 /* Message aux équipes. fil = [{ role: "prospect" | "bot", texte }] ; aurait_recu : adresses réelles, rappelées pendant les essais.
@@ -220,4 +253,4 @@ const blocsFiche = (bien, quand = new Date(), langue = "fr", photos = []) => {
     { petit: en ? `Listing information as of ${jour}. Not a contractual document.` : `Informations de l'annonce au ${jour}. Document non contractuel.` }];
 };
 
-module.exports = { CHAMPS_PUBLICS, cartesPourBot, enVente, bienPublic, annonce, dejaConnu, nettoyer, tel9, quiRecoit, contexte, plan, lignes, texteScores, mailEquipe, blocsFiche, majuscule, nomVille };
+module.exports = { CHAMPS_PUBLICS, cartesPourBot, enVente, bienPublic, annonce, dejaConnu, nettoyer, tel9, quiRecoit, contexte, plan, lignes, texteScores, mailEquipe, alerteNego, blocsFiche, majuscule, nomVille };

@@ -46,6 +46,16 @@ const QUAND = new Date("2026-10-13T10:00:00Z");
   assert.ok(stop.optout && !stop.avis.length && stop.crm.length === 1, "désinscription : notée, sans message aux équipes ni couleur");
   assert.strictEqual(B.plan([{ type: "prioritaire_vendeur", donnees: { reponse: "oui" } }], {}).avis.length, 1);
   assert.deepStrictEqual(B.plan([sortie], {}).crm, [], "sans identifiants réglés, rien n'est écrit dans le CRM");
+  /* parcours page 14 (tâche 12) : recherche du prospect liée au bien, lien avec l'autre bien visité, lead vendeur ; seulement si réglés */
+  const R12 = { ...R, recherches: true, actions: { ...R.actions, VENDEUR: 333 } };
+  const p12 = B.plan([{ type: "prioritaire_vendeur", donnees: { reponse: "oui, une maison à Rodez" } }, { ...sortie, donnees: { ...sortie.donnees, autre_bien_id: 97, qualification: { budget: "Environ 250 000 €", zone: "Cahors" } } }], R12);
+  assert.deepStrictEqual(p12.crm.map((a) => [a.op, a.une_fois || ""]), [["ajouterAction", "vendeur"], ["couleurContact", ""], ["ajouterAction", ""], ["lierBien", "lien-97"], ["creerRecherche", "recherche"]]);
+  assert.strictEqual(p12.crm[0].action_id, 333); assert.ok(/bien à vendre/i.test(p12.crm[0].texte) && p12.crm[0].texte.includes("une maison à Rodez"));
+  assert.deepStrictEqual(p12.crm[4].criteres, { budget_max: 250000, localisation: "Cahors" });
+  assert.ok(!B.plan([{ type: "sortie", donnees: { code: "OUT-6" } }], R12).crm.some((a) => a.op === "creerRecherche"), "STOP : pas de recherche");
+  assert.ok(!B.plan([{ type: "sortie", donnees: { code: "OUT-4" } }], R12).crm.some((a) => a.op === "creerRecherche"), "reprise humaine : pas de recherche");
+  assert.deepStrictEqual(B.plan([{ type: "prioritaire_vendeur", donnees: {} }], R).crm, [], "type d'action vendeur non réglé : rien");
+  assert.ok(!B.plan([sortie], R).crm.some((a) => a.op === "creerRecherche" || a.op === "lierBien"), "recherches non réglées : rien");
 
   const m = B.mailEquipe({ avis: p.avis[0], dossier, bien: BIEN, telephone: "33611111111", fil: [{ role: "prospect", texte: "<b>Je veux visiter</b>" }], aurait_recu: ["martin@agence-exemple.fr"] });
   /* réunion du 21/07 : le lead qualifié a un objet distinct du mail d'arrivée, avec synthèse, score et échange */

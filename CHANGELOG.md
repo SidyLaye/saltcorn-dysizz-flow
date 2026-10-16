@@ -1,5 +1,21 @@
 # Journal des versions
 
+## 2.24.0
+
+### Ajouté
+- Bot WhatsApp, relances (script V1.3, slide 21) : bloc horaire « Leads : relancer les prospects silencieux ». R1 à 2 jours, R2 à 5 jours
+  seulement si le bien est confirmé en vente à l'instant (sinon sautée), R3 à 10 jours, puis clôture sans message ; silence compté depuis
+  le dernier message du bot ; jamais après un STOP, une visite transmise ou une reprise humaine ; après un rappel demandé, R1 seulement ;
+  du lundi au samedi, 9 h à 19 h (Paris) ; une seule fois chacune, sous verrou. Modèle dans la langue de la conversation. Coupé par défaut ;
+  « essai_seulement » limite aux numéros d'essai. Chaque relance va au journal des conversations (réglage « journal »).
+- Écritures CRM du bot (parcours, page 14), coupées par défaut : recherche du prospect liée au bien (une par dossier ; celle de la phase 1
+  si elle existe), lien du contact avec l'autre bien visité, action « bien à vendre » (type d'action VENDEUR) ; une seule fois chacune.
+- Alerte WhatsApp au négociateur et à son assistante (modèle sh_alerte_nego) quand une visite est demandée ou qu'un bien à vendre est
+  déclaré ; réglage « alerte_whatsapp » ; en essai, seulement aux numéros d'essai.
+
+### Corrigé
+- Fiche PDF : dépôt du fichier chez Meta jusqu'à 20 s (une fiche avec photos pèse près de 2 Mo ; 4 s ne suffisaient pas).
+
 ## 2.23.0
 
 ### Ajouté

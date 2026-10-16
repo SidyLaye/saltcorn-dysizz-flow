@@ -43,7 +43,7 @@ Module._load = function (req, parent, ...rest) {
     if (req === "./gabarits") return { appelsDuJour: async () => notesIA.length, noter: async (a) => notesIA.push(a) };
     if (req === "../../envois") return { envoyer: async (m, o) => { mails.push(...m.map((x) => ({ ...x, simuler: o.simuler }))); return { resume: `${m.length} message(s)` }; } };
     if (req === "../../verrou") return { sous: async (k, fn) => fn() };
-    if (req === "../../../garde") return { lireSecret: async (n) => (n === "JETON_WA" ? "jeton-fictif" : undefined) };
+    if (req === "../../../garde") return { lireSecret: async (n) => ({ JETON_WA: "jeton-fictif", JETON_N8N: "jeton-n8n" })[n] };
   }
   if (/tables[\\/]catalogue\.js$/.test(de)) {
     if (req === "./schema") return { tables: async () => T, prefixe: () => "ld_" };
@@ -53,7 +53,11 @@ Module._load = function (req, parent, ...rest) {
   if (req.startsWith("@saltcorn/")) return class {};
   return orig.call(this, req, parent, ...rest);
 };
-global.fetch = async (url, o) => { meta.push({ url, to: typeof o.body === "string" ? JSON.parse(o.body).to : null }); return { ok: true, json: async () => (/media$/.test(url) ? { id: "m1" } : { messages: [{ id: "wamid.1" }] }) }; };
+let JOURNAL_PANNE = false;
+global.fetch = async (url, o) => { const corpsMeta = typeof o.body === "string" ? JSON.parse(o.body) : {};
+  meta.push({ url, to: corpsMeta.to || null, modele: corpsMeta.template ? corpsMeta.template.name : null, langue: corpsMeta.template ? corpsMeta.template.language.code : null, corps: corpsMeta, entetes: o.headers || {} });
+  if (/wa-bot-events$/.test(url) && JOURNAL_PANNE) throw new Error("journal indisponible");
+  return { ok: true, json: async () => (/media$/.test(url) ? { id: "m1" } : { messages: [{ id: "wamid.1" }] }) }; };
 const { repondre } = require("../src/lib/leads/tables/bot");
 const sortie = (code, plus = {}) => ({ type: "sortie", noeud: "TB3", quand: "2026-10-13T10:00:00Z", donnees: { code, statut: "demande transmise", temperature: "HOT", dernier_message: "Je veux visiter", ...plus } });
 
@@ -95,6 +99,52 @@ const sortie = (code, plus = {}) => ({ type: "sortie", noeud: "TB3", quand: "202
   await temp("ev3c", "WARM"); assert.strictEqual(crm.ecritures.length, 2, "couleur changée : réécrite");
   assert.strictEqual((await repondre("evenement", { ...tour, event_id: "ev3d" })).crm, "non écrit", "numéro hors liste : CRM non écrit");
   BOT = BOT0;
+
+  /* tâche 12 : recherche du prospect (une par dossier, gardée dans le dossier), lien avec l'autre bien, lead vendeur, une seule fois chacun */
+  {
+    const BOTa = BOT; BOT = { ...BOT, ecritures_crm: true, recherches: true, actions: { defaut: 222, VENDEUR: 333 } }; crm.ecritures.length = 0;
+    const tour12 = (id) => repondre("evenement", { telephone: "33611111111", dossier_id: 7, event_id: id, evenements: [{ type: "prioritaire_vendeur", donnees: { reponse: "oui" } },
+      sortie("OUT-1", { autre_bien_id: 97, qualification: { budget: "250000", zone: "Cahors" } })] });
+    await tour12("ev12a");
+    const ops = crm.ecritures.map((e) => e.op);
+    assert.deepStrictEqual(ops.filter((o) => o !== "couleurContact"), ["ajouterAction", "ajouterAction", "lierBien", "creerRecherche"]);
+    const rech = crm.ecritures.find((e) => e.op === "creerRecherche");
+    assert.strictEqual(rech.contactId, "4242"); assert.strictEqual(rech.r.budget_max, 250000); assert.strictEqual(rech.r.localisation, "Cahors"); assert.strictEqual(rech.r.type, "maison");
+    assert.ok(/WhatsApp/.test(rech.r.libelle) && rech.r.libelle.includes("30123"));
+    assert.ok(T.dossiers.L.find((d) => d.id === 7).recherche_crm, "recherche gardée dans le dossier : la phase 1 la reprend");
+    assert.strictEqual(crm.ecritures.find((e) => e.op === "lierBien").bienId, "97");
+    crm.ecritures.length = 0; await tour12("ev12b");
+    assert.deepStrictEqual(crm.ecritures.map((e) => e.op), ["ajouterAction"], "le lead reprend : seule l'action de la sortie est réécrite (vendeur, lien, recherche déjà faits)");
+    T.dossiers.L.find((d) => d.id === 7).recherche_crm = null;
+    BOT = BOTa;
+  }
+
+  /* tâche 13 (slides 02, 08, 16, 17 ; R05) : alerte WhatsApp au négociateur quand une visite est demandée ou qu'un bien à vendre est
+     déclaré ; réglage alerte_whatsapp ; en essai, seulement aux numéros d'essai ; jamais pour un rappel ou une documentation */
+  {
+    const BOTa = BOT, martin = CONF.routage.personnes[0]; martin.telephone = "+33 6 00 00 05 00";
+    const marie = T.dossiers.L.find((d) => d.id === 7), nomMarie = marie.nom; marie.nom = "Marie\n  Test";   // Meta refuse saut de ligne et tabulation
+    const alertes = () => meta.filter((m) => m.modele === "sh_alerte_nego");
+    BOT = { ...BOT, whatsapp: { phone_number_id: "123", variable_jeton: "JETON_WA" }, alerte_whatsapp: true, notifications: "reel" }; meta.length = 0;
+    await repondre("evenement", { telephone: "33611111111", dossier_id: 7, event_id: "ev13a", evenements: [sortie("OUT-1")] });
+    assert.deepStrictEqual(alertes().map((m) => m.to), ["33600000500"], "visite : le négociateur est alerté");
+    const v = alertes()[0].corps.template.components[0].parameters.map((x) => x.text);
+    assert.deepStrictEqual(v, ["qualifié", "Marie Test", "réf. 30123 à Cahors", "demande de visite, projet à moins de 3 mois", "+33 6 11 11 11 11"]);
+    meta.length = 0; await repondre("evenement", { telephone: "33611111111", dossier_id: 7, event_id: "ev13b", evenements: [{ type: "prioritaire_vendeur", donnees: { reponse: "oui" } }] });
+    assert.deepStrictEqual(alertes().map((m) => alertes()[0].corps.template.components[0].parameters[0].text), ["prioritaire"], "bien à vendre : alerte prioritaire");
+    meta.length = 0; await repondre("evenement", { telephone: "33611111111", dossier_id: 7, event_id: "ev13c", evenements: [sortie("OUT-2")] });
+    assert.strictEqual(alertes().length, 0, "rappel : le mail suffit");
+    BOT = { ...BOT, notifications: "essai" }; meta.length = 0;
+    await repondre("evenement", { telephone: "33611111111", dossier_id: 7, event_id: "ev13d", evenements: [sortie("OUT-1")] });
+    assert.strictEqual(alertes().length, 0, "essai : personne hors des numéros d'essai");
+    BOT = { ...BOT, numeros_essai: { ...BOT.numeros_essai, 33600000500: { reference: "30123" } } }; meta.length = 0;
+    await repondre("evenement", { telephone: "33611111111", dossier_id: 7, event_id: "ev13e", evenements: [sortie("OUT-1")] });
+    assert.deepStrictEqual(alertes().map((m) => m.to), ["33600000500"], "essai : le négociateur d'essai est alerté");
+    BOT = { ...BOT, alerte_whatsapp: false }; meta.length = 0;
+    await repondre("evenement", { telephone: "33611111111", dossier_id: 7, event_id: "ev13f", evenements: [sortie("OUT-1")] });
+    assert.strictEqual(alertes().length, 0, "réglage coupé : rien");
+    delete martin.telephone; marie.nom = nomMarie; BOT = BOTa; meta.length = 0;
+  }
 
   /* numéro d'essai : pas de dossier, bien réel seulement lu, messages aux adresses d'essai même en service */
   BOT = { ...BOT, numeros_essai: { 33699999999: { reference: "30123", prenom: "Awa" } }, whatsapp: { phone_number_id: "123", variable_jeton: "JETON_WA" } }; mails.length = 0; crm.ecritures.length = 0;
@@ -153,6 +203,49 @@ const sortie = (code, plus = {}) => ({ type: "sortie", noeud: "TB3", quand: "202
     vieillir(); CRM_CHANGE[99] = {};
     c1 = await repondre("contexte", { telephone: "33611111111", dossier_id: 7 }); assert.equal(c1.bien_public.en_vente, null, "statut inconnu : rien");
     delete CRM_CHANGE[99];
+  }
+
+  /* relances (tâche 11, slide 21) : envoyées par l'application aux numéros d'essai tant que le mode essai est actif, une seule fois,
+     dans la plage d'envoi ; R2 sautée si le bien n'est pas confirmé en vente à l'instant */
+  {
+    const { relancer } = require("../src/lib/leads/tables/bot");
+    const J = 86400000, mer10h = new Date("2026-10-14T10:00:00+02:00").getTime();
+    const BOTr = BOT; BOT = { ...BOT, relances: { actif: true, essai_seulement: true }, numeros_essai: { 33677777777: { reference: "30123", prenom: "Awa" } },
+      journal: { url: "https://n8n.exemple.org/webhook/wa-bot-events", variable_jeton: "JETON_N8N" } };
+    T.bot.L.push({ id: 9001, tel9: "677777777", type: "ouverture", noeud: "N0", quand: new Date(mer10h - 3 * J), donnees: "{}" });
+    T.bot.L.push({ id: 9002, tel9: "622222222", type: "ouverture", noeud: "N0", quand: new Date(mer10h - 3 * J), donnees: "{}" });   // numéro réel : pas en essai
+    meta.length = 0;
+    let r = await relancer({ maintenant: mer10h });
+    assert.deepEqual(r.envoyees.map((x) => [x.tel9, x.code]), [["677777777", "r1"]], "seul le numéro d'essai est relancé");
+    assert.deepEqual(meta.filter((m) => /messages$/.test(m.url)).map((m) => [m.to, m.modele, m.langue]), [["33677777777", "sh_relance_r1", "fr"]]);
+    /* chaque relance acceptée par Meta va au journal des conversations (leads-management l'affiche), comme les messages du bot */
+    const j = meta.filter((m) => /wa-bot-events$/.test(m.url));
+    assert.equal(j.length, 1, "une ligne de journal par relance");
+    assert.equal(j[0].entetes["x-ambs-token"], "jeton-n8n");
+    assert.deepEqual([j[0].corps.event_type, j[0].corps.marque, j[0].corps.direction, j[0].corps.format, j[0].corps.telephone, j[0].corps.phone_number_id, j[0].corps.wamid, j[0].corps.statut],
+      ["WHATSAPP_MESSAGE", "SH", "outbound", "template", "33677777777", "123", "wamid.1", "accepted"]);
+    assert.equal(j[0].corps.payload.template.name, "sh_relance_r1"); assert.ok(/^sh\|/.test(j[0].corps.tracking_id));
+    assert.equal((await relancer({ maintenant: mer10h })).envoyees.length, 0, "jamais deux fois");
+    r = await relancer({ maintenant: new Date("2026-10-18T11:00:00+02:00").getTime() });   // R2 due depuis samedi 10 h, mais dimanche
+    assert.equal(r.envoyees.length + r.sautees.length, 0, "dimanche : rien");
+    r = await relancer({ maintenant: mer10h + 3 * J });
+    assert.deepEqual(r.sautees.map((x) => x.code), ["r2"], "bien non confirmé en vente : R2 sautée");
+    JOURNAL_PANNE = true;
+    r = await relancer({ maintenant: mer10h + 5 * J });
+    assert.deepEqual(r.envoyees.map((x) => x.code), ["r3"], "journal en panne : la relance part et compte quand même");
+    assert.equal(r.envoyees[0].journal, false);
+    JOURNAL_PANNE = false;
+    assert.equal((await relancer({ maintenant: mer10h + 5 * J })).envoyees.length, 0, "journal en panne : jamais renvoyée");
+    assert.deepEqual(meta.filter((m) => /messages$/.test(m.url)).map((m) => m.modele), ["sh_relance_r1", "sh_relance_r3"], "R2 sautée : aucun message");
+    /* le bot parle anglais au prospect : la relance part en anglais */
+    BOT.numeros_essai[33655555555] = { reference: "30123", prenom: "John" }; meta.length = 0;
+    T.bot.L.push({ id: 9003, tel9: "655555555", type: "ouverture", noeud: "N0", quand: new Date(mer10h - 3 * J), donnees: "{}" },
+      { id: 9004, tel9: "655555555", type: "inbound", quand: new Date(mer10h - 3 * J), donnees: JSON.stringify({ texte: "yes", langue: "fr" }) },
+      { id: 9005, tel9: "655555555", type: "message_bot", quand: new Date(mer10h - 3 * J), donnees: JSON.stringify({ texte: "Sure", langue: "en" }) });
+    r = await relancer({ maintenant: mer10h });
+    assert.deepEqual(meta.filter((m) => /messages$/.test(m.url)).map((m) => [m.to, m.modele, m.langue]), [["33655555555", "sh_relance_r1_en", "en"]]);
+    BOT = { ...BOT, relances: { actif: false } }; assert.deepEqual(await relancer({ maintenant: mer10h + 30 * J }), { actif: false });
+    BOT = BOTr;
   }
 
   /* le bien passe par l'application : relu dans le CRM puis enregistré (ld_biens), une ligne par bien, photos comprises */
