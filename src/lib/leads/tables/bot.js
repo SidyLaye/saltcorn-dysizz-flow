@@ -284,6 +284,7 @@ const fiche = async (corps, R) => {
     const jeton = W.variable_jeton ? await require("../../../garde").lireSecret(W.variable_jeton) : null;
     if (!W.phone_number_id || !jeton) return echec("WhatsApp non réglé");
     const bien = await lireBien((await charger()).crm, dossier, R), en = corps.langue === "en";
+    if (bien && B.enVente(bien).en_vente === false) return echec("plus en vente");   // jamais la fiche d'un bien vendu ou retiré
     /* photos autorisées (dossier public du réglage « photos ») téléchargées d'abord : une photo qui échoue n'apparaît pas */
     const urls = R.photos && bien && Array.isArray(bien.photos) ? bien.photos : [];
     const ph = await telechargerPhotos(urls);

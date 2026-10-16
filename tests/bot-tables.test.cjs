@@ -204,6 +204,11 @@ const sortie = (code, plus = {}) => ({ type: "sortie", noeud: "TB3", quand: "202
     c1 = await repondre("contexte", { telephone: "33611111111", dossier_id: 7 }); assert.equal(c1.bien_public.en_vente, false, "plus diffusé : plus en vente");
     vieillir(); CRM_CHANGE[99] = {};
     c1 = await repondre("contexte", { telephone: "33611111111", dossier_id: 7 }); assert.equal(c1.bien_public.en_vente, null, "statut inconnu : rien");
+    /* bien vendu : aucune fiche PDF (plan, tâche 4) */
+    BOT.numeros_essai[33644444444] = { reference: "30123", prenom: "Léa" };
+    vieillir(); CRM_CHANGE[99] = { statut: "Vendu", diffuse: true }; const n0 = meta.length;
+    assert.deepEqual(await repondre("fiche", { telephone: "33644444444" }), { echec: true, raison: "plus en vente" }); assert.equal(meta.length, n0, "aucune fiche d'un bien vendu");
+    delete BOT.numeros_essai[33644444444];
     delete CRM_CHANGE[99];
   }
 

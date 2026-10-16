@@ -1,5 +1,10 @@
 # Journal des versions
 
+## 2.24.2
+
+### Corrigé
+- Fiche PDF : jamais pour un bien vendu ou retiré (statut relu dans le CRM) ; réponse « plus en vente » au bot, qui clôt sans fiche.
+
 ## 2.24.1
 
 ### Corrigé
