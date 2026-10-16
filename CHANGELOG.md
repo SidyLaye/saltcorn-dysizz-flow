@@ -1,5 +1,12 @@
 # Journal des versions
 
+## 2.25.2
+
+### Corrigé
+- Lead vendeur : avec un type d'action « bien à vendre » réglé (`actions.VENDEUR`), les équipes n'étaient plus prévenues (ni mail
+  « [PRIORITAIRE] », ni alerte WhatsApp) ; défaut introduit en 2.24.0, vu en essai réel le 16/10. L'action et la couleur rouge
+  s'ajoutent désormais au message, sans le remplacer.
+
 ## 2.25.1
 
 ### Modifié

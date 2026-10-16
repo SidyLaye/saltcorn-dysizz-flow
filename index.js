@@ -1,4 +1,4 @@
-/* dysizz-flow 2.25.1 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.25.2 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.25.1" : "dev";
+    var VERSION2 = true ? "2.25.2" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -99165,11 +99165,12 @@ var require_bot = __commonJS({
       };
       for (const e of evenements || []) {
         const d = e && e.donnees || {};
-        if (e.type === "optout") out.optout = true;
-        if (e.type === "prioritaire_vendeur") poserCouleur(couleurDe("HOT"));
-        if (e.type === "prioritaire_vendeur" && (R.actions || {}).VENDEUR && !out.crm.some((x) => x.une_fois === "vendeur"))
-          out.crm.push({ op: "ajouterAction", action_id: R.actions.VENDEUR, une_fois: "vendeur", texte: "WhatsApp. Bien \xE0 vendre d\xE9clar\xE9 par le prospect (lead prioritaire)." + (d.reponse ? `
+        if (e.type === "prioritaire_vendeur") {
+          poserCouleur(couleurDe("HOT"));
+          if ((R.actions || {}).VENDEUR && !out.crm.some((x) => x.une_fois === "vendeur")) out.crm.push({ op: "ajouterAction", action_id: R.actions.VENDEUR, une_fois: "vendeur", texte: "WhatsApp. Bien \xE0 vendre d\xE9clar\xE9 par le prospect (lead prioritaire)." + (d.reponse ? `
 Sa r\xE9ponse : ${String(d.reponse).slice(0, 300)}` : "") });
+        }
+        if (e.type === "optout") out.optout = true;
         else if (e.type === "temperature") poserCouleur(couleurDe(d.temperature));
         else if (e.type === "sortie") {
           if (d.temperature || vendeur) poserCouleur(couleurDe(d.temperature));

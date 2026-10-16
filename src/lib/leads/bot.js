@@ -182,10 +182,12 @@ const plan = (evenements, R = {}, { vendeur: dejaVendeur = false } = {}) => {
   const poserCouleur = (couleur) => { if (couleur && !out.crm.some((x) => x.op === "couleurContact" && x.couleur === couleur)) out.crm.push({ op: "couleurContact", couleur }); };
   for (const e of evenements || []) {
     const d = (e && e.donnees) || {};
+    /* vendeur : rouge et action « bien à vendre », EN PLUS du message aux équipes (branche AVIS plus bas) — bloc à part, hors de la chaîne */
+    if (e.type === "prioritaire_vendeur") {
+      poserCouleur(couleurDe("HOT"));
+      if ((R.actions || {}).VENDEUR && !out.crm.some((x) => x.une_fois === "vendeur")) out.crm.push({ op: "ajouterAction", action_id: R.actions.VENDEUR, une_fois: "vendeur", texte: "WhatsApp. Bien à vendre déclaré par le prospect (lead prioritaire)." + (d.reponse ? `\nSa réponse : ${String(d.reponse).slice(0, 300)}` : "") });
+    }
     if (e.type === "optout") out.optout = true;
-    if (e.type === "prioritaire_vendeur") poserCouleur(couleurDe("HOT"));
-    if (e.type === "prioritaire_vendeur" && (R.actions || {}).VENDEUR && !out.crm.some((x) => x.une_fois === "vendeur"))
-      out.crm.push({ op: "ajouterAction", action_id: R.actions.VENDEUR, une_fois: "vendeur", texte: "WhatsApp. Bien à vendre déclaré par le prospect (lead prioritaire)." + (d.reponse ? `\nSa réponse : ${String(d.reponse).slice(0, 300)}` : "") });
     /* la couleur suit le délai dès qu'il est connu ou qu'il change, sans attendre une sortie : le lead peut s'arrêter à tout moment */
     else if (e.type === "temperature") poserCouleur(couleurDe(d.temperature));
     else if (e.type === "sortie") {

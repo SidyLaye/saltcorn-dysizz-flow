@@ -45,6 +45,10 @@ const QUAND = new Date("2026-10-13T10:00:00Z");
   const stop = B.plan([{ type: "sortie", donnees: { code: "OUT-6" } }, { type: "optout", donnees: {} }], R);
   assert.ok(stop.optout && !stop.avis.length && stop.crm.length === 1, "désinscription : notée, sans message aux équipes ni couleur");
   assert.strictEqual(B.plan([{ type: "prioritaire_vendeur", donnees: { reponse: "oui" } }], {}).avis.length, 1);
+  /* essai réel du 16/10 : avec le type d'action VENDEUR réglé, le vendeur n'était plus signalé aux équipes (ni mail, ni alerte) */
+  const pv = B.plan([{ type: "prioritaire_vendeur", donnees: { reponse: "oui" } }], { couleurs: { HOT: 5 }, actions: { VENDEUR: 333 } });
+  assert.strictEqual(pv.avis.length, 1, "vendeur : les équipes sont prévenues, même avec l'action CRM réglée");
+  assert.deepStrictEqual(pv.crm.map((a) => a.op), ["couleurContact", "ajouterAction"]);
   /* lead vendeur = urgence (Sidy, 16/10) : rouge dans le CRM quel que soit son délai d'achat */
   const RV = { couleurs: { HOT: 5, WARM: 8, COLD: 3 } };
   assert.deepStrictEqual(B.plan([{ type: "prioritaire_vendeur", donnees: { reponse: "oui" } }], RV).crm, [{ op: "couleurContact", couleur: 5 }], "vendeur déclaré : rouge tout de suite");

@@ -130,7 +130,8 @@ const sortie = (code, plus = {}) => ({ type: "sortie", noeud: "TB3", quand: "202
     const BOTa = BOT, martin = CONF.routage.personnes[0]; martin.telephone = "+33 6 00 00 05 00";
     const marie = T.dossiers.L.find((d) => d.id === 7), nomMarie = marie.nom; marie.nom = "Marie\n  Test";   // Meta refuse saut de ligne et tabulation
     const alertes = () => meta.filter((m) => m.modele === "sh_alerte_nego");
-    BOT = { ...BOT, whatsapp: { phone_number_id: "123", variable_jeton: "JETON_WA" }, alerte_whatsapp: true, notifications: "reel" }; meta.length = 0;
+    BOT = { ...BOT, whatsapp: { phone_number_id: "123", variable_jeton: "JETON_WA" }, alerte_whatsapp: true, notifications: "reel",
+      actions: { ...(BOT.actions || {}), VENDEUR: 333 } }; meta.length = 0;   // comme en prod depuis le 16/10 : type d'action vendeur réglé
     await repondre("evenement", { telephone: "33611111111", dossier_id: 7, event_id: "ev13a", evenements: [sortie("OUT-1")] });
     assert.deepStrictEqual(alertes().map((m) => m.to), ["33600000500"], "visite : le négociateur est alerté");
     const v = alertes()[0].corps.template.components[0].parameters.map((x) => x.text);
