@@ -132,8 +132,10 @@ const sortie = (code, plus = {}) => ({ type: "sortie", noeud: "TB3", quand: "202
     const alertes = () => meta.filter((m) => m.modele === "sh_alerte_nego");
     BOT = { ...BOT, whatsapp: { phone_number_id: "123", variable_jeton: "JETON_WA" }, alerte_whatsapp: true, notifications: "reel",
       actions: { ...(BOT.actions || {}), VENDEUR: 333 } }; meta.length = 0;   // comme en prod depuis le 16/10 : type d'action vendeur réglé
-    await repondre("evenement", { telephone: "33611111111", dossier_id: 7, event_id: "ev13a", evenements: [sortie("OUT-1")] });
+    BOT.whatsapp = { ...BOT.whatsapp, numeros: ["456"] };
+    await repondre("evenement", { telephone: "33611111111", dossier_id: 7, numero_bot: "456", event_id: "ev13a", evenements: [sortie("OUT-1")] });
     assert.deepStrictEqual(alertes().map((m) => m.to), ["33600000500"], "visite : le négociateur est alerté");
+    assert.ok(/\/456\/messages$/.test(alertes()[0].url), "alerte depuis le numéro de la conversation");
     const v = alertes()[0].corps.template.components[0].parameters.map((x) => x.text);
     assert.deepStrictEqual(v, ["qualifié", "Marie Test", "réf. 30123 à Cahors", "visite, projet à moins de 3 mois", "+33 6 11 11 11 11"]);
     meta.length = 0; await repondre("evenement", { telephone: "33611111111", dossier_id: 7, event_id: "ev13b", evenements: [{ type: "prioritaire_vendeur", donnees: { reponse: "oui" } }] });
@@ -163,6 +165,20 @@ const sortie = (code, plus = {}) => ({ type: "sortie", noeud: "TB3", quand: "202
   assert.strictEqual(c.dossier_id, null); assert.strictEqual(c.prenom, "Awa"); assert.strictEqual(c.bien_public.prix, 245000);
   await repondre("evenement", { telephone: "33699999999", event_id: "ev4", evenements: [sortie("OUT-2")] });
   assert.deepStrictEqual(mails.map((m) => m.a), ["essai@exemple.fr"]); assert.strictEqual(crm.ecritures.length, 0);
+
+  /* 16/10 (Sidy) : tout part du numéro du bot sur lequel le lead a écrit, s'il est un des numéros du bot ; sinon du numéro principal */
+  {
+    BOT = { ...BOT, whatsapp: { ...BOT.whatsapp, numeros: ["456"] }, numeros_essai: { ...BOT.numeros_essai, 33633333333: { reference: "30123" }, 33633334444: { reference: "30123" } } };
+    const n0 = meta.length;
+    await repondre("evenement", { telephone: "33633333333", numero_bot: "456", event_id: "evnb1", evenements: [{ type: "inbound", donnees: { texte: "bonjour" } }] });
+    assert.equal(JSON.parse(T.bot.L.filter((l) => l.tel9 === "633333333" && l.type === "inbound").pop().donnees).numero_bot, "456", "numéro de la conversation gardé avec le message");
+    await repondre("fiche", { telephone: "33633333333", numero_bot: "456" });
+    assert.ok(meta.slice(n0).some((m) => /\/456\/media$/.test(m.url)) && meta.slice(n0).some((m) => /\/456\/messages$/.test(m.url)), "fiche envoyée depuis le numéro de la conversation");
+    const n1 = meta.length;
+    await repondre("fiche", { telephone: "33633334444", numero_bot: "789" });
+    assert.ok(meta.slice(n1).length && meta.slice(n1).every((m) => /\/123\//.test(m.url)), "numéro inconnu du bot : numéro principal, jamais un numéro étranger");
+    meta.length = 0;   // le test suivant compte ses propres envois
+  }
 
   /* fiche : une seule fois, au bon numéro ; jamais après une désinscription */
   r = await repondre("sh_pdf_fiche", { telephone: "33699999999" });
@@ -264,9 +280,12 @@ const sortie = (code, plus = {}) => ({ type: "sortie", noeud: "TB3", quand: "202
     BOT.numeros_essai[33655555555] = { reference: "30123", prenom: "John" }; meta.length = 0;
     T.bot.L.push({ id: 9003, tel9: "655555555", type: "ouverture", noeud: "N0", quand: new Date(mer10h - 3 * J), donnees: "{}" },
       { id: 9004, tel9: "655555555", type: "inbound", quand: new Date(mer10h - 3 * J), donnees: JSON.stringify({ texte: "yes", langue: "fr" }) },
-      { id: 9005, tel9: "655555555", type: "message_bot", quand: new Date(mer10h - 3 * J), donnees: JSON.stringify({ texte: "Sure", langue: "en" }) });
+      { id: 9005, tel9: "655555555", type: "message_bot", quand: new Date(mer10h - 3 * J), donnees: JSON.stringify({ texte: "Sure", langue: "en" }) },
+      { id: 9006, tel9: "655555555", type: "inbound", quand: new Date(mer10h - 3 * J), donnees: JSON.stringify({ texte: "ok", numero_bot: "456" }) });
+    BOT = { ...BOT, whatsapp: { ...(BOT.whatsapp || {}), numeros: ["456"] } };
     r = await relancer({ maintenant: mer10h });
     assert.deepEqual(meta.filter((m) => /messages$/.test(m.url)).map((m) => [m.to, m.modele, m.langue]), [["33655555555", "sh_relance_r1_en", "en"]]);
+    assert.ok(meta.filter((m) => /messages$/.test(m.url)).every((m) => /\/456\/messages$/.test(m.url)), "relance depuis le numéro de la conversation");
     await repondre("evenement", { telephone: "33677777777", event_id: "evrel", evenements: [{ type: "inbound", donnees: { texte: "oui, toujours intéressée" } }] });
     assert.notEqual((await repondre("contexte", { telephone: "33677777777" })).statut, "relance", "le lead a répondu : plus « relance »");
     BOT = { ...BOT, relances: { actif: false } }; assert.deepEqual(await relancer({ maintenant: mer10h + 30 * J }), { actif: false });

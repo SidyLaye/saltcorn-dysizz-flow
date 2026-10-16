@@ -26,6 +26,13 @@ const court = (v, n) => String(v == null ? "" : v).slice(0, n);
 /* adresses d'un réglage : liste ou texte */
 const adresses = (x) => liste([].concat(x || []).join(" ")).map((a) => a.toLowerCase()).filter((a) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(a));
 
+/* numéro expéditeur (16/10, Sidy : jamais de réponse depuis un autre numéro que celui où le lead écrit) : le numéro de la conversation
+   s'il est un des numéros du bot (whatsapp.phone_number_id ou whatsapp.numeros), sinon le numéro principal */
+const numeroEnvoi = (W = {}, demande) => {
+  const d = String(demande || "").replace(/\D/g, "");
+  return d && [String(W.phone_number_id || ""), ...(Array.isArray(W.numeros) ? W.numeros : []).map(String)].includes(d) ? d : W.phone_number_id;
+};
+
 const tableBot = async (t) => t.bot || (await require("../../structure").assurer(S.definitions().find((d) => d.k === "bot"))).t;
 
 const trouver = async (t, corps, R) => {
@@ -140,7 +147,8 @@ const evenement = async (corps, R) => {
   if (evid && lot.length && (await tb.getRow({ cle: `${evid}:0:${lot[0].type}` }))) return { ok: true, deja: true };
   const noter = (type, donnees, extra = {}) => tb.insertRow({ dossier: did, tel9, type: court(type, 60), quand: new Date(), donnees: court(JSON.stringify(donnees || {}), 20000), ...extra });
   for (const [i, e] of lot.entries()) {
-    const d = e.donnees && typeof e.donnees === "object" ? e.donnees : {}, q = new Date(e.quand);
+    const d0 = e.donnees && typeof e.donnees === "object" ? e.donnees : {}, q = new Date(e.quand);
+    const d = corps.numero_bot && (e.type === "inbound" || e.type === "ouverture") ? { ...d0, numero_bot: court(String(corps.numero_bot).replace(/\D/g, ""), 20) } : d0;
     await noter(e.type, d, { noeud: court(e.noeud, 60), quand: isNaN(q) ? new Date() : q, texte: court(TEXTE(d), 4000), cle: evid ? `${evid}:${i}:${court(e.type, 60)}` : null });
   }
   /* vendeur déjà déclaré dans cette conversation (depuis la dernière ouverture) : il reste en rouge */
@@ -239,7 +247,7 @@ const evenement = async (corps, R) => {
           const jeton = W.variable_jeton ? await require("../../../garde").lireSecret(W.variable_jeton) : null;
           if (!W.phone_number_id || !jeton) throw new Error("WhatsApp non réglé");
           for (const a of tels) {
-            const { id } = await envoyerModele({ phone_number_id: W.phone_number_id, jeton, a, nom: "sh_alerte_nego", langue: "fr", valeurs, suivi: `sh|${Date.now()}|alerte|${tel9}` });
+            const { id } = await envoyerModele({ phone_number_id: numeroEnvoi(W, corps.numero_bot), jeton, a, nom: "sh_alerte_nego", langue: "fr", valeurs, suivi: `sh|${Date.now()}|alerte|${tel9}` });
             await noter("alerte_whatsapp", { a: B.tel9(a), valeurs: valeurs.slice(0, 4), identifiant: id || null });
             envoyees.push(B.tel9(a));
           }
@@ -303,7 +311,7 @@ const fiche = async (corps, R) => {
     if (!blocs) return echec("bien illisible dans le CRM");
     const buf = await require("../../pdf").ecrirePdf(blocs, { titre: en ? "Property sheet" : "Fiche annonce", pied: false, producteur: "", couleur: "#374151" }, async (u) => ph.get(u));
     let identifiant;
-    try { identifiant = await envoyerDocument({ phone_number_id: W.phone_number_id, jeton, a: tel, buf, nom: en ? "property-sheet.pdf" : "fiche-annonce.pdf" }); }
+    try { identifiant = await envoyerDocument({ phone_number_id: numeroEnvoi(W, corps.numero_bot), jeton, a: tel, buf, nom: en ? "property-sheet.pdf" : "fiche-annonce.pdf" }); }
     catch (e) { await tb.insertRow({ dossier: dossier.id || null, tel9: B.tel9(tel), type: "fiche_echec", quand: new Date(), texte: court(e.message, 500) }); return echec("envoi WhatsApp refusé"); }
     const horaire = new Date();
     await tb.insertRow({ dossier: dossier.id || null, tel9: B.tel9(tel), type: "fiche_envoyee", quand: horaire, donnees: JSON.stringify({ identifiant }) });
@@ -412,12 +420,13 @@ const relancer = async ({ maintenant = Date.now() } = {}) => {
         const jeton = W.variable_jeton ? await require("../../../garde").lireSecret(W.variable_jeton) : null;
         if (!W.phone_number_id || !jeton) throw new Error("WhatsApp non réglé");
         const suivi = `sh|${maintenant}|${plan.code}|relance-${tel9}`;
-        const { id, corps } = await envoyerModele({ phone_number_id: W.phone_number_id, jeton, a: tel, nom, langue, boutons, suivi,
+        const numero = numeroEnvoi(W, (hist.filter((x) => x.donnees.numero_bot).pop() || { donnees: {} }).donnees.numero_bot);   // celui de la conversation
+        const { id, corps } = await envoyerModele({ phone_number_id: numero, jeton, a: tel, nom, langue, boutons, suivi,
           valeurs: plan.code === "r1" ? [prenom, leBien(bp, langue)] : [prenom] });
         await noter({ code: plan.code, modele: nom, langue, identifiant: id || null });
         const quand = new Date(maintenant).toISOString();
         const journal = await journaliser(R.journal, { tracking_id: suivi, marque: "SH", direction: "outbound", conversation_id: `relance-${tel9}`,
-          phone_number_id: String(W.phone_number_id), telephone: tel, format: "template", contenu: JSON.stringify(corps), payload: corps,
+          phone_number_id: String(numero), telephone: tel, format: "template", contenu: JSON.stringify(corps), payload: corps,
           statut: "accepted", cree_le: quand, mis_a_jour_le: quand, wamid: String(id || ""), erreur: "" });
         out.envoyees.push({ tel9, code: plan.code, modele: nom, journal });
       } catch (e) { out.erreurs.push({ tel9, code: plan.code, erreur: court(e.message, 200) }); }

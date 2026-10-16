@@ -1,5 +1,12 @@
 # Journal des versions
 
+## 2.26.0
+
+### Ajouté
+- Bot WhatsApp sur plusieurs numéros (16/10) : la fiche PDF, les relances et l'alerte au négociateur partent du numéro du bot sur lequel
+  le lead a écrit (transmis par le bot, gardé avec ses messages), s'il est un des numéros du bot (`whatsapp.phone_number_id` ou
+  `whatsapp.numeros`) ; sinon du numéro principal. Jamais de réponse depuis un autre numéro que celui de la conversation.
+
 ## 2.25.2
 
 ### Corrigé

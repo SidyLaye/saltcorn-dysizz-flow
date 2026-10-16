@@ -1,4 +1,4 @@
-/* dysizz-flow 2.25.2 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.26.0 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.25.2" : "dev";
+    var VERSION2 = true ? "2.26.0" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -99479,6 +99479,10 @@ var require_bot2 = __commonJS({
     var perm = (m) => Object.assign(new Error(m), { permanent: true });
     var court = (v, n) => String(v == null ? "" : v).slice(0, n);
     var adresses = (x) => liste([].concat(x || []).join(" ")).map((a) => a.toLowerCase()).filter((a) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(a));
+    var numeroEnvoi = (W = {}, demande) => {
+      const d = String(demande || "").replace(/\D/g, "");
+      return d && [String(W.phone_number_id || ""), ...(Array.isArray(W.numeros) ? W.numeros : []).map(String)].includes(d) ? d : W.phone_number_id;
+    };
     var tableBot = async (t) => t.bot || (await require_structure().assurer(S.definitions().find((d) => d.k === "bot"))).t;
     var trouver = async (t, corps, R) => {
       const tel = String(corps && corps.telephone || "").replace(/\D/g, "");
@@ -99597,7 +99601,8 @@ var require_bot2 = __commonJS({
       if (evid && lot.length && await tb.getRow({ cle: `${evid}:0:${lot[0].type}` })) return { ok: true, deja: true };
       const noter = (type, donnees, extra = {}) => tb.insertRow({ dossier: did, tel9, type: court(type, 60), quand: /* @__PURE__ */ new Date(), donnees: court(JSON.stringify(donnees || {}), 2e4), ...extra });
       for (const [i, e] of lot.entries()) {
-        const d = e.donnees && typeof e.donnees === "object" ? e.donnees : {}, q = new Date(e.quand);
+        const d0 = e.donnees && typeof e.donnees === "object" ? e.donnees : {}, q = new Date(e.quand);
+        const d = corps.numero_bot && (e.type === "inbound" || e.type === "ouverture") ? { ...d0, numero_bot: court(String(corps.numero_bot).replace(/\D/g, ""), 20) } : d0;
         await noter(e.type, d, { noeud: court(e.noeud, 60), quand: isNaN(q) ? /* @__PURE__ */ new Date() : q, texte: court(TEXTE(d), 4e3), cle: evid ? `${evid}:${i}:${court(e.type, 60)}` : null });
       }
       const derniereOuverture = ((await tb.getRows({ tel9, type: "ouverture" }, { orderBy: "id", orderDesc: true, limit: 1 }))[0] || { id: 0 }).id;
@@ -99696,7 +99701,7 @@ var require_bot2 = __commonJS({
               const jeton = W.variable_jeton ? await require_garde().lireSecret(W.variable_jeton) : null;
               if (!W.phone_number_id || !jeton) throw new Error("WhatsApp non r\xE9gl\xE9");
               for (const a of tels) {
-                const { id } = await envoyerModele({ phone_number_id: W.phone_number_id, jeton, a, nom: "sh_alerte_nego", langue: "fr", valeurs, suivi: `sh|${Date.now()}|alerte|${tel9}` });
+                const { id } = await envoyerModele({ phone_number_id: numeroEnvoi(W, corps.numero_bot), jeton, a, nom: "sh_alerte_nego", langue: "fr", valeurs, suivi: `sh|${Date.now()}|alerte|${tel9}` });
                 await noter("alerte_whatsapp", { a: B.tel9(a), valeurs: valeurs.slice(0, 4), identifiant: id || null });
                 envoyees.push(B.tel9(a));
               }
@@ -99762,7 +99767,7 @@ var require_bot2 = __commonJS({
         const buf = await require_pdf().ecrirePdf(blocs, { titre: en ? "Property sheet" : "Fiche annonce", pied: false, producteur: "", couleur: "#374151" }, async (u) => ph.get(u));
         let identifiant;
         try {
-          identifiant = await envoyerDocument({ phone_number_id: W.phone_number_id, jeton, a: tel, buf, nom: en ? "property-sheet.pdf" : "fiche-annonce.pdf" });
+          identifiant = await envoyerDocument({ phone_number_id: numeroEnvoi(W, corps.numero_bot), jeton, a: tel, buf, nom: en ? "property-sheet.pdf" : "fiche-annonce.pdf" });
         } catch (e) {
           await tb.insertRow({ dossier: dossier.id || null, tel9: B.tel9(tel), type: "fiche_echec", quand: /* @__PURE__ */ new Date(), texte: court(e.message, 500) });
           return echec("envoi WhatsApp refus\xE9");
@@ -99891,8 +99896,9 @@ var require_bot2 = __commonJS({
             const jeton = W.variable_jeton ? await require_garde().lireSecret(W.variable_jeton) : null;
             if (!W.phone_number_id || !jeton) throw new Error("WhatsApp non r\xE9gl\xE9");
             const suivi = `sh|${maintenant}|${plan.code}|relance-${tel9}`;
+            const numero = numeroEnvoi(W, (hist.filter((x) => x.donnees.numero_bot).pop() || { donnees: {} }).donnees.numero_bot);
             const { id, corps } = await envoyerModele({
-              phone_number_id: W.phone_number_id,
+              phone_number_id: numero,
               jeton,
               a: tel,
               nom,
@@ -99908,7 +99914,7 @@ var require_bot2 = __commonJS({
               marque: "SH",
               direction: "outbound",
               conversation_id: `relance-${tel9}`,
-              phone_number_id: String(W.phone_number_id),
+              phone_number_id: String(numero),
               telephone: tel,
               format: "template",
               contenu: JSON.stringify(corps),
