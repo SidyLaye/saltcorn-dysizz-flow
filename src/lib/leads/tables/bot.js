@@ -124,7 +124,16 @@ const etatDe = async (tb, tel, dossier) => {
 
 const contexte = async (corps, R, { travail = true } = {}) => {   // travail : confier la rédaction des cartes au bot (pas pour les relances)
   const t = await S.tables(), tb = await tableBot(t);
-  const { tel, dossier } = await trouver(t, corps, R);
+  let { tel, dossier } = await trouver(t, corps, R);
+  /* nouvelle annonce pour le même numéro (Sidy, 17/10) : le message d'accueil le plus récent porte sur un autre dossier, et rien n'a été
+     échangé sur celui de la conversation depuis → on suit le nouveau dossier, même quand le prospect répond par écrit */
+  if (dossier && dossier.id && corps.dossier_id) {
+    const n0 = (await tb.getRows({ tel9: B.tel9(tel), type: "ouverture" }, { orderBy: "id", orderDesc: true, limit: 20 })).find((r) => r.noeud === "N0");
+    if (n0 && n0.dossier && n0.dossier !== dossier.id) {
+      const [moi] = await tb.getRows({ tel9: B.tel9(tel), dossier: dossier.id }, { orderBy: "id", orderDesc: true, limit: 1 });
+      if (!moi || n0.id > moi.id) dossier = (await trouver(t, { ...corps, dossier_id: n0.dossier }, R)).dossier || dossier;
+    }
+  }
   const etat = await etatDe(tb, tel, dossier);
   if (!dossier) return B.contexte({ dossier: null, etat });
   const { conf, crm } = await charger();

@@ -188,9 +188,10 @@ const plan = (evenements, R = {}, { vendeur: dejaVendeur = false } = {}) => {
       if ((R.actions || {}).VENDEUR && !out.crm.some((x) => x.une_fois === "vendeur")) out.crm.push({ op: "ajouterAction", action_id: R.actions.VENDEUR, une_fois: "vendeur", texte: "WhatsApp. Bien à vendre déclaré par le prospect (lead prioritaire)." + (d.reponse ? `\nSa réponse : ${String(d.reponse).slice(0, 300)}` : "") });
     }
     /* visite déjà transmise, le prospect change de créneau (Sidy, 17/10) : trace dans l'historique du contact, EN PLUS du message aux équipes */
-    if (e.type === "visite_modifiee") {
-      const action = (R.actions || {})["OUT-1"] || (R.actions || {}).defaut;
-      if (action) out.crm.push({ op: "ajouterAction", action_id: action, texte: `WhatsApp. Nouveau créneau de visite demandé : ${String(d.creneau || "à préciser").slice(0, 300)}` + (d.texte ? `\nSon message : ${String(d.texte).slice(0, 500)}` : "") });
+    if (e.type === "visite_modifiee" || (e.type === "annulation" && d.visite)) {   // visite annulée : même trace, le négociateur l'avait reçue
+      const action = (R.actions || {})["OUT-1"] || (R.actions || {}).defaut, mot = d.texte || d.motif;
+      const quoi = e.type === "annulation" ? "Visite annulée par le prospect." : `Nouveau créneau de visite demandé : ${String(d.creneau || "à préciser").slice(0, 300)}`;
+      if (action) out.crm.push({ op: "ajouterAction", action_id: action, texte: `WhatsApp. ${quoi}` + (mot ? `\nSon message : ${String(mot).slice(0, 500)}` : "") });
     }
     if (e.type === "optout") out.optout = true;
     /* la couleur suit le délai dès qu'il est connu ou qu'il change, sans attendre une sortie : le lead peut s'arrêter à tout moment */
@@ -217,10 +218,10 @@ const plan = (evenements, R = {}, { vendeur: dejaVendeur = false } = {}) => {
    Rend les 5 valeurs du modèle, ou null si l'événement n'appelle pas d'alerte (un rappel ou une documentation : le mail suffit). */
 const PROJET = { HOT: "projet à moins de 3 mois", WARM: "projet entre 3 et 12 mois", COLD: "projet à plus de 12 mois" };
 const alerteNego = ({ avis, dossier = {}, bien, telephone }) => {
-  const d = avis.donnees || {}, visite = avis.qualifie && d.code === "OUT-1", vendeur = avis.type === "prioritaire_vendeur", modif = avis.type === "visite_modifiee";
-  if (!visite && !vendeur && !modif) return null;
+  const d = avis.donnees || {}, visite = avis.qualifie && d.code === "OUT-1", vendeur = avis.type === "prioritaire_vendeur", modif = avis.type === "visite_modifiee", annule = avis.type === "annulation" && !!d.visite;
+  if (!visite && !vendeur && !modif && !annule) return null;
   const b = bien || {}, t = String(telephone || "").replace(/\D/g, "");
-  const demande = vendeur ? ["bien à vendre déclaré"] : modif ? ["nouveau créneau de visite : " + String(d.creneau || "à préciser").replace(/\s+/g, " ").trim().slice(0, 60)]
+  const demande = vendeur ? ["bien à vendre déclaré"] : annule ? ["visite annulée"] : modif ? ["nouveau créneau de visite : " + String(d.creneau || "à préciser").replace(/\s+/g, " ").trim().slice(0, 60)]
     : ["visite", d.lead_prioritaire && "bien à vendre", PROJET[d.temperature]];   // « Demande : visite, projet à moins de 3 mois »
   return [vendeur || d.lead_prioritaire ? "prioritaire" : "qualifié", String(dossier.nom || "Un prospect").slice(0, 60),
     [b.reference && "réf. " + b.reference, b.ville && "à " + b.ville].filter(Boolean).join(" ") || "de l'annonce", demande.filter(Boolean).join(", "),

@@ -1,5 +1,13 @@
 # Journal des versions
 
+## 2.26.2
+
+### Ajouté
+- Bot WhatsApp (17/10) : une visite annulée par le prospect (événement `annulation` avec `visite`) laisse une action dans l'historique du
+  contact et envoie l'alerte WhatsApp « visite annulée » au négociateur et à son assistante, en plus du mail.
+- Nouvelle annonce pour le même numéro : si le message d'accueil le plus récent porte sur un autre dossier et que rien n'a été échangé
+  depuis sur celui de la conversation, le contexte rendu au bot est celui du nouveau dossier, même quand le prospect répond par écrit.
+
 ## 2.26.1
 
 ### Ajouté

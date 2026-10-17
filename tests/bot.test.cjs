@@ -75,6 +75,12 @@ const QUAND = new Date("2026-10-13T10:00:00Z");
   assert.ok(vm.avis[0].titre === "Le prospect demande un autre créneau de visite" && !vm.avis[0].qualifie, "information aux équipes, pas un nouveau lead qualifié");
   assert.deepStrictEqual(B.alerteNego({ avis: vm.avis[0], dossier, bien: BIEN, telephone: "33611111111" }).slice(3), ["nouveau créneau de visite : jeudi après-midi", "+33 6 11 11 11 11"], "le négociateur est alerté sur WhatsApp");
   assert.strictEqual(B.alerteNego({ avis: B.plan([{ type: "message_apres_transmission", donnees: { texte: "merci" } }], R).avis[0], dossier, bien: BIEN, telephone: "33611111111" }), null, "un simple message après transmission : le mail suffit");
+  /* visite annulée par le prospect (17/10) : trace dans l'historique et alerte au négociateur, qui avait reçu la demande */
+  const va = B.plan([{ type: "annulation", donnees: { sortie: "OUT-5", visite: true, motif: "Finalement je ne pourrai pas venir" } }], R);
+  assert.deepStrictEqual(va.crm.map((a) => [a.op, a.action_id]), [["ajouterAction", 111]], "visite annulée : action du type de la visite");
+  assert.ok(va.crm[0].texte.startsWith("WhatsApp. Visite annulée par le prospect.") && va.crm[0].texte.includes("je ne pourrai pas venir"));
+  assert.strictEqual(B.alerteNego({ avis: va.avis[0], dossier, bien: BIEN, telephone: "33611111111" })[3], "visite annulée");
+  assert.strictEqual(B.alerteNego({ avis: B.plan([{ type: "annulation", donnees: { sortie: "OUT-5" } }], R).avis[0], dossier, bien: BIEN, telephone: "33611111111" }), null, "annulation sans visite transmise : le mail suffit");
 
   const m = B.mailEquipe({ avis: p.avis[0], dossier, bien: BIEN, telephone: "33611111111", fil: [{ role: "prospect", texte: "<b>Je veux visiter</b>" }], aurait_recu: ["martin@agence-exemple.fr"] });
   /* réunion du 21/07 : le lead qualifié a un objet distinct du mail d'arrivée, avec synthèse, score et échange */

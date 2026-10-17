@@ -1,4 +1,4 @@
-/* dysizz-flow 2.26.1 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.26.2 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.26.1" : "dev";
+    var VERSION2 = true ? "2.26.2" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -99171,10 +99171,11 @@ var require_bot = __commonJS({
           if ((R.actions || {}).VENDEUR && !out.crm.some((x) => x.une_fois === "vendeur")) out.crm.push({ op: "ajouterAction", action_id: R.actions.VENDEUR, une_fois: "vendeur", texte: "WhatsApp. Bien \xE0 vendre d\xE9clar\xE9 par le prospect (lead prioritaire)." + (d.reponse ? `
 Sa r\xE9ponse : ${String(d.reponse).slice(0, 300)}` : "") });
         }
-        if (e.type === "visite_modifiee") {
-          const action = (R.actions || {})["OUT-1"] || (R.actions || {}).defaut;
-          if (action) out.crm.push({ op: "ajouterAction", action_id: action, texte: `WhatsApp. Nouveau cr\xE9neau de visite demand\xE9 : ${String(d.creneau || "\xE0 pr\xE9ciser").slice(0, 300)}` + (d.texte ? `
-Son message : ${String(d.texte).slice(0, 500)}` : "") });
+        if (e.type === "visite_modifiee" || e.type === "annulation" && d.visite) {
+          const action = (R.actions || {})["OUT-1"] || (R.actions || {}).defaut, mot = d.texte || d.motif;
+          const quoi = e.type === "annulation" ? "Visite annul\xE9e par le prospect." : `Nouveau cr\xE9neau de visite demand\xE9 : ${String(d.creneau || "\xE0 pr\xE9ciser").slice(0, 300)}`;
+          if (action) out.crm.push({ op: "ajouterAction", action_id: action, texte: `WhatsApp. ${quoi}` + (mot ? `
+Son message : ${String(mot).slice(0, 500)}` : "") });
         }
         if (e.type === "optout") out.optout = true;
         else if (e.type === "temperature") poserCouleur(couleurDe(d.temperature));
@@ -99197,10 +99198,10 @@ Son message : ${String(d.texte).slice(0, 500)}` : "") });
     };
     var PROJET = { HOT: "projet \xE0 moins de 3 mois", WARM: "projet entre 3 et 12 mois", COLD: "projet \xE0 plus de 12 mois" };
     var alerteNego = ({ avis, dossier = {}, bien, telephone }) => {
-      const d = avis.donnees || {}, visite = avis.qualifie && d.code === "OUT-1", vendeur = avis.type === "prioritaire_vendeur", modif = avis.type === "visite_modifiee";
-      if (!visite && !vendeur && !modif) return null;
+      const d = avis.donnees || {}, visite = avis.qualifie && d.code === "OUT-1", vendeur = avis.type === "prioritaire_vendeur", modif = avis.type === "visite_modifiee", annule = avis.type === "annulation" && !!d.visite;
+      if (!visite && !vendeur && !modif && !annule) return null;
       const b = bien || {}, t = String(telephone || "").replace(/\D/g, "");
-      const demande = vendeur ? ["bien \xE0 vendre d\xE9clar\xE9"] : modif ? ["nouveau cr\xE9neau de visite : " + String(d.creneau || "\xE0 pr\xE9ciser").replace(/\s+/g, " ").trim().slice(0, 60)] : ["visite", d.lead_prioritaire && "bien \xE0 vendre", PROJET[d.temperature]];
+      const demande = vendeur ? ["bien \xE0 vendre d\xE9clar\xE9"] : annule ? ["visite annul\xE9e"] : modif ? ["nouveau cr\xE9neau de visite : " + String(d.creneau || "\xE0 pr\xE9ciser").replace(/\s+/g, " ").trim().slice(0, 60)] : ["visite", d.lead_prioritaire && "bien \xE0 vendre", PROJET[d.temperature]];
       return [
         vendeur || d.lead_prioritaire ? "prioritaire" : "qualifi\xE9",
         String(dossier.nom || "Un prospect").slice(0, 60),
@@ -99584,7 +99585,14 @@ var require_bot2 = __commonJS({
     };
     var contexte = async (corps, R, { travail = true } = {}) => {
       const t = await S.tables(), tb = await tableBot(t);
-      const { tel, dossier } = await trouver(t, corps, R);
+      let { tel, dossier } = await trouver(t, corps, R);
+      if (dossier && dossier.id && corps.dossier_id) {
+        const n0 = (await tb.getRows({ tel9: B.tel9(tel), type: "ouverture" }, { orderBy: "id", orderDesc: true, limit: 20 })).find((r) => r.noeud === "N0");
+        if (n0 && n0.dossier && n0.dossier !== dossier.id) {
+          const [moi] = await tb.getRows({ tel9: B.tel9(tel), dossier: dossier.id }, { orderBy: "id", orderDesc: true, limit: 1 });
+          if (!moi || n0.id > moi.id) dossier = (await trouver(t, { ...corps, dossier_id: n0.dossier }, R)).dossier || dossier;
+        }
+      }
       const etat = await etatDe(tb, tel, dossier);
       if (!dossier) return B.contexte({ dossier: null, etat });
       const { conf, crm } = await charger();

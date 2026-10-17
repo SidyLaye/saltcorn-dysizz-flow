@@ -68,6 +68,17 @@ const sortie = (code, plus = {}) => ({ type: "sortie", noeud: "TB3", quand: "202
   assert.ok(!/rue du Test/.test(JSON.stringify(c)));
   assert.strictEqual((await repondre("contexte", { telephone: "33611111111", dossier_id: 8 })).dossier_id, 8);
   assert.strictEqual((await repondre("contexte", { telephone: "33622222222", dossier_id: 7 })).inconnu, true, "le dossier d'un autre numéro n'est jamais rendu");
+  /* Sidy, 17/10 : nouvelle annonce pour le même numéro. Le message d'accueil le plus récent porte sur un autre dossier : le contexte suit
+     ce dossier, même si le prospect répond par écrit (le bot demande encore l'ancien dossier) */
+  {
+    const n = T.bot.L.length;
+    T.bot.L.push({ id: 99001, tel9: "611111111", type: "inbound", dossier: 7, quand: new Date(), donnees: "{}" },
+      { id: 99002, tel9: "611111111", type: "ouverture", noeud: "N0", dossier: 8, quand: new Date(), donnees: "{}" });
+    assert.strictEqual((await repondre("contexte", { telephone: "33611111111", dossier_id: 7 })).dossier_id, 8, "nouvelle annonce : le dossier du dernier message d'accueil");
+    T.bot.L.push({ id: 99003, tel9: "611111111", type: "inbound", dossier: 7, quand: new Date(), donnees: "{}" });
+    assert.strictEqual((await repondre("contexte", { telephone: "33611111111", dossier_id: 7 })).dossier_id, 7, "il a écrit ensuite sur l'ancien dossier : on y reste");
+    T.bot.L.splice(n);
+  }
   await assert.rejects(repondre("contexte", { telephone: "12" }), /invalide/);
   await assert.rejects(repondre("autre", {}), /inconnue/);
 
