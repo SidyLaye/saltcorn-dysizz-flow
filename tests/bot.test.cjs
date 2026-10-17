@@ -68,6 +68,13 @@ const QUAND = new Date("2026-10-13T10:00:00Z");
   assert.ok(!B.plan([{ type: "sortie", donnees: { code: "OUT-4" } }], R12).crm.some((a) => a.op === "creerRecherche"), "reprise humaine : pas de recherche");
   assert.deepStrictEqual(B.plan([{ type: "prioritaire_vendeur", donnees: {} }], R).crm, [{ op: "couleurContact", couleur: 5 }], "type d'action vendeur non réglé : pas d'action, seulement le rouge");
   assert.ok(!B.plan([sortie], R).crm.some((a) => a.op === "creerRecherche" || a.op === "lierBien"), "recherches non réglées : rien");
+  /* Sidy, 17/10 : le prospect change le créneau d'une visite déjà transmise ; action dans l'historique, mail et alerte au négociateur */
+  const vm = B.plan([{ type: "visite_modifiee", donnees: { creneau: "jeudi après-midi", texte: "Finalement je préfère jeudi après-midi" } }], R);
+  assert.deepStrictEqual(vm.crm.map((a) => [a.op, a.action_id]), [["ajouterAction", 111]], "créneau changé : action du type de la visite");
+  assert.ok(vm.crm[0].texte.includes("Nouveau créneau de visite demandé : jeudi après-midi") && vm.crm[0].texte.includes("Finalement je préfère"));
+  assert.ok(vm.avis[0].titre === "Le prospect demande un autre créneau de visite" && !vm.avis[0].qualifie, "information aux équipes, pas un nouveau lead qualifié");
+  assert.deepStrictEqual(B.alerteNego({ avis: vm.avis[0], dossier, bien: BIEN, telephone: "33611111111" }).slice(3), ["nouveau créneau de visite : jeudi après-midi", "+33 6 11 11 11 11"], "le négociateur est alerté sur WhatsApp");
+  assert.strictEqual(B.alerteNego({ avis: B.plan([{ type: "message_apres_transmission", donnees: { texte: "merci" } }], R).avis[0], dossier, bien: BIEN, telephone: "33611111111" }), null, "un simple message après transmission : le mail suffit");
 
   const m = B.mailEquipe({ avis: p.avis[0], dossier, bien: BIEN, telephone: "33611111111", fil: [{ role: "prospect", texte: "<b>Je veux visiter</b>" }], aurait_recu: ["martin@agence-exemple.fr"] });
   /* réunion du 21/07 : le lead qualifié a un objet distinct du mail d'arrivée, avec synthèse, score et échange */

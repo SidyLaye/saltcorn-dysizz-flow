@@ -142,6 +142,8 @@ const sortie = (code, plus = {}) => ({ type: "sortie", noeud: "TB3", quand: "202
     assert.deepStrictEqual(alertes().map((m) => alertes()[0].corps.template.components[0].parameters[0].text), ["prioritaire"], "bien à vendre : alerte prioritaire");
     meta.length = 0; await repondre("evenement", { telephone: "33611111111", dossier_id: 7, event_id: "ev13c", evenements: [sortie("OUT-2")] });
     assert.strictEqual(alertes().length, 0, "rappel : le mail suffit");
+    meta.length = 0; await repondre("evenement", { telephone: "33611111111", dossier_id: 7, event_id: "ev13g", evenements: [{ type: "visite_modifiee", donnees: { creneau: "jeudi\naprès-midi", texte: "Finalement jeudi après-midi" } }] });
+    assert.deepStrictEqual(alertes().map((m) => m.corps.template.components[0].parameters[3].text), ["nouveau créneau de visite : jeudi après-midi"], "créneau changé après la visite transmise : le négociateur est alerté");
     BOT = { ...BOT, notifications: "essai" }; meta.length = 0;
     await repondre("evenement", { telephone: "33611111111", dossier_id: 7, event_id: "ev13d", evenements: [sortie("OUT-1")] });
     assert.strictEqual(alertes().length, 0, "essai : personne hors des numéros d'essai");

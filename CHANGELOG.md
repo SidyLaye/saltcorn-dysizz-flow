@@ -1,5 +1,13 @@
 # Journal des versions
 
+## 2.26.1
+
+### Ajouté
+- Bot WhatsApp, visite déjà transmise (17/10) : événement `visite_modifiee` quand le prospect demande un autre créneau. Action dans
+  l'historique du contact (type de la visite, sinon type par défaut), message « Le prospect demande un autre créneau de visite » aux
+  équipes et alerte WhatsApp au négociateur et à son assistante (« nouveau créneau de visite : … »). Pour une visite sur un autre bien,
+  le négociateur de ce bien est aussi prévenu.
+
 ## 2.26.0
 
 ### Ajouté

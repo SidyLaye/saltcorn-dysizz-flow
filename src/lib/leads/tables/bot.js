@@ -208,7 +208,8 @@ const evenement = async (corps, R) => {
     let reels = qui.map((x) => x.email);
     /* visite demandée sur un autre bien que celui de l'annonce : le négociateur du bien initial ET celui du nouveau bien
        sont prévenus (réunion du 21/07 : un prospect, plusieurs biens, plusieurs négociateurs) */
-    const autreId = (lot.find((e) => e.type === "sortie" && e.donnees && e.donnees.autre_bien_id) || { donnees: {} }).donnees.autre_bien_id;
+    const autreId = (lot.find((e) => (e.type === "sortie" || e.type === "visite_modifiee") && e.donnees && e.donnees.autre_bien_id) || { donnees: {} }).donnees.autre_bien_id;
+    const surAutre = (avis) => autre && (avis.qualifie || avis.type === "visite_modifiee");   // le créneau changé concerne le bien visité
     const autre = autreId ? await lireBien(crm, { bien_crm: String(autreId) }, R) : null;
     const quiAutre = autre ? B.quiRecoit(autre.negociateur_id, conf, autre).liste : [];
     if (autre) reels = [...new Set([...reels, ...quiAutre.map((x) => x.email)])];
@@ -226,7 +227,7 @@ const evenement = async (corps, R) => {
       /* essai : aux adresses d'essai ; avec « essai_routage », aux vrais destinataires calculés qui sont aussi des adresses
          d'essai (le routage est testé pour de vrai, personne d'autre ne reçoit : ni siège, ni copie du client) */
       const a = essai ? (R.essai_routage === true ? tous.filter((x) => adresses(R.adresses_essai).includes(String(x).toLowerCase())) : adresses(R.adresses_essai)) : tous;
-      const { objet, html } = B.mailEquipe({ avis, dossier: dos, bien: autre && avis.qualifie ? autre : bien, bien_initial: autre && avis.qualifie ? bien : null, telephone: tel, fil, aurait_recu: essai ? tous : null });
+      const { objet, html } = B.mailEquipe({ avis, dossier: dos, bien: surAutre(avis) ? autre : bien, bien_initial: surAutre(avis) ? bien : null, telephone: tel, fil, aurait_recu: essai ? tous : null });
       /* ponytail: un message par événement, sans plafond ; à regrouper si un prospect écrit beaucoup après sa demande */
       for (const adr of a) messages.push({ cle: `${S.prefixe()}bot-${did || tel9}:${evid || Date.now()}:${i}:${adr}`, a: adr, sujet: objet, html, reference: did ? `dossier ${did}` : "essai" });
     }
@@ -240,7 +241,7 @@ const evenement = async (corps, R) => {
         .filter((n) => !essai || Object.keys(R.numeros_essai || {}).includes(n));
       const W = R.whatsapp || {}, envoyees = [];
       for (const avis of p.avis) {
-        const valeurs = B.alerteNego({ avis, dossier: dos, bien: autre && avis.qualifie ? autre : bien, telephone: tel });
+        const valeurs = B.alerteNego({ avis, dossier: dos, bien: surAutre(avis) ? autre : bien, telephone: tel });
         if (!valeurs) continue;
         if (!tels.length) { await noter("alerte_whatsapp", { envoyee: false, raison: "aucun numéro : négociateur et assistante sans téléphone dans l'équipe" + (essai ? ", ou hors des numéros d'essai" : "") }); continue; }
         try {

@@ -1,4 +1,4 @@
-/* dysizz-flow 2.26.0 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.26.1 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.26.0" : "dev";
+    var VERSION2 = true ? "2.26.1" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -99126,7 +99126,8 @@ var require_bot = __commonJS({
       message_apres_transmission: "Nouveau message du prospect apr\xE8s transmission",
       /* le bot ne répond plus après un STOP ; un humain décide s'il recontacte */
       message_apres_stop: "Le prospect d\xE9sinscrit a r\xE9\xE9crit",
-      bien_plus_en_vente: "Le prospect s'int\xE9resse \xE0 un bien qui n'est plus en vente"
+      bien_plus_en_vente: "Le prospect s'int\xE9resse \xE0 un bien qui n'est plus en vente",
+      visite_modifiee: "Le prospect demande un autre cr\xE9neau de visite"
     };
     var lignes = (d = {}) => {
       const q = d.qualification || {}, etiquettes = [d.lead_prioritaire && "bien \xE0 vendre (prioritaire)", d.lead_financement && "financement", d.lead_travaux && "travaux", d.lead_relocation && "relocation"].filter(Boolean);
@@ -99170,6 +99171,11 @@ var require_bot = __commonJS({
           if ((R.actions || {}).VENDEUR && !out.crm.some((x) => x.une_fois === "vendeur")) out.crm.push({ op: "ajouterAction", action_id: R.actions.VENDEUR, une_fois: "vendeur", texte: "WhatsApp. Bien \xE0 vendre d\xE9clar\xE9 par le prospect (lead prioritaire)." + (d.reponse ? `
 Sa r\xE9ponse : ${String(d.reponse).slice(0, 300)}` : "") });
         }
+        if (e.type === "visite_modifiee") {
+          const action = (R.actions || {})["OUT-1"] || (R.actions || {}).defaut;
+          if (action) out.crm.push({ op: "ajouterAction", action_id: action, texte: `WhatsApp. Nouveau cr\xE9neau de visite demand\xE9 : ${String(d.creneau || "\xE0 pr\xE9ciser").slice(0, 300)}` + (d.texte ? `
+Son message : ${String(d.texte).slice(0, 500)}` : "") });
+        }
         if (e.type === "optout") out.optout = true;
         else if (e.type === "temperature") poserCouleur(couleurDe(d.temperature));
         else if (e.type === "sortie") {
@@ -99191,10 +99197,10 @@ Sa r\xE9ponse : ${String(d.reponse).slice(0, 300)}` : "") });
     };
     var PROJET = { HOT: "projet \xE0 moins de 3 mois", WARM: "projet entre 3 et 12 mois", COLD: "projet \xE0 plus de 12 mois" };
     var alerteNego = ({ avis, dossier = {}, bien, telephone }) => {
-      const d = avis.donnees || {}, visite = avis.qualifie && d.code === "OUT-1", vendeur = avis.type === "prioritaire_vendeur";
-      if (!visite && !vendeur) return null;
+      const d = avis.donnees || {}, visite = avis.qualifie && d.code === "OUT-1", vendeur = avis.type === "prioritaire_vendeur", modif = avis.type === "visite_modifiee";
+      if (!visite && !vendeur && !modif) return null;
       const b = bien || {}, t = String(telephone || "").replace(/\D/g, "");
-      const demande = vendeur ? ["bien \xE0 vendre d\xE9clar\xE9"] : ["visite", d.lead_prioritaire && "bien \xE0 vendre", PROJET[d.temperature]];
+      const demande = vendeur ? ["bien \xE0 vendre d\xE9clar\xE9"] : modif ? ["nouveau cr\xE9neau de visite : " + String(d.creneau || "\xE0 pr\xE9ciser").replace(/\s+/g, " ").trim().slice(0, 60)] : ["visite", d.lead_prioritaire && "bien \xE0 vendre", PROJET[d.temperature]];
       return [
         vendeur || d.lead_prioritaire ? "prioritaire" : "qualifi\xE9",
         String(dossier.nom || "Un prospect").slice(0, 60),
@@ -99669,7 +99675,8 @@ var require_bot2 = __commonJS({
         const bien = await lireBien(crm, dos, R);
         const qui = B.quiRecoit(dos.negociateur || bien && bien.negociateur_id, conf, bien).liste;
         let reels = qui.map((x) => x.email);
-        const autreId = (lot.find((e) => e.type === "sortie" && e.donnees && e.donnees.autre_bien_id) || { donnees: {} }).donnees.autre_bien_id;
+        const autreId = (lot.find((e) => (e.type === "sortie" || e.type === "visite_modifiee") && e.donnees && e.donnees.autre_bien_id) || { donnees: {} }).donnees.autre_bien_id;
+        const surAutre = (avis) => autre && (avis.qualifie || avis.type === "visite_modifiee");
         const autre = autreId ? await lireBien(crm, { bien_crm: String(autreId) }, R) : null;
         const quiAutre = autre ? B.quiRecoit(autre.negociateur_id, conf, autre).liste : [];
         if (autre) reels = [.../* @__PURE__ */ new Set([...reels, ...quiAutre.map((x) => x.email)])];
@@ -99682,7 +99689,7 @@ var require_bot2 = __commonJS({
         for (const [i, avis] of p.avis.entries()) {
           const tous = [.../* @__PURE__ */ new Set([...reels, ...avis.referents.flatMap((k) => adresses((R.referents || {})[k]))])];
           const a = essai ? R.essai_routage === true ? tous.filter((x) => adresses(R.adresses_essai).includes(String(x).toLowerCase())) : adresses(R.adresses_essai) : tous;
-          const { objet, html } = B.mailEquipe({ avis, dossier: dos, bien: autre && avis.qualifie ? autre : bien, bien_initial: autre && avis.qualifie ? bien : null, telephone: tel, fil, aurait_recu: essai ? tous : null });
+          const { objet, html } = B.mailEquipe({ avis, dossier: dos, bien: surAutre(avis) ? autre : bien, bien_initial: surAutre(avis) ? bien : null, telephone: tel, fil, aurait_recu: essai ? tous : null });
           for (const adr of a) messages.push({ cle: `${S.prefixe()}bot-${did || tel9}:${evid || Date.now()}:${i}:${adr}`, a: adr, sujet: objet, html, reference: did ? `dossier ${did}` : "essai" });
         }
         const simuler = R.notifications === "simuler" || !R.notifications || !essai && !RA.envoi_mails;
@@ -99691,7 +99698,7 @@ var require_bot2 = __commonJS({
           const tels = [...new Set([...qui, ...quiAutre].filter((x) => x.roles.some((r) => r === "negociateur" || r === "assistante")).map((x) => (conf.routage && conf.routage.personnes || []).find((p2) => String(p2.email || "").toLowerCase() === x.email)).map((p2) => String(p2 && p2.telephone || "").replace(/\D/g, "")).filter((n) => n.length >= 9))].filter((n) => !essai || Object.keys(R.numeros_essai || {}).includes(n));
           const W = R.whatsapp || {}, envoyees = [];
           for (const avis of p.avis) {
-            const valeurs = B.alerteNego({ avis, dossier: dos, bien: autre && avis.qualifie ? autre : bien, telephone: tel });
+            const valeurs = B.alerteNego({ avis, dossier: dos, bien: surAutre(avis) ? autre : bien, telephone: tel });
             if (!valeurs) continue;
             if (!tels.length) {
               await noter("alerte_whatsapp", { envoyee: false, raison: "aucun num\xE9ro : n\xE9gociateur et assistante sans t\xE9l\xE9phone dans l'\xE9quipe" + (essai ? ", ou hors des num\xE9ros d'essai" : "") });
