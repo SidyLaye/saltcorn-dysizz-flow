@@ -1,5 +1,11 @@
 # Journal des versions
 
+## 2.26.3
+
+### Corrigé
+- Écritures CRM « une seule fois » (action vendeur, lien avec un autre bien, recherche) : la trace des écritures déjà faites est relue
+  sur 1 000 lignes au lieu de 50. Après de nombreux essais sur un numéro sans dossier, une deuxième recherche était créée (17/10).
+
 ## 2.26.2
 
 ### Ajouté

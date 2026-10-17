@@ -131,6 +131,13 @@ const sortie = (code, plus = {}) => ({ type: "sortie", noeud: "TB3", quand: "202
     assert.strictEqual(crm.ecritures.find((e) => e.op === "lierBien").bienId, "97");
     crm.ecritures.length = 0; await tour12("ev12b");
     assert.deepStrictEqual(crm.ecritures.map((e) => e.op), ["ajouterAction"], "le lead reprend : seule l'action de la sortie est réécrite (vendeur, lien, recherche déjà faits)");
+    /* 17/10 : plus de 50 écritures CRM depuis (essais répétés) → une deuxième recherche était créée ; vendeur et recherche ne sont jamais refaits */
+    const n12 = T.bot.L.length;
+    for (let k = 0; k < 60; k++) T.bot.L.push({ id: 80000 + k, tel9: "611111111", type: "crm", dossier: 7, quand: new Date(), donnees: JSON.stringify({ contact: "4242", resultats: [{ op: "couleurContact", couleur: 5, fait: true }] }) });
+    T.dossiers.L.find((d) => d.id === 7).recherche_crm = null;   // comme un numéro d'essai sans dossier : seule la trace des écritures protège
+    crm.ecritures.length = 0; await tour12("ev12c");
+    assert.deepStrictEqual(crm.ecritures.map((e) => e.op), ["ajouterAction"], "60 écritures plus tard : vendeur, lien et recherche ne sont pas refaits");
+    T.bot.L.splice(n12, 60);
     T.dossiers.L.find((d) => d.id === 7).recherche_crm = null;
     BOT = BOTa;
   }

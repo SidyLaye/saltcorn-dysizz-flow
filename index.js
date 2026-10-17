@@ -1,4 +1,4 @@
-/* dysizz-flow 2.26.2 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.26.3 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.26.2" : "dev";
+    var VERSION2 = true ? "2.26.3" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -99640,7 +99640,7 @@ var require_bot2 = __commonJS({
         const faits = [];
         if (ecrire) {
           const c = flowApi().crmDepuisCoffre(crm.type, crm.reglages, crm.prefixe, "reel");
-          const precedents = (await tb.getRows({ tel9, type: "crm" }, { orderBy: "id", orderDesc: true, limit: 50 })).map((r) => json(r.donnees, {})).filter((d) => String(d.contact || "") === String(dos.contact_crm)).flatMap((d) => (d.resultats || []).filter((x) => x.fait));
+          const precedents = (await tb.getRows({ tel9, type: "crm" }, { orderBy: "id", orderDesc: true, limit: 1e3 })).map((r) => json(r.donnees, {})).filter((d) => String(d.contact || "") === String(dos.contact_crm)).flatMap((d) => (d.resultats || []).filter((x) => x.fait));
           const avant = (precedents.find((x) => x.op === "couleurContact") || {}).couleur, uneFois = new Set(precedents.map((x) => x.une_fois).filter(Boolean));
           for (const a of p.crm) {
             const trace = { op: a.op, ...a.couleur ? { couleur: a.couleur } : {}, ...a.une_fois ? { une_fois: a.une_fois } : {} };

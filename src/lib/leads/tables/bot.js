@@ -185,7 +185,7 @@ const evenement = async (corps, R) => {
       const c = flowApi().crmDepuisCoffre(crm.type, crm.reglages, crm.prefixe, "reel");
       /* couleur déjà posée par un tour précédent (le lead s'arrête et reprend quand il veut) : pas de réécriture ;
          écriture « une_fois » (vendeur, lien, recherche) déjà réussie pour ce contact : jamais refaite */
-      const precedents = (await tb.getRows({ tel9, type: "crm" }, { orderBy: "id", orderDesc: true, limit: 50 })).map((r) => json(r.donnees, {}))
+      const precedents = (await tb.getRows({ tel9, type: "crm" }, { orderBy: "id", orderDesc: true, limit: 1000 })).map((r) => json(r.donnees, {}))   // 50 ne suffisait pas : essais répétés (17/10), recherche refaite
         .filter((d) => String(d.contact || "") === String(dos.contact_crm)).flatMap((d) => (d.resultats || []).filter((x) => x.fait));
       const avant = (precedents.find((x) => x.op === "couleurContact") || {}).couleur, uneFois = new Set(precedents.map((x) => x.une_fois).filter(Boolean));
       for (const a of p.crm) {
