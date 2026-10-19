@@ -1,5 +1,13 @@
 # Journal des versions
 
+## 2.26.6
+
+### Ajouté
+- Bot WhatsApp, essais (19/10) : après la remise à zéro d'un numéro d'essai, le vrai message d'accueil repart (modèle
+  `sh_ouverture_v3` : photo du bien en tête, prénom, bien, 3 boutons) depuis le numéro de la conversation, et il est enregistré comme
+  l'ouverture N0 d'une campagne. L'essai commence comme pour un vrai lead, et les relances peuvent suivre. `envoyerModele` accepte
+  une image en tête.
+
 ## 2.26.5
 
 ### Ajouté

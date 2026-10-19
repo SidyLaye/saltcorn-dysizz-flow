@@ -153,7 +153,11 @@ const contexte = async (corps, R, { travail = true } = {}) => {   // travail : c
   const photos = R.photos && bien && Array.isArray(bien.photos) ? bien.photos : [];
   const lead = leads[0] ? json(leads[0].dossier, {}) : dossier.essai && dossier.message ? { extraction: { message: dossier.message, nature: "lead" } } : null;
   const job = travail ? travailCartes(bien, R) : null;
-  return { ...B.contexte({ dossier, lead, bien, photos, contact, conf, reglages: R, etat }), ...(job ? { cartes_a_rediger: job } : {}), ...raz };
+  const res = { ...B.contexte({ dossier, lead, bien, photos, contact, conf, reglages: R, etat }), ...(job ? { cartes_a_rediger: job } : {}), ...raz };
+  /* « /reset » d'un numéro d'essai (Sidy, 19/10) : le vrai message d'accueil repart (photo, prénom, bien, 3 boutons), enregistré comme
+     l'ouverture N0 d'une campagne, pour que l'essai commence comme pour un vrai lead et que les relances puissent suivre */
+  if (reinitialise) res.ouverture_reenvoyee = await renvoyerOuverture(tb, tel, res, R, corps.numero_bot).catch(() => false);
+  return res;
 };
 
 const TEXTE = (d) => d.texte || d.dernier_message || d.question || d.reponse || d.mot_cle || "";
@@ -381,8 +385,9 @@ const biens = async (corps, R) => {
    Tant que leads-management n'est pas branché, l'application envoie elle-même le modèle Meta (même numéro expéditeur que le bot).
    R2 (« le bien est toujours disponible ») seulement si le bien est confirmé en vente par une lecture de moins de 5 minutes. */
 const MODELES_RELANCE = { r1: "sh_relance_r1", r2: "sh_relance_r2", r3: "sh_relance_r3" };
-const envoyerModele = async ({ phone_number_id, jeton, a, nom, langue, valeurs = [], boutons = [], suivi }) => {
+const envoyerModele = async ({ phone_number_id, jeton, a, nom, langue, valeurs = [], boutons = [], image = null, suivi }) => {
   const corps = { messaging_product: "whatsapp", to: a, type: "template", biz_opaque_callback_data: suivi, template: { name: nom, language: { code: langue }, components: [
+    ...(image ? [{ type: "header", parameters: [{ type: "image", image: { link: image } }] }] : []),   // message d'accueil : photo du bien
     { type: "body", parameters: valeurs.map((v) => ({ type: "text", text: String(v).replace(/\s+/g, " ").trim() })) },   // Meta : ni saut de ligne, ni tabulation, ni 4 espaces
     ...boutons.map((p, i) => ({ type: "button", sub_type: "quick_reply", index: String(i), parameters: [{ type: "payload", payload: p }] }))] } };
   const r = await fetch(`https://graph.facebook.com/v21.0/${encodeURIComponent(phone_number_id)}/messages`, { method: "POST",
@@ -454,6 +459,20 @@ const relancer = async ({ maintenant = Date.now() } = {}) => {
     }
     return out;
   });
+};
+
+const renvoyerOuverture = async (tb, tel, ctx, R, numeroBot) => {
+  const W = R.whatsapp || {}, bp = ctx.bien_public || {}, photo = (bp.photos_publiques || []).find((u) => /^https:\/\//.test(u));
+  const jeton = W.variable_jeton ? await require("../../../garde").lireSecret(W.variable_jeton) : null;
+  if (!W.phone_number_id || !jeton || !photo) return false;   // le modèle d'accueil a une photo en tête : sans photo, l'accueil du bot prend le relais
+  const numero = numeroEnvoi(W, numeroBot), quand = new Date(), suivi = `sh|${quand.getTime()}|ouverture|essai-${B.tel9(tel)}`;
+  const { id, corps } = await envoyerModele({ phone_number_id: numero, jeton, a: tel, nom: "sh_ouverture_v3", langue: "fr", image: photo, suivi,
+    valeurs: [ctx.prenom || "à vous", leBien(bp, "fr")], boutons: ["N0_INFO", "N0_VISITE", "N0_RAPPEL"].map((b) => b + (ctx.dossier_id ? `|${ctx.dossier_id}` : "")) });
+  await tb.insertRow({ dossier: ctx.dossier_id || null, tel9: B.tel9(tel), type: "ouverture", noeud: "N0", quand,
+    donnees: JSON.stringify({ statut: "en cours", source: "essai", entite: ctx.entite || "", choix: "", langue: "fr", modele: "sh_ouverture_v3", numero_bot: String(numero), identifiant: id || null }) });
+  await journaliser(R.journal, { tracking_id: suivi, marque: "SH", direction: "outbound", conversation_id: `essai-${B.tel9(tel)}`, phone_number_id: String(numero), telephone: tel,
+    format: "template", contenu: JSON.stringify(corps), payload: corps, statut: "accepted", cree_le: quand.toISOString(), mis_a_jour_le: quand.toISOString(), wamid: String(id || ""), erreur: "" });
+  return true;
 };
 
 const ACTIONS = { contexte, evenement, fiche, biens };

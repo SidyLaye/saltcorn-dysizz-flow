@@ -1,4 +1,4 @@
-/* dysizz-flow 2.26.5 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.26.6 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.26.5" : "dev";
+    var VERSION2 = true ? "2.26.6" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -99622,7 +99622,9 @@ var require_bot2 = __commonJS({
       const photos = R.photos && bien && Array.isArray(bien.photos) ? bien.photos : [];
       const lead = leads[0] ? json(leads[0].dossier, {}) : dossier.essai && dossier.message ? { extraction: { message: dossier.message, nature: "lead" } } : null;
       const job = travail ? travailCartes(bien, R) : null;
-      return { ...B.contexte({ dossier, lead, bien, photos, contact, conf, reglages: R, etat }), ...job ? { cartes_a_rediger: job } : {}, ...raz };
+      const res = { ...B.contexte({ dossier, lead, bien, photos, contact, conf, reglages: R, etat }), ...job ? { cartes_a_rediger: job } : {}, ...raz };
+      if (reinitialise) res.ouverture_reenvoyee = await renvoyerOuverture(tb, tel, res, R, corps.numero_bot).catch(() => false);
+      return res;
     };
     var TEXTE = (d) => d.texte || d.dernier_message || d.question || d.reponse || d.mot_cle || "";
     var evenement = async (corps, R) => {
@@ -99852,8 +99854,10 @@ var require_bot2 = __commonJS({
       }) };
     };
     var MODELES_RELANCE = { r1: "sh_relance_r1", r2: "sh_relance_r2", r3: "sh_relance_r3" };
-    var envoyerModele = async ({ phone_number_id, jeton, a, nom, langue, valeurs = [], boutons = [], suivi }) => {
+    var envoyerModele = async ({ phone_number_id, jeton, a, nom, langue, valeurs = [], boutons = [], image = null, suivi }) => {
       const corps = { messaging_product: "whatsapp", to: a, type: "template", biz_opaque_callback_data: suivi, template: { name: nom, language: { code: langue }, components: [
+        ...image ? [{ type: "header", parameters: [{ type: "image", image: { link: image } }] }] : [],
+        // message d'accueil : photo du bien
         { type: "body", parameters: valeurs.map((v) => ({ type: "text", text: String(v).replace(/\s+/g, " ").trim() })) },
         // Meta : ni saut de ligne, ni tabulation, ni 4 espaces
         ...boutons.map((p, i) => ({ type: "button", sub_type: "quick_reply", index: String(i), parameters: [{ type: "payload", payload: p }] }))
@@ -99965,6 +99969,48 @@ var require_bot2 = __commonJS({
         }
         return out;
       });
+    };
+    var renvoyerOuverture = async (tb, tel, ctx, R, numeroBot) => {
+      const W = R.whatsapp || {}, bp = ctx.bien_public || {}, photo = (bp.photos_publiques || []).find((u) => /^https:\/\//.test(u));
+      const jeton = W.variable_jeton ? await require_garde().lireSecret(W.variable_jeton) : null;
+      if (!W.phone_number_id || !jeton || !photo) return false;
+      const numero = numeroEnvoi(W, numeroBot), quand = /* @__PURE__ */ new Date(), suivi = `sh|${quand.getTime()}|ouverture|essai-${B.tel9(tel)}`;
+      const { id, corps } = await envoyerModele({
+        phone_number_id: numero,
+        jeton,
+        a: tel,
+        nom: "sh_ouverture_v3",
+        langue: "fr",
+        image: photo,
+        suivi,
+        valeurs: [ctx.prenom || "\xE0 vous", leBien(bp, "fr")],
+        boutons: ["N0_INFO", "N0_VISITE", "N0_RAPPEL"].map((b) => b + (ctx.dossier_id ? `|${ctx.dossier_id}` : ""))
+      });
+      await tb.insertRow({
+        dossier: ctx.dossier_id || null,
+        tel9: B.tel9(tel),
+        type: "ouverture",
+        noeud: "N0",
+        quand,
+        donnees: JSON.stringify({ statut: "en cours", source: "essai", entite: ctx.entite || "", choix: "", langue: "fr", modele: "sh_ouverture_v3", numero_bot: String(numero), identifiant: id || null })
+      });
+      await journaliser(R.journal, {
+        tracking_id: suivi,
+        marque: "SH",
+        direction: "outbound",
+        conversation_id: `essai-${B.tel9(tel)}`,
+        phone_number_id: String(numero),
+        telephone: tel,
+        format: "template",
+        contenu: JSON.stringify(corps),
+        payload: corps,
+        statut: "accepted",
+        cree_le: quand.toISOString(),
+        mis_a_jour_le: quand.toISOString(),
+        wamid: String(id || ""),
+        erreur: ""
+      });
+      return true;
     };
     var ACTIONS2 = { contexte, evenement, fiche, biens };
     var repondre = async (action, corps) => {

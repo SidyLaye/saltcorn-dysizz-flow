@@ -399,9 +399,17 @@ const sortie = (code, plus = {}) => ({ type: "sortie", noeud: "TB3", quand: "202
     for (const type of ["optout", "fiche_envoyee", "sortie", "ouverture", "inbound", "relance", "crm"]) T.bot.L.push({ id: 70000 + T.bot.L.length, tel9: t9, type, dossier: null, quand: new Date(), donnees: "{}" });
     let c = await repondre("contexte", { telephone: tel });
     assert.ok(c.optout && c.fiche_annonce_envoyee, "avant : désinscrit, fiche déjà envoyée");
-    c = await repondre("contexte", { telephone: tel, reinitialiser: true });
+    meta.length = 0;
+    c = await repondre("contexte", { telephone: tel, reinitialiser: true, numero_bot: "456" });
     assert.strictEqual(c.reinitialise, true); assert.ok(!c.optout && !c.fiche_annonce_envoyee, "après : tout est à refaire");
-    assert.deepStrictEqual(T.bot.L.filter((l) => l.tel9 === t9).map((l) => l.type), ["crm"], "seules les écritures CRM restent");
+    /* le vrai message d'accueil repart (Sidy, 19/10) : photo du bien, prénom, bien, 3 boutons, depuis le numéro de la conversation */
+    const ouv = meta.find((m) => m.modele === "sh_ouverture_v3");
+    assert.ok(ouv && c.ouverture_reenvoyee === true && /\/456\/messages$/.test(ouv.url), "message d'accueil renvoyé depuis le numéro de la conversation");
+    const comp = ouv.corps.template.components;
+    assert.ok(/^https:\/\//.test(comp.find((x) => x.type === "header").parameters[0].image.link), "photo du bien en tête");
+    assert.deepStrictEqual(comp.find((x) => x.type === "body").parameters.map((x) => x.text), ["Célia", "la maison à Cahors"]);
+    assert.deepStrictEqual(comp.filter((x) => x.type === "button").map((x) => x.parameters[0].payload), ["N0_INFO", "N0_VISITE", "N0_RAPPEL"]);
+    assert.deepStrictEqual(T.bot.L.filter((l) => l.tel9 === t9).map((l) => [l.type, l.noeud || ""]), [["crm", ""], ["ouverture", "N0"]], "seules les écritures CRM restent, plus l'ouverture renvoyée (les relances partent d'elle)");
     const vrai = "33611111111", avant = T.bot.L.filter((l) => l.tel9 === "611111111").length;
     c = await repondre("contexte", { telephone: vrai, dossier_id: 7, reinitialiser: true });
     assert.strictEqual(c.reinitialise, false); assert.strictEqual(T.bot.L.filter((l) => l.tel9 === "611111111").length, avant, "un vrai numéro n'est jamais effacé");
