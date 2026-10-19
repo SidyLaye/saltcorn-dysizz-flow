@@ -125,6 +125,16 @@ const etatDe = async (tb, tel, dossier) => {
 const contexte = async (corps, R, { travail = true } = {}) => {   // travail : confier la rédaction des cartes au bot (pas pour les relances)
   const t = await S.tables(), tb = await tableBot(t);
   let { tel, dossier } = await trouver(t, corps, R);
+  /* essais (Sidy, 19/10) : « /reset » depuis un numéro d'essai efface ses traces (STOP, fiche envoyée, sorties, relances, messages) pour
+     rejouer un parcours ; les écritures CRM restent (recherche et action vendeur pas refaites). Un vrai numéro n'est jamais effacé. */
+  let reinitialise;
+  if (corps.reinitialiser) {
+    reinitialise = !!(R.numeros_essai || {})[tel];
+    if (reinitialise) {
+      const types = [...new Set((await tb.getRows({ tel9: B.tel9(tel) })).map((r) => r.type))].filter((x) => x !== "crm");
+      if (types.length) await tb.deleteRows({ tel9: B.tel9(tel), type: { in: types } });
+    }
+  }
   /* nouvelle annonce pour le même numéro (Sidy, 17/10) : le message d'accueil le plus récent porte sur un autre dossier, et rien n'a été
      échangé sur celui de la conversation depuis → on suit le nouveau dossier, même quand le prospect répond par écrit */
   if (dossier && dossier.id && corps.dossier_id) {
@@ -135,14 +145,15 @@ const contexte = async (corps, R, { travail = true } = {}) => {   // travail : c
     }
   }
   const etat = await etatDe(tb, tel, dossier);
-  if (!dossier) return B.contexte({ dossier: null, etat });
+  const raz = reinitialise === undefined ? {} : { reinitialise };
+  if (!dossier) return { ...B.contexte({ dossier: null, etat }), ...raz };
   const { conf, crm } = await charger();
   const [bien, leads, contact] = await Promise.all([lireBien(crm, dossier, R), dossier.id ? t.leads.getRows({ dossier_id: dossier.id }, { orderBy: "id", orderDesc: true, limit: 1 }) : [],
     dossier.essai ? (dossier.projet ? { prenom: null, projets: [dossier.projet] } : null) : lireContact(crm, dossier.contact_crm)]);
   const photos = R.photos && bien && Array.isArray(bien.photos) ? bien.photos : [];
   const lead = leads[0] ? json(leads[0].dossier, {}) : dossier.essai && dossier.message ? { extraction: { message: dossier.message, nature: "lead" } } : null;
   const job = travail ? travailCartes(bien, R) : null;
-  return { ...B.contexte({ dossier, lead, bien, photos, contact, conf, reglages: R, etat }), ...(job ? { cartes_a_rediger: job } : {}) };
+  return { ...B.contexte({ dossier, lead, bien, photos, contact, conf, reglages: R, etat }), ...(job ? { cartes_a_rediger: job } : {}), ...raz };
 };
 
 const TEXTE = (d) => d.texte || d.dernier_message || d.question || d.reponse || d.mot_cle || "";

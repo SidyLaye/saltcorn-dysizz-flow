@@ -1,5 +1,12 @@
 # Journal des versions
 
+## 2.26.5
+
+### Ajouté
+- Bot WhatsApp, essais (19/10) : `sh_contexte` avec `reinitialiser: true` efface, pour un numéro déclaré dans `bot.numeros_essai`
+  seulement, ses traces dans l'application (STOP, fiche envoyée, sorties, relances, messages) afin de rejouer un parcours ; les
+  écritures CRM restent (recherche et action vendeur pas refaites). Réponse `reinitialise` : vrai, ou faux pour un vrai numéro.
+
 ## 2.26.4
 
 ### Corrigé

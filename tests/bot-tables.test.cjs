@@ -14,6 +14,7 @@ const table = (L = []) => ({ L,
   getRows: async (w, o = {}) => { const r = L.filter((l) => vrai(l, w)).sort((a, b) => (a[o.orderBy] > b[o.orderBy] ? 1 : -1) * (o.orderDesc ? -1 : 1)); return o.limit ? r.slice(0, o.limit) : r; },
   insertRow: async (r) => { const id = L.length ? Math.max(...L.map((l) => l.id)) + 1 : 1; L.push({ ...r, id }); return id; },
   updateRow: async (r, id) => { const l = L.find((x) => x.id === id); if (l) Object.assign(l, r); },
+  deleteRows: async (w) => { for (let i = L.length - 1; i >= 0; i--) if (vrai(L[i], w)) L.splice(i, 1); },
   deleteRows: async (w) => { for (let i = L.length - 1; i >= 0; i--) if (vrai(L[i], w)) L.splice(i, 1); } });
 const T = { bot: table(), dossiers: table([{ id: 7, tel9: "611111111", bien_crm: "99", contact_crm: "4242", negociateur: "500", portail: "leboncoin", nom: "Marie Test", maj_le: 2 },
   { id: 8, tel9: "611111111", bien_crm: "98", negociateur: "500", nom: "Marie Test", maj_le: 1 }]),
@@ -390,5 +391,20 @@ const sortie = (code, plus = {}) => ({ type: "sortie", noeud: "TB3", quand: "202
   await repondre("evenement", { telephone: "33611111111", event_id: "ev8", evenements: [sortie("OUT-1", { autre_bien_id: 97 })] });
   assert.deepStrictEqual([...new Set(mails.map((m) => m.a))].sort(), ["julie.autre@agence-exemple.fr", "martin@agence-exemple.fr", "siege@agence-exemple.fr"]);
   assert.ok(mails[0].html.includes("Bien demandé") && mails[0].html.includes("réf. 30777") && mails[0].html.includes("Bien de l&#39;annonce d&#39;origine") && mails[0].html.includes("réf. 30123"));
+  /* Sidy, 19/10 : « /reset » depuis un numéro d'essai efface ses traces dans l'application (STOP, fiche envoyée, sorties, relances,
+     messages) pour rejouer un parcours ; les écritures CRM restent, pour ne pas refaire la recherche ni l'action vendeur. Jamais un vrai numéro. */
+  {
+    const tel = "33655555555", t9 = "655555555";
+    BOT = { ...BOT, numeros_essai: { ...BOT.numeros_essai, [tel]: { reference: "30123", prenom: "Célia" } } };
+    for (const type of ["optout", "fiche_envoyee", "sortie", "ouverture", "inbound", "relance", "crm"]) T.bot.L.push({ id: 70000 + T.bot.L.length, tel9: t9, type, dossier: null, quand: new Date(), donnees: "{}" });
+    let c = await repondre("contexte", { telephone: tel });
+    assert.ok(c.optout && c.fiche_annonce_envoyee, "avant : désinscrit, fiche déjà envoyée");
+    c = await repondre("contexte", { telephone: tel, reinitialiser: true });
+    assert.strictEqual(c.reinitialise, true); assert.ok(!c.optout && !c.fiche_annonce_envoyee, "après : tout est à refaire");
+    assert.deepStrictEqual(T.bot.L.filter((l) => l.tel9 === t9).map((l) => l.type), ["crm"], "seules les écritures CRM restent");
+    const vrai = "33611111111", avant = T.bot.L.filter((l) => l.tel9 === "611111111").length;
+    c = await repondre("contexte", { telephone: vrai, dossier_id: 7, reinitialiser: true });
+    assert.strictEqual(c.reinitialise, false); assert.strictEqual(T.bot.L.filter((l) => l.tel9 === "611111111").length, avant, "un vrai numéro n'est jamais effacé");
+  }
   console.log("bot avec tables : OK");
 })().catch((e) => { console.error(e); process.exit(1); });
