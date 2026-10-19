@@ -40,6 +40,16 @@ const sansDuree = (d) => { const o = json(d); delete o.duree_ms; for (const a of
   const spam = json(await T.etapeLire({ ...MAILS.spam }, CONF, {}));
   assert.strictEqual(spam.fin, true);
   assert.deepStrictEqual(await T.etapeBien(json(spam), M.creer({ biens }), CONF), spam);
+  /* 19/10 : un scanner de sécurité a rempli 270 fois le formulaire du site (nom « pHqghUme », adresse @example.com) ;
+     chaque envoi partait en lead vers le siège et les négociateurs. Un formulaire rempli par un robot n'est jamais transmis. */
+  const robot = (remplacer) => ({ ...MAILS.leboncoin, texte: remplacer(MAILS.leboncoin.texte), date: "2026-09-25T07:00:00Z" });
+  for (const [quoi, m] of [["signature du scanner", robot((t) => t.replace("Paul Lefèvre", "pHqghUme"))], ["adresse réservée aux essais", robot((t) => t.replace("paul.test@example.org", "testing@example.com"))],
+    ["domaine .tst du scanner", robot((t) => t.replace("paul.test@example.org", "sample@email.tst"))]]) {
+    const r = await T.traiter(m, M.creer({ biens }), CONF, { dossiers: memoire() });
+    assert.deepStrictEqual([r.statut, r.extraction.nature], ["ignore", "robot"], quoi + " : non transmis");
+    assert.ok(r.alertes.some((a) => /robot/.test(a)) && !r.actions.length, quoi + " : signalé, aucune écriture");
+  }
+  assert.notStrictEqual((await T.traiter({ ...MAILS.leboncoin, date: "2026-09-25T07:00:00Z" }, M.creer({ biens }), CONF, { dossiers: memoire() })).extraction.nature, "robot", "un vrai lead reste un lead");
   /* le consentement porte la preuve (.eml) et le motif réglé */
   const lbc = { ...MAILS.leboncoin, date: "2026-09-25T07:00:00Z" };
   let d = await T.etapeLire(lbc, CONF, {}); d = await T.etapeBien(d, M.creer({ biens }), CONF); d = await T.etapeContact(d, M.creer({ biens }), CONF); d = T.etapeConsentement(d, lbc, CONF);

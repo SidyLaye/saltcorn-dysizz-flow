@@ -1,5 +1,13 @@
 # Journal des versions
 
+## 2.26.4
+
+### Corrigé
+- Leads : un formulaire rempli par un robot n'est plus transmis (19/10 : un scanner de sécurité a envoyé 270 fois le formulaire du
+  site, et chaque envoi partait en lead vers le siège et les négociateurs). Sont écartés la signature du scanner Acunetix
+  (« pHqghUme ») et les adresses aux domaines ou extensions réservés aux essais (example.com, example.net, .test, .tst, .invalid,
+  .localhost, .example). Le lead est rangé « ignoré », avec une alerte, sans écriture dans le CRM ni mail.
+
 ## 2.26.3
 
 ### Corrigé

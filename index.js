@@ -1,4 +1,4 @@
-/* dysizz-flow 2.26.3 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.26.4 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.26.3" : "dev";
+    var VERSION2 = true ? "2.26.4" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -95279,6 +95279,11 @@ var require_traiter = __commonJS({
     var { destinataires } = require_routage();
     var C = require_conversation();
     var NATURES_LEAD = ["lead", "relance", "recherche", "estimation", "direct"];
+    var ROBOT_EMAIL = /@(?:[\w-]+\.)*(?:example\.(?:com|net)|[\w-]+\.(?:test|tst|invalid|localhost|example))$/i;
+    var robot = (r) => {
+      const c = r.contact || {};
+      return ROBOT_EMAIL.test(String(c.email || "").trim()) || /phqghume/i.test([c.nom, c.prenom, c.email, c.telephone, r.message].filter(Boolean).join(" "));
+    };
     var ETAPES = ["bien", "contact", "suivi", "projet", "commentaire", "consentement", "action", "notification"];
     var dateFr = (d) => {
       const x = new Date(d);
@@ -95439,6 +95444,10 @@ var require_traiter = __commonJS({
           r.bien.id_crm = String(pre.bien_id);
           r.preuves["bien.id_crm"] = "dossier";
         }
+      }
+      if (NATURES_LEAD.includes(r.nature) && robot(r)) {
+        r.nature = "robot";
+        d.alertes.push("formulaire rempli par un robot (scanner de s\xE9curit\xE9 ou adresse r\xE9serv\xE9e aux essais) : non transmis");
       }
       if (!NATURES_LEAD.includes(r.nature)) {
         d.statut = ["inconnu", "reponse_campagne"].includes(r.nature) ? "a_trier" : r.nature === "alerte_spam" && (r.bloques || []).length || r.nature === "hameconnage" ? "alerte" : "ignore";

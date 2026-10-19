@@ -15,6 +15,12 @@ const { destinataires } = require("./routage");
 const C = require("./conversation");
 
 const NATURES_LEAD = ["lead", "relance", "recherche", "estimation", "direct"];
+/* Formulaire rempli par un robot (19/10 : un scanner de sécurité a envoyé 270 fois le formulaire du site, nom « pHqghUme »,
+   adresse @example.com). Signature du scanner Acunetix, domaines et extensions réservés aux essais : jamais une vraie personne.
+   ponytail: example.org n'est pas bloqué, les données d'essai des tests l'utilisent ; une limite de débit couvrirait les autres robots. */
+const ROBOT_EMAIL = /@(?:[\w-]+\.)*(?:example\.(?:com|net)|[\w-]+\.(?:test|tst|invalid|localhost|example))$/i;
+const robot = (r) => { const c = r.contact || {};
+  return ROBOT_EMAIL.test(String(c.email || "").trim()) || /phqghume/i.test([c.nom, c.prenom, c.email, c.telephone, r.message].filter(Boolean).join(" ")); };
 const ETAPES = ["bien", "contact", "suivi", "projet", "commentaire", "consentement", "action", "notification"];
 
 const dateFr = (d) => { const x = new Date(d); return isNaN(x) ? "" : x.toLocaleDateString("fr-FR", { timeZone: "Europe/Paris", day: "2-digit", month: "2-digit", year: "numeric" }); };
@@ -158,6 +164,10 @@ const etapeLire = async (mail, conf = {}, opts = {}) => {
     if (pre && pre.bien_id) { r.bien.id_crm = String(pre.bien_id); r.preuves["bien.id_crm"] = "dossier"; }
   }
 
+  if (NATURES_LEAD.includes(r.nature) && robot(r)) {
+    r.nature = "robot";
+    d.alertes.push("formulaire rempli par un robot (scanner de sécurité ou adresse réservée aux essais) : non transmis");
+  }
   if (!NATURES_LEAD.includes(r.nature)) {
     d.statut = ["inconnu", "reponse_campagne"].includes(r.nature) ? "a_trier" : (r.nature === "alerte_spam" && (r.bloques || []).length) || r.nature === "hameconnage" ? "alerte" : "ignore";
     if (r.nature === "hameconnage") d.alertes.push("hameçonnage probable (" + (r.expediteur_affiche || "expéditeur") + ") : ne pas ouvrir les liens ni les pièces jointes, ne pas transmettre");
