@@ -1,5 +1,16 @@
 # Journal des versions
 
+## 2.26.7
+
+### Corrigé
+- Leads (revue du 19/10) : une référence d'agence en lettres seules (« Référence : GILO ») est lue, si elle est seule dans
+  son champ (3 à 12 lettres, pas un mot de remplissage comme « aucune » ou « voir ») ; avant, le bien était cherché sur le
+  prix seul et pouvait être un autre bien au prix voisin.
+- Une référence de 2 caractères mêlant chiffre et lettre (« 3X ») compte comme une référence d'agence : retenue si un seul
+  bien du CRM la porte et qu'aucun fait du mail ne la contredit. Un seul caractère ou deux lettres restent insuffisants.
+- Rejeu des 3 925 mails reçus depuis le 01/10 : seuls 4 changent (les 3 « GILO » et le « 3X »). Aucun ancien lead n'est
+  retraité ni renvoyé.
+
 ## 2.26.6
 
 ### Ajouté

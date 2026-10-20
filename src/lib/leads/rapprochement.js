@@ -115,11 +115,12 @@ const variantes = (ref, suffixes = SUFFIXES) => {
 };
 
 /* Force d'une référence exacte : identifiant de diffusion long = très forte ; référence de l'agence d'au moins
-   3 caractères = forte ; plus courte = faible (elle peut désigner un autre bien, les faits doivent confirmer). */
+   3 caractères = forte, ou 2 mêlant chiffre et lettre (« 3X ») ; plus courte = faible (elle peut désigner un autre
+   bien, les faits doivent confirmer). */
 const forceRef = (valeur, etape) => {
-  const n = String(valeur).replace(/[^A-Za-z0-9]/g, "").length;
+  const s = String(valeur).replace(/[^A-Za-z0-9]/g, ""), n = s.length;
   if (etape !== "reference_complete") return "faible";
-  return n >= 8 ? "tres_forte" : n >= 3 ? "forte" : "faible";
+  return n >= 8 ? "tres_forte" : n >= 3 || (n === 2 && /\d/.test(s) && /[a-z]/i.test(s)) ? "forte" : "faible";
 };
 
 /* Note d'un bien du catalogue pour la recherche par critères. */

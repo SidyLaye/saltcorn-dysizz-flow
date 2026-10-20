@@ -23,6 +23,10 @@ const poser = (r, chemin, v, preuve) => {
   cible[k] = v; r.preuves[chemin] = preuve;
 };
 
+/* Référence de l'agence en lettres seules (« GILO ») : seule dans son champ, 3 à 12 lettres, pas un mot de remplissage. */
+const PAS_UNE_REF = /^(aucune?|n[ée]ant|inconnue?|non|vide|voir|sans|nul|null|none|test)$/i;
+const refLettres = (v) => /^[A-Za-z]{3,12}$/.test(String(v).trim()) && !PAS_UNE_REF.test(String(v).trim());
+
 const depuisFiche = (r, couples, L) => {
   for (const c of couples) {
     const v = c.valeur, p = "fiche:" + c.champ;
@@ -36,7 +40,7 @@ const depuisFiche = (r, couples, L) => {
       case "pays": poser(r, "contact.pays", v, p); break;
       case "langue": poser(r, "contact.langue", v, p); break;
       case "message": if (!r.message) { r.message = bloc(c.lignes, c.ligne + 1, v); r.preuves.message = p; } break;
-      case "reference": { const m = v.match(/[\w][\w./-]*/); if (m && /\d/.test(m[0])) poser(r, "bien.reference", m[0], p); break; }
+      case "reference": { const m = v.match(/[\w][\w./-]*/); if (m && (/\d/.test(m[0]) || refLettres(v))) poser(r, "bien.reference", m[0], p); break; }
       case "id_crm": poser(r, "bien.id_crm", (v.match(/\d{5,}/) || [])[0], p); break;
       case "prix": poser(r, "bien.prix", V.prix(/€|eur/i.test(v) ? v : v + " €"), p); break;
       case "ville": poser(r, "bien.ville", v, p); break;

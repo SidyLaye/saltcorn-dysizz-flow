@@ -1,4 +1,4 @@
-/* dysizz-flow 2.26.6 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.26.7 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.26.6" : "dev";
+    var VERSION2 = true ? "2.26.7" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -93426,6 +93426,8 @@ var require_extraire = __commonJS({
       cible[k] = v;
       r.preuves[chemin] = preuve;
     };
+    var PAS_UNE_REF = /^(aucune?|n[ée]ant|inconnue?|non|vide|voir|sans|nul|null|none|test)$/i;
+    var refLettres = (v) => /^[A-Za-z]{3,12}$/.test(String(v).trim()) && !PAS_UNE_REF.test(String(v).trim());
     var depuisFiche = (r, couples, L) => {
       for (const c of couples) {
         const v = c.valeur, p = "fiche:" + c.champ;
@@ -93462,7 +93464,7 @@ var require_extraire = __commonJS({
             break;
           case "reference": {
             const m = v.match(/[\w][\w./-]*/);
-            if (m && /\d/.test(m[0])) poser(r, "bien.reference", m[0], p);
+            if (m && (/\d/.test(m[0]) || refLettres(v))) poser(r, "bien.reference", m[0], p);
             break;
           }
           case "id_crm":
@@ -94004,9 +94006,9 @@ var require_rapprochement = __commonJS({
       return out;
     };
     var forceRef = (valeur, etape) => {
-      const n = String(valeur).replace(/[^A-Za-z0-9]/g, "").length;
+      const s = String(valeur).replace(/[^A-Za-z0-9]/g, ""), n = s.length;
       if (etape !== "reference_complete") return "faible";
-      return n >= 8 ? "tres_forte" : n >= 3 ? "forte" : "faible";
+      return n >= 8 ? "tres_forte" : n >= 3 || n === 2 && /\d/.test(s) && /[a-z]/i.test(s) ? "forte" : "faible";
     };
     var noter = (faits, b, regles = REGLES, exigeants = false) => {
       const cmp = comparer(faits, b, regles);

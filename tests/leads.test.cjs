@@ -305,6 +305,19 @@ const { CONF, MAILS } = require("./fixtures-leads.cjs");
     assert.strictEqual(rx.bien, null, "une référence tronquée ne suffit pas sans fait distinctif");
     const r8 = await rapprocher({ bien: { reference: "985_985_61000001", prix: 530000, type: "appartement" } }, M.creer({ biens: [{ id: 61000001, reference: "985_985", prix: 510000, type: "appartement", ville: "Cannes" }, { id: 7, reference: "985", prix: 4800000, type: "maison" }] }));
     assert.strictEqual(r8.bien && r8.bien.id, 61000001, "identifiant Immofacile caché dans la référence");
+    /* Référence de l'agence en lettres seules (« GILO », Leboncoin du 08/10) : lue ; un mot qui n'en est pas une, non. */
+    const lbcRef = (ref) => extraire({ expediteur: '"leboncoin" <a1b2c3d4e5f6g7h8@messagerie.leboncoin.fr>', objet: 'Nouveau message pour "Maison 5 pièces 109 m²" sur leboncoin',
+      texte: `Bonjour,\nEmilie vous a contacté sur leboncoin.\nPrénom : Emilie\nNom : TEST\nE-mail : emilie@example.org\nTéléphone : +33600000042\n« Ce bien est-il toujours disponible ? »\nMaison 5 pièces 109 m²\n480000 €\nRéférence : ${ref}\nLien : https://www.leboncoin.fr/ad/ventes_immobilieres/1\nL'équipe leboncoin` }, C2);
+    assert.strictEqual(lbcRef("GILO").bien.reference, "GILO");
+    assert.strictEqual(lbcRef("12027400400").bien.reference, "12027400400");
+    for (const x of ["NC", "N/A", "voir annonce", "aucune", "Non communiquée", "-"]) assert.ok(!lbcRef(x).bien.reference, "pas une référence : " + x);
+    /* Référence courte mêlant lettre et chiffre (« 3X », Ma Propriété du 16/10) : un seul bien du CRM la porte → retenue ;
+       un prix contraire la rejette toujours ; un seul caractère ne suffit jamais. */
+    const crm3 = M.creer({ biens: [{ id: 60458214, reference: "3X", prix: 1442000, type: "maison" }, { id: 2, reference: "7", prix: 150000 }] });
+    assert.strictEqual(((await rapprocher({ bien: { reference: "3X" } }, crm3)).bien || {}).id, 60458214);
+    assert.strictEqual((await rapprocher({ bien: { reference: "3X", prix: 250000 } }, crm3)).bien, null, "prix contraire");
+    assert.strictEqual((await rapprocher({ bien: { reference: "7" } }, crm3)).bien, null, "un caractère");
+    assert.strictEqual((await rapprocher({ bien: { reference: "AB" } }, M.creer({ biens: [{ id: 3, reference: "AB", prix: 1 }] }))).bien, null, "deux lettres : pas une référence sûre");
   }
 
   /* Portail déclaré par le client : par domaine, ou par adresse complète (le formulaire du site écrit depuis le domaine de l'agence ;
