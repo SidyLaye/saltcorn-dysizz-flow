@@ -1,4 +1,4 @@
-/* dysizz-flow 2.26.7 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.26.8 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.26.7" : "dev";
+    var VERSION2 = true ? "2.26.8" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -99738,7 +99738,7 @@ var require_bot2 = __commonJS({
               const jeton = W.variable_jeton ? await require_garde().lireSecret(W.variable_jeton) : null;
               if (!W.phone_number_id || !jeton) throw new Error("WhatsApp non r\xE9gl\xE9");
               for (const a of tels) {
-                const { id } = await envoyerModele({ phone_number_id: numeroEnvoi(W, corps.numero_bot), jeton, a, nom: "sh_alerte_nego", langue: "fr", valeurs, suivi: `sh|${Date.now()}|alerte|${tel9}` });
+                const { id } = await envoyerModele({ phone_number_id: W.numero_alertes || numeroEnvoi(W, corps.numero_bot), jeton, a, nom: "sh_alerte_nego", langue: "fr", valeurs, suivi: `sh|${Date.now()}|alerte|${tel9}` });
                 await noter("alerte_whatsapp", { a: B.tel9(a), valeurs: valeurs.slice(0, 4), identifiant: id || null });
                 envoyees.push(B.tel9(a));
               }

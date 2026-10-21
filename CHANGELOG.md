@@ -1,5 +1,11 @@
 # Journal des versions
 
+## 2.26.8
+
+### Ajouté
+- Bot WhatsApp : réglage `whatsapp.numero_alertes`. Les alertes aux négociateurs (modèle `sh_alerte_nego`) partent de ce
+  numéro, avec le même jeton ; la conversation avec le prospect reste sur son numéro. Sans le réglage, rien ne change.
+
 ## 2.26.7
 
 ### Corrigé

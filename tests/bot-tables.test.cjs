@@ -155,6 +155,12 @@ const sortie = (code, plus = {}) => ({ type: "sortie", noeud: "TB3", quand: "202
     await repondre("evenement", { telephone: "33611111111", dossier_id: 7, numero_bot: "456", event_id: "ev13a", evenements: [sortie("OUT-1")] });
     assert.deepStrictEqual(alertes().map((m) => m.to), ["33600000500"], "visite : le négociateur est alerté");
     assert.ok(/\/456\/messages$/.test(alertes()[0].url), "alerte depuis le numéro de la conversation");
+    /* Sidy, 21/10 : les alertes aux négociateurs partent du numéro AM Business Services (whatsapp.numero_alertes) ; le prospect, lui, reste sur le numéro de sa conversation */
+    BOT.whatsapp = { ...BOT.whatsapp, numero_alertes: "789" }; meta.length = 0;
+    await repondre("evenement", { telephone: "33611111111", dossier_id: 7, numero_bot: "456", event_id: "ev13n", evenements: [sortie("OUT-1")] });
+    assert.ok(/\/789\/messages$/.test(alertes()[0].url), "alerte depuis le numéro d'alertes quand il est réglé");
+    assert.ok(meta.filter((m) => m.modele !== "sh_alerte_nego").every((m) => !/\/789\//.test(m.url)), "rien d'autre ne part du numéro d'alertes");
+    delete BOT.whatsapp.numero_alertes;
     const v = alertes()[0].corps.template.components[0].parameters.map((x) => x.text);
     assert.deepStrictEqual(v, ["qualifié", "Marie Test", "réf. 30123 à Cahors", "visite, projet à moins de 3 mois", "+33 6 11 11 11 11"]);
     meta.length = 0; await repondre("evenement", { telephone: "33611111111", dossier_id: 7, event_id: "ev13b", evenements: [{ type: "prioritaire_vendeur", donnees: { reponse: "oui" } }] });
