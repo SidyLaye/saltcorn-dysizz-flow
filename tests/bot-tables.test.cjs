@@ -148,7 +148,7 @@ const sortie = (code, plus = {}) => ({ type: "sortie", noeud: "TB3", quand: "202
   {
     const BOTa = BOT, martin = CONF.routage.personnes[0]; martin.telephone = "+33 6 00 00 05 00";
     const marie = T.dossiers.L.find((d) => d.id === 7), nomMarie = marie.nom; marie.nom = "Marie\n  Test";   // Meta refuse saut de ligne et tabulation
-    const alertes = () => meta.filter((m) => m.modele === "sh_alerte_nego");
+    const alertes = () => meta.filter((m) => /^sh_alerte_(nego|vendeur)$/.test(m.modele));
     BOT = { ...BOT, whatsapp: { phone_number_id: "123", variable_jeton: "JETON_WA" }, alerte_whatsapp: true, notifications: "reel",
       actions: { ...(BOT.actions || {}), VENDEUR: 333 } }; meta.length = 0;   // comme en prod depuis le 16/10 : type d'action vendeur réglé
     BOT.whatsapp = { ...BOT.whatsapp, numeros: ["456"] };
@@ -159,12 +159,12 @@ const sortie = (code, plus = {}) => ({ type: "sortie", noeud: "TB3", quand: "202
     BOT.whatsapp = { ...BOT.whatsapp, numero_alertes: "789" }; meta.length = 0;
     await repondre("evenement", { telephone: "33611111111", dossier_id: 7, numero_bot: "456", event_id: "ev13n", evenements: [sortie("OUT-1")] });
     assert.ok(/\/789\/messages$/.test(alertes()[0].url), "alerte depuis le numéro d'alertes quand il est réglé");
-    assert.ok(meta.filter((m) => m.modele !== "sh_alerte_nego").every((m) => !/\/789\//.test(m.url)), "rien d'autre ne part du numéro d'alertes");
+    assert.ok(meta.filter((m) => !/^sh_alerte_/.test(m.modele)).every((m) => !/\/789\//.test(m.url)), "rien d'autre ne part du numéro d'alertes");
     delete BOT.whatsapp.numero_alertes;
     const v = alertes()[0].corps.template.components[0].parameters.map((x) => x.text);
     assert.deepStrictEqual(v, ["qualifié", "Marie Test", "réf. 30123 à Cahors", "visite, projet à moins de 3 mois", "+33 6 11 11 11 11"]);
     meta.length = 0; await repondre("evenement", { telephone: "33611111111", dossier_id: 7, event_id: "ev13b", evenements: [{ type: "prioritaire_vendeur", donnees: { reponse: "oui" } }] });
-    assert.deepStrictEqual(alertes().map((m) => alertes()[0].corps.template.components[0].parameters[0].text), ["prioritaire"], "bien à vendre : alerte prioritaire");
+    assert.deepStrictEqual(alertes().map((m) => [m.modele, m.corps.template.components[0].parameters[0].text]), [["sh_alerte_vendeur", "prioritaire"]], "bien à vendre : « Nouveau lead vendeur » (Sidy, 21/10)");
     meta.length = 0; await repondre("evenement", { telephone: "33611111111", dossier_id: 7, event_id: "ev13c", evenements: [sortie("OUT-2")] });
     assert.strictEqual(alertes().length, 0, "rappel : le mail suffit");
     meta.length = 0; await repondre("evenement", { telephone: "33611111111", dossier_id: 7, event_id: "ev13g", evenements: [{ type: "visite_modifiee", donnees: { creneau: "jeudi\naprès-midi", texte: "Finalement jeudi après-midi" } }] });

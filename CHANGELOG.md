@@ -5,6 +5,8 @@
 ### Ajouté
 - Bot WhatsApp : réglage `whatsapp.numero_alertes`. Les alertes aux négociateurs (modèle `sh_alerte_nego`) partent de ce
   numéro, avec le même jeton ; la conversation avec le prospect reste sur son numéro. Sans le réglage, rien ne change.
+- Bot WhatsApp : un lead vendeur (alerte « prioritaire ») est annoncé au négociateur par le modèle `sh_alerte_vendeur`,
+  « Nouveau lead vendeur WhatsApp … », avec les mêmes valeurs que `sh_alerte_nego`.
 
 ## 2.26.7
 

@@ -99738,7 +99738,7 @@ var require_bot2 = __commonJS({
               const jeton = W.variable_jeton ? await require_garde().lireSecret(W.variable_jeton) : null;
               if (!W.phone_number_id || !jeton) throw new Error("WhatsApp non r\xE9gl\xE9");
               for (const a of tels) {
-                const { id } = await envoyerModele({ phone_number_id: W.numero_alertes || numeroEnvoi(W, corps.numero_bot), jeton, a, nom: "sh_alerte_nego", langue: "fr", valeurs, suivi: `sh|${Date.now()}|alerte|${tel9}` });
+                const { id } = await envoyerModele({ phone_number_id: W.numero_alertes || numeroEnvoi(W, corps.numero_bot), jeton, a, nom: valeurs[0] === "prioritaire" ? "sh_alerte_vendeur" : "sh_alerte_nego", langue: "fr", valeurs, suivi: `sh|${Date.now()}|alerte|${tel9}` });
                 await noter("alerte_whatsapp", { a: B.tel9(a), valeurs: valeurs.slice(0, 4), identifiant: id || null });
                 envoyees.push(B.tel9(a));
               }

@@ -273,8 +273,9 @@ const evenement = async (corps, R) => {
           if (!W.phone_number_id || !jeton) throw new Error("WhatsApp non réglé");
           for (const a of tels) {
             /* Sidy, 21/10 : les alertes aux négociateurs partent du numéro AM Business Services (réglage whatsapp.numero_alertes,
-               même jeton, modèle sh_alerte_nego approuvé sur son compte) ; sans ce réglage, du numéro de la conversation */
-            const { id } = await envoyerModele({ phone_number_id: W.numero_alertes || numeroEnvoi(W, corps.numero_bot), jeton, a, nom: "sh_alerte_nego", langue: "fr", valeurs, suivi: `sh|${Date.now()}|alerte|${tel9}` });
+               même jeton, modèles approuvés sur son compte) ; sans ce réglage, du numéro de la conversation.
+               Un vendeur (« prioritaire ») reçoit sh_alerte_vendeur : « Nouveau lead vendeur WhatsApp … » (Sidy, 21/10), mêmes valeurs */
+            const { id } = await envoyerModele({ phone_number_id: W.numero_alertes || numeroEnvoi(W, corps.numero_bot), jeton, a, nom: valeurs[0] === "prioritaire" ? "sh_alerte_vendeur" : "sh_alerte_nego", langue: "fr", valeurs, suivi: `sh|${Date.now()}|alerte|${tel9}` });
             await noter("alerte_whatsapp", { a: B.tel9(a), valeurs: valeurs.slice(0, 4), identifiant: id || null });
             envoyees.push(B.tel9(a));
           }
