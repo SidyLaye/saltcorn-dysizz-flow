@@ -1,4 +1,4 @@
-/* dysizz-flow 2.26.8 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.26.9 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.26.8" : "dev";
+    var VERSION2 = true ? "2.26.9" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -99223,7 +99223,7 @@ Son message : ${String(mot).slice(0, 500)}` : "") });
     };
     var mailEquipe = ({ avis, dossier = {}, bien, bien_initial = null, telephone, fil = [], aurait_recu }) => {
       const b = bien || {}, nom = dossier.nom || "Prospect";
-      const objet = `${avis.prioritaire ? "[PRIORITAIRE] " : ""}${avis.qualifie ? "Lead qualifi\xE9 WhatsApp" : "WhatsApp"} \xB7 ${avis.titre}${b.reference ? " \xB7 r\xE9f. " + b.reference : ""} \xB7 ${nom}`;
+      const objet = `${aurait_recu ? "[ESSAI] " : ""}${avis.prioritaire ? "[PRIORITAIRE] " : ""}${avis.qualifie ? "Lead qualifi\xE9 WhatsApp" : "WhatsApp"} \xB7 ${avis.titre}${b.reference ? " \xB7 r\xE9f. " + b.reference : ""} \xB7 ${nom}`;
       const ligne = (l, v) => v ? `<tr><td style="color:#667;padding:2px 12px 2px 0;vertical-align:top">${esc(l)}</td><td><b>${esc(v)}</b></td></tr>` : "";
       const html = `<div style="font-family:Arial,sans-serif;font-size:14px;color:#1f2937">
 <p>${avis.qualifie ? "Lead qualifi\xE9 \xE0 l'issue de la conversation avec l'assistant WhatsApp : " : ""}<b>${esc(avis.titre)}</b>${avis.qualifie ? "." : ", re\xE7u par l'assistant WhatsApp."}</p>
@@ -99725,7 +99725,15 @@ var require_bot2 = __commonJS({
         const simuler = R.notifications === "simuler" || !R.notifications || !essai && !RA.envoi_mails;
         out.avis = (await require_envois().envoyer(messages, { simuler })).resume;
         if (R.alerte_whatsapp === true && R.notifications !== "simuler" && R.notifications) {
-          const tels = [...new Set([...qui, ...quiAutre].filter((x) => x.roles.some((r) => r === "negociateur" || r === "assistante")).map((x) => (conf.routage && conf.routage.personnes || []).find((p2) => String(p2.email || "").toLowerCase() === x.email)).map((p2) => String(p2 && p2.telephone || "").replace(/\D/g, "")).filter((n) => n.length >= 9))].filter((n) => !essai || Object.keys(R.numeros_essai || {}).includes(n));
+          const intl = (t2) => {
+            const d = String(t2 || "").replace(/\D/g, "");
+            return /^0\d{9}$/.test(d) ? "33" + d.slice(1) : d.replace(/^00/, "");
+          };
+          const registre = Object.entries(R.numeros_essai || {});
+          const tels = [...new Set([...qui, ...quiAutre].filter((x) => x.roles.some((r) => r === "negociateur" || r === "assistante")).flatMap((x) => [
+            (conf.routage && conf.routage.personnes || []).find((p2) => String(p2.email || "").toLowerCase() === x.email),
+            ...registre.filter(([, e]) => e && String(e.email || "").trim().toLowerCase() === x.email).map(([k]) => ({ telephone: k }))
+          ]).map((p2) => intl(p2 && p2.telephone)).filter((n) => n.length >= 9))].filter((n) => !essai || registre.some(([k]) => k === n));
           const W = R.whatsapp || {}, envoyees = [];
           for (const avis of p.avis) {
             const valeurs = B.alerteNego({ avis, dossier: dos, bien: surAutre(avis) ? autre : bien, telephone: tel });
@@ -99738,7 +99746,15 @@ var require_bot2 = __commonJS({
               const jeton = W.variable_jeton ? await require_garde().lireSecret(W.variable_jeton) : null;
               if (!W.phone_number_id || !jeton) throw new Error("WhatsApp non r\xE9gl\xE9");
               for (const a of tels) {
-                const { id } = await envoyerModele({ phone_number_id: W.numero_alertes || numeroEnvoi(W, corps.numero_bot), jeton, a, nom: valeurs[0] === "prioritaire" ? "sh_alerte_vendeur" : "sh_alerte_nego", langue: "fr", valeurs, suivi: `sh|${Date.now()}|alerte|${tel9}` });
+                const { id } = await envoyerModele({
+                  phone_number_id: W.numero_alertes || numeroEnvoi(W, corps.numero_bot),
+                  jeton,
+                  a,
+                  nom: valeurs[0] === "prioritaire" ? "sh_alerte_vendeur" : "sh_alerte_nego",
+                  langue: "fr",
+                  valeurs: essai ? ["ESSAI \xB7 " + valeurs[0], ...valeurs.slice(1)] : valeurs,
+                  suivi: `sh|${Date.now()}|alerte|${tel9}`
+                });
                 await noter("alerte_whatsapp", { a: B.tel9(a), valeurs: valeurs.slice(0, 4), identifiant: id || null });
                 envoyees.push(B.tel9(a));
               }

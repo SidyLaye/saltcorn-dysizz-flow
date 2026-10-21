@@ -84,7 +84,8 @@ const QUAND = new Date("2026-10-13T10:00:00Z");
 
   const m = B.mailEquipe({ avis: p.avis[0], dossier, bien: BIEN, telephone: "33611111111", fil: [{ role: "prospect", texte: "<b>Je veux visiter</b>" }], aurait_recu: ["martin@agence-exemple.fr"] });
   /* réunion du 21/07 : le lead qualifié a un objet distinct du mail d'arrivée, avec synthèse, score et échange */
-  assert.ok(m.objet.startsWith("[PRIORITAIRE] Lead qualifié WhatsApp · Demande de visite") && m.objet.includes("réf. 30123") && m.objet.includes("Marie Test"));
+  /* 21/10 (recette) : un mail d'essai porte « [ESSAI] » en tête d'objet, pour qu'un négociateur ne le prenne jamais pour un vrai lead */
+  assert.ok(m.objet.startsWith("[ESSAI] [PRIORITAIRE] Lead qualifié WhatsApp · Demande de visite") && m.objet.includes("réf. 30123") && m.objet.includes("Marie Test"));
   assert.ok(m.html.includes("samedi matin") && m.html.includes("&lt;b&gt;Je veux visiter") && m.html.includes("moins de 3 mois") && m.html.includes("Essai : en service"));
   assert.ok(m.html.includes("Lead qualifié à l'issue de la conversation") && m.html.includes("bien 85/100 · financement 50/100 (barème provisoire)"));
   assert.strictEqual(B.texteScores(null), "");

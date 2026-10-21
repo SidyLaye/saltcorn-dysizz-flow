@@ -233,7 +233,7 @@ const alerteNego = ({ avis, dossier = {}, bien, telephone }) => {
    pour agir sans ouvrir le système. */
 const mailEquipe = ({ avis, dossier = {}, bien, bien_initial = null, telephone, fil = [], aurait_recu }) => {
   const b = bien || {}, nom = dossier.nom || "Prospect";
-  const objet = `${avis.prioritaire ? "[PRIORITAIRE] " : ""}${avis.qualifie ? "Lead qualifié WhatsApp" : "WhatsApp"} · ${avis.titre}${b.reference ? " · réf. " + b.reference : ""} · ${nom}`;
+  const objet = `${aurait_recu ? "[ESSAI] " : ""}${avis.prioritaire ? "[PRIORITAIRE] " : ""}${avis.qualifie ? "Lead qualifié WhatsApp" : "WhatsApp"} · ${avis.titre}${b.reference ? " · réf. " + b.reference : ""} · ${nom}`;
   const ligne = (l, v) => (v ? `<tr><td style="color:#667;padding:2px 12px 2px 0;vertical-align:top">${esc(l)}</td><td><b>${esc(v)}</b></td></tr>` : "");
   const html = `<div style="font-family:Arial,sans-serif;font-size:14px;color:#1f2937">
 <p>${avis.qualifie ? "Lead qualifié à l'issue de la conversation avec l'assistant WhatsApp : " : ""}<b>${esc(avis.titre)}</b>${avis.qualifie ? "." : ", reçu par l'assistant WhatsApp."}</p>

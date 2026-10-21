@@ -177,6 +177,16 @@ const sortie = (code, plus = {}) => ({ type: "sortie", noeud: "TB3", quand: "202
     BOT = { ...BOT, numeros_essai: { ...BOT.numeros_essai, 33600000500: { reference: "30123" } } }; meta.length = 0;
     await repondre("evenement", { telephone: "33611111111", dossier_id: 7, event_id: "ev13e", evenements: [sortie("OUT-1")] });
     assert.deepStrictEqual(alertes().map((m) => m.to), ["33600000500"], "essai : le négociateur d'essai est alerté");
+    assert.equal(alertes()[0].corps.template.components[0].parameters[0].text, "ESSAI · qualifié", "21/10 (recette) : une alerte d'essai le dit");
+    /* 21/10 (recette) : un portable de l'équipe écrit à la française (06…) est reconnu et part au numéro international */
+    martin.telephone = "06 00 00 05 00"; meta.length = 0;
+    await repondre("evenement", { telephone: "33611111111", dossier_id: 7, event_id: "ev13h", evenements: [sortie("OUT-1")] });
+    assert.deepStrictEqual(alertes().map((m) => m.to), ["33600000500"], "06… de l'équipe = 336… du registre, envoyé au numéro international");
+    /* 21/10 (recette, Manon Brun) : sans portable dans l'équipe, le portable vient de l'entrée du registre qui a le même mail */
+    martin.telephone = ""; BOT = { ...BOT, numeros_essai: { ...BOT.numeros_essai, 33600000777: { email: String(martin.email).toUpperCase(), prenom: "Martin" } } }; meta.length = 0;
+    await repondre("evenement", { telephone: "33611111111", dossier_id: 7, event_id: "ev13i", evenements: [sortie("OUT-1")] });
+    assert.deepStrictEqual(alertes().map((m) => m.to), ["33600000777"], "négociateur sans portable dans l'équipe : le portable de son entrée d'essai");
+    martin.telephone = "+33 6 00 00 05 00";
     BOT = { ...BOT, notifications: "simuler" }; meta.length = 0;
     await repondre("evenement", { telephone: "33611111111", dossier_id: 7, event_id: "ev13s", evenements: [sortie("OUT-1")] });
     assert.strictEqual(alertes().length, 0, "mode simuler : rien ne part, pas plus l'alerte que les mails");

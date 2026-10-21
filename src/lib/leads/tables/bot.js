@@ -259,10 +259,15 @@ const evenement = async (corps, R) => {
     out.avis = (await require("../../envois").envoyer(messages, { simuler })).resume;
     /* alerte WhatsApp au négociateur et à son assistante (numéros de l'équipe) ; en essai, seulement aux numéros d'essai */
     if (R.alerte_whatsapp === true && R.notifications !== "simuler" && R.notifications) {   // mode simuler : rien ne part
+      /* numéro international (Meta l'exige) : un portable de l'équipe écrit « 06… » devient « 336… » ; une personne sans portable dans
+         l'équipe prend celui de son entrée du registre d'essai, au même mail (recette du 21/10) */
+      const intl = (t) => { const d = String(t || "").replace(/\D/g, ""); return /^0\d{9}$/.test(d) ? "33" + d.slice(1) : d.replace(/^00/, ""); };
+      const registre = Object.entries(R.numeros_essai || {});
       const tels = [...new Set([...qui, ...quiAutre].filter((x) => x.roles.some((r) => r === "negociateur" || r === "assistante"))
-        .map((x) => ((conf.routage && conf.routage.personnes) || []).find((p) => String(p.email || "").toLowerCase() === x.email))
-        .map((p) => String((p && p.telephone) || "").replace(/\D/g, "")).filter((n) => n.length >= 9))]
-        .filter((n) => !essai || Object.keys(R.numeros_essai || {}).includes(n));
+        .flatMap((x) => [((conf.routage && conf.routage.personnes) || []).find((p) => String(p.email || "").toLowerCase() === x.email),
+          ...registre.filter(([, e]) => e && String(e.email || "").trim().toLowerCase() === x.email).map(([k]) => ({ telephone: k }))])
+        .map((p) => intl(p && p.telephone)).filter((n) => n.length >= 9))]
+        .filter((n) => !essai || registre.some(([k]) => k === n));
       const W = R.whatsapp || {}, envoyees = [];
       for (const avis of p.avis) {
         const valeurs = B.alerteNego({ avis, dossier: dos, bien: surAutre(avis) ? autre : bien, telephone: tel });
@@ -275,7 +280,9 @@ const evenement = async (corps, R) => {
             /* Sidy, 21/10 : les alertes aux négociateurs partent du numéro AM Business Services (réglage whatsapp.numero_alertes,
                même jeton, modèles approuvés sur son compte) ; sans ce réglage, du numéro de la conversation.
                Un vendeur (« prioritaire ») reçoit sh_alerte_vendeur : « Nouveau lead vendeur WhatsApp … » (Sidy, 21/10), mêmes valeurs */
-            const { id } = await envoyerModele({ phone_number_id: W.numero_alertes || numeroEnvoi(W, corps.numero_bot), jeton, a, nom: valeurs[0] === "prioritaire" ? "sh_alerte_vendeur" : "sh_alerte_nego", langue: "fr", valeurs, suivi: `sh|${Date.now()}|alerte|${tel9}` });
+            /* en essai, la première valeur le dit : « Nouveau lead WhatsApp (ESSAI · qualifié) » (recette du 21/10) */
+            const { id } = await envoyerModele({ phone_number_id: W.numero_alertes || numeroEnvoi(W, corps.numero_bot), jeton, a, nom: valeurs[0] === "prioritaire" ? "sh_alerte_vendeur" : "sh_alerte_nego", langue: "fr",
+              valeurs: essai ? ["ESSAI · " + valeurs[0], ...valeurs.slice(1)] : valeurs, suivi: `sh|${Date.now()}|alerte|${tel9}` });
             await noter("alerte_whatsapp", { a: B.tel9(a), valeurs: valeurs.slice(0, 4), identifiant: id || null });
             envoyees.push(B.tel9(a));
           }

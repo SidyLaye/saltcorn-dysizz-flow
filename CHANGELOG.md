@@ -1,5 +1,16 @@
 # Journal des versions
 
+## 2.26.9
+
+### Corrigé
+- Alertes WhatsApp au négociateur : un portable de l'équipe écrit « 06… » part au numéro international (« 336… ») et est
+  reconnu parmi les numéros d'essai ; sans portable dans l'équipe, la personne prend celui de son entrée du registre
+  d'essai au même mail.
+
+### Ajouté
+- Essais : l'objet des mails commence par « [ESSAI] » et la première valeur des alertes par « ESSAI · », pour qu'un
+  négociateur ne prenne jamais un essai pour un vrai lead.
+
 ## 2.26.8
 
 ### Ajouté
