@@ -7,6 +7,8 @@
   numéro, avec le même jeton ; la conversation avec le prospect reste sur son numéro. Sans le réglage, rien ne change.
 - Bot WhatsApp : un lead vendeur (alerte « prioritaire ») est annoncé au négociateur par le modèle `sh_alerte_vendeur`,
   « Nouveau lead vendeur WhatsApp … », avec les mêmes valeurs que `sh_alerte_nego`.
+- Bot WhatsApp : la fiche PDF envoyée au prospect va au journal des conversations (`bot.journal`), comme les messages
+  du bot : la plateforme des testeurs l'affiche dans sa vue de la conversation.
 
 ## 2.26.7
 

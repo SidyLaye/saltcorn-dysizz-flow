@@ -206,6 +206,15 @@ const sortie = (code, plus = {}) => ({ type: "sortie", noeud: "TB3", quand: "202
     assert.ok(meta.slice(n1).length && meta.slice(n1).every((m) => /\/123\//.test(m.url)), "numéro inconnu du bot : numéro principal, jamais un numéro étranger");
     meta.length = 0;   // le test suivant compte ses propres envois
   }
+  /* 21/10 (Sidy) : la fiche PDF va au journal des conversations, pour la vue WhatsApp des testeurs */
+  {
+    const BOTf = BOT; BOT = { ...BOT, numeros_essai: { ...BOT.numeros_essai, 33655555555: { reference: "30123" } }, journal: { url: "https://n8n.exemple.org/webhook/wa-bot-events", variable_jeton: "JETON_N8N" } };
+    meta.length = 0;
+    const rf = await repondre("fiche", { telephone: "33655555555" }); assert.equal(rf.envoyee, true, JSON.stringify(rf));
+    const j = meta.filter((m) => /wa-bot-events$/.test(m.url));
+    assert.deepEqual(j.map((m) => [m.corps.format, m.corps.direction, m.corps.telephone, m.corps.payload.document.filename]), [["document", "outbound", "33655555555", "fiche-annonce.pdf"]]);
+    BOT = BOTf; meta.length = 0;
+  }
 
   /* fiche : une seule fois, au bon numéro ; jamais après une désinscription */
   r = await repondre("sh_pdf_fiche", { telephone: "33699999999" });
@@ -318,7 +327,6 @@ const sortie = (code, plus = {}) => ({ type: "sortie", noeud: "TB3", quand: "202
     BOT = { ...BOT, relances: { actif: false } }; assert.deepEqual(await relancer({ maintenant: mer10h + 30 * J }), { actif: false });
     BOT = BOTr;
   }
-
   /* le bien passe par l'application : relu dans le CRM puis enregistré (ld_biens), une ligne par bien, photos comprises */
   const cat = require("../src/lib/leads/tables/catalogue");
   const ligne99 = () => T.biens.L.filter((b) => b.crm_id === "99");

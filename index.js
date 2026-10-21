@@ -99803,14 +99803,32 @@ var require_bot2 = __commonJS({
         if (!blocs) return echec("bien illisible dans le CRM");
         const buf = await require_pdf().ecrirePdf(blocs, { titre: en ? "Property sheet" : "Fiche annonce", pied: false, producteur: "", couleur: "#374151" }, async (u) => ph.get(u));
         let identifiant;
+        const numero = numeroEnvoi(W, corps.numero_bot), nomPdf = en ? "property-sheet.pdf" : "fiche-annonce.pdf";
         try {
-          identifiant = await envoyerDocument({ phone_number_id: numeroEnvoi(W, corps.numero_bot), jeton, a: tel, buf, nom: en ? "property-sheet.pdf" : "fiche-annonce.pdf" });
+          identifiant = await envoyerDocument({ phone_number_id: numero, jeton, a: tel, buf, nom: nomPdf });
         } catch (e) {
           await tb.insertRow({ dossier: dossier.id || null, tel9: B.tel9(tel), type: "fiche_echec", quand: /* @__PURE__ */ new Date(), texte: court(e.message, 500) });
           return echec("envoi WhatsApp refus\xE9");
         }
         const horaire = /* @__PURE__ */ new Date();
         await tb.insertRow({ dossier: dossier.id || null, tel9: B.tel9(tel), type: "fiche_envoyee", quand: horaire, donnees: JSON.stringify({ identifiant }) });
+        const doc = { messaging_product: "whatsapp", to: tel, type: "document", document: { filename: nomPdf } };
+        await journaliser(R.journal, {
+          tracking_id: `sh|${horaire.getTime()}|fiche|${B.tel9(tel)}`,
+          marque: "SH",
+          direction: "outbound",
+          conversation_id: `fiche-${B.tel9(tel)}`,
+          phone_number_id: String(numero),
+          telephone: tel,
+          format: "document",
+          contenu: JSON.stringify(doc),
+          payload: doc,
+          statut: "accepted",
+          cree_le: horaire.toISOString(),
+          mis_a_jour_le: horaire.toISOString(),
+          wamid: String(identifiant || ""),
+          erreur: ""
+        });
         return { envoyee: true, identifiant, horaire: horaire.toISOString() };
       });
     };
