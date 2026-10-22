@@ -281,7 +281,7 @@ const evenement = async (corps, R) => {
                même jeton, modèles approuvés sur son compte) ; sans ce réglage, du numéro de la conversation.
                Un vendeur (« prioritaire ») reçoit sh_alerte_vendeur : « Nouveau lead vendeur WhatsApp … » (Sidy, 21/10), mêmes valeurs */
             /* en essai, la première valeur le dit : « Nouveau lead WhatsApp (ESSAI · qualifié) » (recette du 21/10) */
-            const { id } = await envoyerModele({ phone_number_id: W.numero_alertes || numeroEnvoi(W, corps.numero_bot), jeton, a, nom: valeurs[0] === "prioritaire" ? "sh_alerte_vendeur" : "sh_alerte_nego", langue: "fr",
+            const { id } = await envoyerModele({ phone_number_id: W.numero_alertes || numeroEnvoi(W, corps.numero_bot), jeton, a, nom: valeurs[0] === "prioritaire" || avis.prioritaire ? "sh_alerte_vendeur" : "sh_alerte_nego", langue: "fr",
               valeurs: essai ? ["ESSAI · " + valeurs[0], ...valeurs.slice(1)] : valeurs, suivi: `sh|${Date.now()}|alerte|${tel9}` });
             await noter("alerte_whatsapp", { a: B.tel9(a), valeurs: valeurs.slice(0, 4), identifiant: id || null });
             envoyees.push(B.tel9(a));
@@ -476,6 +476,46 @@ const relancer = async ({ maintenant = Date.now() } = {}) => {
   });
 };
 
+/* Sidy, 22/10 : « une première notif à l'intention et une deuxième avec toutes les infos ». Demande commencée puis laissée en route
+   (ni sortie, ni branche finie) : 30 min après le dernier message du prospect, le récapitulatif de ce qu'il a donné part aux mêmes
+   personnes, une fois. Lancé par le déclencheur horaire des relances. */
+const OUVRE = { intention: (d) => ["visite", "rappel"].includes(d.demande) && d.demande, prioritaire_vendeur: () => "bien à vendre",
+  branche_f: (d) => d.lead_financement === true && !("tache" in d) && "financement", branche_w: (d) => d.lead_travaux === true && !("tache" in d) && "travaux",
+  branche_i: (d) => d.lead_relocation === true && !("tache" in d) && "installation" };
+const FINIT = { branche_f: "financement", branche_w: "travaux", branche_i: "installation" }, REFERENT = { financement: "f", travaux: "w", installation: "i" };
+const recapituler = async ({ maintenant = Date.now(), silence = 30 * 60000 } = {}) => {
+  const R = json((await require("./conf").reglages()).bot, {});
+  return require("../../verrou").sous("bot-recap", async () => {
+    const t = await S.tables(), tb = await tableBot(t), out = { envoyes: [] };
+    const recents = (await tb.getRows({ type: { in: Object.keys(OUVRE) } }, { orderBy: "id", orderDesc: true, limit: 500 })).filter((e) => maintenant - new Date(e.quand) < 2 * 86400000);
+    for (const tel9 of [...new Set(recents.map((e) => e.tel9))]) {
+      const hist = (await tb.getRows({ tel9 }, { orderBy: "id", orderDesc: true, limit: 400 })).reverse().map((e) => ({ ...e, donnees: json(e.donnees, {}) }));
+      /* depuis la dernière clôture : sortie, récapitulatif déjà parti ou nouvel accueil */
+      const apres = hist.slice(hist.map((e) => e.type === "sortie" || e.type === "recap_inacheve" || (e.type === "ouverture" && e.noeud === "N0")).lastIndexOf(true) + 1);
+      const ouvertes = new Map();
+      for (const e of apres) {
+        const q = OUVRE[e.type] && OUVRE[e.type](e.donnees);
+        if (q) { if (!ouvertes.has(q)) ouvertes.set(q, e); } else if (FINIT[e.type] && "tache" in e.donnees) ouvertes.delete(FINIT[e.type]);
+      }
+      const dernier = apres.filter((e) => e.type === "inbound").pop();
+      if (!ouvertes.size || !dernier || maintenant - new Date(dernier.quand) < silence) continue;
+      const premier = [...ouvertes.values()][0];
+      const dos = (await t.dossiers.getRows({ tel9 }, { orderBy: "maj_le", orderDesc: true, limit: 1 }))[0];
+      const tel = Object.keys(R.numeros_essai || {}).find((n) => B.tel9(n) === tel9) || String((dos && dos.telephone) || "").replace(/\D/g, "");
+      if (!tel) continue;
+      /* ce qu'il a donné : la dernière qualification, sinon celle de l'intention ; l'échange entier suit dans le mail */
+      const qual = (apres.filter((e) => e.type === "qualification").pop() || {}).donnees || [...ouvertes.values()].map((e) => e.donnees.qualification).filter(Boolean).pop() || {};
+      const temp = (apres.filter((e) => e.type === "temperature").pop() || { donnees: {} }).donnees.temperature;
+      const demandes = [...ouvertes.keys()];
+      const r = await evenement({ telephone: tel, dossier_id: premier.dossier || undefined, event_id: `recap-${premier.id}`, evenements: [{ type: "recap_inacheve", quand: new Date(maintenant).toISOString(),
+        donnees: { demandes, referents: demandes.map((x) => REFERENT[x]).filter(Boolean), qualification: qual, temperature: qual.temperature || temp || "", scores: qual.scores } }] }, R)
+        .catch((e) => ({ erreur: court(e.message, 200) }));
+      out.envoyes.push({ tel9, demandes, ...(r.erreur ? { erreur: r.erreur } : {}) });
+    }
+    return out;
+  });
+};
+
 const renvoyerOuverture = async (tb, tel, ctx, R, numeroBot) => {
   const W = R.whatsapp || {}, bp = ctx.bien_public || {}, photo = (bp.photos_publiques || []).find((u) => /^https:\/\//.test(u));
   const jeton = W.variable_jeton ? await require("../../../garde").lireSecret(W.variable_jeton) : null;
@@ -499,4 +539,4 @@ const repondre = async (action, corps) => {
   return ACTIONS[k](corps && typeof corps === "object" ? corps : {}, R && typeof R === "object" ? R : {});
 };
 
-module.exports = { repondre, contexte, evenement, fiche, telechargerPhotos, relancer };
+module.exports = { repondre, contexte, evenement, fiche, telechargerPhotos, relancer, recapituler };

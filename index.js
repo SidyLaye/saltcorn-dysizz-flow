@@ -1,4 +1,4 @@
-/* dysizz-flow 2.26.9 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.27.0 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.26.9" : "dev";
+    var VERSION2 = true ? "2.27.0" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -99140,6 +99140,13 @@ var require_bot = __commonJS({
       bien_plus_en_vente: "Le prospect s'int\xE9resse \xE0 un bien qui n'est plus en vente",
       visite_modifiee: "Le prospect demande un autre cr\xE9neau de visite"
     };
+    var INTENTIONS = { visite: "Demande de visite en cours", rappel: "Demande de rappel en cours" };
+    var BRANCHES = {
+      branche_f: ["lead_financement", "f", "Int\xE9r\xEAt pour un accompagnement au financement", "Financement : les r\xE9ponses du prospect"],
+      branche_w: ["lead_travaux", "w", "Int\xE9r\xEAt pour des travaux", "Travaux : les r\xE9ponses du prospect"],
+      branche_i: ["lead_relocation", "i", "Int\xE9r\xEAt pour un accompagnement \xE0 l'installation", "Installation : les r\xE9ponses du prospect"]
+    };
+    var INTERNES = ["lead_financement", "lead_travaux", "lead_relocation", "tache", "score", "dossier_id", "langue", "tag", "elys_fx"];
     var lignes = (d = {}) => {
       const q = d.qualification || {}, etiquettes = [d.lead_prioritaire && "bien \xE0 vendre (prioritaire)", d.lead_financement && "financement", d.lead_travaux && "travaux", d.lead_relocation && "relocation"].filter(Boolean);
       const branche = (o) => Object.entries(o || {}).filter(([, v]) => v !== "" && v != null && typeof v !== "object").map(([k, v]) => `${k} : ${v}`).join(" ; ");
@@ -99170,6 +99177,7 @@ var require_bot = __commonJS({
     var plan = (evenements, R = {}, { vendeur: dejaVendeur = false } = {}) => {
       const out = { crm: [], avis: [], optout: false };
       const sortie = (evenements || []).some((e) => e && e.type === "sortie");
+      const finies = new Set((evenements || []).filter((e) => e && BRANCHES[e.type] && e.donnees && "tache" in e.donnees).map((e) => e.type));
       const vendeur = dejaVendeur || (evenements || []).some((e) => e && (e.type === "prioritaire_vendeur" || e.type === "sortie" && e.donnees && e.donnees.lead_prioritaire));
       const couleurDe = (t) => (R.couleurs || {})[vendeur ? "HOT" : t];
       const poserCouleur = (couleur) => {
@@ -99204,17 +99212,33 @@ Son message : ${String(mot).slice(0, 500)}` : "") });
           if (d.code !== "OUT-6") out.avis.push({ titre: DEMANDES[d.code] || "Demande", qualifie: d.code !== "OUT-5", prioritaire: !!d.lead_prioritaire, donnees: d, referents: [d.lead_financement && "f", d.lead_travaux && "w", d.lead_relocation && "i"].filter(Boolean) });
         } else if (AVIS[e.type] && !(sortie && e.type === "prioritaire_vendeur"))
           out.avis.push({ titre: AVIS[e.type], type: e.type, prioritaire: e.type === "prioritaire_vendeur", donnees: d, referents: [] });
+        else if (e.type === "intention" && INTENTIONS[d.demande] && !sortie)
+          out.avis.push({ titre: INTENTIONS[d.demande], type: e.type, suite: true, donnees: d, referents: [] });
+        else if (BRANCHES[e.type] && d[BRANCHES[e.type][0]] === true && !sortie) {
+          const [, k, debut, fin] = BRANCHES[e.type], finie = "tache" in d;
+          if (finie) out.avis.push({ titre: fin, type: e.type, donnees: { [k]: Object.fromEntries(Object.entries(d).filter(([c]) => !INTERNES.includes(c))) }, referents: [k] });
+          else if (!finies.has(e.type)) out.avis.push({ titre: debut, type: e.type, suite: true, donnees: d, referents: [k] });
+        } else if (e.type === "recap_inacheve")
+          out.avis.push({
+            titre: "Demande inachev\xE9e, le prospect ne r\xE9pond plus : " + (d.demandes || []).join(", "),
+            type: e.type,
+            prioritaire: (d.demandes || []).includes("bien \xE0 vendre"),
+            donnees: d,
+            referents: (d.referents || []).filter((k) => ["f", "w", "i"].includes(k))
+          });
       }
       return out;
     };
     var PROJET = { HOT: "projet \xE0 moins de 3 mois", WARM: "projet entre 3 et 12 mois", COLD: "projet \xE0 plus de 12 mois" };
     var alerteNego = ({ avis, dossier = {}, bien, telephone }) => {
       const d = avis.donnees || {}, visite = avis.qualifie && d.code === "OUT-1", vendeur = avis.type === "prioritaire_vendeur", modif = avis.type === "visite_modifiee", annule = avis.type === "annulation" && !!d.visite;
-      if (!visite && !vendeur && !modif && !annule) return null;
+      const enCours = avis.type === "intention" && d.demande === "visite";
+      const inacheve = avis.type === "recap_inacheve" && (d.demandes || []).filter((x) => x === "visite" || x === "bien \xE0 vendre");
+      if (!visite && !vendeur && !modif && !annule && !enCours && !(inacheve && inacheve.length)) return null;
       const b = bien || {}, t = String(telephone || "").replace(/\D/g, "");
-      const demande = vendeur ? ["bien \xE0 vendre d\xE9clar\xE9"] : annule ? ["visite annul\xE9e"] : modif ? ["nouveau cr\xE9neau de visite : " + String(d.creneau || "\xE0 pr\xE9ciser").replace(/\s+/g, " ").trim().slice(0, 60)] : ["visite", d.lead_prioritaire && "bien \xE0 vendre", PROJET[d.temperature]];
+      const demande = enCours ? ["visite en cours de pr\xE9paration"] : inacheve ? [...inacheve, "le prospect ne r\xE9pond plus"] : vendeur ? ["bien \xE0 vendre d\xE9clar\xE9"] : annule ? ["visite annul\xE9e"] : modif ? ["nouveau cr\xE9neau de visite : " + String(d.creneau || "\xE0 pr\xE9ciser").replace(/\s+/g, " ").trim().slice(0, 60)] : ["visite", d.lead_prioritaire && "bien \xE0 vendre", PROJET[d.temperature]];
       return [
-        vendeur || d.lead_prioritaire ? "prioritaire" : "qualifi\xE9",
+        enCours ? "en cours" : inacheve ? "inachev\xE9" : vendeur || d.lead_prioritaire ? "prioritaire" : "qualifi\xE9",
         String(dossier.nom || "Un prospect").slice(0, 60),
         [b.reference && "r\xE9f. " + b.reference, b.ville && "\xE0 " + b.ville].filter(Boolean).join(" ") || "de l'annonce",
         demande.filter(Boolean).join(", "),
@@ -99227,6 +99251,7 @@ Son message : ${String(mot).slice(0, 500)}` : "") });
       const ligne = (l, v) => v ? `<tr><td style="color:#667;padding:2px 12px 2px 0;vertical-align:top">${esc(l)}</td><td><b>${esc(v)}</b></td></tr>` : "";
       const html = `<div style="font-family:Arial,sans-serif;font-size:14px;color:#1f2937">
 <p>${avis.qualifie ? "Lead qualifi\xE9 \xE0 l'issue de la conversation avec l'assistant WhatsApp : " : ""}<b>${esc(avis.titre)}</b>${avis.qualifie ? "." : ", re\xE7u par l'assistant WhatsApp."}</p>
+${avis.suite ? "<p>Le prospect est en train de pr\xE9ciser sa demande avec l'assistant : le d\xE9tail suivra dans un second message.</p>" : ""}
 <table style="border-collapse:collapse">${ligne("Prospect", nom)}${ligne("T\xE9l\xE9phone", telephone ? "+" + telephone : "")}${ligne("E-mail", dossier.email)}
 ${ligne(bien_initial ? "Bien demand\xE9" : "Bien", [b.reference && "r\xE9f. " + b.reference, b.type, b.ville, b.prix && milliers(b.prix) + " \u20AC"].filter(Boolean).join(" \xB7 "))}
 ${bien_initial ? ligne("Bien de l'annonce d'origine", [bien_initial.reference && "r\xE9f. " + bien_initial.reference, bien_initial.type, bien_initial.ville, bien_initial.prix && milliers(bien_initial.prix) + " \u20AC"].filter(Boolean).join(" \xB7 ")) : ""}
@@ -99750,7 +99775,7 @@ var require_bot2 = __commonJS({
                   phone_number_id: W.numero_alertes || numeroEnvoi(W, corps.numero_bot),
                   jeton,
                   a,
-                  nom: valeurs[0] === "prioritaire" ? "sh_alerte_vendeur" : "sh_alerte_nego",
+                  nom: valeurs[0] === "prioritaire" || avis.prioritaire ? "sh_alerte_vendeur" : "sh_alerte_nego",
                   langue: "fr",
                   valeurs: essai ? ["ESSAI \xB7 " + valeurs[0], ...valeurs.slice(1)] : valeurs,
                   suivi: `sh|${Date.now()}|alerte|${tel9}`
@@ -100006,6 +100031,49 @@ var require_bot2 = __commonJS({
         return out;
       });
     };
+    var OUVRE = {
+      intention: (d) => ["visite", "rappel"].includes(d.demande) && d.demande,
+      prioritaire_vendeur: () => "bien \xE0 vendre",
+      branche_f: (d) => d.lead_financement === true && !("tache" in d) && "financement",
+      branche_w: (d) => d.lead_travaux === true && !("tache" in d) && "travaux",
+      branche_i: (d) => d.lead_relocation === true && !("tache" in d) && "installation"
+    };
+    var FINIT = { branche_f: "financement", branche_w: "travaux", branche_i: "installation" };
+    var REFERENT = { financement: "f", travaux: "w", installation: "i" };
+    var recapituler = async ({ maintenant = Date.now(), silence = 30 * 6e4 } = {}) => {
+      const R = json((await require_conf().reglages()).bot, {});
+      return require_verrou().sous("bot-recap", async () => {
+        const t = await S.tables(), tb = await tableBot(t), out = { envoyes: [] };
+        const recents = (await tb.getRows({ type: { in: Object.keys(OUVRE) } }, { orderBy: "id", orderDesc: true, limit: 500 })).filter((e) => maintenant - new Date(e.quand) < 2 * 864e5);
+        for (const tel9 of [...new Set(recents.map((e) => e.tel9))]) {
+          const hist = (await tb.getRows({ tel9 }, { orderBy: "id", orderDesc: true, limit: 400 })).reverse().map((e) => ({ ...e, donnees: json(e.donnees, {}) }));
+          const apres = hist.slice(hist.map((e) => e.type === "sortie" || e.type === "recap_inacheve" || e.type === "ouverture" && e.noeud === "N0").lastIndexOf(true) + 1);
+          const ouvertes = /* @__PURE__ */ new Map();
+          for (const e of apres) {
+            const q = OUVRE[e.type] && OUVRE[e.type](e.donnees);
+            if (q) {
+              if (!ouvertes.has(q)) ouvertes.set(q, e);
+            } else if (FINIT[e.type] && "tache" in e.donnees) ouvertes.delete(FINIT[e.type]);
+          }
+          const dernier = apres.filter((e) => e.type === "inbound").pop();
+          if (!ouvertes.size || !dernier || maintenant - new Date(dernier.quand) < silence) continue;
+          const premier = [...ouvertes.values()][0];
+          const dos = (await t.dossiers.getRows({ tel9 }, { orderBy: "maj_le", orderDesc: true, limit: 1 }))[0];
+          const tel = Object.keys(R.numeros_essai || {}).find((n) => B.tel9(n) === tel9) || String(dos && dos.telephone || "").replace(/\D/g, "");
+          if (!tel) continue;
+          const qual = (apres.filter((e) => e.type === "qualification").pop() || {}).donnees || [...ouvertes.values()].map((e) => e.donnees.qualification).filter(Boolean).pop() || {};
+          const temp = (apres.filter((e) => e.type === "temperature").pop() || { donnees: {} }).donnees.temperature;
+          const demandes = [...ouvertes.keys()];
+          const r = await evenement({ telephone: tel, dossier_id: premier.dossier || void 0, event_id: `recap-${premier.id}`, evenements: [{
+            type: "recap_inacheve",
+            quand: new Date(maintenant).toISOString(),
+            donnees: { demandes, referents: demandes.map((x) => REFERENT[x]).filter(Boolean), qualification: qual, temperature: qual.temperature || temp || "", scores: qual.scores }
+          }] }, R).catch((e) => ({ erreur: court(e.message, 200) }));
+          out.envoyes.push({ tel9, demandes, ...r.erreur ? { erreur: r.erreur } : {} });
+        }
+        return out;
+      });
+    };
     var renvoyerOuverture = async (tb, tel, ctx, R, numeroBot) => {
       const W = R.whatsapp || {}, bp = ctx.bien_public || {}, photo = (bp.photos_publiques || []).find((u) => /^https:\/\//.test(u));
       const jeton = W.variable_jeton ? await require_garde().lireSecret(W.variable_jeton) : null;
@@ -100055,7 +100123,7 @@ var require_bot2 = __commonJS({
       const R = json((await require_conf().reglages()).bot, {});
       return ACTIONS2[k](corps && typeof corps === "object" ? corps : {}, R && typeof R === "object" ? R : {});
     };
-    module2.exports = { repondre, contexte, evenement, fiche, telechargerPhotos, relancer };
+    module2.exports = { repondre, contexte, evenement, fiche, telechargerPhotos, relancer, recapituler };
   }
 });
 
@@ -102083,9 +102151,12 @@ var require_leads_solution = __commonJS({
         icon: "fab fa-whatsapp",
         output: "relances",
         timeout: 120,
-        description: "\xC0 mettre dans un d\xE9clencheur horaire. Prospect sans r\xE9ponse apr\xE8s le message d'ouverture : R1 \xE0 2 jours, R2 \xE0 5 jours (seulement si le bien est confirm\xE9 en vente \xE0 l'instant), R3 \xE0 10 jours, puis cl\xF4ture sans message. Jamais apr\xE8s un STOP, une visite transmise ou une reprise par un conseiller ; du lundi au samedi, 9 h \xE0 19 h (Paris) ; une seule fois chacune. Mod\xE8les Meta sh_relance_r1/r2/r3 (et _en), dans la langue de la conversation. R\xE9glage \xAB relances \xBB du champ \xAB bot \xBB : coup\xE9 par d\xE9faut ; \xAB essai_seulement \xBB limite aux num\xE9ros d'essai.",
+        description: "\xC0 mettre dans un d\xE9clencheur horaire. Demande commenc\xE9e puis laiss\xE9e en route (visite, rappel, financement, travaux, installation, bien \xE0 vendre) : r\xE9capitulatif aux m\xEAmes personnes 30 min apr\xE8s le dernier message, une fois. Prospect sans r\xE9ponse apr\xE8s le message d'ouverture : R1 \xE0 2 jours, R2 \xE0 5 jours (seulement si le bien est confirm\xE9 en vente \xE0 l'instant), R3 \xE0 10 jours, puis cl\xF4ture sans message. Jamais apr\xE8s un STOP, une visite transmise ou une reprise par un conseiller ; du lundi au samedi, 9 h \xE0 19 h (Paris) ; une seule fois chacune. Mod\xE8les Meta sh_relance_r1/r2/r3 (et _en), dans la langue de la conversation. R\xE9glage \xAB relances \xBB du champ \xAB bot \xBB : coup\xE9 par d\xE9faut ; \xAB essai_seulement \xBB limite aux num\xE9ros d'essai.",
         params: [P_PREFIXE],
-        run: async (p) => dans(p, () => require_bot2().relancer())
+        run: async (p) => dans(p, async () => {
+          const T = require_bot2(), recap = await T.recapituler().catch((e) => ({ erreur: String(e.message).slice(0, 300) }));
+          return { ...await T.relancer(), recap };
+        })
       },
       {
         name: "dzf_leads_preparer",

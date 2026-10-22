@@ -141,5 +141,34 @@ const QUAND = new Date("2026-10-13T10:00:00Z");
   assert.strictEqual(ph.length, 10); assert.ok(ph.every((u) => u.startsWith("https://")));
   const M2 = require("../src/lib/leads/crm/memoire").creer({ biens: [{ id: 7, photos: ["https://x.fr/p.jpg"] }] });
   assert.deepStrictEqual(await M2.photosBien(7), ["https://x.fr/p.jpg"]);
+
+  /* Sidy, 22/10 : « une première notif à l'intention et une deuxième avec toutes les infos », pour tous les types */
+  {
+    const avis = (evts) => B.plan(evts, {}).avis.map((a) => [a.titre, a.referents.join(""), !!a.suite]);
+    assert.deepStrictEqual(avis([{ type: "intention", donnees: { demande: "visite" } }]), [["Demande de visite en cours", "", true]]);
+    assert.deepStrictEqual(avis([{ type: "intention", donnees: { demande: "rappel" } }]), [["Demande de rappel en cours", "", true]]);
+    assert.deepStrictEqual(avis([{ type: "intention", donnees: { demande: "visite" } }, { type: "sortie", donnees: { code: "OUT-1" } }]).map((a) => a[0]), ["Demande de visite ou de rendez-vous"], "créneau déjà connu : la demande part entière, une fois");
+    assert.deepStrictEqual(avis([{ type: "branche_f", donnees: { tag: "intérêt financement", lead_financement: true } }]), [["Intérêt pour un accompagnement au financement", "f", true]]);
+    const fin = B.plan([{ type: "branche_f", donnees: { lead_financement: true, tache: "rappel", score: 50, apport: "50 000 €", horizon: "3 mois" } }], {}).avis;
+    assert.deepStrictEqual(fin.map((a) => [a.titre, a.referents.join(""), !!a.suite]), [["Financement : les réponses du prospect", "f", false]]);
+    assert.ok(B.lignes(fin[0].donnees).some(([l, v]) => l === "Financement (détail)" && /apport : 50 000 €/.test(v) && !/tache|score|lead_/.test(v)), "les réponses, sans les champs internes");
+    assert.deepStrictEqual(avis([{ type: "branche_f", donnees: { lead_financement: true } }, { type: "branche_f", donnees: { lead_financement: true, tache: "x", apport: "1" } }]).map((a) => a[0]), ["Financement : les réponses du prospect"], "branche finie dans le même tour : un seul message");
+    assert.deepStrictEqual(avis([{ type: "branche_w", donnees: { lead_travaux: false } }, { type: "branche_i", donnees: { lead_relocation: false } }]), [], "pas d'intérêt : rien");
+    assert.deepStrictEqual(avis([{ type: "branche_i", donnees: { lead_relocation: true, tache: "", consentement: false, pays: "Royaume-Uni" } }]), [["Installation : les réponses du prospect", "i", false]]);
+    assert.deepStrictEqual(avis([{ type: "branche_w", donnees: { lead_travaux: true, tache: "rappel", nature: "toiture" } }, { type: "sortie", donnees: { code: "OUT-1" } }]).map((a) => a[0]), ["Demande de visite ou de rendez-vous"], "la sortie du même tour porte déjà le détail");
+    const rc = B.plan([{ type: "recap_inacheve", donnees: { demandes: ["visite", "financement"], referents: ["f"], qualification: { budget: "300 000 €" } } }], {}).avis;
+    assert.deepStrictEqual(rc.map((a) => [a.titre, a.referents.join("")]), [["Demande inachevée, le prospect ne répond plus : visite, financement", "f"]]);
+    assert.ok(B.lignes(rc[0].donnees).some(([l, v]) => l === "Budget" && v === "300 000 €"));
+    const al = (a) => B.alerteNego({ avis: a, dossier: { nom: "Marie" }, bien: { reference: "1", ville: "Cahors" }, telephone: "33611111111" });
+    const enCours = al(B.plan([{ type: "intention", donnees: { demande: "visite" } }], {}).avis[0]);
+    assert.deepStrictEqual([enCours[0], enCours[3]], ["en cours", "visite en cours de préparation"], "visite commencée : le négociateur est alerté");
+    assert.strictEqual(al(B.plan([{ type: "intention", donnees: { demande: "rappel" } }], {}).avis[0]), null, "rappel : le mail suffit");
+    const inach = al(rc[0]); assert.deepStrictEqual([inach[0], inach[3]], ["inachevé", "visite, le prospect ne répond plus"]);
+    assert.strictEqual(al(B.plan([{ type: "recap_inacheve", donnees: { demandes: ["rappel"] } }], {}).avis[0]), null);
+    const vend = B.plan([{ type: "recap_inacheve", donnees: { demandes: ["bien à vendre"] } }], {}).avis[0];
+    assert.ok(vend.prioritaire && al(vend)[3] === "bien à vendre, le prospect ne répond plus", "vendeur arrêté en route : alerte vendeur");
+    const m = B.mailEquipe({ avis: B.plan([{ type: "intention", donnees: { demande: "visite" } }], {}).avis[0], dossier: { nom: "Marie" }, telephone: "33611111111" });
+    assert.ok(/le détail suivra dans un second message/.test(m.html) && /Demande de visite en cours/.test(m.objet));
+  }
   console.log("bot : OK");
 })().catch((e) => { console.error(e); process.exit(1); });

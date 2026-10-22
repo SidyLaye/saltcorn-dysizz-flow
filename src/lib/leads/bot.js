@@ -143,6 +143,13 @@ const texteScores = (sc) => { if (!sc) return ""; const t = Object.keys(NOMS_SCO
 const AVIS = { prioritaire_vendeur: "Le prospect a un bien à vendre", annulation: "Le prospect annule sa demande", message_apres_transmission: "Nouveau message du prospect après transmission",
   /* le bot ne répond plus après un STOP ; un humain décide s'il recontacte */ message_apres_stop: "Le prospect désinscrit a réécrit",
   bien_plus_en_vente: "Le prospect s'intéresse à un bien qui n'est plus en vente", visite_modifiee: "Le prospect demande un autre créneau de visite" };
+/* Sidy, 22/10 : « une première notif à l'intention et une deuxième avec toutes les infos ». Intention = demande commencée ;
+   la seconde = la sortie (ou la branche finie) ; arrêtée en route, le récapitulatif (recap_inacheve) part plus tard. */
+const INTENTIONS = { visite: "Demande de visite en cours", rappel: "Demande de rappel en cours" };
+const BRANCHES = { branche_f: ["lead_financement", "f", "Intérêt pour un accompagnement au financement", "Financement : les réponses du prospect"],
+  branche_w: ["lead_travaux", "w", "Intérêt pour des travaux", "Travaux : les réponses du prospect"],
+  branche_i: ["lead_relocation", "i", "Intérêt pour un accompagnement à l'installation", "Installation : les réponses du prospect"] };
+const INTERNES = ["lead_financement", "lead_travaux", "lead_relocation", "tache", "score", "dossier_id", "langue", "tag", "elys_fx"];
 
 /* Lignes « libellé, valeur » d'une sortie du bot : pour l'action du CRM et pour le message aux équipes. */
 const lignes = (d = {}) => {
@@ -176,6 +183,7 @@ const montant = (v) => {
 const plan = (evenements, R = {}, { vendeur: dejaVendeur = false } = {}) => {
   const out = { crm: [], avis: [], optout: false };
   const sortie = (evenements || []).some((e) => e && e.type === "sortie");
+  const finies = new Set((evenements || []).filter((e) => e && BRANCHES[e.type] && e.donnees && "tache" in e.donnees).map((e) => e.type));
   /* lead vendeur = urgence (Sidy, 16/10) : rouge dans le CRM quel que soit son délai d'achat, et il le reste dans la conversation */
   const vendeur = dejaVendeur || (evenements || []).some((e) => e && (e.type === "prioritaire_vendeur" || (e.type === "sortie" && e.donnees && e.donnees.lead_prioritaire)));
   const couleurDe = (t) => (R.couleurs || {})[vendeur ? "HOT" : t];
@@ -210,6 +218,16 @@ const plan = (evenements, R = {}, { vendeur: dejaVendeur = false } = {}) => {
       if (d.code !== "OUT-6") out.avis.push({ titre: DEMANDES[d.code] || "Demande", qualifie: d.code !== "OUT-5", prioritaire: !!d.lead_prioritaire, donnees: d, referents: [d.lead_financement && "f", d.lead_travaux && "w", d.lead_relocation && "i"].filter(Boolean) });
     } else if (AVIS[e.type] && !(sortie && e.type === "prioritaire_vendeur"))
       out.avis.push({ titre: AVIS[e.type], type: e.type, prioritaire: e.type === "prioritaire_vendeur", donnees: d, referents: [] });
+    /* la sortie du même tour porte déjà tout : ni l'intention ni le détail d'une branche ne partent à part */
+    else if (e.type === "intention" && INTENTIONS[d.demande] && !sortie)
+      out.avis.push({ titre: INTENTIONS[d.demande], type: e.type, suite: true, donnees: d, referents: [] });
+    else if (BRANCHES[e.type] && d[BRANCHES[e.type][0]] === true && !sortie) {
+      const [, k, debut, fin] = BRANCHES[e.type], finie = "tache" in d;
+      if (finie) out.avis.push({ titre: fin, type: e.type, donnees: { [k]: Object.fromEntries(Object.entries(d).filter(([c]) => !INTERNES.includes(c))) }, referents: [k] });
+      else if (!finies.has(e.type)) out.avis.push({ titre: debut, type: e.type, suite: true, donnees: d, referents: [k] });
+    } else if (e.type === "recap_inacheve")
+      out.avis.push({ titre: "Demande inachevée, le prospect ne répond plus : " + (d.demandes || []).join(", "), type: e.type, prioritaire: (d.demandes || []).includes("bien à vendre"),
+        donnees: d, referents: (d.referents || []).filter((k) => ["f", "w", "i"].includes(k)) });
   }
   return out;
 };
@@ -219,11 +237,15 @@ const plan = (evenements, R = {}, { vendeur: dejaVendeur = false } = {}) => {
 const PROJET = { HOT: "projet à moins de 3 mois", WARM: "projet entre 3 et 12 mois", COLD: "projet à plus de 12 mois" };
 const alerteNego = ({ avis, dossier = {}, bien, telephone }) => {
   const d = avis.donnees || {}, visite = avis.qualifie && d.code === "OUT-1", vendeur = avis.type === "prioritaire_vendeur", modif = avis.type === "visite_modifiee", annule = avis.type === "annulation" && !!d.visite;
-  if (!visite && !vendeur && !modif && !annule) return null;
+  /* 22/10 : visite commencée (« en cours »), puis demande arrêtée en route (« inachevé ») : visite ou bien à vendre */
+  const enCours = avis.type === "intention" && d.demande === "visite";
+  const inacheve = avis.type === "recap_inacheve" && (d.demandes || []).filter((x) => x === "visite" || x === "bien à vendre");
+  if (!visite && !vendeur && !modif && !annule && !enCours && !(inacheve && inacheve.length)) return null;
   const b = bien || {}, t = String(telephone || "").replace(/\D/g, "");
-  const demande = vendeur ? ["bien à vendre déclaré"] : annule ? ["visite annulée"] : modif ? ["nouveau créneau de visite : " + String(d.creneau || "à préciser").replace(/\s+/g, " ").trim().slice(0, 60)]
+  const demande = enCours ? ["visite en cours de préparation"] : inacheve ? [...inacheve, "le prospect ne répond plus"]
+    : vendeur ? ["bien à vendre déclaré"] : annule ? ["visite annulée"] : modif ? ["nouveau créneau de visite : " + String(d.creneau || "à préciser").replace(/\s+/g, " ").trim().slice(0, 60)]
     : ["visite", d.lead_prioritaire && "bien à vendre", PROJET[d.temperature]];   // « Demande : visite, projet à moins de 3 mois »
-  return [vendeur || d.lead_prioritaire ? "prioritaire" : "qualifié", String(dossier.nom || "Un prospect").slice(0, 60),
+  return [enCours ? "en cours" : inacheve ? "inachevé" : vendeur || d.lead_prioritaire ? "prioritaire" : "qualifié", String(dossier.nom || "Un prospect").slice(0, 60),
     [b.reference && "réf. " + b.reference, b.ville && "à " + b.ville].filter(Boolean).join(" ") || "de l'annonce", demande.filter(Boolean).join(", "),
     /^33\d{9}$/.test(t) ? "+33 " + t.slice(2).replace(/(\d)(\d{2})(\d{2})(\d{2})(\d{2})/, "$1 $2 $3 $4 $5") : "+" + t];
 };
@@ -237,6 +259,7 @@ const mailEquipe = ({ avis, dossier = {}, bien, bien_initial = null, telephone, 
   const ligne = (l, v) => (v ? `<tr><td style="color:#667;padding:2px 12px 2px 0;vertical-align:top">${esc(l)}</td><td><b>${esc(v)}</b></td></tr>` : "");
   const html = `<div style="font-family:Arial,sans-serif;font-size:14px;color:#1f2937">
 <p>${avis.qualifie ? "Lead qualifié à l'issue de la conversation avec l'assistant WhatsApp : " : ""}<b>${esc(avis.titre)}</b>${avis.qualifie ? "." : ", reçu par l'assistant WhatsApp."}</p>
+${avis.suite ? "<p>Le prospect est en train de préciser sa demande avec l'assistant : le détail suivra dans un second message.</p>" : ""}
 <table style="border-collapse:collapse">${ligne("Prospect", nom)}${ligne("Téléphone", telephone ? "+" + telephone : "")}${ligne("E-mail", dossier.email)}
 ${ligne(bien_initial ? "Bien demandé" : "Bien", [b.reference && "réf. " + b.reference, b.type, b.ville, b.prix && milliers(b.prix) + " €"].filter(Boolean).join(" · "))}
 ${bien_initial ? ligne("Bien de l'annonce d'origine", [bien_initial.reference && "réf. " + bien_initial.reference, bien_initial.type, bien_initial.ville, bien_initial.prix && milliers(bien_initial.prix) + " €"].filter(Boolean).join(" · ")) : ""}

@@ -1,5 +1,16 @@
 # Journal des versions
 
+## 2.27.0
+
+### Ajouté
+- Bot WhatsApp : deux notifications par demande. La première part dès que le prospect commence une demande (visite,
+  rappel, financement, travaux, installation ; le bien à vendre l'avait déjà) : mail « … en cours » avec l'échange et ce
+  qui est connu, et alerte « en cours » au négociateur pour une visite. La seconde apporte tout : la sortie, ou les
+  réponses de la branche finie (financement, travaux, installation).
+- Demande commencée puis laissée en route : 30 min après le dernier message du prospect, un récapitulatif « Demande
+  inachevée » part aux mêmes personnes, une fois (alerte « inachevé » pour une visite ou un bien à vendre). Lancé par le
+  bloc des relances (déclencheur horaire).
+
 ## 2.26.9
 
 ### Corrigé

@@ -196,6 +196,30 @@ const sortie = (code, plus = {}) => ({ type: "sortie", noeud: "TB3", quand: "202
     delete martin.telephone; marie.nom = nomMarie; BOT = BOTa; meta.length = 0;
   }
 
+  /* Sidy, 22/10 : une notification dès l'intention, puis le détail ; demande laissée en route : récapitulatif 30 min après son dernier message */
+  {
+    const BOTi = BOT, martin = CONF.routage.personnes[0], marie = T.dossiers.L.find((d) => d.id === 7); martin.telephone = "+33 6 00 00 05 00"; marie.telephone = "33611111111";
+    BOT = { ...BOT, whatsapp: { phone_number_id: "123", variable_jeton: "JETON_WA" }, alerte_whatsapp: true, notifications: "reel" }; mails.length = 0; meta.length = 0;
+    const alertes = () => meta.filter((m) => /^sh_alerte_(nego|vendeur)$/.test(m.modele)).map((m) => m.corps.template.components[0].parameters.map((x) => x.text));
+    const { recapituler } = require("../src/lib/leads/tables/bot"), t0 = Date.now(), min = 60000, miens = (r) => r.envoyes.filter((x) => x.tel9 === "611111111");
+    await repondre("evenement", { telephone: "33611111111", dossier_id: 7, event_id: "ev22a", evenements: [{ type: "inbound", quand: new Date(t0).toISOString(), donnees: { texte: "Je veux visiter" } },
+      { type: "intention", donnees: { demande: "visite", qualification: { budget: "300 000 €" } } }] });
+    assert.ok(mails.length && mails.every((m) => /Demande de visite en cours/.test(m.sujet)), "intention : les équipes sont prévenues tout de suite");
+    assert.deepStrictEqual(alertes().map((v) => [v[0], v[3]]), [["en cours", "visite en cours de préparation"]]);
+    mails.length = 0; meta.length = 0;
+    assert.deepStrictEqual(miens(await recapituler({ maintenant: t0 + 10 * min })), [], "il vient d'écrire : on attend");
+    assert.deepStrictEqual(miens(await recapituler({ maintenant: t0 + 31 * min })).map((x) => x.demandes), [["visite"]]);
+    assert.ok(mails.length && mails.every((m) => /Demande inachevée, le prospect ne répond plus : visite/.test(m.sujet)) && /300 000 €/.test(mails[0].html), "seconde notification : ce qu'il a donné");
+    assert.deepStrictEqual(alertes().map((v) => v[0]), ["inachevé"]);
+    assert.deepStrictEqual(miens(await recapituler({ maintenant: t0 + 90 * min })), [], "une seule fois");
+    /* demande menée au bout : la sortie est la seconde notification, pas de récapitulatif */
+    await repondre("evenement", { telephone: "33611111111", dossier_id: 7, event_id: "ev22b", evenements: [{ type: "inbound", quand: new Date(t0 + 100 * min).toISOString(), donnees: { texte: "Rappelez-moi" } },
+      { type: "intention", donnees: { demande: "rappel" } }, { type: "branche_f", donnees: { lead_financement: true } }] });
+    await repondre("evenement", { telephone: "33611111111", dossier_id: 7, event_id: "ev22c", evenements: [sortie("OUT-2")] });
+    assert.deepStrictEqual(miens(await recapituler({ maintenant: t0 + 200 * min })), []);
+    delete martin.telephone; delete marie.telephone; BOT = BOTi; meta.length = 0; mails.length = 0;
+  }
+
   /* numéro d'essai : pas de dossier, bien réel seulement lu, messages aux adresses d'essai même en service */
   BOT = { ...BOT, numeros_essai: { 33699999999: { reference: "30123", prenom: "Awa" } }, whatsapp: { phone_number_id: "123", variable_jeton: "JETON_WA" } }; mails.length = 0; crm.ecritures.length = 0;
   c = await repondre("contexte", { telephone: "33699999999" });

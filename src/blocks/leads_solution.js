@@ -33,9 +33,12 @@ module.exports = [
   },
   {
     name: "dzf_leads_bot_relances", label: "Leads : relancer les prospects silencieux (bot WhatsApp)", category: CAT, icon: "fab fa-whatsapp", output: "relances", timeout: 120,
-    description: "À mettre dans un déclencheur horaire. Prospect sans réponse après le message d'ouverture : R1 à 2 jours, R2 à 5 jours (seulement si le bien est confirmé en vente à l'instant), R3 à 10 jours, puis clôture sans message. Jamais après un STOP, une visite transmise ou une reprise par un conseiller ; du lundi au samedi, 9 h à 19 h (Paris) ; une seule fois chacune. Modèles Meta sh_relance_r1/r2/r3 (et _en), dans la langue de la conversation. Réglage « relances » du champ « bot » : coupé par défaut ; « essai_seulement » limite aux numéros d'essai.",
+    description: "À mettre dans un déclencheur horaire. Demande commencée puis laissée en route (visite, rappel, financement, travaux, installation, bien à vendre) : récapitulatif aux mêmes personnes 30 min après le dernier message, une fois. Prospect sans réponse après le message d'ouverture : R1 à 2 jours, R2 à 5 jours (seulement si le bien est confirmé en vente à l'instant), R3 à 10 jours, puis clôture sans message. Jamais après un STOP, une visite transmise ou une reprise par un conseiller ; du lundi au samedi, 9 h à 19 h (Paris) ; une seule fois chacune. Modèles Meta sh_relance_r1/r2/r3 (et _en), dans la langue de la conversation. Réglage « relances » du champ « bot » : coupé par défaut ; « essai_seulement » limite aux numéros d'essai.",
     params: [P_PREFIXE],
-    run: async (p) => dans(p, () => require("../lib/leads/tables/bot").relancer()),
+    run: async (p) => dans(p, async () => {   // 22/10 : aussi le récapitulatif des demandes laissées en route ; une panne de l'un n'arrête pas l'autre
+      const T = require("../lib/leads/tables/bot"), recap = await T.recapituler().catch((e) => ({ erreur: String(e.message).slice(0, 300) }));
+      return { ...(await T.relancer()), recap };
+    }),
   },
   {
     name: "dzf_leads_preparer", label: "Leads : préparer le mail reçu", category: CAT, icon: "fas fa-inbox", output: "lead",
