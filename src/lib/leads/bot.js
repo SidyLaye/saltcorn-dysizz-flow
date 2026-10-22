@@ -151,10 +151,15 @@ const BRANCHES = { branche_f: ["lead_financement", "f", "Intérêt pour un accom
   branche_i: ["lead_relocation", "i", "Intérêt pour un accompagnement à l'installation", "Installation : les réponses du prospect"] };
 const INTERNES = ["lead_financement", "lead_travaux", "lead_relocation", "tache", "score", "dossier_id", "langue", "tag", "elys_fx"];
 
+/* réponses des branches F, W, I (clés du bot) en mots lisibles dans les mails et les actions du CRM */
+const LIBELLES_BRANCHE = { apport: "Apport", budget_global: "Budget global", accord_bancaire: "Banque ou courtier", horizon: "Horizon",
+  nature: "Nature des travaux", bien_concerne: "Bien concerné", urgence: "Urgence", enveloppe: "Enveloppe", pays: "Pays", calendrier: "Calendrier",
+  besoins: "Besoins", zone: "Zone", consentement: "Accord pour être contacté" };
 /* Lignes « libellé, valeur » d'une sortie du bot : pour l'action du CRM et pour le message aux équipes. */
 const lignes = (d = {}) => {
   const q = d.qualification || {}, etiquettes = [d.lead_prioritaire && "bien à vendre (prioritaire)", d.lead_financement && "financement", d.lead_travaux && "travaux", d.lead_relocation && "relocation"].filter(Boolean);
-  const branche = (o) => Object.entries(o || {}).filter(([, v]) => v !== "" && v != null && typeof v !== "object").map(([k, v]) => `${k} : ${v}`).join(" ; ");
+  const branche = (o) => Object.entries(o || {}).filter(([, v]) => v !== "" && v != null && typeof v !== "object")
+    .map(([k, v]) => `${LIBELLES_BRANCHE[k] || k} : ${v === true ? "oui" : v === false ? "non" : v}`).join(" ; ");
   return [
     ["Demande", [DEMANDES[d.code] || d.code, d.motif].filter(Boolean).join(" · ")],
     ["Créneau souhaité", [d.creneau, d.fuseau].filter(Boolean).join(" · ")],

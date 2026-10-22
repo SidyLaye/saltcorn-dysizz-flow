@@ -151,7 +151,7 @@ const QUAND = new Date("2026-10-13T10:00:00Z");
     assert.deepStrictEqual(avis([{ type: "branche_f", donnees: { tag: "intérêt financement", lead_financement: true } }]), [["Intérêt pour un accompagnement au financement", "f", true]]);
     const fin = B.plan([{ type: "branche_f", donnees: { lead_financement: true, tache: "rappel", score: 50, apport: "50 000 €", horizon: "3 mois" } }], {}).avis;
     assert.deepStrictEqual(fin.map((a) => [a.titre, a.referents.join(""), !!a.suite]), [["Financement : les réponses du prospect", "f", false]]);
-    assert.ok(B.lignes(fin[0].donnees).some(([l, v]) => l === "Financement (détail)" && /apport : 50 000 €/.test(v) && !/tache|score|lead_/.test(v)), "les réponses, sans les champs internes");
+    assert.ok(B.lignes(fin[0].donnees).some(([l, v]) => l === "Financement (détail)" && /^Apport : 50 000 € ; Horizon : 3 mois$/.test(v) && !/tache|score|lead_/.test(v)), "les réponses, sans les champs internes");
     assert.deepStrictEqual(avis([{ type: "branche_f", donnees: { lead_financement: true } }, { type: "branche_f", donnees: { lead_financement: true, tache: "x", apport: "1" } }]).map((a) => a[0]), ["Financement : les réponses du prospect"], "branche finie dans le même tour : un seul message");
     assert.deepStrictEqual(avis([{ type: "branche_w", donnees: { lead_travaux: false } }, { type: "branche_i", donnees: { lead_relocation: false } }]), [], "pas d'intérêt : rien");
     assert.deepStrictEqual(avis([{ type: "branche_i", donnees: { lead_relocation: true, tache: "", consentement: false, pays: "Royaume-Uni" } }]), [["Installation : les réponses du prospect", "i", false]]);

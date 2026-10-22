@@ -1,5 +1,11 @@
 # Journal des versions
 
+## 2.27.1
+
+### Corrigé
+- Mails aux équipes et actions du CRM : les réponses des branches financement, travaux et installation sont écrites en
+  mots (« Budget global », « Banque ou courtier »…), plus avec les noms techniques du bot.
+
 ## 2.27.0
 
 ### Ajouté
