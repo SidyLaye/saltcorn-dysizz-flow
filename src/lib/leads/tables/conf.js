@@ -55,6 +55,8 @@ const charger = async () => {
     notifier_relances: R.notifier_relances || "negociateur",
     marges_projet: json(R.marges_projet, {}),
     commentaire: { max: +R.commentaire_max || 6000 },
+    /* recherche par photo : le dossier d'images public du client (celui du bot) */
+    rapprochement: { photos_dossier: (json(R.bot, {}) || {}).photos || null },
     action_lead: (() => { const v = R.action_lead || json(R.crm_reglages, {}).action_lead; return v ? (isFinite(+v) ? +v : v) : null; })(),
     portails: portails.filter((p) => p.actif !== false).map((p) => ({ id: "declare_" + p.id, nom: p.nom, domaines: liste(p.domaines), objets_lead: lignes(p.objets_lead), objets_non_lead: lignes(p.objets_non_lead), libelles: json(p.libelles, {}), reference: p.reference || null, nature: p.nature || "lead" })),
     agences: agences.filter((a) => a.actif !== false).map((a) => ({ id: String(a.crm_id || "a" + a.id), nom: a.nom, boites: liste(a.boites), negociateur_defaut: a.negociateur_defaut ? (ref(a.negociateur_defaut) || {}).personne || a.negociateur_defaut : null })),

@@ -104,6 +104,10 @@ const optionsLecture = async (api) => {
       return ok;
     };
     o.noter = noter;
+    /* mails déjà reçus de cette adresse exacte : classés publicité ou autre par l'IA, et ceux qui étaient des leads (lecture.js) */
+    o.historique = async (adr) => (await db().query(`select count(*) filter (where lu_par like '%ia%' and nature in ('notification', 'autre')) non_lead,
+      count(*) filter (where nature in ('lead', 'relance', 'recherche', 'estimation', 'direct', 'reponse_campagne')) lead
+      from "${tenant()}".${nom("leads")} where position($1 in lower(coalesce(expediteur, ''))) > 0`, [adr])).rows.map((x) => ({ non_lead: +x.non_lead, lead: +x.lead }))[0];
   }
   return o;
 };

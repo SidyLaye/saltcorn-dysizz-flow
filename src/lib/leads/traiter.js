@@ -208,7 +208,10 @@ const etapeBien = async (d, crm, conf = {}) => {
     /* référence renumérotée dans le CRM depuis le premier mail : le bien du dossier déjà ouvert pour cette même référence */
     const refs = (cles.references || []).map((x) => String(x).toLowerCase());
     const ouvert = connus.find((x) => x.bien_id && x.reference && refs.includes(String(x.reference).toLowerCase()));
-    rb = await rapprocher(r, crm, { ...(conf.rapprochement || {}), texte: d.interne && d.interne.texte_mail, bienConnu: ouvert && ouvert.bien_id });
+    /* photo de l'annonce dans le mail : comparée à celles des biens candidats si les critères hésitent (dossier d'images public du client) */
+    const dossierPhotos = conf.rapprochement && conf.rapprochement.photos_dossier, images = r.images || [];
+    const comparerPhotos = images.length && dossierPhotos && crm.photosBien ? (biens) => require("./photo").distances(images, biens, { photosDe: (b) => crm.photosBien(b.id, dossierPhotos) }) : null;
+    rb = await rapprocher(r, crm, { ...(conf.rapprochement || {}), texte: d.interne && d.interne.texte_mail, bienConnu: ouvert && ouvert.bien_id, comparerPhotos });
     for (const a of rb.alertes || []) d.alertes.push(a);
   }
   d.bien = rb.bien; d.rapprochement = { methode: rb.methode, confiance: rb.confiance, motif: rb.motif, etapes: rb.etapes };

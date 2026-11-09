@@ -93459,6 +93459,120 @@ var require_portails = __commonJS({
   }
 });
 
+// src/lib/leads/photo.js
+var require_photo = __commonJS({
+  "src/lib/leads/photo.js"(exports2, module2) {
+    "use strict";
+    var MEME = 26;
+    var DIFFERENTE = 34;
+    var BRUIT = /(logo|icon|ico-|pixel|spacer|track|\/open|\/o\.gif|\/oo\/|facebook|twitter|linkedin|instagram|youtube|badge|arrow|picto|transparent|banner|appstore|avatar|xiti|hit\.|static\/emails|agent_data\/mail|mcusercontent|customeriomail|sendgrid|signature|map_|maps?\.|staticmap|email-assets|\.gif(\?|$))/i;
+    var imagesDuMail = (html) => [...new Set((String(html || "").match(/<img\b[^>]*?\bsrc\s*=\s*["'][^"']+["']/gi) || []).map((t) => t.replace(/^[\s\S]*\bsrc\s*=\s*["']/i, "").replace(/["']$/, "").replace(/&amp;/g, "&")).filter((u) => /^https:\/\//i.test(u) && !BRUIT.test(u)))].slice(0, 6);
+    var SHARP;
+    var outil = () => {
+      if (SHARP !== void 0) return SHARP;
+      try {
+        SHARP = require("sharp");
+      } catch (e) {
+        try {
+          SHARP = require(require.resolve("sharp", { paths: require.main && require.main.paths || [] }));
+        } catch (e2) {
+          SHARP = null;
+        }
+      }
+      return SHARP;
+    };
+    var COS = (() => {
+      const n = 32, c = [];
+      for (let u = 0; u < 8; u++) {
+        c[u] = [];
+        for (let x = 0; x < n; x++) c[u][x] = Math.cos((2 * x + 1) * u * Math.PI / (2 * n));
+      }
+      return c;
+    })();
+    var empreinte = async (buf, s = outil()) => {
+      if (!s || !buf || !buf.length) return null;
+      try {
+        const m = await s(buf).metadata();
+        if (!m.width || !m.height || m.width < 90 || m.height < 60 || m.width / m.height > 4 || m.height / m.width > 3) return null;
+        const a = await s(buf).grayscale().resize(9, 8, { fit: "fill" }).raw().toBuffer();
+        const d = [];
+        for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) d.push(a[y * 9 + x + 1] > a[y * 9 + x] ? 1 : 0);
+        const g = await s(buf).grayscale().resize(32, 32, { fit: "fill" }).raw().toBuffer();
+        const bas = [];
+        for (let u = 0; u < 8; u++) for (let v = 0; v < 8; v++) {
+          let t = 0;
+          for (let y = 0; y < 32; y++) {
+            let l = 0;
+            for (let x = 0; x < 32; x++) l += g[y * 32 + x] * COS[v][x];
+            t += l * COS[u][y];
+          }
+          bas.push(t);
+        }
+        const med = [...bas.slice(1)].sort((p, q) => p - q)[31];
+        return { d, p: bas.map((x) => x > med ? 1 : 0) };
+      } catch (e) {
+        return null;
+      }
+    };
+    var ecart = (a, b) => {
+      let n = 0;
+      for (let i = 0; i < 64; i++) {
+        if (a.d[i] !== b.d[i]) n++;
+        if (a.p[i] !== b.p[i]) n++;
+      }
+      return n;
+    };
+    var PRIVEES4 = [[0, 8], [10, 8], [100 << 24 | 64 << 16, 10], [127 << 24, 8], [169 << 24 | 254 << 16, 16], [172 << 24 | 16 << 16, 12], [192 << 24, 24], [192 << 24 | 168 << 16, 16], [198 << 24 | 18 << 16, 15], [224 << 24, 3]].map(([b, n]) => [n === 8 && b < 256 ? b << 24 : b, n]);
+    var privee = (ip) => {
+      const v = String(ip).replace(/^::ffff:/i, "");
+      if (/^\d+\.\d+\.\d+\.\d+$/.test(v)) {
+        const x = v.split(".").reduce((a, o) => (a << 8 | +o) >>> 0, 0);
+        return PRIVEES4.some(([b, n]) => (x ^ b >>> 0) >>> 32 - n === 0);
+      }
+      return /^(::1?|f[cd]|fe[89ab])/i.test(v) || v === "";
+    };
+    var adresseSure = async (url, resoudre = (h) => require("dns").promises.lookup(h, { all: true })) => {
+      let u;
+      try {
+        u = new URL(url);
+      } catch (e) {
+        return false;
+      }
+      if (u.protocol !== "https:" || u.username || u.password || u.port && u.port !== "443" || /^[\d.]+$|[:[\]]/.test(u.hostname) || !u.hostname.includes(".")) return false;
+      const l = await resoudre(u.hostname).catch(() => []);
+      return l.length > 0 && !l.some((a) => privee(a.address));
+    };
+    var charger = async (url, f = globalThis.fetch, { octets = 5e6, delai = 6e3, resoudre } = {}) => {
+      if (!await adresseSure(url, resoudre)) return null;
+      const c = new AbortController(), minuteur = setTimeout(() => c.abort(), delai);
+      try {
+        const r = await f(url, { signal: c.signal, redirect: "error", headers: { "User-Agent": "Mozilla/5.0 (compatible; dysizz-flow)" } });
+        if (!r.ok || !/image\/(jpe?g|png|webp)/i.test(r.headers && r.headers.get("content-type") || "")) return null;
+        const b = Buffer.from(await r.arrayBuffer());
+        return b.length && b.length <= octets ? b : null;
+      } catch (e) {
+        return null;
+      } finally {
+        clearTimeout(minuteur);
+      }
+    };
+    var distances = async (images, biens, { photosDe, charger: ch = charger, empreinte: em = empreinte, parBien = 3, budget_ms = 25e3 } = {}) => {
+      const fin = Date.now() + budget_ms, out = /* @__PURE__ */ new Map();
+      if (!images || !images.length || !biens.length || !photosDe || em === empreinte && !outil()) return out;
+      const du = (await Promise.all(images.map(async (u) => em(await ch(u))))).filter(Boolean);
+      if (!du.length) return out;
+      await Promise.all(biens.map(async (b) => {
+        if (Date.now() > fin) return;
+        const urls = (await photosDe(b).catch(() => []) || []).slice(0, parBien);
+        const hs = (await Promise.all(urls.map(async (u) => Date.now() > fin ? null : em(await ch(u))))).filter(Boolean);
+        if (hs.length) out.set(String(b.id), Math.min(...du.flatMap((a) => hs.map((h) => ecart(a, h)))));
+      }));
+      return out;
+    };
+    module2.exports = { imagesDuMail, empreinte, ecart, distances, charger, adresseSure, privee, outil, MEME, DIFFERENTE };
+  }
+});
+
 // src/lib/leads/extraire.js
 var require_extraire = __commonJS({
   "src/lib/leads/extraire.js"(exports2, module2) {
@@ -93951,6 +94065,8 @@ var require_extraire = __commonJS({
         if (["lead", "relance"].includes(r.nature) && !b.reference && !b.id_crm && !b.reference_portail) r.manquants.push("reference");
       }
       r.destinataire = mail.destinataire || "";
+      const images = require_photo().imagesDuMail(mail.html ?? mail.corps_html);
+      if (images.length) r.images = images;
       return r;
     };
     module2.exports = { nettoyerNoms, extraire, identifierSite, RELAIS, telephoneDuProspect };
@@ -94168,6 +94284,24 @@ var require_rapprochement = __commonJS({
         if (t && !autreProche) {
           if (t.cmp.legers.length) alertes.push(t.cmp.legers.join(", ") + " diff\xE9rent entre le mail et le CRM");
           return { bien: t.x, methode: "criteres:" + t.cmp.accords.join("+"), etapes, alertes, confiance: t.cmp.accords.length >= 3 ? "moyenne" : "basse" };
+        }
+        if (opts.comparerPhotos) {
+          const proches = notes.filter((n) => !n.cmp.conflits.length && (n.cmp.accords.includes("prix") || n.cmp.prix_proche) && n.score >= 3).slice(0, 5);
+          const dist = proches.length ? await opts.comparerPhotos(proches.map((n) => n.x)).catch(() => null) : null;
+          if (dist && dist.size) {
+            const P = require_photo();
+            const possible = (faits.prix || (faits.prix_candidats || []).length ? 3 : 0) + (faits.surface ? 2 : 0) + (faits.pieces ? 1 : 0) + (faits.ville || faits.code_postal ? 2 : 0) + (faits.type ? 0.5 : 0) + 4;
+            const l = proches.filter((n) => dist.has(String(n.x.id))).map((n) => {
+              const d = dist.get(String(n.x.id));
+              return { n, d, pct: Math.round(100 * (n.score + (d <= P.MEME ? 4 : 0)) / possible) };
+            }).sort((a2, c) => a2.d - c.d || c.pct - a2.pct);
+            e.photo = l.map((x) => ({ id: x.n.x.id, reference: x.n.x.reference, ecart: x.d, correspondance: x.pct }));
+            const [a, b2] = l;
+            if (a && a.d <= P.MEME && (!b2 || b2.d >= P.DIFFERENTE)) {
+              alertes.push(`bien retrouv\xE9 par la photo de l'annonce : correspondance ${a.pct} % (${[...a.n.cmp.accords, "photo"].join(", ")})`);
+              return { bien: a.n.x, methode: "criteres+photo:" + a.n.cmp.accords.join("+"), etapes, alertes, confiance: "moyenne" };
+            }
+          }
         }
         if (autreProche) e.ambigu = true;
       }
@@ -94853,6 +94987,16 @@ var require_lecture = __commonJS({
             return r;
           }
           r.lecture.etapes.push("gabarit incomplet : " + manquantsImportants(r).join(", "));
+        }
+      }
+      if (opts.historique && ["inconnu", "reponse_campagne"].includes(r.nature)) {
+        const adr = (String(m.expediteur || "").match(/[\w.%+-]+@[\w.-]+\.[a-z]{2,}/i) || [])[0];
+        const h = adr ? await opts.historique(adr.toLowerCase()).catch(() => null) : null;
+        if (h && h.non_lead >= 2 && !h.lead) {
+          r.nature = "notification";
+          r.lu_par.push("historique");
+          r.lecture.etapes.push(`exp\xE9diteur d\xE9j\xE0 class\xE9 ${h.non_lead} fois sans lead : pas d'appel \xE0 l'IA`);
+          return r;
         }
       }
       if (!opts.ia) return r;
@@ -95560,7 +95704,9 @@ var require_traiter = __commonJS({
       if (actifs(conf).bien) {
         const refs = (cles.references || []).map((x) => String(x).toLowerCase());
         const ouvert = connus.find((x) => x.bien_id && x.reference && refs.includes(String(x.reference).toLowerCase()));
-        rb = await rapprocher(r, crm, { ...conf.rapprochement || {}, texte: d.interne && d.interne.texte_mail, bienConnu: ouvert && ouvert.bien_id });
+        const dossierPhotos = conf.rapprochement && conf.rapprochement.photos_dossier, images = r.images || [];
+        const comparerPhotos = images.length && dossierPhotos && crm.photosBien ? (biens) => require_photo().distances(images, biens, { photosDe: (b) => crm.photosBien(b.id, dossierPhotos) }) : null;
+        rb = await rapprocher(r, crm, { ...conf.rapprochement || {}, texte: d.interne && d.interne.texte_mail, bienConnu: ouvert && ouvert.bien_id, comparerPhotos });
         for (const a of rb.alertes || []) d.alertes.push(a);
       }
       d.bien = rb.bien;
@@ -97774,6 +97920,8 @@ var require_conf = __commonJS({
         notifier_relances: R.notifier_relances || "negociateur",
         marges_projet: json(R.marges_projet, {}),
         commentaire: { max: +R.commentaire_max || 6e3 },
+        /* recherche par photo : le dossier d'images public du client (celui du bot) */
+        rapprochement: { photos_dossier: (json(R.bot, {}) || {}).photos || null },
         action_lead: (() => {
           const v = R.action_lead || json(R.crm_reglages, {}).action_lead;
           return v ? isFinite(+v) ? +v : v : null;
@@ -99970,6 +100118,9 @@ var require_gabarits = __commonJS({
           return ok;
         };
         o.noter = noter;
+        o.historique = async (adr) => (await db().query(`select count(*) filter (where lu_par like '%ia%' and nature in ('notification', 'autre')) non_lead,
+      count(*) filter (where nature in ('lead', 'relance', 'recherche', 'estimation', 'direct', 'reponse_campagne')) lead
+      from "${tenant()}".${nom("leads")} where position($1 in lower(coalesce(expediteur, ''))) > 0`, [adr])).rows.map((x) => ({ non_lead: +x.non_lead, lead: +x.lead }))[0];
       }
       return o;
     };

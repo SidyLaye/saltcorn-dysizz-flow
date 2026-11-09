@@ -23,7 +23,7 @@ await build({
   entryPoints: [r("src", "index.js")],
   outfile: r("index.js"),
   bundle: true, platform: "node", target: "node18", format: "cjs",
-  external: ["@saltcorn/*", "pg"],
+  external: ["@saltcorn/*", "pg", "sharp"],   /* sharp : celui de Saltcorn (recherche par photo) */
   nodePaths: [r("tools", "node_modules")],
   define: { __DZF_VERSION__: JSON.stringify(pkg.version) },
   banner: { js: `/* dysizz-flow ${pkg.version} — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */` },

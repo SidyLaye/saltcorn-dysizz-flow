@@ -8,6 +8,12 @@
   une alerte au plus toutes les 6 heures pour tous les processus. Sans réglage, rien ne part.
 - Réglage `ia_modele` pris en compte avec le fournisseur « saltcorn » : le modèle choisi lit les mails, le reste du
   plugin garde le sien.
+- Mémoire des expéditeurs : une adresse que l'IA a déjà classée publicité ou autre au moins deux fois, sans jamais un
+  lead, est classée sans nouvel appel (depuis le 01/10 : 963 lectures sur 1 745 évitées, aucun vrai lead parmi elles).
+- Recherche par photo : quand la recherche par critères hésite, la photo de l'annonce reçue dans le mail est comparée à
+  celles des biens candidats (empreintes dHash et pHash, sharp de Saltcorn) ; retenu seulement si la photo est la même
+  et qu'aucun autre candidat n'a une photo proche. Adresses d'images vérifiées (https, port 443, noms publics, aucune
+  redirection). Banc sur 349 vrais mails : 304 bons biens, aucune erreur, 45 abstentions.
 
 ### Corrigé
 - Properstar (annonce sans identifiant) : la commune affichée au-dessus de « Maison · 6 Pièces… » est lue, comme lieu

@@ -228,6 +228,24 @@ const rapprocher = async (lead, crm, opts = {}) => {
       if (t.cmp.legers.length) alertes.push(t.cmp.legers.join(", ") + " différent entre le mail et le CRM");
       return { bien: t.x, methode: "criteres:" + t.cmp.accords.join("+"), etapes, alertes, confiance: t.cmp.accords.length >= 3 ? "moyenne" : "basse" };
     }
+    /* 5. la photo départage (Sidy, 09/11) : quelques biens concordent sans qu'un seul soit assez prouvé ; la photo du mail
+       est comparée aux leurs. Retenu seulement si sa photo est la même (écart ≤ 26) et qu'aucun autre candidat n'a une
+       photo proche (écart < 34) ; la note de correspondance compte tous les faits du mail, photo comprise. */
+    if (opts.comparerPhotos) {
+      const proches = notes.filter((n) => !n.cmp.conflits.length && (n.cmp.accords.includes("prix") || n.cmp.prix_proche) && n.score >= 3).slice(0, 5);
+      const dist = proches.length ? await opts.comparerPhotos(proches.map((n) => n.x)).catch(() => null) : null;
+      if (dist && dist.size) {
+        const P = require("./photo");
+        const possible = (faits.prix || (faits.prix_candidats || []).length ? 3 : 0) + (faits.surface ? 2 : 0) + (faits.pieces ? 1 : 0) + (faits.ville || faits.code_postal ? 2 : 0) + (faits.type ? 0.5 : 0) + 4;
+        const l = proches.filter((n) => dist.has(String(n.x.id))).map((n) => { const d = dist.get(String(n.x.id)); return { n, d, pct: Math.round((100 * (n.score + (d <= P.MEME ? 4 : 0))) / possible) }; }).sort((a, c) => a.d - c.d || c.pct - a.pct);
+        e.photo = l.map((x) => ({ id: x.n.x.id, reference: x.n.x.reference, ecart: x.d, correspondance: x.pct }));
+        const [a, b] = l;
+        if (a && a.d <= P.MEME && (!b || b.d >= P.DIFFERENTE)) {
+          alertes.push(`bien retrouvé par la photo de l'annonce : correspondance ${a.pct} % (${[...a.n.cmp.accords, "photo"].join(", ")})`);
+          return { bien: a.n.x, methode: "criteres+photo:" + a.n.cmp.accords.join("+"), etapes, alertes, confiance: "moyenne" };
+        }
+      }
+    }
     if (autreProche) e.ambigu = true;
   }
   const ambigu = etapes.some((x) => x.ambigu);

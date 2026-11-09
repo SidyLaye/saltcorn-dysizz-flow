@@ -366,6 +366,9 @@ const extraire = (mail, conf = {}) => {
     if (["lead", "relance"].includes(r.nature) && !b.reference && !b.id_crm && !b.reference_portail) r.manquants.push("reference");
   }
   r.destinataire = mail.destinataire || "";
+  /* photos de l'annonce montrées par le portail (logos et pixels de suivi écartés) : pour la recherche par photo */
+  const images = require("./photo").imagesDuMail(mail.html ?? mail.corps_html);
+  if (images.length) r.images = images;
   return r;
 };
 
