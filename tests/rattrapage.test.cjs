@@ -11,7 +11,9 @@ Module._load = function (n, parent, ...rest) {
     if (n === "./schema") return { nom: (k) => "ld_" + k, prefixe: () => "ld_", tables: async () => ({ leads: { getRow: async ({ id }) => LEADS[id] || null } }) };
     if (n === "@saltcorn/data/db") return { getTenantSchema: () => "public", query: async (sql, args) => { requetes.push({ sql, args }); return { rows: /from "public"."ld_mails"/.test(sql) ? [{ id: 120 }] : [{ id: 10 }, { id: 11 }, { id: 77 }] }; } };
     if (n === "./dossier") return { traiterMail: async (mailId, o) => { appels.push({ mailId, simulation: o.simulation }); return { id: o.simulation ? null : mailId - 100, statut: RESULTAT[mailId], dossier: { statut: RESULTAT[mailId], motifs: RESULTAT[mailId] === "pret" ? [] : ["x"], bien: { id: 9, reference: "R9" }, negociateur: "20", destinataires: { liste: [{ email: "nego@ex.org" }] }, execution: { resultats: [{ op: "creerContact", fait: !o.simulation, mode: o.simulation ? "ombre" : "reel" }] } } }; } };
-    if (n === "./envoi") return { messages: async (d, res) => ({ simuler: false, raison: "1 destinataire(s)", liste: d.destinataires.liste.map((x) => ({ cle: `ld_lead-${res.id}:${x.email}`, a: x.email })) }) };
+    /* comme envoi.messages : prêt → destinataires ; à vérifier / à trier → le non automatisé, avec sa propre clé */
+    if (n === "./envoi") return { messages: async (d, res) => (d.statut === "pret" ? { simuler: false, raison: "1 destinataire(s)", liste: d.destinataires.liste.map((x) => ({ cle: `ld_lead-${res.id}:${x.email}`, a: x.email })) }
+      : { simuler: false, raison: "non automatisé", liste: [{ cle: `ld_lead-${res.id}:non-automatise:na@ex.org`, a: "na@ex.org" }] }) };
     if (n === "../../envois") return { envoyer: async (l) => { envoyes.push(...l.map((m) => m.cle)); return { resume: `${l.length} envoyé(s)` }; } };
   }
   return original.call(this, n, parent, ...rest);
@@ -28,13 +30,13 @@ Module._load = function (n, parent, ...rest) {
   let r = await rattraper("10, 11, 999", "simuler");
   assert.deepEqual(appels.map((a) => a.simulation), [true, true], "simulation : traitement en lecture seule");
   assert.equal(envoyes.length, 0, "simulation : rien envoyé");
-  assert.equal(r.leads[0].envoi, "serait envoyé"); assert.equal(r.leads[1].envoi, "ne serait pas envoyé");
+  assert.equal(r.leads[0].envoi, "serait envoyé"); assert.equal(r.leads[1].envoi, "irait au non automatisé (na@ex.org)", "à vérifier : le non automatisé, comme le traitement normal");
   assert.equal(r.erreurs.length, 1, "lead inconnu signalé");
   appels.length = 0;
   r = await rattraper("10,11", "appliquer");
   assert.deepEqual(appels.map((a) => a.simulation), [false, false], "appliquer : traitement réel");
-  assert.deepEqual(envoyes, ["ld_lead-10:nego@ex.org"], "seul le lead devenu prêt part, avec la clé de l'envoi normal");
-  assert.equal(r.encore_bloques, 1); assert.equal(r.envoyes, 1);
+  assert.deepEqual(envoyes, ["ld_lead-10:nego@ex.org", "ld_lead-11:non-automatise:na@ex.org"], "le lead prêt part au négociateur ; celui à vérifier au non automatisé ; clés de l'envoi normal");
+  assert.equal(r.encore_bloques, 1); assert.equal(r.envoyes, 1); assert.equal(r.non_automatise, 1);
   /* mail jamais traité : traité, puis envoyé avec le numéro du lead créé */
   appels.length = 0; envoyes.length = 0;
   r = await rattraper("", "appliquer", { mails: [120] });
@@ -45,6 +47,10 @@ Module._load = function (n, parent, ...rest) {
   r = await rattraper("10", "appliquer", { envoyer: false });
   assert.deepEqual(appels, [{ mailId: 110, simulation: false }]); assert.equal(envoyes.length, 0, "sans envoi : aucun mail");
   assert.equal(r.leads[0].envoi, "non envoyé (rattrapage sans envoi)"); assert.equal(r.envoyes, 0);
+  /* sans envoi : un lead à vérifier ne part pas non plus au non automatisé */
+  appels.length = 0; envoyes.length = 0;
+  r = await rattraper("11", "appliquer", { envoyer: false });
+  assert.equal(envoyes.length, 0, "sans envoi : rien au non automatisé"); assert.equal(r.non_automatise, 0);
   Module._load = original;
-  console.log("rattrapage OK : simulation sans écriture ni envoi, application avec envoi unique des leads prêts");
+  console.log("rattrapage OK : simulation sans écriture ni envoi, application avec envoi unique (prêts au négociateur, à vérifier au non automatisé)");
 })().catch((e) => { console.error(e); process.exitCode = 1; });

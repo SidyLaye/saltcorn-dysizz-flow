@@ -1,4 +1,4 @@
-/* dysizz-flow 2.27.1 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.27.2 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.27.1" : "dev";
+    var VERSION2 = true ? "2.27.2" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -92606,7 +92606,8 @@ var require_portails = __commonJS({
       {
         id: "green_acres",
         nom: "Green-Acres",
-        test: (d) => /green-acres\.(com|fr)$/.test(d),
+        test: (d) => /green-acres\.(com|fr)$|(^|\.)vizzit\.com$/.test(d),
+        /* « … via Vizzit » <…@email.vizzit.com> : nouvelle adresse d'envoi de Green-Acres (09/11) */
         nature: (o) => /buyer replied|a répondu|replied/i.test(o) ? "relance" : /demande d.information|nouveau contact|new contact/i.test(o) ? "lead" : "non_lead",
         regles: ({ L, o, r, texte, conf = {} }) => {
           const ref = texte.match(/\((?:reference|référence)\s*([\w-]+)\)|^(?:reference|référence)\s*:\s*([\w-]+)/im);
@@ -93170,7 +93171,8 @@ var require_portails = __commonJS({
         id: "kyero",
         nom: "KYERO",
         test: (d) => /kyero\.com$/.test(d),
-        nature: () => "lead",
+        /* factures, prélèvements, rapports, lettres et flux : correspondance du portail, pas des leads (audit du 09/11) */
+        nature: (o) => /facture|invoice|paiement|payment|pr[ée]lever|rapport hebdomadaire|weekly report|renseignements sur vos services|a note from kyero|flux ubiflow/i.test(o) ? "non_lead" : "lead",
         regles: ({ o, texte, r }) => {
           const m = texte.match(/\*\*\[([A-Z0-9-]{5,})\]\s*\*\*/) || o.match(/:\s*([A-Z0-9-]{5,})\/?\s*$/);
           if (m && /\d/.test(m[1])) r.bien.reference = m[1];
@@ -93321,6 +93323,50 @@ var require_portails = __commonJS({
           }
         }
       },
+      /* Maisons & Appartements (origine Immofacile « maisons_appartements ») : fiche « Libellé : valeur » lue par les règles communes,
+         plus le bloc « Cette demande concerne le bien suivant » (type, commune, pièces, surface) ; relances vendeur = estimation ; lettres d'info = non-lead */
+      {
+        id: "maisons_appartements",
+        nom: "Maisons & Appartements",
+        test: (d) => /(^|\.)maisonsetappartements\.fr$/.test(d),
+        nature: (o) => /r[ée]pondre [àa] ce vendeur|estimation/i.test(o) ? "estimation" : /demande d.information concernant un bien|rendez-vous demand[ée]|d[ée]sire [êe]tre appel[ée]|appel entrant/i.test(o) ? "lead" : "non_lead",
+        regles: ({ L, r }) => {
+          const i = L.findIndex((l) => /^cette demande concerne le bien suivant/i.test(l));
+          const bloc2 = i >= 0 ? L.slice(i + 1, i + 8) : [];
+          const tv = bloc2.map((l) => l.match(/^(.{3,40}?)\s+à vendre\s*-\s*(.{2,60})$/i)).find(Boolean);
+          if (tv) {
+            if (!r.bien.ville) r.bien.ville = tv[2].trim();
+            const ft = V.faitsTitre(tv[1]) || {};
+            if (ft.type && !r.bien.type) r.bien.type = ft.type;
+          }
+          r.bien.lieu_approche = true;
+          const ps = bloc2.map((l) => l.match(/^(\d{1,2})\s*pi[èe]ces?\s*-\s*(\d{1,5}(?:[.,]\d+)?)\s*m/i)).find(Boolean);
+          if (ps) {
+            if (!r.bien.pieces) r.bien.pieces = +ps[1];
+            if (!r.bien.surface) r.bien.surface = parseFloat(ps[2].replace(",", "."));
+          }
+          const tel = L.map((l) => l.match(/^voici son t[ée]l[ée]phone\s*:\s*(.+)$/i)).find(Boolean);
+          if (tel && !r.contact.telephone) {
+            const t = V.telephone(tel[1]);
+            if (t) r.contact.telephone = t;
+          }
+        }
+      },
+      /* Etreproprio : « Lead Acheteur - 29381 - Maison et moulin… - Êtreproprio.com » ; « Mandat : » est lu par les règles communes.
+         Le titre n'est pas converti en faits (« … grand terrain » donnerait le type terrain pour une maison). */
+      {
+        id: "etreproprio",
+        nom: "Etreproprio",
+        test: (d) => /(^|\.)etreproprio\.com$/.test(d),
+        nature: (o) => /lead acheteur/i.test(o) ? "lead" : "non_lead",
+        regles: ({ o, r }) => {
+          const m = o.match(/lead acheteur\s*-\s*([\w-]*\d[\w-]*)\s*-\s*(.+?)(?:\s*-\s*[êe]tre ?proprio.*)?$/i);
+          if (m) {
+            if (!r.bien.reference) r.bien.reference = m[1];
+            if (!r.bien.titre) r.bien.titre = m[2].trim();
+          }
+        }
+      },
       {
         id: "annonces_diverses",
         nom: "Autres portails",
@@ -93340,6 +93386,8 @@ var require_portails = __commonJS({
         nature: (o) => /vous avez (un|une) (nouveau |nouvelle )?(contact|demande|message)|nouveau message|nouveau contact|^\W*contact\b|contact .*annonce|internaute|demande d.information|souhaite (plus d.)?information|nouveau contact|a un contact|intéressé par/i.test(o) && !/collaborateurs|profil|page agence|saviez-vous|soyez prêt|tenez vos clients|facture|abonnement|newsletter/i.test(o) ? "lead" : "non_lead"
       },
       /* Rapport de quarantaine anti-spam : ce n'est pas un lead mais il peut en cacher. */
+      /* Rapport de quarantaine Hornetsecurity (nouvel anti-spam d'un client, octobre 2026) : pas un lead ; son contenu n'est qu'en HTML */
+      { id: "hornetsecurity", nom: "Rapport anti-spam (Hornetsecurity)", test: (d) => /(^|\.)hornetsecurity\.com$/.test(d), nature: () => "alerte_spam" },
       {
         id: "vade",
         nom: "Rapport anti-spam",
@@ -93349,7 +93397,7 @@ var require_portails = __commonJS({
           r.bloques = (texte.match(/^.{3,40}\|.+\|\s*\d+\s*k\s*\|.+$/gm) || []).map((l) => l.split("|")[0].trim()).filter((x) => /properstar|green|leboncoin|seloger|figaro|bienici|rightmove|french|giraffe|ac3|immo/i.test(x));
         }
       },
-      { id: "bruit", nom: "Service / newsletter", test: (d) => /(immo-facile\.(fr|com)|orisha\.com|gedeon\.im|canva\.com|firebaseapp\.com|toutvendre\.fr|opinionsystem\.fr|notaires\.fr|cci\.fr|tiktok\.com|news\.leboncoin\.fr|gestiviag\.com|communication-snpi\.com|centre-conventions-collectives\.fr|linkedin\.com|facebookmail\.com|google\.com)$/.test(d), nature: () => "non_lead" }
+      { id: "bruit", nom: "Service / newsletter", test: (d) => /(immo-facile\.(fr|com)|orisha\.com|gedeon\.im|canva\.com|firebaseapp\.com|toutvendre\.fr|opinionsystem\.fr|notaires\.fr|cci\.fr|tiktok\.com|news\.leboncoin\.fr|gestiviag\.com|communication-snpi\.com|centre-conventions-collectives\.fr|linkedin\.com|facebookmail\.com|instagram\.com|google\.com)$/.test(d), nature: () => "non_lead" }
     ];
     var SIGNATURES = {
       leboncoin: /l.équipe leboncoin|leboncoin\.fr\/ad\/|vous a contacté sur leboncoin/i,
@@ -94101,9 +94149,10 @@ var require_rapprochement = __commonJS({
         if (autreProche) e.ambigu = true;
       }
       const ambigu = etapes.some((x) => x.ambigu);
+      const criteresFaits = etapes.some((x) => x.etape === "criteres");
       const contredit = etapes.some((x) => (x.candidats || []).some((c) => /contradiction/.test(c.raison) && x.etape !== "criteres"));
       const pistes = etapes.filter((x) => x.etape === "criteres").flatMap((x) => (x.candidats || []).filter((c) => c.ok)).slice(0, 3).map((c) => c.reference);
-      return { bien: null, methode: null, etapes, pistes, motif: ambigu ? "plusieurs biens possibles" + (pistes.length ? " (" + pistes.join(", ") + ")" : "") : contredit ? "bien trouv\xE9 mais contredit par le mail" : refs.length ? "r\xE9f\xE9rence introuvable" : "pas de r\xE9f\xE9rence ni assez de crit\xE8res (le prix est n\xE9cessaire)" };
+      return { bien: null, methode: null, etapes, pistes, motif: ambigu ? "plusieurs biens possibles" + (pistes.length ? " (" + pistes.join(", ") + ")" : "") : contredit ? "bien trouv\xE9 mais contredit par le mail" : refs.length ? "r\xE9f\xE9rence introuvable" + (criteresFaits ? " ; recherche par crit\xE8res faite : aucun bien ne concorde" : "") : criteresFaits ? "pas de r\xE9f\xE9rence ; recherche par crit\xE8res faite : aucun bien ne concorde (il faut le prix et un autre fait)" : "pas de r\xE9f\xE9rence ni de prix (la recherche par crit\xE8res exige le prix)" };
     };
     module2.exports = { rapprocher, comparer, verdict, variantes, noter, forceRef, REGLES };
   }
@@ -102063,7 +102112,7 @@ var require_rattrapage = __commonJS({
       const { tables } = require_schema();
       const t = await tables();
       const appliquer = mode === "appliquer";
-      const out = { mode, leads: [], prets: 0, envoyes: 0, encore_bloques: 0, erreurs: [] };
+      const out = { mode, leads: [], prets: 0, envoyes: 0, non_automatise: 0, encore_bloques: 0, erreurs: [] };
       const travaux = [...ids(mails).map((id) => ({ mail: id })), ...ids(liste).map((id) => ({ lead: id }))];
       if (suivi) {
         suivi.etape = appliquer ? "rattrapage" : "simulation";
@@ -102086,16 +102135,23 @@ var require_rattrapage = __commonJS({
           if (r.id) x.lead = r.id;
           if (r.statut === "pret") out.prets++;
           else if (!["ignore", "alerte", "suivi"].includes(r.statut)) out.encore_bloques++;
+          const aRelire = ["a_verifier", "a_trier"].includes(r.statut);
           if (appliquer && r.statut === "pret" && !envoyer) x.envoi = "non envoy\xE9 (rattrapage sans envoi)";
-          else if (appliquer && r.statut === "pret") {
+          else if (appliquer && (r.statut === "pret" || aRelire && envoyer)) {
             const d = r.dossier;
             d.mail_id = d.mail_id || mailId;
             const m = await require_envoi().messages(d, { id: r.id || w.lead, mail_id: mailId });
             if (m.liste.length) {
               const b = await require_envois().envoyer(m.liste, { simuler: m.simuler });
-              x.envoi = b.resume;
-              out.envoyes++;
+              x.envoi = (aRelire ? "non automatis\xE9 : " : "") + b.resume;
+              if (aRelire) out.non_automatise = (out.non_automatise || 0) + 1;
+              else out.envoyes++;
             } else x.envoi = m.raison;
+          } else if (!appliquer && aRelire && envoyer && r.dossier) {
+            const d = r.dossier;
+            d.mail_id = d.mail_id || mailId;
+            const m = await require_envoi().messages(d, { id: r.id || w.lead, mail_id: mailId }).catch(() => ({ liste: [], raison: "?" }));
+            x.envoi = m.liste.length ? "irait au non automatis\xE9 (" + m.liste.map((y) => y.a).join(", ") + ")" : "ne serait pas envoy\xE9 (" + m.raison + ")";
           } else if (!appliquer) x.envoi = r.statut !== "pret" ? "ne serait pas envoy\xE9" : envoyer ? "serait envoy\xE9" : "pr\xEAt, sans envoi (option)";
           out.leads.push(x);
         } catch (e) {

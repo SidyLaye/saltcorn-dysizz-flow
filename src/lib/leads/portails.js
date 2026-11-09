@@ -46,7 +46,7 @@ const PORTAILS = [
     },
   },
   {
-    id: "green_acres", nom: "Green-Acres", test: (d) => /green-acres\.(com|fr)$/.test(d),
+    id: "green_acres", nom: "Green-Acres", test: (d) => /green-acres\.(com|fr)$|(^|\.)vizzit\.com$/.test(d),   /* « … via Vizzit » <…@email.vizzit.com> : nouvelle adresse d'envoi de Green-Acres (09/11) */
     nature: (o) => (/buyer replied|a répondu|replied/i.test(o) ? "relance" : /demande d.information|nouveau contact|new contact/i.test(o) ? "lead" : "non_lead"),
     regles: ({ L, o, r, texte, conf = {} }) => {
       const ref = texte.match(/\((?:reference|référence)\s*([\w-]+)\)|^(?:reference|référence)\s*:\s*([\w-]+)/im);
@@ -365,7 +365,9 @@ const PORTAILS = [
       const lo = texte.match(/Localisation\s+(.+)/i); if (lo) r.bien.ville = lo[1].trim().slice(0, 60);
     } },
   { id: "huisenaanbod", nom: "HUISenAANBOD.nl", test: (d) => /huisenaanbod\.nl$/.test(d), nature: (o, t) => (/#naamaanvrager|#vraag|#adv_details/i.test(t) ? "non_lead" : "lead") },
-  { id: "kyero", nom: "KYERO", test: (d) => /kyero\.com$/.test(d), nature: () => "lead",
+  { id: "kyero", nom: "KYERO", test: (d) => /kyero\.com$/.test(d),
+    /* factures, prélèvements, rapports, lettres et flux : correspondance du portail, pas des leads (audit du 09/11) */
+    nature: (o) => (/facture|invoice|paiement|payment|pr[ée]lever|rapport hebdomadaire|weekly report|renseignements sur vos services|a note from kyero|flux ubiflow/i.test(o) ? "non_lead" : "lead"),
     regles: ({ o, texte, r }) => {
       const m = texte.match(/\*\*\[([A-Z0-9-]{5,})\]\s*\*\*/) || o.match(/:\s*([A-Z0-9-]{5,})\/?\s*$/); if (m && /\d/.test(m[1])) r.bien.reference = m[1];
       const ri = (o + "\n" + texte).match(/r[ée]f\s*\/\s*id\s*:\s*([\w-]+)\s*\/\s*([\w-]*)/i);
@@ -421,6 +423,35 @@ const PORTAILS = [
         const ty = g(/^bien de type/i); if (ty) r.recherche.type = V.typeBien(ty) || ty;
         const op = g(/^opération/i); if (op) r.projet = /location/i.test(op) ? "location" : "achat"; }
     } },
+  /* Maisons & Appartements (origine Immofacile « maisons_appartements ») : fiche « Libellé : valeur » lue par les règles communes,
+     plus le bloc « Cette demande concerne le bien suivant » (type, commune, pièces, surface) ; relances vendeur = estimation ; lettres d'info = non-lead */
+  {
+    id: "maisons_appartements", nom: "Maisons & Appartements", test: (d) => /(^|\.)maisonsetappartements\.fr$/.test(d),
+    nature: (o) => (/r[ée]pondre [àa] ce vendeur|estimation/i.test(o) ? "estimation"
+      : /demande d.information concernant un bien|rendez-vous demand[ée]|d[ée]sire [êe]tre appel[ée]|appel entrant/i.test(o) ? "lead" : "non_lead"),
+    regles: ({ L, r }) => {
+      const i = L.findIndex((l) => /^cette demande concerne le bien suivant/i.test(l));
+      const bloc = i >= 0 ? L.slice(i + 1, i + 8) : [];
+      const tv = bloc.map((l) => l.match(/^(.{3,40}?)\s+à vendre\s*-\s*(.{2,60})$/i)).find(Boolean);   // « Maison/Villa à vendre - Larressore »
+      if (tv) { if (!r.bien.ville) r.bien.ville = tv[2].trim(); const ft = V.faitsTitre(tv[1]) || {}; if (ft.type && !r.bien.type) r.bien.type = ft.type; }
+      /* commune affichée par le portail, parfois la grande ville voisine (Bayonne pour Sames, Dax pour Goos) : elle confirme, jamais ne contredit */
+      r.bien.lieu_approche = true;
+      const ps = bloc.map((l) => l.match(/^(\d{1,2})\s*pi[èe]ces?\s*-\s*(\d{1,5}(?:[.,]\d+)?)\s*m/i)).find(Boolean);   // « 4 pièces - 86 m² »
+      if (ps) { if (!r.bien.pieces) r.bien.pieces = +ps[1]; if (!r.bien.surface) r.bien.surface = parseFloat(ps[2].replace(",", ".")); }
+      const tel = L.map((l) => l.match(/^voici son t[ée]l[ée]phone\s*:\s*(.+)$/i)).find(Boolean);   // « Appel entrant » : seul le numéro est donné
+      if (tel && !r.contact.telephone) { const t = V.telephone(tel[1]); if (t) r.contact.telephone = t; }
+    },
+  },
+  /* Etreproprio : « Lead Acheteur - 29381 - Maison et moulin… - Êtreproprio.com » ; « Mandat : » est lu par les règles communes.
+     Le titre n'est pas converti en faits (« … grand terrain » donnerait le type terrain pour une maison). */
+  {
+    id: "etreproprio", nom: "Etreproprio", test: (d) => /(^|\.)etreproprio\.com$/.test(d),
+    nature: (o) => (/lead acheteur/i.test(o) ? "lead" : "non_lead"),
+    regles: ({ o, r }) => {
+      const m = o.match(/lead acheteur\s*-\s*([\w-]*\d[\w-]*)\s*-\s*(.+?)(?:\s*-\s*[êe]tre ?proprio.*)?$/i);
+      if (m) { if (!r.bien.reference) r.bien.reference = m[1]; if (!r.bien.titre) r.bien.titre = m[2].trim(); }
+    },
+  },
   { id: "annonces_diverses", nom: "Autres portails", test: (d) => /(stonimmo\.com|lesannoncesducommerce\.fr|annonce-immobilier\.com|lesiteimmo\.com|superimmo(pro)?\.com|contact\.superimmopro\.com|belles-demeures|jetrouvetous\.fr|immobilier\.email)$/.test(d),
     regles: ({ texte, o, r }) => {
       const a = texte.match(/annonce concern[ée]e\s*:?\s*([\d\s.\u00a0\u202f]+€)?\s*([A-Za-zÀ-ÿ' -]+?)\s*\((\d{5})\)/i);
@@ -430,9 +461,11 @@ const PORTAILS = [
     },
     nature: (o) => (/vous avez (un|une) (nouveau |nouvelle )?(contact|demande|message)|nouveau message|nouveau contact|^\W*contact\b|contact .*annonce|internaute|demande d.information|souhaite (plus d.)?information|nouveau contact|a un contact|intéressé par/i.test(o) && !/collaborateurs|profil|page agence|saviez-vous|soyez prêt|tenez vos clients|facture|abonnement|newsletter/i.test(o) ? "lead" : "non_lead") },
   /* Rapport de quarantaine anti-spam : ce n'est pas un lead mais il peut en cacher. */
+  /* Rapport de quarantaine Hornetsecurity (nouvel anti-spam d'un client, octobre 2026) : pas un lead ; son contenu n'est qu'en HTML */
+  { id: "hornetsecurity", nom: "Rapport anti-spam (Hornetsecurity)", test: (d) => /(^|\.)hornetsecurity\.com$/.test(d), nature: () => "alerte_spam" },
   { id: "vade", nom: "Rapport anti-spam", test: (d) => /vadesecure\.com$/.test(d), nature: () => "alerte_spam",
     regles: ({ texte, r }) => { r.bloques = (texte.match(/^.{3,40}\|.+\|\s*\d+\s*k\s*\|.+$/gm) || []).map((l) => l.split("|")[0].trim()).filter((x) => /properstar|green|leboncoin|seloger|figaro|bienici|rightmove|french|giraffe|ac3|immo/i.test(x)); } },
-  { id: "bruit", nom: "Service / newsletter", test: (d) => /(immo-facile\.(fr|com)|orisha\.com|gedeon\.im|canva\.com|firebaseapp\.com|toutvendre\.fr|opinionsystem\.fr|notaires\.fr|cci\.fr|tiktok\.com|news\.leboncoin\.fr|gestiviag\.com|communication-snpi\.com|centre-conventions-collectives\.fr|linkedin\.com|facebookmail\.com|google\.com)$/.test(d), nature: () => "non_lead" },
+  { id: "bruit", nom: "Service / newsletter", test: (d) => /(immo-facile\.(fr|com)|orisha\.com|gedeon\.im|canva\.com|firebaseapp\.com|toutvendre\.fr|opinionsystem\.fr|notaires\.fr|cci\.fr|tiktok\.com|news\.leboncoin\.fr|gestiviag\.com|communication-snpi\.com|centre-conventions-collectives\.fr|linkedin\.com|facebookmail\.com|instagram\.com|google\.com)$/.test(d), nature: () => "non_lead" },
 ];
 
 /* Signature dans le texte : sert quand l'expéditeur d'origine est perdu

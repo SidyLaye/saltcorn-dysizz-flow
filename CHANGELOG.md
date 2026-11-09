@@ -1,5 +1,19 @@
 # Journal des versions
 
+## 2.27.2
+
+### Ajouté
+- Portails reconnus : Maisons & Appartements (demandes, rendez-vous, appels ; relances vendeur = estimation ;
+  lettres d'information = non-lead ; type, commune, pièces et surface lus, commune tenue pour approximative) et
+  Etreproprio (« Lead Acheteur - mandat - titre »). Les rapports de quarantaine Hornetsecurity sont des alertes anti-spam.
+- Green-Acres écrit aussi depuis vizzit.com : même portail, mêmes règles.
+
+### Corrigé
+- Kyero : factures, prélèvements, rapports, lettres et flux ne sont plus lus comme des leads. Instagram rejoint les services.
+- Bien non trouvé : le motif dit si la recherche par critères a tourné (prix lu, aucun bien ne concorde) ou si le prix manquait.
+- Rattrapage : en mode « appliquer », un lead resté « à vérifier » part au non automatisé comme dans le traitement normal
+  (même clé : une adresse déjà servie ne reçoit rien) ; la simulation le dit.
+
 ## 2.27.1
 
 ### Corrigé

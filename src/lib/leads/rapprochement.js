@@ -219,9 +219,10 @@ const rapprocher = async (lead, crm, opts = {}) => {
     if (autreProche) e.ambigu = true;
   }
   const ambigu = etapes.some((x) => x.ambigu);
+  const criteresFaits = etapes.some((x) => x.etape === "criteres");   // le motif dit si la recherche par critères a tourné (audit du 09/11)
   const contredit = etapes.some((x) => (x.candidats || []).some((c) => /contradiction/.test(c.raison) && x.etape !== "criteres"));
   const pistes = etapes.filter((x) => x.etape === "criteres").flatMap((x) => (x.candidats || []).filter((c) => c.ok)).slice(0, 3).map((c) => c.reference);
-  return { bien: null, methode: null, etapes, pistes, motif: ambigu ? "plusieurs biens possibles" + (pistes.length ? " (" + pistes.join(", ") + ")" : "") : contredit ? "bien trouvé mais contredit par le mail" : refs.length ? "référence introuvable" : "pas de référence ni assez de critères (le prix est nécessaire)" };
+  return { bien: null, methode: null, etapes, pistes, motif: ambigu ? "plusieurs biens possibles" + (pistes.length ? " (" + pistes.join(", ") + ")" : "") : contredit ? "bien trouvé mais contredit par le mail" : refs.length ? "référence introuvable" + (criteresFaits ? " ; recherche par critères faite : aucun bien ne concorde" : "") : criteresFaits ? "pas de référence ; recherche par critères faite : aucun bien ne concorde (il faut le prix et un autre fait)" : "pas de référence ni de prix (la recherche par critères exige le prix)" };
 };
 
 module.exports = { rapprocher, comparer, verdict, variantes, noter, forceRef, REGLES };

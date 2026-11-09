@@ -48,7 +48,7 @@ const rattraper = async (liste, mode = "simuler", { mails = [], suivi = null, en
   const { tables } = require("./schema");
   const t = await tables();
   const appliquer = mode === "appliquer";
-  const out = { mode, leads: [], prets: 0, envoyes: 0, encore_bloques: 0, erreurs: [] };
+  const out = { mode, leads: [], prets: 0, envoyes: 0, non_automatise: 0, encore_bloques: 0, erreurs: [] };
   const travaux = [...ids(mails).map((id) => ({ mail: id })), ...ids(liste).map((id) => ({ lead: id }))];
   if (suivi) { suivi.etape = appliquer ? "rattrapage" : "simulation"; suivi.total = travaux.length; }
   for (const w of travaux) {
@@ -63,12 +63,19 @@ const rattraper = async (liste, mode = "simuler", { mails = [], suivi = null, en
       const x = resume(avant, r);
       if (r.id) x.lead = r.id;
       if (r.statut === "pret") out.prets++; else if (!["ignore", "alerte", "suivi"].includes(r.statut)) out.encore_bloques++;
+      /* « à vérifier » ou « à trier » : comme le traitement normal, transmis tel quel au non automatisé (sauf ce qui n'est pas un lead) ;
+         même clé que l'envoi normal : une adresse déjà servie ne reçoit rien de plus (rattrapage après une panne de l'IA) */
+      const aRelire = ["a_verifier", "a_trier"].includes(r.statut);
       if (appliquer && r.statut === "pret" && !envoyer) x.envoi = "non envoyé (rattrapage sans envoi)";
-      else if (appliquer && r.statut === "pret") {
+      else if (appliquer && (r.statut === "pret" || (aRelire && envoyer))) {
         const d = r.dossier; d.mail_id = d.mail_id || mailId;
         const m = await require("./envoi").messages(d, { id: r.id || w.lead, mail_id: mailId });
-        if (m.liste.length) { const b = await require("../../envois").envoyer(m.liste, { simuler: m.simuler }); x.envoi = b.resume; out.envoyes++; }
+        if (m.liste.length) { const b = await require("../../envois").envoyer(m.liste, { simuler: m.simuler }); x.envoi = (aRelire ? "non automatisé : " : "") + b.resume; if (aRelire) out.non_automatise = (out.non_automatise || 0) + 1; else out.envoyes++; }
         else x.envoi = m.raison;
+      } else if (!appliquer && aRelire && envoyer && r.dossier) {
+        const d = r.dossier; d.mail_id = d.mail_id || mailId;
+        const m = await require("./envoi").messages(d, { id: r.id || w.lead, mail_id: mailId }).catch(() => ({ liste: [], raison: "?" }));
+        x.envoi = m.liste.length ? "irait au non automatisé (" + m.liste.map((y) => y.a).join(", ") + ")" : "ne serait pas envoyé (" + m.raison + ")";
       } else if (!appliquer) x.envoi = r.statut !== "pret" ? "ne serait pas envoyé" : envoyer ? "serait envoyé" : "prêt, sans envoi (option)";
       out.leads.push(x);
     } catch (e) { out.erreurs.push({ ...w, erreur: String(e.message || e).slice(0, 220) }); }
