@@ -51,12 +51,16 @@ const ecrireChamps = async (t, leadId, d) => {
 
 const enregistrer = async (d, mail, dossierId = null) => {
   const t = await tables();
+  /* empreinte de sens de la cascade : rangée à part (ld_empreintes), pas dans le dossier */
+  const lec = d.extraction && d.extraction.lecture, empreinte = lec && lec.empreinte;
+  if (empreinte) delete lec.empreinte;
   const ligne = { ...versLigne(d, mail), dossier_id: dossierId };
   const ex = mail && mail.id ? await t.leads.getRow({ mail_id: mail.id }) : null;
   let id;
   if (ex) { await t.leads.updateRow({ ...ligne, decision: ex.decision || "", ancien_statut: ex.ancien_statut, ancien_bien: ex.ancien_bien, ancien_destinataires: ex.ancien_destinataires }, ex.id); id = ex.id; }
   else id = await t.leads.insertRow(ligne);
   await ecrireChamps(t, id, d).catch(() => {});
+  if (empreinte && t.empreintes) await (async () => { await t.empreintes.deleteRows({ lead: id }); await t.empreintes.insertRow({ lead: id, vecteur: empreinte, cree_le: new Date() }); })().catch(() => {});
   return id;
 };
 

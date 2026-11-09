@@ -88,6 +88,29 @@ const noter = async (a) => {
   if (!a.ok) require("./alerte_ia").signaler("panne").catch(() => {});
 };
 
+/* Cascade avant l'IA (lib/leads/cascade.js) : empreinte de sens par le plugin large-language-model (modèle d'empreintes du client),
+   comparée aux mails déjà lus par l'IA (références relues toutes les 10 minutes). 10 s au plus ; sans plugin ou en erreur : null, l'IA lit. */
+const REFS = globalThis[Symbol.for("dysizz-flow.leads.cascade")] || (globalThis[Symbol.for("dysizz-flow.leads.cascade")] = new Map());
+const references = async () => {
+  const k = cleCache(), c = REFS.get(k);
+  if (c && Date.now() - c.t < 600e3) return c.refs;
+  const C = require("../cascade");
+  const rows = (await db().query(`select e.vecteur, l.nature, l.statut from "${tenant()}".${nom("empreintes")} e join "${tenant()}".${nom("leads")} l on l.id = e.lead
+    where l.lu_par like '%ia%' or l.nature in ('lead', 'relance', 'recherche', 'estimation', 'direct', 'reponse_campagne')`)).rows;
+  const refs = rows.map((x) => ({ v: C.depuisTexte(x.vecteur), etiquette: C.etiquette(x.nature, x.statut) })).filter((x) => x.v && x.etiquette);
+  REFS.set(k, { t: Date.now(), refs });
+  return refs;
+};
+const cascade = async (m, texte) => {
+  const C = require("../cascade");
+  const f = require("@saltcorn/data/db/state").getState().functions || {};
+  if (!f.llm_embedding) return null;
+  const brut = await Promise.race([f.llm_embedding.run(C.texteEmpreinte(m, texte), {}), new Promise((_, ko) => setTimeout(() => ko(new Error("empreinte : délai dépassé")), 10000))]);
+  const v = C.reduire(Array.isArray(brut) ? brut : (brut && brut.embedding) || null);
+  if (!v) return null;
+  return { ...C.decider(v, await references()), vecteur: C.versTexte(v) };
+};
+
 /* Options de lecture passées au moteur pour chaque mail. */
 const optionsLecture = async (api) => {
   await tables();
@@ -104,6 +127,7 @@ const optionsLecture = async (api) => {
       return ok;
     };
     o.noter = noter;
+    o.cascade = cascade;
   }
   return o;
 };

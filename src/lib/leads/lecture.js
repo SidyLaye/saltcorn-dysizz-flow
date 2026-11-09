@@ -9,6 +9,7 @@
      gabarits:  stockage { lister, creer, maj } (facultatif),
      budget:    async () => true/false (plafond d'appels du client),
      noter:     async (appel) => void (journal des appels à l'IA),
+     cascade:   async (mail, texte) => { eviter, voisins, ressemblance, vecteur } (facultatif, lib/leads/cascade.js),
    } */
 "use strict";
 const { extraire } = require("./extraire");
@@ -93,6 +94,17 @@ const lire = async (mail, conf = {}, opts = {}) => {
 
   /* 3. IA */
   if (!opts.ia) return r;
+  /* cascade : un mail inconnu très proche de publicités déjà lues, et d'aucun lead, n'a pas besoin de l'IA ; au moindre doute ou en cas
+     d'erreur, l'IA le lit. Son empreinte est gardée pour comparer les mails suivants. */
+  if (opts.cascade && ["inconnu", "reponse_campagne"].includes(r.nature)) {
+    const c = await opts.cascade(m, texte).catch(() => null);
+    if (c && c.vecteur) r.lecture.empreinte = c.vecteur;
+    if (c && c.eviter) {
+      r.nature = "notification"; r.lu_par.push("cascade"); r.lecture.cascade = { voisins: c.voisins };
+      r.lecture.etapes.push(`ressemble à ${c.voisins.length} publicités déjà lues (${c.ressemblance} % ou plus) et à aucun lead : pas d'appel à l'IA`);
+      return r;
+    }
+  }
   if (opts.budget && !(await opts.budget().catch(() => false))) { r.lecture.etapes.push("IA non appelée : plafond du jour atteint"); r.lecture.ia = { statut: "plafond" }; return r; }
   let lu;
   try { lu = await opts.ia.lire(m, texte); }

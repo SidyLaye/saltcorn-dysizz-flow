@@ -1,5 +1,14 @@
 # Journal des versions
 
+## 2.27.4
+
+### Ajouté
+- Cascade avant l'IA : l'empreinte de sens d'un mail inconnu (text-embedding-3-small, 256 nombres, par le plugin
+  large-language-model) est comparée à celles des mails déjà lus par l'IA (table `ld_empreintes`). Ses 3 plus proches
+  voisins sont des publicités à 90 % de ressemblance ou plus, et aucun lead ne lui ressemble à plus de 70 % : classé
+  publicité sans appel à l'IA. Sinon, ou en cas d'erreur, l'IA le lit. Rejeu sur 40 jours (1 753 mails lus par l'IA,
+  123 vrais leads, chaque mail comparé aux seuls mails d'avant) : 41 % d'appels évités, aucun lead perdu.
+
 ## 2.27.3
 
 ### Ajouté

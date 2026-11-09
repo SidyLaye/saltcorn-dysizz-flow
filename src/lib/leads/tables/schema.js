@@ -63,6 +63,9 @@ const T = {
     ["quand", "Date"], ["ok", "Bool"], ["ms", "Integer"], ["nature", "String"], ["source", "String"], ["erreur", "String"]] },
   demandes: { name: "ld_demandes", desc: "Demandes d'évolution et incidents", fields: [
     ["titre", "String", { required: true }], ["description", "String"], ["urgence", "String"], ["statut", "String"], ["demandeur", "String"], ["cree_le", "Date"], ["maj_le", "Date"]] },
+  /* empreinte de sens (256 nombres, base64) de chaque mail arrivé jusqu'à l'IA : la cascade le compare aux suivants (lib/leads/cascade.js) */
+  empreintes: { name: "ld_empreintes", desc: "Empreintes de sens des mails lus par l'IA (cascade)", index: ["lead"], fields: [
+    ["lead", "Integer", { required: true }], ["vecteur", "String"], ["cree_le", "Date"]] },
   champs: { name: "ld_champs", desc: "Chaque valeur lue dans un mail et d'où elle vient", index: ["lead"], fields: [
     ["lead", "Integer", { required: true }], ["champ", "String"], ["valeur", "String"], ["provenance", "String"]] },
   messages: { name: "ld_demande_messages", desc: "Messages des demandes", fields: [["demande", "Integer", { required: true }], ["auteur", "String"], ["admin", "Bool"], ["texte", "String"], ["quand", "Date"]] },

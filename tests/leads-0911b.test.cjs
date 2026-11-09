@@ -93,5 +93,27 @@ const lis = (expediteur, objet, texte) => extraire({ expediteur, objet, texte, d
   assert.equal(P.ecart(h, h), 0); assert.equal(P.ecart(h, { d: Array(64).fill(0), p: Array(64).fill(1) }), 128);
   /* sans sharp : aucune comparaison, aucun appel au réseau */
   assert.equal((await P.distances(["https://x.fr/a.jpg"], [vrai], { photosDe: async () => ["https://y.fr/b.jpg"], empreinte: async () => null, charger: async () => Buffer.from("x") })).size, 0);
-  console.log("corrections du 09/11 (suite) OK : Properstar, objet des mails directs, doublons, modèle de lecture, alerte de panne, recherche par photo");
+  /* cascade avant l'IA : 3 voisins publicités à 90 % ou plus et aucun lead à plus de 70 % ; sinon, ou en erreur, l'IA lit */
+  const CA = require("../src/lib/leads/cascade");
+  const vec = (...x) => CA.reduire([...x, ...Array(256).fill(0)].slice(0, 256));
+  const base = vec(1, 0, 0), proche = vec(1, 0.1, 0), loin = vec(0, 1, 0);
+  const non = (v) => ({ v, etiquette: "non" }), refLead = (v) => ({ v, etiquette: "lead" });
+  assert.equal(CA.decider(base, [non(proche), non(proche), non(proche)]).eviter, true);
+  assert.equal(CA.decider(base, [non(proche), non(proche)]).eviter, false, "moins de 3 références : l'IA lit");
+  assert.equal(CA.decider(base, [non(proche), non(proche), non(loin)]).eviter, false, "un des 3 voisins trop loin");
+  assert.equal(CA.decider(base, [non(proche), non(proche), non(proche), refLead(vec(1, 0.5, 0.5))]).eviter, false, "un lead ressemblant à plus de 70 % : l'IA lit");
+  assert.equal(CA.decider(base, [non(proche), non(proche), refLead(proche)]).eviter, false, "un lead parmi les 3 plus proches");
+  assert.deepEqual([...CA.depuisTexte(CA.versTexte(base))].slice(0, 3), [...base].slice(0, 3));
+  assert.equal(CA.etiquette("notification", "ignore"), "non"); assert.equal(CA.etiquette("inconnu", "a_trier"), null); assert.equal(CA.etiquette("autre", "pret"), "lead");
+  const { lire: lireC } = require("../src/lib/leads/lecture");
+  const pubC = { expediteur: "Promo <news@fournisseur-exemple.fr>", objet: "Offre du mois", texte: "Découvrez nos nouveautés.", destinataire: "contact@agence-exemple.fr" };
+  let appelsC = 0;
+  const iaC = { lire: async () => { appelsC++; return { sortie: { nature: "lead", confiance_nature: 0.9 }, rejets: [], ms: 1 }; } };
+  const rc = await lireC(pubC, conf, { ia: iaC, cascade: async () => ({ eviter: true, ressemblance: 93, voisins: [[0.95, "non"], [0.94, "non"], [0.93, "non"]], vecteur: "x" }) });
+  assert.equal(rc.nature, "notification"); assert.equal(appelsC, 0); assert.ok(rc.lu_par.includes("cascade")); assert.equal(rc.lecture.empreinte, "x");
+  const rd = await lireC(pubC, conf, { ia: iaC, cascade: async () => ({ eviter: false, voisins: [], vecteur: "y" }) });
+  assert.equal(appelsC, 1, "doute : l'IA lit"); assert.equal(rd.lecture.empreinte, "y", "empreinte gardée pour les suivants");
+  await lireC(pubC, conf, { ia: iaC, cascade: async () => { throw new Error("réseau"); } });
+  assert.equal(appelsC, 2, "erreur d'empreinte : l'IA lit");
+  console.log("corrections du 09/11 (suite) OK : Properstar, objet des mails directs, doublons, modèle de lecture, alerte de panne, recherche par photo, cascade avant l'IA");
 })().catch((e) => { console.error(e); process.exitCode = 1; });

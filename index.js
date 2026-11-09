@@ -1,4 +1,4 @@
-/* dysizz-flow 2.27.3 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.27.4 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.27.3" : "dev";
+    var VERSION2 = true ? "2.27.4" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -94990,6 +94990,17 @@ var require_lecture = __commonJS({
         }
       }
       if (!opts.ia) return r;
+      if (opts.cascade && ["inconnu", "reponse_campagne"].includes(r.nature)) {
+        const c = await opts.cascade(m, texte).catch(() => null);
+        if (c && c.vecteur) r.lecture.empreinte = c.vecteur;
+        if (c && c.eviter) {
+          r.nature = "notification";
+          r.lu_par.push("cascade");
+          r.lecture.cascade = { voisins: c.voisins };
+          r.lecture.etapes.push(`ressemble \xE0 ${c.voisins.length} publicit\xE9s d\xE9j\xE0 lues (${c.ressemblance} % ou plus) et \xE0 aucun lead : pas d'appel \xE0 l'IA`);
+          return r;
+        }
+      }
       if (opts.budget && !await opts.budget().catch(() => false)) {
         r.lecture.etapes.push("IA non appel\xE9e : plafond du jour atteint");
         r.lecture.ia = { statut: "plafond" };
@@ -97771,6 +97782,12 @@ var require_schema = __commonJS({
         ["cree_le", "Date"],
         ["maj_le", "Date"]
       ] },
+      /* empreinte de sens (256 nombres, base64) de chaque mail arrivé jusqu'à l'IA : la cascade le compare aux suivants (lib/leads/cascade.js) */
+      empreintes: { name: "ld_empreintes", desc: "Empreintes de sens des mails lus par l'IA (cascade)", index: ["lead"], fields: [
+        ["lead", "Integer", { required: true }],
+        ["vecteur", "String"],
+        ["cree_le", "Date"]
+      ] },
       champs: { name: "ld_champs", desc: "Chaque valeur lue dans un mail et d'o\xF9 elle vient", index: ["lead"], fields: [
         ["lead", "Integer", { required: true }],
         ["champ", "String"],
@@ -99983,6 +100000,51 @@ var require_alerte_ia = __commonJS({
   }
 });
 
+// src/lib/leads/cascade.js
+var require_cascade = __commonJS({
+  "src/lib/leads/cascade.js"(exports2, module2) {
+    "use strict";
+    var DIMS = 256;
+    var K = 3;
+    var SEUIL = 0.9;
+    var GARDE = 0.7;
+    var LEADS = ["lead", "relance", "recherche", "estimation", "direct", "reponse_campagne"];
+    var NON = ["notification", "autre", "non_lead", "test", "masse"];
+    var texteEmpreinte = (m, texte) => ("Objet : " + String(m && m.objet || "") + "\n" + String(texte || "")).slice(0, 2e3);
+    var reduire = (v) => {
+      const r = new Float32Array(DIMS);
+      let n = 0;
+      for (let i = 0; i < DIMS; i++) {
+        r[i] = +(v && v[i] || 0);
+        n += r[i] * r[i];
+      }
+      n = Math.sqrt(n);
+      if (!n) return null;
+      for (let i = 0; i < DIMS; i++) r[i] /= n;
+      return r;
+    };
+    var versTexte = (f) => Buffer.from(f.buffer, f.byteOffset, f.byteLength).toString("base64");
+    var depuisTexte = (s) => {
+      const b = Buffer.from(String(s || ""), "base64");
+      return b.length === DIMS * 4 ? new Float32Array(b.buffer.slice(b.byteOffset, b.byteOffset + b.length)) : null;
+    };
+    var etiquette = (nature, statut) => LEADS.includes(nature) || ["pret", "a_verifier"].includes(statut) ? "lead" : NON.includes(nature) ? "non" : null;
+    var produit = (a, b) => {
+      let s = 0;
+      for (let i = 0; i < DIMS; i++) s += a[i] * b[i];
+      return s;
+    };
+    var decider = (v, refs, { k = K, seuil = SEUIL, garde = GARDE } = {}) => {
+      if (!v || !refs || refs.length < k) return { eviter: false, voisins: [] };
+      const s = refs.map((r) => [produit(v, r.v), r.etiquette]).sort((a, b) => b[0] - a[0]).slice(0, 10);
+      const top = s.slice(0, k);
+      const eviter = top.every(([x, e]) => e === "non" && x >= seuil) && !s.some(([x, e]) => e === "lead" && x >= garde);
+      return { eviter, ressemblance: Math.floor(top[k - 1][0] * 100), voisins: top.map(([x, e]) => [Math.round(x * 1e3) / 1e3, e]) };
+    };
+    module2.exports = { texteEmpreinte, reduire, versTexte, depuisTexte, etiquette, decider, DIMS, K, SEUIL, GARDE };
+  }
+});
+
 // src/lib/leads/tables/gabarits.js
 var require_gabarits = __commonJS({
   "src/lib/leads/tables/gabarits.js"(exports2, module2) {
@@ -100092,6 +100154,26 @@ var require_gabarits = __commonJS({
       if (!a.ok) require_alerte_ia().signaler("panne").catch(() => {
       });
     };
+    var REFS = globalThis[Symbol.for("dysizz-flow.leads.cascade")] || (globalThis[Symbol.for("dysizz-flow.leads.cascade")] = /* @__PURE__ */ new Map());
+    var references = async () => {
+      const k = cleCache(), c = REFS.get(k);
+      if (c && Date.now() - c.t < 6e5) return c.refs;
+      const C2 = require_cascade();
+      const rows = (await db().query(`select e.vecteur, l.nature, l.statut from "${tenant()}".${nom("empreintes")} e join "${tenant()}".${nom("leads")} l on l.id = e.lead
+    where l.lu_par like '%ia%' or l.nature in ('lead', 'relance', 'recherche', 'estimation', 'direct', 'reponse_campagne')`)).rows;
+      const refs = rows.map((x) => ({ v: C2.depuisTexte(x.vecteur), etiquette: C2.etiquette(x.nature, x.statut) })).filter((x) => x.v && x.etiquette);
+      REFS.set(k, { t: Date.now(), refs });
+      return refs;
+    };
+    var cascade = async (m, texte) => {
+      const C2 = require_cascade();
+      const f = require("@saltcorn/data/db/state").getState().functions || {};
+      if (!f.llm_embedding) return null;
+      const brut = await Promise.race([f.llm_embedding.run(C2.texteEmpreinte(m, texte), {}), new Promise((_, ko) => setTimeout(() => ko(new Error("empreinte : d\xE9lai d\xE9pass\xE9")), 1e4))]);
+      const v = C2.reduire(Array.isArray(brut) ? brut : brut && brut.embedding || null);
+      if (!v) return null;
+      return { ...C2.decider(v, await references()), vecteur: C2.versTexte(v) };
+    };
     var optionsLecture = async (api) => {
       await tables();
       const R = await reglages();
@@ -100108,6 +100190,7 @@ var require_gabarits = __commonJS({
           return ok;
         };
         o.noter = noter;
+        o.cascade = cascade;
       }
       return o;
     };
@@ -100233,6 +100316,8 @@ var require_dossier = __commonJS({
     };
     var enregistrer = async (d, mail, dossierId = null) => {
       const t = await tables();
+      const lec = d.extraction && d.extraction.lecture, empreinte = lec && lec.empreinte;
+      if (empreinte) delete lec.empreinte;
       const ligne = { ...versLigne(d, mail), dossier_id: dossierId };
       const ex = mail && mail.id ? await t.leads.getRow({ mail_id: mail.id }) : null;
       let id;
@@ -100241,6 +100326,11 @@ var require_dossier = __commonJS({
         id = ex.id;
       } else id = await t.leads.insertRow(ligne);
       await ecrireChamps(t, id, d).catch(() => {
+      });
+      if (empreinte && t.empreintes) await (async () => {
+        await t.empreintes.deleteRows({ lead: id });
+        await t.empreintes.insertRow({ lead: id, vecteur: empreinte, cree_le: /* @__PURE__ */ new Date() });
+      })().catch(() => {
       });
       return id;
     };
