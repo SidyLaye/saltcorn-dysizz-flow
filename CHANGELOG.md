@@ -8,8 +8,6 @@
   une alerte au plus toutes les 6 heures pour tous les processus. Sans réglage, rien ne part.
 - Réglage `ia_modele` pris en compte avec le fournisseur « saltcorn » : le modèle choisi lit les mails, le reste du
   plugin garde le sien.
-- Mémoire des expéditeurs : une adresse que l'IA a déjà classée publicité ou autre au moins deux fois, sans jamais un
-  lead, est classée sans nouvel appel (depuis le 01/10 : 963 lectures sur 1 745 évitées, aucun vrai lead parmi elles).
 - Recherche par photo : quand la recherche par critères hésite, la photo de l'annonce reçue dans le mail est comparée à
   celles des biens candidats (empreintes dHash et pHash, sharp de Saltcorn) ; retenu seulement si la photo est la même
   et qu'aucun autre candidat n'a une photo proche. Adresses d'images vérifiées (https, port 443, noms publics, aucune

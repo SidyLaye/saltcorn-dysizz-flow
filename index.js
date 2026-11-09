@@ -94989,16 +94989,6 @@ var require_lecture = __commonJS({
           r.lecture.etapes.push("gabarit incomplet : " + manquantsImportants(r).join(", "));
         }
       }
-      if (opts.historique && ["inconnu", "reponse_campagne"].includes(r.nature)) {
-        const adr = (String(m.expediteur || "").match(/[\w.%+-]+@[\w.-]+\.[a-z]{2,}/i) || [])[0];
-        const h = adr ? await opts.historique(adr.toLowerCase()).catch(() => null) : null;
-        if (h && h.non_lead >= 2 && !h.lead) {
-          r.nature = "notification";
-          r.lu_par.push("historique");
-          r.lecture.etapes.push(`exp\xE9diteur d\xE9j\xE0 class\xE9 ${h.non_lead} fois sans lead : pas d'appel \xE0 l'IA`);
-          return r;
-        }
-      }
       if (!opts.ia) return r;
       if (opts.budget && !await opts.budget().catch(() => false)) {
         r.lecture.etapes.push("IA non appel\xE9e : plafond du jour atteint");
@@ -100118,9 +100108,6 @@ var require_gabarits = __commonJS({
           return ok;
         };
         o.noter = noter;
-        o.historique = async (adr) => (await db().query(`select count(*) filter (where lu_par like '%ia%' and nature in ('notification', 'autre')) non_lead,
-      count(*) filter (where nature in ('lead', 'relance', 'recherche', 'estimation', 'direct', 'reponse_campagne')) lead
-      from "${tenant()}".${nom("leads")} where position($1 in lower(coalesce(expediteur, ''))) > 0`, [adr])).rows.map((x) => ({ non_lead: +x.non_lead, lead: +x.lead }))[0];
       }
       return o;
     };

@@ -93,17 +93,5 @@ const lis = (expediteur, objet, texte) => extraire({ expediteur, objet, texte, d
   assert.equal(P.ecart(h, h), 0); assert.equal(P.ecart(h, { d: Array(64).fill(0), p: Array(64).fill(1) }), 128);
   /* sans sharp : aucune comparaison, aucun appel au réseau */
   assert.equal((await P.distances(["https://x.fr/a.jpg"], [vrai], { photosDe: async () => ["https://y.fr/b.jpg"], empreinte: async () => null, charger: async () => Buffer.from("x") })).size, 0);
-  /* mémoire des expéditeurs : une adresse déjà classée publicité deux fois par l'IA, sans aucun lead, ne repasse plus par l'IA */
-  const { lire: lireMail } = require("../src/lib/leads/lecture");
-  const pubMail = { expediteur: "Promo <news@fournisseur-exemple.fr>", objet: "Offre du mois", texte: "Découvrez nos nouveautés.", destinataire: "contact@agence-exemple.fr" };
-  let appels = 0;
-  const iaFausse = { lire: async () => { appels++; return { sortie: { nature: "notification", confiance_nature: 0.9 }, rejets: [], ms: 1 }; } };
-  const histo = (h) => ({ ia: iaFausse, historique: async (adr) => { assert.equal(adr, "news@fournisseur-exemple.fr"); return h; } });
-  const rh = await lireMail(pubMail, conf, histo({ non_lead: 2, lead: 0 }));
-  assert.equal(rh.nature, "notification"); assert.equal(appels, 0, "pas d'appel à l'IA"); assert.ok(rh.lu_par.includes("historique"));
-  await lireMail(pubMail, conf, histo({ non_lead: 5, lead: 1 })); assert.equal(appels, 1, "un lead déjà reçu de cette adresse : l'IA lit");
-  await lireMail({ ...pubMail, texte: "autre texte" }, conf, histo({ non_lead: 1, lead: 0 })); assert.equal(appels, 2, "une seule fois : l'IA lit");
-  /* un portail connu n'est jamais concerné (les règles le lisent) */
-  await lireMail({ ...pubMail, expediteur: "Leboncoin <x@messagerie.leboncoin.fr>", objet: "Nouveau message pour « Maison » sur leboncoin", texte: "Bonjour" }, conf, histo({ non_lead: 9, lead: 0 }));
-  console.log("corrections du 09/11 (suite) OK : Properstar, objet des mails directs, doublons, modèle de lecture, alerte de panne, recherche par photo, mémoire des expéditeurs");
+  console.log("corrections du 09/11 (suite) OK : Properstar, objet des mails directs, doublons, modèle de lecture, alerte de panne, recherche par photo");
 })().catch((e) => { console.error(e); process.exitCode = 1; });

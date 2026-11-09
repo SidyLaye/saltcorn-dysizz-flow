@@ -9,7 +9,6 @@
      gabarits:  stockage { lister, creer, maj } (facultatif),
      budget:    async () => true/false (plafond d'appels du client),
      noter:     async (appel) => void (journal des appels à l'IA),
-     historique: async (adresse) => { non_lead, lead } (facultatif : mails déjà reçus de cette adresse exacte),
    } */
 "use strict";
 const { extraire } = require("./extraire");
@@ -92,18 +91,7 @@ const lire = async (mail, conf = {}, opts = {}) => {
     }
   }
 
-  /* 3. IA — sauf pour une adresse que l'IA a déjà classée publicité ou autre au moins deux fois, sans jamais un lead : 91 % de ce que lisait
-     l'IA étaient des publicités, dont plus de la moitié d'expéditeurs déjà classés (09/11 : 963 lectures sur 1 745 depuis le 01/10, aucun
-     vrai lead parmi elles). Seulement pour un mail que les règles n'ont pas su classer. */
-  if (opts.historique && ["inconnu", "reponse_campagne"].includes(r.nature)) {
-    const adr = (String(m.expediteur || "").match(/[\w.%+-]+@[\w.-]+\.[a-z]{2,}/i) || [])[0];
-    const h = adr ? await opts.historique(adr.toLowerCase()).catch(() => null) : null;
-    if (h && h.non_lead >= 2 && !h.lead) {
-      r.nature = "notification"; r.lu_par.push("historique");
-      r.lecture.etapes.push(`expéditeur déjà classé ${h.non_lead} fois sans lead : pas d'appel à l'IA`);
-      return r;
-    }
-  }
+  /* 3. IA */
   if (!opts.ia) return r;
   if (opts.budget && !(await opts.budget().catch(() => false))) { r.lecture.etapes.push("IA non appelée : plafond du jour atteint"); r.lecture.ia = { statut: "plafond" }; return r; }
   let lu;
