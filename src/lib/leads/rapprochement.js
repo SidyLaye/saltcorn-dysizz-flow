@@ -157,7 +157,19 @@ const rapprocher = async (lead, crm, opts = {}) => {
     }
     const ok = res.candidats.filter((c) => c.ok);
     if (ok.length === 1) { const x = list.find((y) => y.id === ok[0].id); if (ok[0].alerte) alertes.push(ok[0].alerte + " différent entre le mail et le CRM"); return x; }
-    if (ok.length > 1) res.ambigu = true;
+    if (ok.length > 1) {
+      /* vrais doublons du CRM (annonce recréée : même référence, même prix, mêmes surface, pièces et lieu) : le plus
+         récent est retenu (Sidy, 09/11) ; deux biens qui diffèrent en quoi que ce soit restent « plusieurs biens possibles » */
+      const c = ok.map((o) => list.find((y) => y.id === o.id)), r0 = c[0], refDe = (y) => String(y.reference || "").trim().toLowerCase();
+      const pareil = (y) => { const k = comparer({ prix: r0.prix, surface: r0.surface, pieces: r0.pieces, ville: r0.ville, code_postal: r0.code_postal }, y, regles); return !k.conflits.length && !k.legers.filter((l) => l !== "type").length && k.accords.includes("prix"); };
+      if (refDe(r0) && c.every((y) => refDe(y) === refDe(r0) && pareil(y))) {
+        const x = c.reduce((a, y) => (+y.id > +a.id ? y : a));
+        alertes.push(`doublon dans le CRM (réf. ${x.reference} : ${c.map((y) => y.id + (y.statut ? " " + y.statut : "")).join(", ")}) : le plus récent est retenu`);
+        res.doublon = true;
+        return x;
+      }
+      res.ambigu = true;
+    }
     return null;
   };
 

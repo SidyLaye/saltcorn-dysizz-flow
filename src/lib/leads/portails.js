@@ -225,7 +225,15 @@ const PORTAILS = [
       const i = L.findIndex((l) => /^=\s*(nouveau message|new message)/i.test(l));
       if (i >= 0) r.message = bloc(L, i + 1);
       const j = L.findIndex((l) => /annonce désirée|desired listing/i.test(l));
-      if (j >= 0) { const fin = L.slice(j + 1).findIndex((l) => /^==/.test(l)); const s = L.slice(j + 1, fin > 0 ? j + 1 + fin : j + 8).join(" "); r.bien.titre = L[j + 1]; const pt = L.slice(j + 1, j + 5).find((l) => /·/.test(l)); r.bien.type = V.typeBien(pt ? pt.split("·")[0] : L[j + 1]); r.bien.surface = V.surface(s); r.bien.pieces = V.pieces(s); r.bien.chambres = V.chambres(s); r.bien.prix = V.prix(s); }
+      if (j >= 0) {
+        const fin = L.slice(j + 1).findIndex((l) => /^==/.test(l)); const s = L.slice(j + 1, fin > 0 ? j + 1 + fin : j + 8).join(" "); r.bien.titre = L[j + 1];
+        const k = L.slice(j + 1, j + 6).findIndex((l) => /·/.test(l)), pt = k >= 0 ? L[j + 1 + k] : null;
+        r.bien.type = V.typeBien(pt ? pt.split("·")[0] : L[j + 1]); r.bien.surface = V.surface(s); r.bien.pieces = V.pieces(s); r.bien.chambres = V.chambres(s); r.bien.prix = V.prix(s);
+        /* la commune est la ligne juste au-dessus de « Maison · 6 Pièces… » (« Prendeignes ») ; une fin de titre coupé peut
+           y ressembler : elle ne fait que confirmer un bien, jamais le rejeter (audit du 09/11) */
+        const c = k > 0 ? L[j + k] : null;
+        if (!r.bien.ville && c && /^\p{Lu}[\p{L}' -]{1,40}$/u.test(c)) { r.bien.ville = c; r.bien.lieu_approche = true; }
+      }
     },
   },
   {

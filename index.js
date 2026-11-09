@@ -1,4 +1,4 @@
-/* dysizz-flow 2.27.2 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.27.3 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.27.2" : "dev";
+    var VERSION2 = true ? "2.27.3" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -92883,12 +92883,17 @@ var require_portails = __commonJS({
             const fin = L.slice(j + 1).findIndex((l) => /^==/.test(l));
             const s = L.slice(j + 1, fin > 0 ? j + 1 + fin : j + 8).join(" ");
             r.bien.titre = L[j + 1];
-            const pt = L.slice(j + 1, j + 5).find((l) => /·/.test(l));
+            const k = L.slice(j + 1, j + 6).findIndex((l) => /·/.test(l)), pt = k >= 0 ? L[j + 1 + k] : null;
             r.bien.type = V.typeBien(pt ? pt.split("\xB7")[0] : L[j + 1]);
             r.bien.surface = V.surface(s);
             r.bien.pieces = V.pieces(s);
             r.bien.chambres = V.chambres(s);
             r.bien.prix = V.prix(s);
+            const c = k > 0 ? L[j + k] : null;
+            if (!r.bien.ville && c && new RegExp("^\\p{Lu}[\\p{L}' -]{1,40}$", "u").test(c)) {
+              r.bien.ville = c;
+              r.bien.lieu_approche = true;
+            }
           }
         }
       },
@@ -93774,6 +93779,11 @@ var require_extraire = __commonJS({
           if (n2 && !/^(19|20)\d\d$/.test(n2[1])) poser(r, "bien.reference", n2[1], "objet:nombre");
         }
         for (const [k, v] of Object.entries(V.faitsTitre(objet))) poser(r, "bien." + k, v, "objet");
+        const vo = objet.match(new RegExp("(?:^|\\s)\xE0\\s+(\\p{Lu}[\\p{L}'\u2019-]+(?:\\s(?:sur|sous|en|l\xE8s|les|la|le|de|du|des|d'\\p{L}+|\\p{Lu}[\\p{L}'\u2019-]*)){0,3})\\s*(?:[,(\u2013]|\\s-\\s|$)", "u"));
+        if (vo && !r.bien.ville && !/s[ée]lection|habitat|agence|immo/i.test(vo[1])) {
+          poser(r, "bien.ville", vo[1], "objet");
+          r.bien.lieu_approche = true;
+        }
         poser(r, "contact.email", V.email(mail.expediteur), "expediteur");
         const n = String(mail.expediteur || "").match(/^\s*"?([^"<@]+?)"?\s*</);
         const societe = n && /\b(sarl|sas|sasu|eurl|sci|sa|ste|soci[ée]t[ée]|services?|r[ée]novation|construction|b[aâ]timent|immobili[eè]re?|agence|entreprise|group[e]?|ltd|limited|gmbh|bv|srl|inc|llc|consulting|conseil)\b/i.test(n[1]);
@@ -94093,7 +94103,20 @@ var require_rapprochement = __commonJS({
           if (ok[0].alerte) alertes.push(ok[0].alerte + " diff\xE9rent entre le mail et le CRM");
           return x;
         }
-        if (ok.length > 1) res.ambigu = true;
+        if (ok.length > 1) {
+          const c = ok.map((o) => list.find((y) => y.id === o.id)), r0 = c[0], refDe = (y) => String(y.reference || "").trim().toLowerCase();
+          const pareil = (y) => {
+            const k = comparer({ prix: r0.prix, surface: r0.surface, pieces: r0.pieces, ville: r0.ville, code_postal: r0.code_postal }, y, regles);
+            return !k.conflits.length && !k.legers.filter((l) => l !== "type").length && k.accords.includes("prix");
+          };
+          if (refDe(r0) && c.every((y) => refDe(y) === refDe(r0) && pareil(y))) {
+            const x = c.reduce((a, y) => +y.id > +a.id ? y : a);
+            alertes.push(`doublon dans le CRM (r\xE9f. ${x.reference} : ${c.map((y) => y.id + (y.statut ? " " + y.statut : "")).join(", ")}) : le plus r\xE9cent est retenu`);
+            res.doublon = true;
+            return x;
+          }
+          res.ambigu = true;
+        }
         return null;
       };
       const toutesRefs = [b.reference, ...b.references_autres || [], b.reference_portail].filter(Boolean).map(String);
@@ -94192,13 +94215,15 @@ estimation \u2014 une personne veut faire estimer ou vendre son bien
 reclamation \u2014 une plainte d'un prospect (c'est aussi un lead)
 notification \u2014 message de service, publicit\xE9, facture, newsletter, sans prospect
 test \u2014 message de test
-autre \u2014 tout le reste
+autre \u2014 tout le reste : candidature (emploi, stage, alternance), offre de service ou de partenariat, d\xE9marchage
 
 R\xC8GLES ABSOLUES
 \u2014 N'invente RIEN. Un champ absent vaut null. Chaque valeur doit \xEAtre \xE9crite dans le mail.
 \u2014 Le prospect est la personne qui \xE9crit \xE0 l'agence, jamais l'agence, le n\xE9gociateur ni le portail.
 \u2014 Ne d\xE9duis jamais pr\xE9nom ou nom de l'adresse e-mail. Jamais \xAB contact \xBB, \xAB info \xBB, \xAB noreply \xBB comme nom.
 \u2014 T\xE9l\xE9phone recopi\xE9 tel quel. R\xE9f\xE9rence recopi\xE9e telle quelle (z\xE9ros, tirets, underscores).
+\u2014 R\xE9f\xE9rence du bien : celle qui suit \xAB R\xE9f. \xBB, \xAB R\xE9f\xE9rence \xBB ou \xAB mandat \xBB quand le mail en donne une, plut\xF4t qu'un
+  autre code de l'annonce ; jamais l'identifiant de l'agence, d'une conversation ou d'un message.
 \u2014 Prix, surface, pi\xE8ces : le nombre seul, sans unit\xE9.
 \u2014 S\xE9pare le BIEN demand\xE9 (reference, type_bien, nb_pieces, surface, prix, ville, code_postal, adresse)
   des CRIT\xC8RES DU PROSPECT (recherche_*). Un budget maximum n'est jamais le prix du bien.
@@ -94310,11 +94335,11 @@ ${String(texte || "").slice(0, max)}
     };
     var FOURNISSEURS = {
       /* plugin « large-language-model » de Saltcorn déjà réglé par le client */
-      saltcorn: () => async (prompt, schema = SCHEMA, nom = "extraction") => {
+      saltcorn: () => async (prompt, schema = SCHEMA, nom = "extraction", modele = null) => {
         const st = require("@saltcorn/data/db/state").getState();
         const f = st.functions && st.functions.llm_generate;
         if (!f) throw new Error("plugin large-language-model absent ou non r\xE9gl\xE9");
-        const compl = await f.run(prompt, { temperature: 0, tools: [{ type: "function", function: { name: nom, description: nom === "extraction" ? "Donn\xE9es lues dans le mail" : "R\xE9ponse structur\xE9e", parameters: schema } }], tool_choice: { type: "function", function: { name: nom } } });
+        const compl = await f.run(prompt, { ...modele ? { model: modele } : {}, temperature: 0, tools: [{ type: "function", function: { name: nom, description: nom === "extraction" ? "Donn\xE9es lues dans le mail" : "R\xE9ponse structur\xE9e", parameters: schema } }], tool_choice: { type: "function", function: { name: nom } } });
         if (typeof compl === "string") return compl;
         const tc = compl && compl.tool_calls && compl.tool_calls[0];
         if (tc) return tc.input || tc.function && tc.function.arguments;
@@ -94367,7 +94392,7 @@ ${String(texte || "").slice(0, max)}
           let brut, err;
           for (let i = 0; i < essais; i++) {
             try {
-              brut = await appeler(construirePrompt(mail, texte), SCHEMA);
+              brut = await appeler(construirePrompt(mail, texte), SCHEMA, "extraction", reglages.modele || null);
               err = null;
               break;
             } catch (e) {
@@ -97982,7 +98007,7 @@ var require_api = __commonJS({
         const cache = G.get(ck) || /* @__PURE__ */ new Map();
         G.set(ck, cache);
         const IA = require_ia2();
-        if (fournisseur === "saltcorn") return IA.creer({ fournisseur, cache });
+        if (fournisseur === "saltcorn") return IA.creer({ fournisseur, cache, modele });
         const n = String(nomCle || "LEADS_IA_CLE").replace(/[^\w]/g, "");
         let client = null;
         const obtenir = async () => {
@@ -98307,431 +98332,6 @@ var require_catalogue = __commonJS({
       };
     };
     module2.exports = { synchroniser, evenementBien, avecCatalogue, biensLocaux, fictifsParReference, enregistrerBiens, bienFrais, oublier };
-  }
-});
-
-// src/lib/leads/tables/gabarits.js
-var require_gabarits = __commonJS({
-  "src/lib/leads/tables/gabarits.js"(exports2, module2) {
-    "use strict";
-    var { tables, nom } = require_schema();
-    var { reglages } = require_conf();
-    var db = () => require("@saltcorn/data/db");
-    var tenant = () => {
-      try {
-        return db().getTenantSchema();
-      } catch (e) {
-        return "public";
-      }
-    };
-    var json = (s, d) => {
-      if (s && typeof s === "object") return s;
-      try {
-        return JSON.parse(s);
-      } catch (e) {
-        return d;
-      }
-    };
-    var C = globalThis[Symbol.for("dysizz-flow.leads.gabarits")] || (globalThis[Symbol.for("dysizz-flow.leads.gabarits")] = /* @__PURE__ */ new Map());
-    var cleCache = () => tenant() + ":" + require_schema().prefixe();
-    var oublier = () => C.delete(cleCache());
-    var versGabarit = (r) => ({ ...r, signature: json(r.signature, {}), champs: json(r.champs, []) });
-    var versLigne = (g) => {
-      const o = {};
-      for (const k of ["source", "nature", "statut", "nb_observations", "nb_echecs", "nb_utilisations", "origine", "cree_le", "vu_le", "active_le", "suspendu_le"]) if (g[k] !== void 0) o[k] = g[k];
-      if (g.signature !== void 0) o.signature = JSON.stringify(g.signature);
-      if (g.champs !== void 0) o.champs = JSON.stringify(g.champs);
-      for (const k of ["cree_le", "vu_le", "active_le", "suspendu_le"]) if (o[k]) o[k] = new Date(o[k]);
-      return o;
-    };
-    var COMMUNS = `"public".dzl_gabarits_communs`;
-    var communsPrets = /* @__PURE__ */ new Set();
-    var preparerCommuns = async () => {
-      if (db().isSQLite || communsPrets.has("x")) return !db().isSQLite;
-      await db().query(`create table if not exists ${COMMUNS} (cle text primary key, source text, nature text, signature text, champs text, clients text, maj_le timestamptz default now())`);
-      communsPrets.add("x");
-      return true;
-    };
-    var lireCommuns = async () => {
-      if (!await preparerCommuns().catch(() => false)) return [];
-      return (await db().query(`select * from ${COMMUNS} order by maj_le desc limit 2000`)).rows.map((r) => ({ id: "c:" + r.cle, source: r.source, nature: r.nature, signature: json(r.signature, {}), champs: json(r.champs, []), statut: "actif", nb_observations: 0, origine: "commun" }));
-    };
-    var publier = async (api, g, R) => {
-      if (!R.gabarits_partages || !await preparerCommuns().catch(() => false)) return;
-      const A = api.leads.apprentissage;
-      const dom = String((g.signature || {}).expediteur || "").replace(/\\/g, "").replace(/\$$/, "");
-      if (!dom || String(R.domaines_agence || "").toLowerCase().split(/[\s,;]+/).some((d) => d && dom.endsWith(d))) return;
-      if ((g.champs || []).some((c) => A.motifSur(c.motif))) return;
-      const cle = require("crypto").createHash("sha1").update(A.cleForme(g) + JSON.stringify(g.champs)).digest("hex");
-      await db().query(
-        `insert into ${COMMUNS} (cle, source, nature, signature, champs, clients) values ($1,$2,$3,$4,$5,$6)
-    on conflict (cle) do update set maj_le = now(), clients = case when position($6 in coalesce(${COMMUNS}.clients,'')) > 0 then ${COMMUNS}.clients else coalesce(${COMMUNS}.clients,'') || ',' || $6 end`,
-        [cle, g.source, g.nature, JSON.stringify(g.signature), JSON.stringify(g.champs), tenant()]
-      );
-    };
-    var stockage = (api, R) => {
-      const A = api.leads.apprentissage;
-      const lister = async () => {
-        const k = cleCache(), c = C.get(k);
-        if (c && Date.now() - c.t < 6e4) return c.l;
-        const t = await tables();
-        const locaux = (await t.gabarits.getRows({})).map(versGabarit);
-        let communs = R.gabarits_partages ? await lireCommuns().catch(() => []) : [];
-        const vus = new Set(locaux.map((g) => A.cleForme(g) + JSON.stringify(g.champs)));
-        communs = communs.filter((g) => !vus.has(A.cleForme(g) + JSON.stringify(g.champs)));
-        const l = [...locaux, ...communs];
-        C.set(k, { t: Date.now(), l });
-        return l;
-      };
-      const creer = async (g) => {
-        const t = await tables();
-        const id = await t.gabarits.insertRow(versLigne(g));
-        oublier();
-        return { ...g, id };
-      };
-      const maj = async (id, champs) => {
-        const t = await tables();
-        if (String(id).startsWith("c:")) {
-          const g = (await lister()).find((x) => x.id === id);
-          if (g) await t.gabarits.insertRow(versLigne({ ...g, ...champs, origine: "commun", cree_le: /* @__PURE__ */ new Date() }));
-        } else {
-          await t.gabarits.updateRow(versLigne(champs), +id);
-          if (champs.statut === "actif") {
-            const r = await t.gabarits.getRow({ id: +id });
-            if (r) await publier(api, versGabarit(r), R).catch(() => {
-            });
-          }
-        }
-        oublier();
-      };
-      return { lister, creer, maj };
-    };
-    var debutJour = () => {
-      const d = new Date((/* @__PURE__ */ new Date()).toLocaleString("en-US", { timeZone: "Europe/Paris" }));
-      const p = /* @__PURE__ */ new Date();
-      p.setTime(p.getTime() - (d.getHours() * 3600 + d.getMinutes() * 60 + d.getSeconds()) * 1e3);
-      return p;
-    };
-    var appelsDuJour = async () => +(await db().query(`select count(*) n from "${tenant()}".${nom("ia")} where quand >= $1`, [debutJour()])).rows[0].n;
-    var noter = async (a) => {
-      const t = await tables();
-      await t.ia.insertRow({ quand: /* @__PURE__ */ new Date(), ok: !!a.ok, ms: a.ms || null, nature: a.nature || null, source: a.source ? String(a.source).slice(0, 120) : null, erreur: a.erreur ? String(a.erreur).slice(0, 300) : null });
-    };
-    var optionsLecture = async (api) => {
-      await tables();
-      const R = await reglages();
-      const A = api.leads.apprentissage;
-      if (!A) return {};
-      const o = { gabarits: stockage(api, R) };
-      if (R.ia_actif && api.iaDepuisCoffre) {
-        o.ia = api.iaDepuisCoffre(R.ia_fournisseur || "saltcorn", R.ia_modele || "", "LEADS_IA_CLE", R.ia_url || void 0);
-        const plafond = +R.ia_plafond_jour || 200;
-        o.budget = async () => await appelsDuJour() < plafond;
-        o.noter = noter;
-      }
-      return o;
-    };
-    var importerAmbs = async (api, lignes) => {
-      const t = await tables();
-      const deja = new Set((await t.gabarits.getRows({})).map((g) => g.origine));
-      let n = 0;
-      for (const g of api.leads.apprentissage.depuisAmbs(lignes)) {
-        if (deja.has(g.origine)) continue;
-        await t.gabarits.insertRow(versLigne({ ...g, cree_le: /* @__PURE__ */ new Date() }));
-        n++;
-      }
-      oublier();
-      return n;
-    };
-    var enregistrerVerification = async (api, R) => {
-      const t = await tables();
-      const A = api.leads.apprentissage;
-      const lignes = await t.gabarits.getRows({});
-      const idAncien = (o) => (String(o || "").match(/^ambs:(\d+)(?::|$)/) || [])[1] || null;
-      const fait = { mis_a_jour: 0, ajoutes: 0, retires: 0, appris: 0 };
-      const gardes = /* @__PURE__ */ new Set();
-      for (const g of R.gardes) {
-        const id = idAncien(g.origine);
-        gardes.add(id);
-        const ex = lignes.filter((l) => idAncien(l.origine) === id);
-        const ligne = versLigne({ ...g, active_le: /* @__PURE__ */ new Date(), vu_le: /* @__PURE__ */ new Date() });
-        if (ex.length) {
-          await t.gabarits.updateRow(ligne, ex[0].id);
-          for (const x of ex.slice(1)) await t.gabarits.updateRow({ statut: "quarantaine" }, x.id);
-          fait.mis_a_jour++;
-        } else {
-          await t.gabarits.insertRow({ ...ligne, cree_le: /* @__PURE__ */ new Date() });
-          fait.ajoutes++;
-        }
-      }
-      for (const d of R.detail.filter((x) => x.verdict === "retir\xE9")) {
-        for (const l of lignes.filter((x) => idAncien(x.origine) === String(d.id) && x.statut !== "quarantaine" && !gardes.has(String(d.id)))) {
-          await t.gabarits.updateRow({ statut: "quarantaine" }, l.id);
-          fait.retires++;
-        }
-      }
-      const formes = new Set(lignes.map((l) => A.cleForme(versGabarit(l)) + l.champs));
-      for (const g of R.nouveaux || []) {
-        const k = A.cleForme(g) + JSON.stringify(g.champs);
-        if (formes.has(k)) continue;
-        formes.add(k);
-        await t.gabarits.insertRow(versLigne({ ...g, cree_le: /* @__PURE__ */ new Date(), vu_le: /* @__PURE__ */ new Date() }));
-        fait.appris++;
-      }
-      oublier();
-      return fait;
-    };
-    module2.exports = { optionsLecture, stockage, importerAmbs, enregistrerVerification, appelsDuJour, noter, oublier, versGabarit, lireCommuns };
-  }
-});
-
-// src/lib/leads/tables/dossier.js
-var require_dossier = __commonJS({
-  "src/lib/leads/tables/dossier.js"(exports2, module2) {
-    "use strict";
-    var { tables, nom } = require_schema();
-    var { charger } = require_conf();
-    var { flowApi } = require_core3();
-    var fil = require_fil();
-    var { avecCatalogue } = require_catalogue();
-    var G = require_gabarits();
-    var courte = (v, n = 900) => String(v == null ? "" : v).slice(0, n);
-    var sansCommentaire = (a) => a && a.donnees && a.donnees.comment ? { ...a, donnees: { ...a.donnees, comment: `(${a.donnees.comment.length} caract\xE8res)` } } : a;
-    var versLigne = (d, mail = {}) => {
-      const x = d.extraction || {}, c = x.contact || {}, b = d.bien || null;
-      const ex = d.execution || {};
-      return {
-        mail_id: mail.id || null,
-        message_id: courte(mail.message_id, 300),
-        recu_le: mail.date_envoi || mail.recu_le || /* @__PURE__ */ new Date(),
-        traite_le: /* @__PURE__ */ new Date(),
-        expediteur: courte(mail.expediteur, 300),
-        objet: courte(mail.objet, 400),
-        portail: d.portail || (x.portail === "inconnu" || !x.portail ? x.portail_nom || x.portail || "" : x.portail),
-        source: d.source || d.portail || x.portail_nom || x.portail || "",
-        nature: x.nature || "",
-        statut: d.statut,
-        role: d.role || "",
-        lu_par: (x.lu_par || []).join("+"),
-        contact_nom: courte([c.prenom, c.nom].filter(Boolean).join(" ") || c.nom_complet, 200),
-        contact_email: c.email || c.email_relais || "",
-        contact_tel: c.telephone || "",
-        contact_crm: ex.contactId && !/^ombre-/.test(String(ex.contactId)) ? String(ex.contactId) : d.contact && d.contact.id ? String(d.contact.id) : "",
-        contact_action: d.contact && d.contact.action || "",
-        reference: x.bien && (x.bien.reference || x.bien.id_crm || x.bien.reference_portail) || "",
-        bien_crm: b ? String(b.id) : "",
-        bien_ref_crm: b ? String(b.reference || "") : "",
-        bien_methode: d.rapprochement && d.rapprochement.methode || "",
-        bien_confiance: d.rapprochement && d.rapprochement.confiance || "",
-        agence: d.agence ? d.agence.nom : "",
-        negociateur: d.negociateur ? String(d.negociateur) : "",
-        origine: d.origine ? d.origine.libelle || d.origine.code : "",
-        site: x.site || "",
-        destinataires: d.destinataires ? d.destinataires.liste.map((l) => l.email).sort().join(", ") : "",
-        motifs: (d.motifs || []).join(" \xB7 "),
-        alertes: (d.alertes || []).join(" \xB7 "),
-        mode: ex.mode || "ombre",
-        actions: (d.actions || []).map((a) => a.op).join(", "),
-        dossier: JSON.stringify({ ...d, fil: d.fil ? { ...d.fil, messages_dossier: void 0, nb_messages_dossier: (d.fil.messages_dossier || []).length } : void 0, actions: (d.actions || []).map((a) => sansCommentaire({ ...a, preuves: a.preuves && a.preuves.map((p) => p.nom) })) }).slice(0, 2e5),
-        duree_ms: d.duree_ms || 0
-      };
-    };
-    var champsLus = (d) => {
-      const x = d.extraction || {}, out = [];
-      const val = (chemin) => chemin.split(".").reduce((o, k) => o == null ? void 0 : o[k], x);
-      for (const [chemin, prov] of Object.entries(x.preuves || {})) {
-        const v = val(chemin);
-        if (v === void 0 || v === null || v === "" || typeof v === "object") continue;
-        out.push({ champ: chemin, valeur: String(v).slice(0, 500), provenance: String(prov).slice(0, 200) });
-      }
-      return out;
-    };
-    var ecrireChamps = async (t, leadId, d) => {
-      if (!t.champs) return;
-      await t.champs.deleteRows({ lead: leadId });
-      for (const c of champsLus(d)) await t.champs.insertRow({ lead: leadId, ...c });
-    };
-    var enregistrer = async (d, mail, dossierId = null) => {
-      const t = await tables();
-      const ligne = { ...versLigne(d, mail), dossier_id: dossierId };
-      const ex = mail && mail.id ? await t.leads.getRow({ mail_id: mail.id }) : null;
-      let id;
-      if (ex) {
-        await t.leads.updateRow({ ...ligne, decision: ex.decision || "", ancien_statut: ex.ancien_statut, ancien_bien: ex.ancien_bien, ancien_destinataires: ex.ancien_destinataires }, ex.id);
-        id = ex.id;
-      } else id = await t.leads.insertRow(ligne);
-      await ecrireChamps(t, id, d).catch(() => {
-      });
-      return id;
-    };
-    var versMoteur = (mail) => ({ expediteur: mail.expediteur, destinataire: mail.destinataire, objet: mail.objet, texte: mail.corps_texte, html: mail.corps_html, date: mail.date_envoi, message_id: mail.message_id, in_reply_to: mail.in_reply_to, references: mail.references_fil, source_eml: mail.source_eml || null });
-    var cleVerrou = (api, m, conf, mailId) => {
-      try {
-        const r = api.leads.extraire(m, conf);
-        const texte = api.leads.texte.texteMail({ texte: m.texte, html: m.html });
-        const k = api.leads.conversation.cles(r, texte, conf);
-        const v = k.relais || k.email || k.telephone && String(k.telephone).replace(/\D/g, "").slice(-9);
-        return v ? "dossier:" + String(v).toLowerCase() : "mail:" + mailId;
-      } catch (e) {
-        return "mail:" + mailId;
-      }
-    };
-    var traiterMail = async (mailId, { forcerOmbre = false, actualiserConsentement = false, simulation = false } = {}) => {
-      const api = flowApi();
-      if (!api) throw new Error("dysizz-flow 2.4 ou plus r\xE9cent est n\xE9cessaire");
-      const Table = require("@saltcorn/data/models/table");
-      const tm = Table.findOne({ name: nom("mails") });
-      const mail = tm && await tm.getRow({ id: +mailId });
-      if (!mail) throw new Error("mail introuvable");
-      const { conf, crm, reglages: R } = await charger();
-      if (actualiserConsentement) conf.consentement = { ...conf.consentement, actualiser_motif: true };
-      const mode = forcerOmbre || simulation ? "ombre" : crm.mode;
-      const client = await avecCatalogue(api.crmDepuisCoffre(crm.type, crm.reglages, crm.prefixe, mode));
-      const m = versMoteur(mail);
-      return api.verrou.sous(cleVerrou(api, m, conf, mail.id), async () => {
-        let lecture = await G.optionsLecture(api).catch(() => ({}));
-        if (simulation) lecture = { ...lecture, noter: void 0, gabarits: lecture.gabarits && { ...lecture.gabarits, creer: async (g) => ({ ...g, id: "simulation" }), maj: async () => {
-        } } };
-        const d = await api.leads.traiter(m, client, conf, { dossiers: { trouver: fil.trouver }, ...lecture });
-        if (d.dossier && d.portail)
-          d.dossier.portail = d.portail;
-        d.execution = { ...await api.leads.executer(d, client, { mode, ecrireAVerifier: R && R.crm_a_verifier === true }), mode };
-        if (client.notees) d.execution.ecritures_notees = client.notees.map(sansCommentaire);
-        if (simulation) return { id: null, dossier_id: null, statut: d.statut, dossier: d, simulation: true };
-        const garder = d.dossier && !(d.statut === "a_trier" && !d.dossier.existant);
-        const dossierId = garder ? await fil.enregistrer(api)(d, d.execution, new Date(mail.date_envoi || Date.now()), mail.id) : null;
-        const id = await enregistrer(d, mail, dossierId);
-        if (dossierId && d.bien && d.bien.id != null) {
-          let photos = "";
-          try {
-            photos = String((JSON.parse(R && R.bot || "{}") || {}).photos || "");
-          } catch (e) {
-          }
-          try {
-            require_catalogue().bienFrais(client, d.bien.id, { dossierImages: photos, fraicheur_ms: 0, budget_ms: 1 }).catch(() => {
-            });
-          } catch (e) {
-          }
-        }
-        return { id, dossier_id: dossierId, statut: d.statut, dossier: d };
-      });
-    };
-    var retraiter = (mailId, o) => traiterMail(mailId, o);
-    module2.exports = { enregistrer, retraiter, traiterMail, versLigne, versMoteur, cleVerrou, champsLus };
-  }
-});
-
-// src/lib/leads/tables/etapes.js
-var require_etapes = __commonJS({
-  "src/lib/leads/tables/etapes.js"(exports2, module2) {
-    "use strict";
-    var { nom } = require_schema();
-    var { charger } = require_conf();
-    var { flowApi } = require_core3();
-    var fil = require_fil();
-    var { avecCatalogue } = require_catalogue();
-    var G = require_gabarits();
-    var { enregistrer, versMoteur, cleVerrou } = require_dossier();
-    var perm = (m) => Object.assign(new Error(m), { permanent: true });
-    var api = () => {
-      const a = flowApi();
-      return a;
-    };
-    var obj = (v, nom2 = "dossier") => {
-      if (v && typeof v === "object") return v;
-      try {
-        return JSON.parse(v);
-      } catch (e) {
-        throw perm(`${nom2} : il faut le r\xE9sultat de l'\xE9tape pr\xE9c\xE9dente ({{dossier}})`);
-      }
-    };
-    var lireMail = async (id) => {
-      const Table = require("@saltcorn/data/models/table");
-      const t = Table.findOne({ name: nom("mails") });
-      const m = t && await t.getRow({ id: +id });
-      if (!m) throw perm(`mail ${id} introuvable dans ${nom("mails")}`);
-      return m;
-    };
-    var clientCrm = async (crm, mode) => avecCatalogue(api().crmDepuisCoffre(crm.type, crm.reglages, crm.prefixe, mode));
-    var preparer = async (id, { forcerOmbre = false } = {}) => {
-      const a = api();
-      const mail = await lireMail(id);
-      const { conf, crm } = await charger();
-      return { mail_id: mail.id, objet: String(mail.objet || "").slice(0, 200), cle: cleVerrou(a, versMoteur(mail), conf, mail.id), mode: forcerOmbre ? "ombre" : crm.mode, prefixe: require_schema().prefixe() };
-    };
-    var lire = async (lead) => {
-      const a = api(), L = obj(lead, "lead");
-      const mail = await lireMail(L.mail_id);
-      const { conf } = await charger();
-      const lecture = await G.optionsLecture(a).catch(() => ({}));
-      const d = await a.leads.etapeLire(versMoteur(mail), conf, { dossiers: { trouver: fil.trouver }, ...lecture });
-      return { ...d, mail_id: mail.id, mode: L.mode || "ombre", prefixe: L.prefixe || require_schema().prefixe() };
-    };
-    var bien = async (dossier) => {
-      const d = obj(dossier);
-      if (d.fin) return d;
-      const { conf, crm } = await charger();
-      return api().leads.etapeBien(d, await clientCrm(crm, "ombre"), conf);
-    };
-    var contact = async (dossier) => {
-      const d = obj(dossier);
-      if (d.fin) return d;
-      const { conf, crm } = await charger();
-      return api().leads.etapeContact(d, await clientCrm(crm, "ombre"), conf);
-    };
-    var consentement = async (dossier) => {
-      const d = obj(dossier);
-      if (d.fin) return d;
-      const { conf } = await charger();
-      return api().leads.etapeConsentement(d, versMoteur(await lireMail(d.mail_id)), conf);
-    };
-    var destinataires = async (dossier) => {
-      const d = obj(dossier);
-      if (d.fin) return d;
-      const { conf } = await charger();
-      return api().leads.etapeDestinataires(d, conf);
-    };
-    var ecrireCrm = async (dossier) => {
-      const a = api(), d = obj(dossier);
-      const { crm } = await charger();
-      const mode = d.mode === "reel" && crm.mode === "reel" ? "reel" : "ombre";
-      const client = await clientCrm(crm, mode);
-      if (d.dossier && d.portail) d.dossier.portail = d.portail;
-      const R = await require_conf().reglages();
-      d.execution = { ...await a.leads.executer(d, client, { mode, ecrireAVerifier: R.crm_a_verifier === true }), mode };
-      if (client.notees) d.execution.ecritures_notees = client.notees.map((x) => x && x.donnees && x.donnees.comment ? { ...x, donnees: { ...x.donnees, comment: `(${x.donnees.comment.length} caract\xE8res)` } } : x);
-      return d;
-    };
-    var conformite = async (dossier) => {
-      const d = obj(dossier), execution = d.execution;
-      if (d.fin || !execution || execution.mode !== "reel" || execution.non_automatise || !execution.contactId || !execution.consentementVerifie || !execution.consentement) return d;
-      if ((execution.resultats || []).some((r) => r.op === "confirmerRgpd")) return d;
-      const { crm, conf } = await charger();
-      if (crm.mode !== "reel" || !conf.consentement || !conf.consentement.actif) return d;
-      const client = await clientCrm(crm, "reel");
-      if (!client.confirmerRgpd) return d;
-      execution.resultats = execution.resultats || [];
-      try {
-        const r = await client.confirmerRgpd(execution.contactId);
-        execution.resultats.push({ op: "confirmerRgpd", fait: !!(r && r.confirme), resultat: r });
-      } catch (e) {
-        execution.resultats.push({ op: "confirmerRgpd", fait: false, erreur: e.message });
-      }
-      return d;
-    };
-    var ranger = async (dossier) => {
-      const a = api(), d = obj(dossier);
-      const mail = await lireMail(d.mail_id);
-      const garder = d.dossier && !(d.statut === "a_trier" && !d.dossier.existant);
-      const dossierId = garder ? await fil.enregistrer(a)(d, d.execution || {}, new Date(mail.date_envoi || Date.now()), mail.id) : null;
-      const propre = a.leads.nettoyer({ ...d });
-      delete propre.mail_id;
-      delete propre.mode;
-      delete propre.prefixe;
-      const id = await enregistrer(propre, mail, dossierId);
-      return { id, dossier_id: dossierId, statut: d.statut };
-    };
-    module2.exports = { preparer, lire, bien, contact, consentement, destinataires, ecrireCrm, conformite, ranger };
   }
 });
 
@@ -100187,7 +99787,493 @@ var require_bot2 = __commonJS({
       const R = json((await require_conf().reglages()).bot, {});
       return ACTIONS2[k](corps && typeof corps === "object" ? corps : {}, R && typeof R === "object" ? R : {});
     };
-    module2.exports = { repondre, contexte, evenement, fiche, telechargerPhotos, relancer, recapituler };
+    module2.exports = { repondre, contexte, evenement, fiche, telechargerPhotos, relancer, recapituler, envoyerModele };
+  }
+});
+
+// src/lib/leads/tables/alerte_ia.js
+var require_alerte_ia = __commonJS({
+  "src/lib/leads/tables/alerte_ia.js"(exports2, module2) {
+    "use strict";
+    var { tables, nom } = require_schema();
+    var { reglages, json } = require_conf();
+    var SEUIL = 3;
+    var DELAI_H = 6;
+    var db = () => require("@saltcorn/data/db");
+    var tenant = () => {
+      try {
+        return db().getTenantSchema();
+      } catch (e) {
+        return "public";
+      }
+    };
+    var court = (v, n) => String(v == null ? "" : v).replace(/\s+/g, " ").trim().slice(0, n);
+    var enPanne = (lignes, seuil = SEUIL) => lignes.length >= seuil && lignes.slice(0, seuil).every((l) => !l.ok);
+    var valeurs = (cause, { erreur, plafond } = {}) => cause === "plafond" ? [`le plafond de ${plafond || 200} lectures par l'IA est atteint aujourd'hui ; les mails suivants restent \xE0 trier jusqu'\xE0 demain`, "relever le plafond dans les r\xE9glages si besoin, puis lancer le rattrapage des leads"] : [`l'IA de lecture des mails ne r\xE9pond plus (${court(erreur, 120) || "erreur inconnue"}) ; les mails inconnus restent \xE0 trier`, "v\xE9rifier le cr\xE9dit OpenAI, puis lancer le rattrapage des leads"];
+    var signaler = async (cause) => {
+      const R = await reglages();
+      const W = (json(R.bot, {}) || {}).whatsapp || {};
+      const admins = (Array.isArray(W.alertes_admin) ? W.alertes_admin : []).map((x) => String(x).replace(/\D/g, "")).filter((x) => x.length >= 9);
+      if (!admins.length || !W.variable_jeton) return { envoyee: false, raison: "alerte non r\xE9gl\xE9e" };
+      const S = tenant();
+      let erreur;
+      if (cause === "panne") {
+        const lignes = (await db().query(`select ok, erreur from "${S}".${nom("ia")} order by id desc limit ${SEUIL}`)).rows;
+        if (!enPanne(lignes)) return { envoyee: false, raison: "sous le seuil" };
+        erreur = lignes[0].erreur;
+      }
+      return require_verrou().sous(`ld-alerte-ia:${S}`, async () => {
+        const deja = await db().query(`select 1 from "${S}".${nom("bot")} where type = 'alerte_ia' and quand > now() - interval '${DELAI_H} hours' limit 1`);
+        if (deja.rows.length) return { envoyee: false, raison: "d\xE9j\xE0 pr\xE9venu" };
+        const v = valeurs(cause, { erreur, plafond: R.ia_plafond_jour });
+        const trace = { cause, valeurs: v, a: admins.map((x) => "\u2026" + x.slice(-4)), envoyees: 0 };
+        try {
+          const jeton = await require_garde().lireSecret(W.variable_jeton);
+          const { envoyerModele } = require_bot2();
+          for (const a of admins) {
+            await envoyerModele({ phone_number_id: W.numero_alertes || W.phone_number_id, jeton, a, nom: "ambs_alerte_technique", langue: "fr", valeurs: v, suivi: `ambs|${Date.now()}|alerte_ia` });
+            trace.envoyees++;
+          }
+        } catch (e) {
+          trace.erreur = court(e.message, 300);
+        }
+        await (await tables()).bot.insertRow({ tel9: "admin", type: "alerte_ia", quand: /* @__PURE__ */ new Date(), donnees: JSON.stringify(trace) });
+        return { envoyee: trace.envoyees > 0, ...trace };
+      });
+    };
+    module2.exports = { signaler, enPanne, valeurs, SEUIL };
+  }
+});
+
+// src/lib/leads/tables/gabarits.js
+var require_gabarits = __commonJS({
+  "src/lib/leads/tables/gabarits.js"(exports2, module2) {
+    "use strict";
+    var { tables, nom } = require_schema();
+    var { reglages } = require_conf();
+    var db = () => require("@saltcorn/data/db");
+    var tenant = () => {
+      try {
+        return db().getTenantSchema();
+      } catch (e) {
+        return "public";
+      }
+    };
+    var json = (s, d) => {
+      if (s && typeof s === "object") return s;
+      try {
+        return JSON.parse(s);
+      } catch (e) {
+        return d;
+      }
+    };
+    var C = globalThis[Symbol.for("dysizz-flow.leads.gabarits")] || (globalThis[Symbol.for("dysizz-flow.leads.gabarits")] = /* @__PURE__ */ new Map());
+    var cleCache = () => tenant() + ":" + require_schema().prefixe();
+    var oublier = () => C.delete(cleCache());
+    var versGabarit = (r) => ({ ...r, signature: json(r.signature, {}), champs: json(r.champs, []) });
+    var versLigne = (g) => {
+      const o = {};
+      for (const k of ["source", "nature", "statut", "nb_observations", "nb_echecs", "nb_utilisations", "origine", "cree_le", "vu_le", "active_le", "suspendu_le"]) if (g[k] !== void 0) o[k] = g[k];
+      if (g.signature !== void 0) o.signature = JSON.stringify(g.signature);
+      if (g.champs !== void 0) o.champs = JSON.stringify(g.champs);
+      for (const k of ["cree_le", "vu_le", "active_le", "suspendu_le"]) if (o[k]) o[k] = new Date(o[k]);
+      return o;
+    };
+    var COMMUNS = `"public".dzl_gabarits_communs`;
+    var communsPrets = /* @__PURE__ */ new Set();
+    var preparerCommuns = async () => {
+      if (db().isSQLite || communsPrets.has("x")) return !db().isSQLite;
+      await db().query(`create table if not exists ${COMMUNS} (cle text primary key, source text, nature text, signature text, champs text, clients text, maj_le timestamptz default now())`);
+      communsPrets.add("x");
+      return true;
+    };
+    var lireCommuns = async () => {
+      if (!await preparerCommuns().catch(() => false)) return [];
+      return (await db().query(`select * from ${COMMUNS} order by maj_le desc limit 2000`)).rows.map((r) => ({ id: "c:" + r.cle, source: r.source, nature: r.nature, signature: json(r.signature, {}), champs: json(r.champs, []), statut: "actif", nb_observations: 0, origine: "commun" }));
+    };
+    var publier = async (api, g, R) => {
+      if (!R.gabarits_partages || !await preparerCommuns().catch(() => false)) return;
+      const A = api.leads.apprentissage;
+      const dom = String((g.signature || {}).expediteur || "").replace(/\\/g, "").replace(/\$$/, "");
+      if (!dom || String(R.domaines_agence || "").toLowerCase().split(/[\s,;]+/).some((d) => d && dom.endsWith(d))) return;
+      if ((g.champs || []).some((c) => A.motifSur(c.motif))) return;
+      const cle = require("crypto").createHash("sha1").update(A.cleForme(g) + JSON.stringify(g.champs)).digest("hex");
+      await db().query(
+        `insert into ${COMMUNS} (cle, source, nature, signature, champs, clients) values ($1,$2,$3,$4,$5,$6)
+    on conflict (cle) do update set maj_le = now(), clients = case when position($6 in coalesce(${COMMUNS}.clients,'')) > 0 then ${COMMUNS}.clients else coalesce(${COMMUNS}.clients,'') || ',' || $6 end`,
+        [cle, g.source, g.nature, JSON.stringify(g.signature), JSON.stringify(g.champs), tenant()]
+      );
+    };
+    var stockage = (api, R) => {
+      const A = api.leads.apprentissage;
+      const lister = async () => {
+        const k = cleCache(), c = C.get(k);
+        if (c && Date.now() - c.t < 6e4) return c.l;
+        const t = await tables();
+        const locaux = (await t.gabarits.getRows({})).map(versGabarit);
+        let communs = R.gabarits_partages ? await lireCommuns().catch(() => []) : [];
+        const vus = new Set(locaux.map((g) => A.cleForme(g) + JSON.stringify(g.champs)));
+        communs = communs.filter((g) => !vus.has(A.cleForme(g) + JSON.stringify(g.champs)));
+        const l = [...locaux, ...communs];
+        C.set(k, { t: Date.now(), l });
+        return l;
+      };
+      const creer = async (g) => {
+        const t = await tables();
+        const id = await t.gabarits.insertRow(versLigne(g));
+        oublier();
+        return { ...g, id };
+      };
+      const maj = async (id, champs) => {
+        const t = await tables();
+        if (String(id).startsWith("c:")) {
+          const g = (await lister()).find((x) => x.id === id);
+          if (g) await t.gabarits.insertRow(versLigne({ ...g, ...champs, origine: "commun", cree_le: /* @__PURE__ */ new Date() }));
+        } else {
+          await t.gabarits.updateRow(versLigne(champs), +id);
+          if (champs.statut === "actif") {
+            const r = await t.gabarits.getRow({ id: +id });
+            if (r) await publier(api, versGabarit(r), R).catch(() => {
+            });
+          }
+        }
+        oublier();
+      };
+      return { lister, creer, maj };
+    };
+    var debutJour = () => {
+      const d = new Date((/* @__PURE__ */ new Date()).toLocaleString("en-US", { timeZone: "Europe/Paris" }));
+      const p = /* @__PURE__ */ new Date();
+      p.setTime(p.getTime() - (d.getHours() * 3600 + d.getMinutes() * 60 + d.getSeconds()) * 1e3);
+      return p;
+    };
+    var appelsDuJour = async () => +(await db().query(`select count(*) n from "${tenant()}".${nom("ia")} where quand >= $1`, [debutJour()])).rows[0].n;
+    var noter = async (a) => {
+      const t = await tables();
+      await t.ia.insertRow({ quand: /* @__PURE__ */ new Date(), ok: !!a.ok, ms: a.ms || null, nature: a.nature || null, source: a.source ? String(a.source).slice(0, 120) : null, erreur: a.erreur ? String(a.erreur).slice(0, 300) : null });
+      if (!a.ok) require_alerte_ia().signaler("panne").catch(() => {
+      });
+    };
+    var optionsLecture = async (api) => {
+      await tables();
+      const R = await reglages();
+      const A = api.leads.apprentissage;
+      if (!A) return {};
+      const o = { gabarits: stockage(api, R) };
+      if (R.ia_actif && api.iaDepuisCoffre) {
+        o.ia = api.iaDepuisCoffre(R.ia_fournisseur || "saltcorn", R.ia_modele || "", "LEADS_IA_CLE", R.ia_url || void 0);
+        const plafond = +R.ia_plafond_jour || 200;
+        o.budget = async () => {
+          const ok = await appelsDuJour() < plafond;
+          if (!ok) require_alerte_ia().signaler("plafond").catch(() => {
+          });
+          return ok;
+        };
+        o.noter = noter;
+      }
+      return o;
+    };
+    var importerAmbs = async (api, lignes) => {
+      const t = await tables();
+      const deja = new Set((await t.gabarits.getRows({})).map((g) => g.origine));
+      let n = 0;
+      for (const g of api.leads.apprentissage.depuisAmbs(lignes)) {
+        if (deja.has(g.origine)) continue;
+        await t.gabarits.insertRow(versLigne({ ...g, cree_le: /* @__PURE__ */ new Date() }));
+        n++;
+      }
+      oublier();
+      return n;
+    };
+    var enregistrerVerification = async (api, R) => {
+      const t = await tables();
+      const A = api.leads.apprentissage;
+      const lignes = await t.gabarits.getRows({});
+      const idAncien = (o) => (String(o || "").match(/^ambs:(\d+)(?::|$)/) || [])[1] || null;
+      const fait = { mis_a_jour: 0, ajoutes: 0, retires: 0, appris: 0 };
+      const gardes = /* @__PURE__ */ new Set();
+      for (const g of R.gardes) {
+        const id = idAncien(g.origine);
+        gardes.add(id);
+        const ex = lignes.filter((l) => idAncien(l.origine) === id);
+        const ligne = versLigne({ ...g, active_le: /* @__PURE__ */ new Date(), vu_le: /* @__PURE__ */ new Date() });
+        if (ex.length) {
+          await t.gabarits.updateRow(ligne, ex[0].id);
+          for (const x of ex.slice(1)) await t.gabarits.updateRow({ statut: "quarantaine" }, x.id);
+          fait.mis_a_jour++;
+        } else {
+          await t.gabarits.insertRow({ ...ligne, cree_le: /* @__PURE__ */ new Date() });
+          fait.ajoutes++;
+        }
+      }
+      for (const d of R.detail.filter((x) => x.verdict === "retir\xE9")) {
+        for (const l of lignes.filter((x) => idAncien(x.origine) === String(d.id) && x.statut !== "quarantaine" && !gardes.has(String(d.id)))) {
+          await t.gabarits.updateRow({ statut: "quarantaine" }, l.id);
+          fait.retires++;
+        }
+      }
+      const formes = new Set(lignes.map((l) => A.cleForme(versGabarit(l)) + l.champs));
+      for (const g of R.nouveaux || []) {
+        const k = A.cleForme(g) + JSON.stringify(g.champs);
+        if (formes.has(k)) continue;
+        formes.add(k);
+        await t.gabarits.insertRow(versLigne({ ...g, cree_le: /* @__PURE__ */ new Date(), vu_le: /* @__PURE__ */ new Date() }));
+        fait.appris++;
+      }
+      oublier();
+      return fait;
+    };
+    module2.exports = { optionsLecture, stockage, importerAmbs, enregistrerVerification, appelsDuJour, noter, oublier, versGabarit, lireCommuns };
+  }
+});
+
+// src/lib/leads/tables/dossier.js
+var require_dossier = __commonJS({
+  "src/lib/leads/tables/dossier.js"(exports2, module2) {
+    "use strict";
+    var { tables, nom } = require_schema();
+    var { charger } = require_conf();
+    var { flowApi } = require_core3();
+    var fil = require_fil();
+    var { avecCatalogue } = require_catalogue();
+    var G = require_gabarits();
+    var courte = (v, n = 900) => String(v == null ? "" : v).slice(0, n);
+    var sansCommentaire = (a) => a && a.donnees && a.donnees.comment ? { ...a, donnees: { ...a.donnees, comment: `(${a.donnees.comment.length} caract\xE8res)` } } : a;
+    var versLigne = (d, mail = {}) => {
+      const x = d.extraction || {}, c = x.contact || {}, b = d.bien || null;
+      const ex = d.execution || {};
+      return {
+        mail_id: mail.id || null,
+        message_id: courte(mail.message_id, 300),
+        recu_le: mail.date_envoi || mail.recu_le || /* @__PURE__ */ new Date(),
+        traite_le: /* @__PURE__ */ new Date(),
+        expediteur: courte(mail.expediteur, 300),
+        objet: courte(mail.objet, 400),
+        portail: d.portail || (x.portail === "inconnu" || !x.portail ? x.portail_nom || x.portail || "" : x.portail),
+        source: d.source || d.portail || x.portail_nom || x.portail || "",
+        nature: x.nature || "",
+        statut: d.statut,
+        role: d.role || "",
+        lu_par: (x.lu_par || []).join("+"),
+        contact_nom: courte([c.prenom, c.nom].filter(Boolean).join(" ") || c.nom_complet, 200),
+        contact_email: c.email || c.email_relais || "",
+        contact_tel: c.telephone || "",
+        contact_crm: ex.contactId && !/^ombre-/.test(String(ex.contactId)) ? String(ex.contactId) : d.contact && d.contact.id ? String(d.contact.id) : "",
+        contact_action: d.contact && d.contact.action || "",
+        reference: x.bien && (x.bien.reference || x.bien.id_crm || x.bien.reference_portail) || "",
+        bien_crm: b ? String(b.id) : "",
+        bien_ref_crm: b ? String(b.reference || "") : "",
+        bien_methode: d.rapprochement && d.rapprochement.methode || "",
+        bien_confiance: d.rapprochement && d.rapprochement.confiance || "",
+        agence: d.agence ? d.agence.nom : "",
+        negociateur: d.negociateur ? String(d.negociateur) : "",
+        origine: d.origine ? d.origine.libelle || d.origine.code : "",
+        site: x.site || "",
+        destinataires: d.destinataires ? d.destinataires.liste.map((l) => l.email).sort().join(", ") : "",
+        motifs: (d.motifs || []).join(" \xB7 "),
+        alertes: (d.alertes || []).join(" \xB7 "),
+        mode: ex.mode || "ombre",
+        actions: (d.actions || []).map((a) => a.op).join(", "),
+        dossier: JSON.stringify({ ...d, fil: d.fil ? { ...d.fil, messages_dossier: void 0, nb_messages_dossier: (d.fil.messages_dossier || []).length } : void 0, actions: (d.actions || []).map((a) => sansCommentaire({ ...a, preuves: a.preuves && a.preuves.map((p) => p.nom) })) }).slice(0, 2e5),
+        duree_ms: d.duree_ms || 0
+      };
+    };
+    var champsLus = (d) => {
+      const x = d.extraction || {}, out = [];
+      const val = (chemin) => chemin.split(".").reduce((o, k) => o == null ? void 0 : o[k], x);
+      for (const [chemin, prov] of Object.entries(x.preuves || {})) {
+        const v = val(chemin);
+        if (v === void 0 || v === null || v === "" || typeof v === "object") continue;
+        out.push({ champ: chemin, valeur: String(v).slice(0, 500), provenance: String(prov).slice(0, 200) });
+      }
+      return out;
+    };
+    var ecrireChamps = async (t, leadId, d) => {
+      if (!t.champs) return;
+      await t.champs.deleteRows({ lead: leadId });
+      for (const c of champsLus(d)) await t.champs.insertRow({ lead: leadId, ...c });
+    };
+    var enregistrer = async (d, mail, dossierId = null) => {
+      const t = await tables();
+      const ligne = { ...versLigne(d, mail), dossier_id: dossierId };
+      const ex = mail && mail.id ? await t.leads.getRow({ mail_id: mail.id }) : null;
+      let id;
+      if (ex) {
+        await t.leads.updateRow({ ...ligne, decision: ex.decision || "", ancien_statut: ex.ancien_statut, ancien_bien: ex.ancien_bien, ancien_destinataires: ex.ancien_destinataires }, ex.id);
+        id = ex.id;
+      } else id = await t.leads.insertRow(ligne);
+      await ecrireChamps(t, id, d).catch(() => {
+      });
+      return id;
+    };
+    var versMoteur = (mail) => ({ expediteur: mail.expediteur, destinataire: mail.destinataire, objet: mail.objet, texte: mail.corps_texte, html: mail.corps_html, date: mail.date_envoi, message_id: mail.message_id, in_reply_to: mail.in_reply_to, references: mail.references_fil, source_eml: mail.source_eml || null });
+    var cleVerrou = (api, m, conf, mailId) => {
+      try {
+        const r = api.leads.extraire(m, conf);
+        const texte = api.leads.texte.texteMail({ texte: m.texte, html: m.html });
+        const k = api.leads.conversation.cles(r, texte, conf);
+        const v = k.relais || k.email || k.telephone && String(k.telephone).replace(/\D/g, "").slice(-9);
+        return v ? "dossier:" + String(v).toLowerCase() : "mail:" + mailId;
+      } catch (e) {
+        return "mail:" + mailId;
+      }
+    };
+    var traiterMail = async (mailId, { forcerOmbre = false, actualiserConsentement = false, simulation = false } = {}) => {
+      const api = flowApi();
+      if (!api) throw new Error("dysizz-flow 2.4 ou plus r\xE9cent est n\xE9cessaire");
+      const Table = require("@saltcorn/data/models/table");
+      const tm = Table.findOne({ name: nom("mails") });
+      const mail = tm && await tm.getRow({ id: +mailId });
+      if (!mail) throw new Error("mail introuvable");
+      const { conf, crm, reglages: R } = await charger();
+      if (actualiserConsentement) conf.consentement = { ...conf.consentement, actualiser_motif: true };
+      const mode = forcerOmbre || simulation ? "ombre" : crm.mode;
+      const client = await avecCatalogue(api.crmDepuisCoffre(crm.type, crm.reglages, crm.prefixe, mode));
+      const m = versMoteur(mail);
+      return api.verrou.sous(cleVerrou(api, m, conf, mail.id), async () => {
+        let lecture = await G.optionsLecture(api).catch(() => ({}));
+        if (simulation) lecture = { ...lecture, noter: void 0, gabarits: lecture.gabarits && { ...lecture.gabarits, creer: async (g) => ({ ...g, id: "simulation" }), maj: async () => {
+        } } };
+        const d = await api.leads.traiter(m, client, conf, { dossiers: { trouver: fil.trouver }, ...lecture });
+        if (d.dossier && d.portail)
+          d.dossier.portail = d.portail;
+        d.execution = { ...await api.leads.executer(d, client, { mode, ecrireAVerifier: R && R.crm_a_verifier === true }), mode };
+        if (client.notees) d.execution.ecritures_notees = client.notees.map(sansCommentaire);
+        if (simulation) return { id: null, dossier_id: null, statut: d.statut, dossier: d, simulation: true };
+        const garder = d.dossier && !(d.statut === "a_trier" && !d.dossier.existant);
+        const dossierId = garder ? await fil.enregistrer(api)(d, d.execution, new Date(mail.date_envoi || Date.now()), mail.id) : null;
+        const id = await enregistrer(d, mail, dossierId);
+        if (dossierId && d.bien && d.bien.id != null) {
+          let photos = "";
+          try {
+            photos = String((JSON.parse(R && R.bot || "{}") || {}).photos || "");
+          } catch (e) {
+          }
+          try {
+            require_catalogue().bienFrais(client, d.bien.id, { dossierImages: photos, fraicheur_ms: 0, budget_ms: 1 }).catch(() => {
+            });
+          } catch (e) {
+          }
+        }
+        return { id, dossier_id: dossierId, statut: d.statut, dossier: d };
+      });
+    };
+    var retraiter = (mailId, o) => traiterMail(mailId, o);
+    module2.exports = { enregistrer, retraiter, traiterMail, versLigne, versMoteur, cleVerrou, champsLus };
+  }
+});
+
+// src/lib/leads/tables/etapes.js
+var require_etapes = __commonJS({
+  "src/lib/leads/tables/etapes.js"(exports2, module2) {
+    "use strict";
+    var { nom } = require_schema();
+    var { charger } = require_conf();
+    var { flowApi } = require_core3();
+    var fil = require_fil();
+    var { avecCatalogue } = require_catalogue();
+    var G = require_gabarits();
+    var { enregistrer, versMoteur, cleVerrou } = require_dossier();
+    var perm = (m) => Object.assign(new Error(m), { permanent: true });
+    var api = () => {
+      const a = flowApi();
+      return a;
+    };
+    var obj = (v, nom2 = "dossier") => {
+      if (v && typeof v === "object") return v;
+      try {
+        return JSON.parse(v);
+      } catch (e) {
+        throw perm(`${nom2} : il faut le r\xE9sultat de l'\xE9tape pr\xE9c\xE9dente ({{dossier}})`);
+      }
+    };
+    var lireMail = async (id) => {
+      const Table = require("@saltcorn/data/models/table");
+      const t = Table.findOne({ name: nom("mails") });
+      const m = t && await t.getRow({ id: +id });
+      if (!m) throw perm(`mail ${id} introuvable dans ${nom("mails")}`);
+      return m;
+    };
+    var clientCrm = async (crm, mode) => avecCatalogue(api().crmDepuisCoffre(crm.type, crm.reglages, crm.prefixe, mode));
+    var preparer = async (id, { forcerOmbre = false } = {}) => {
+      const a = api();
+      const mail = await lireMail(id);
+      const { conf, crm } = await charger();
+      return { mail_id: mail.id, objet: String(mail.objet || "").slice(0, 200), cle: cleVerrou(a, versMoteur(mail), conf, mail.id), mode: forcerOmbre ? "ombre" : crm.mode, prefixe: require_schema().prefixe() };
+    };
+    var lire = async (lead) => {
+      const a = api(), L = obj(lead, "lead");
+      const mail = await lireMail(L.mail_id);
+      const { conf } = await charger();
+      const lecture = await G.optionsLecture(a).catch(() => ({}));
+      const d = await a.leads.etapeLire(versMoteur(mail), conf, { dossiers: { trouver: fil.trouver }, ...lecture });
+      return { ...d, mail_id: mail.id, mode: L.mode || "ombre", prefixe: L.prefixe || require_schema().prefixe() };
+    };
+    var bien = async (dossier) => {
+      const d = obj(dossier);
+      if (d.fin) return d;
+      const { conf, crm } = await charger();
+      return api().leads.etapeBien(d, await clientCrm(crm, "ombre"), conf);
+    };
+    var contact = async (dossier) => {
+      const d = obj(dossier);
+      if (d.fin) return d;
+      const { conf, crm } = await charger();
+      return api().leads.etapeContact(d, await clientCrm(crm, "ombre"), conf);
+    };
+    var consentement = async (dossier) => {
+      const d = obj(dossier);
+      if (d.fin) return d;
+      const { conf } = await charger();
+      return api().leads.etapeConsentement(d, versMoteur(await lireMail(d.mail_id)), conf);
+    };
+    var destinataires = async (dossier) => {
+      const d = obj(dossier);
+      if (d.fin) return d;
+      const { conf } = await charger();
+      return api().leads.etapeDestinataires(d, conf);
+    };
+    var ecrireCrm = async (dossier) => {
+      const a = api(), d = obj(dossier);
+      const { crm } = await charger();
+      const mode = d.mode === "reel" && crm.mode === "reel" ? "reel" : "ombre";
+      const client = await clientCrm(crm, mode);
+      if (d.dossier && d.portail) d.dossier.portail = d.portail;
+      const R = await require_conf().reglages();
+      d.execution = { ...await a.leads.executer(d, client, { mode, ecrireAVerifier: R.crm_a_verifier === true }), mode };
+      if (client.notees) d.execution.ecritures_notees = client.notees.map((x) => x && x.donnees && x.donnees.comment ? { ...x, donnees: { ...x.donnees, comment: `(${x.donnees.comment.length} caract\xE8res)` } } : x);
+      return d;
+    };
+    var conformite = async (dossier) => {
+      const d = obj(dossier), execution = d.execution;
+      if (d.fin || !execution || execution.mode !== "reel" || execution.non_automatise || !execution.contactId || !execution.consentementVerifie || !execution.consentement) return d;
+      if ((execution.resultats || []).some((r) => r.op === "confirmerRgpd")) return d;
+      const { crm, conf } = await charger();
+      if (crm.mode !== "reel" || !conf.consentement || !conf.consentement.actif) return d;
+      const client = await clientCrm(crm, "reel");
+      if (!client.confirmerRgpd) return d;
+      execution.resultats = execution.resultats || [];
+      try {
+        const r = await client.confirmerRgpd(execution.contactId);
+        execution.resultats.push({ op: "confirmerRgpd", fait: !!(r && r.confirme), resultat: r });
+      } catch (e) {
+        execution.resultats.push({ op: "confirmerRgpd", fait: false, erreur: e.message });
+      }
+      return d;
+    };
+    var ranger = async (dossier) => {
+      const a = api(), d = obj(dossier);
+      const mail = await lireMail(d.mail_id);
+      const garder = d.dossier && !(d.statut === "a_trier" && !d.dossier.existant);
+      const dossierId = garder ? await fil.enregistrer(a)(d, d.execution || {}, new Date(mail.date_envoi || Date.now()), mail.id) : null;
+      const propre = a.leads.nettoyer({ ...d });
+      delete propre.mail_id;
+      delete propre.mode;
+      delete propre.prefixe;
+      const id = await enregistrer(propre, mail, dossierId);
+      return { id, dossier_id: dossierId, statut: d.statut };
+    };
+    module2.exports = { preparer, lire, bien, contact, consentement, destinataires, ecrireCrm, conformite, ranger };
   }
 });
 

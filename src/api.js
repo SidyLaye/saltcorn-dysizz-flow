@@ -22,7 +22,7 @@ module.exports = {
       const ck = JSON.stringify([t, fournisseur, modele, nomCle || "LEADS_IA_CLE", url || ""]);
       const cache = G.get(ck) || new Map(); G.set(ck, cache);
       const IA = require("./lib/leads/ia");
-      if (fournisseur === "saltcorn") return IA.creer({ fournisseur, cache });
+      if (fournisseur === "saltcorn") return IA.creer({ fournisseur, cache, modele });
       const n = String(nomCle || "LEADS_IA_CLE").replace(/[^\w]/g, "");
       let client = null;
       const obtenir = async () => {

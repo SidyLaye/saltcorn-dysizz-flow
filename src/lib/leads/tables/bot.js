@@ -539,4 +539,4 @@ const repondre = async (action, corps) => {
   return ACTIONS[k](corps && typeof corps === "object" ? corps : {}, R && typeof R === "object" ? R : {});
 };
 
-module.exports = { repondre, contexte, evenement, fiche, telechargerPhotos, relancer, recapituler };
+module.exports = { repondre, contexte, evenement, fiche, telechargerPhotos, relancer, recapituler, envoyerModele };

@@ -81,7 +81,12 @@ const stockage = (api, R) => {
 /* ——— Plafond d'appels et journal ——— */
 const debutJour = () => { const d = new Date(new Date().toLocaleString("en-US", { timeZone: "Europe/Paris" })); const p = new Date(); p.setTime(p.getTime() - (d.getHours() * 3600 + d.getMinutes() * 60 + d.getSeconds()) * 1000); return p; };
 const appelsDuJour = async () => +(await db().query(`select count(*) n from "${tenant()}".${nom("ia")} where quand >= $1`, [debutJour()])).rows[0].n;
-const noter = async (a) => { const t = await tables(); await t.ia.insertRow({ quand: new Date(), ok: !!a.ok, ms: a.ms || null, nature: a.nature || null, source: a.source ? String(a.source).slice(0, 120) : null, erreur: a.erreur ? String(a.erreur).slice(0, 300) : null }); };
+const noter = async (a) => {
+  const t = await tables();
+  await t.ia.insertRow({ quand: new Date(), ok: !!a.ok, ms: a.ms || null, nature: a.nature || null, source: a.source ? String(a.source).slice(0, 120) : null, erreur: a.erreur ? String(a.erreur).slice(0, 300) : null });
+  /* panne de l'IA (crédit épuisé le 04/11) : alerte WhatsApp à l'administrateur, sans retarder la lecture */
+  if (!a.ok) require("./alerte_ia").signaler("panne").catch(() => {});
+};
 
 /* Options de lecture passées au moteur pour chaque mail. */
 const optionsLecture = async (api) => {
@@ -93,7 +98,11 @@ const optionsLecture = async (api) => {
   if (R.ia_actif && api.iaDepuisCoffre) {
     o.ia = api.iaDepuisCoffre(R.ia_fournisseur || "saltcorn", R.ia_modele || "", "LEADS_IA_CLE", R.ia_url || undefined);
     const plafond = +R.ia_plafond_jour || 200;
-    o.budget = async () => (await appelsDuJour()) < plafond;
+    o.budget = async () => {
+      const ok = (await appelsDuJour()) < plafond;
+      if (!ok) require("./alerte_ia").signaler("plafond").catch(() => {});
+      return ok;
+    };
     o.noter = noter;
   }
   return o;

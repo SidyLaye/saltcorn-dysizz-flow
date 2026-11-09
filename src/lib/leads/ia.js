@@ -39,13 +39,15 @@ estimation — une personne veut faire estimer ou vendre son bien
 reclamation — une plainte d'un prospect (c'est aussi un lead)
 notification — message de service, publicité, facture, newsletter, sans prospect
 test — message de test
-autre — tout le reste
+autre — tout le reste : candidature (emploi, stage, alternance), offre de service ou de partenariat, démarchage
 
 RÈGLES ABSOLUES
 — N'invente RIEN. Un champ absent vaut null. Chaque valeur doit être écrite dans le mail.
 — Le prospect est la personne qui écrit à l'agence, jamais l'agence, le négociateur ni le portail.
 — Ne déduis jamais prénom ou nom de l'adresse e-mail. Jamais « contact », « info », « noreply » comme nom.
 — Téléphone recopié tel quel. Référence recopiée telle quelle (zéros, tirets, underscores).
+— Référence du bien : celle qui suit « Réf. », « Référence » ou « mandat » quand le mail en donne une, plutôt qu'un
+  autre code de l'annonce ; jamais l'identifiant de l'agence, d'une conversation ou d'un message.
 — Prix, surface, pièces : le nombre seul, sans unité.
 — Sépare le BIEN demandé (reference, type_bien, nb_pieces, surface, prix, ville, code_postal, adresse)
   des CRITÈRES DU PROSPECT (recherche_*). Un budget maximum n'est jamais le prix du bien.
@@ -133,12 +135,13 @@ const fetchJson = async (url, init, delai = 60000) => {
 
 const FOURNISSEURS = {
   /* plugin « large-language-model » de Saltcorn déjà réglé par le client */
-  saltcorn: () => async (prompt, schema = SCHEMA, nom = "extraction") => {
+  saltcorn: () => async (prompt, schema = SCHEMA, nom = "extraction", modele = null) => {
     /* même appel que l'action llm_generate_json du plugin : un outil forcé, dont les arguments sont le JSON */
     const st = require("@saltcorn/data/db/state").getState();
     const f = st.functions && st.functions.llm_generate;
     if (!f) throw new Error("plugin large-language-model absent ou non réglé");
-    const compl = await f.run(prompt, { temperature: 0, tools: [{ type: "function", function: { name: nom, description: nom === "extraction" ? "Données lues dans le mail" : "Réponse structurée", parameters: schema } }], tool_choice: { type: "function", function: { name: nom } } });
+    /* modèle de lecture des mails (réglage ia_modele, ex. gpt-5-mini : banc du 09/11) ; sinon celui du plugin */
+    const compl = await f.run(prompt, { ...(modele ? { model: modele } : {}), temperature: 0, tools: [{ type: "function", function: { name: nom, description: nom === "extraction" ? "Données lues dans le mail" : "Réponse structurée", parameters: schema } }], tool_choice: { type: "function", function: { name: nom } } });
     if (typeof compl === "string") return compl;
     const tc = compl && compl.tool_calls && compl.tool_calls[0];
     if (tc) return tc.input || (tc.function && tc.function.arguments);
@@ -182,7 +185,7 @@ const creer = (reglages = {}) => {
       const t0 = Date.now();
       let brut, err;
       for (let i = 0; i < essais; i++) {
-        try { brut = await appeler(construirePrompt(mail, texte), SCHEMA); err = null; break; }
+        try { brut = await appeler(construirePrompt(mail, texte), SCHEMA, "extraction", reglages.modele || null); err = null; break; }
         catch (e) { err = e; if (e.status && e.status < 500 && e.status !== 429) break; await attendre(1000 * 4 ** i); }
       }
       if (err) throw err;

@@ -1,5 +1,24 @@
 # Journal des versions
 
+## 2.27.3
+
+### Ajouté
+- Alerte WhatsApp à l'administrateur quand l'IA de lecture des mails tombe en panne (3 échecs de suite) ou que le
+  plafond du jour est atteint : modèle Meta `ambs_alerte_technique`, numéros du réglage `bot.whatsapp.alertes_admin`,
+  une alerte au plus toutes les 6 heures pour tous les processus. Sans réglage, rien ne part.
+- Réglage `ia_modele` pris en compte avec le fournisseur « saltcorn » : le modèle choisi lit les mails, le reste du
+  plugin garde le sien.
+
+### Corrigé
+- Properstar (annonce sans identifiant) : la commune affichée au-dessus de « Maison · 6 Pièces… » est lue, comme lieu
+  approximatif.
+- Mail direct dont l'objet recopie le titre d'une annonce (« Immeuble à Villefranche-de-Rouergue, 66 500 € ») : la commune
+  est lue, comme lieu approximatif (jamais le nom de l'agence).
+- Vrais doublons du CRM (même référence, même prix, mêmes surface, pièces et lieu) : le bien le plus récent est retenu,
+  avec une alerte ; deux biens qui diffèrent restent « plusieurs biens possibles ».
+- Lecture par l'IA : une candidature, une offre de service ou de partenariat n'est jamais une demande ; la référence du
+  bien est celle qui suit « Réf. », jamais l'identifiant de l'agence ou d'une conversation.
+
 ## 2.27.2
 
 ### Ajouté

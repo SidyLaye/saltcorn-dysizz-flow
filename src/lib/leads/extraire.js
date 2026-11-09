@@ -233,6 +233,10 @@ const extraire = (mail, conf = {}) => {
     if (ref) poser(r, "bien.reference", ref[1], "objet");
     else { const n = objet.match(/(?<![\d.,])(\d{4,12})(?![\d.,]|\s*(€|m2|m²|euros?))/); if (n && !/^(19|20)\d\d$/.test(n[1])) poser(r, "bien.reference", n[1], "objet:nombre"); }
     for (const [k, v] of Object.entries(V.faitsTitre(objet))) poser(r, "bien." + k, v, "objet");
+    /* titre d'annonce recopié dans l'objet (« Immeuble à Villefranche-de-Rouergue, 66 500 € ») : sa commune ne fait que
+       confirmer un bien, jamais le rejeter (audit du 09/11 : bien retrouvé avec le prix) */
+    const vo = objet.match(/(?:^|\s)à\s+(\p{Lu}[\p{L}'’-]+(?:\s(?:sur|sous|en|lès|les|la|le|de|du|des|d'\p{L}+|\p{Lu}[\p{L}'’-]*)){0,3})\s*(?:[,(–]|\s-\s|$)/u);
+    if (vo && !r.bien.ville && !/s[ée]lection|habitat|agence|immo/i.test(vo[1])) { poser(r, "bien.ville", vo[1], "objet"); r.bien.lieu_approche = true; }
     poser(r, "contact.email", V.email(mail.expediteur), "expediteur");
     const n = String(mail.expediteur || "").match(/^\s*"?([^"<@]+?)"?\s*</);
     /* un nom de société affiché (« A DUPONT RENOVATION SERVICES », « EXEMPLE SARL ») n'est pas le nom du prospect :
