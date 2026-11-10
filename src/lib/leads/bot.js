@@ -82,10 +82,15 @@ const annonce = (a) => {
 
 /* Projet du lead connu avant la conversation : son mail (phase 1), puis ses recherches dans le CRM. Le bot revalide
    ces informations au lieu de les redemander. Jamais les notes internes ni les commentaires des recherches. */
-const dejaConnu = (x = {}, contact = null) => {
+const dejaConnu = (x = {}, contact = null, bien = null) => {
   const r = x.recherche || {}, projets = (contact && contact.projets) || [];
   const p = projets.find((o) => o.budget_max || o.zone || o.delai) || projets[0] || {};
-  const o = { budget: r.budget_max || p.budget_max || null, budget_min: p.budget_min || null, zone: r.localisation || p.zone || null, rayon_km: p.rayon_km || null,
+  /* Sidy, 09/11 : « le leads a jamais donné de budget […] l'annonce il a cliqué […] c'est pas le budget qu'il a donné ». Le bot dit
+     « vous aviez indiqué un budget » : seulement ce que le lead a écrit lui-même dans sa demande, jamais le prix de l'annonce. Les
+     recherches du CRM ne donnent jamais de budget : l'application les crée à partir du bien cliqué (budget = prix, criteresProjet). */
+  const prix = +(bien && bien.prix) || 0, b = +r.budget_max || 0;
+  const budget = b && !(prix && Math.abs(b - prix) <= prix * 0.02) ? r.budget_max : null;
+  const o = { budget, budget_min: null, zone: r.localisation || p.zone || null, rayon_km: p.rayon_km || null,
     surface_min: r.surface_min || p.surface_min || null, terrain_min: p.terrain_min || null, pieces_min: r.pieces_min || p.pieces_min || null,
     delai: p.delai || null, bien_a_vendre: p.revente != null ? p.revente : null, usage: p.usage || null, motif: p.motif || null };
   return o;
@@ -126,7 +131,7 @@ const contexte = ({ dossier, lead, bien, photos = [], contact = null, conf, regl
     /* numéro direct de la personne qui reprend : seulement si le client l'a accepté */
     liens_whatsapp: R.liens_directs === true && tel ? { negociateur: "https://wa.me/" + tel } : {},
     langue_ouverture: "fr",
-    deja_connu: dejaConnu(x, contact),
+    deja_connu: dejaConnu(x, contact, bien),
     /* la demande du lead telle qu'il l'a écrite au portail : le bot s'en sert pour comprendre, sans la redemander */
     demande: { message: String(x.message || "").slice(0, 1500), nature: x.nature || "", portail: dossier.portail || "" },
     ouverture_envoyee: !!etat.ouverture, fiche_annonce_envoyee: !!etat.fiche, statut: etat.statut || "", optout: !!etat.optout,
@@ -135,6 +140,10 @@ const contexte = ({ dossier, lead, bien, photos = [], contact = null, conf, regl
 
 const DEMANDES = { "OUT-1": "Demande de visite ou de rendez-vous", "OUT-2": "Demande de rappel", "OUT-3": "Projet à plus long terme, à recontacter",
   "OUT-4": "Demande à parler à un conseiller", "OUT-5": "Le prospect n'est plus intéressé", "OUT-6": "Désinscription" };
+/* renvoi vers un humain sans fin de conversation (CR du 03/11) : le bot marque la sortie OUT-4 de son genre ; le titre dit ce qu'il faut reprendre */
+const RENVOIS = { question: "Question du prospect à reprendre", reclamation: "Réclamation ou insatisfaction du prospect", recherche: "Recherche d'autres biens à proposer",
+  vendu: "Bien plus en vente : biens proches à proposer" };
+const titreSortie = (d = {}) => (d.code === "OUT-4" && RENVOIS[d.renvoi]) || DEMANDES[d.code] || "Demande";
 const DELAIS = { HOT: "moins de 3 mois", WARM: "3 à 12 mois", COLD: "plus de 12 mois" };
 /* Scores /100 produits par la conversation (provisoires tant que le client n'a pas validé les poids) : « bien 75/100 · financement 50/100 » */
 const NOMS_SCORES = { bien: "bien", financement: "financement", travaux: "travaux", international: "relocation" };
@@ -152,7 +161,8 @@ const BRANCHES = { branche_f: ["lead_financement", "f", "Intérêt pour un accom
 const INTERNES = ["lead_financement", "lead_travaux", "lead_relocation", "tache", "score", "dossier_id", "langue", "tag", "elys_fx"];
 
 /* réponses des branches F, W, I (clés du bot) en mots lisibles dans les mails et les actions du CRM */
-const LIBELLES_BRANCHE = { apport: "Apport", budget_global: "Budget global", accord_bancaire: "Banque ou courtier", horizon: "Horizon",
+const LIBELLES_BRANCHE = { paiement: "Achat", mise_en_relation: "Mise en relation avec le référent financement",   // CR du 03/11 : deux questions
+  apport: "Apport", budget_global: "Budget global", accord_bancaire: "Banque ou courtier", horizon: "Horizon",
   nature: "Nature des travaux", bien_concerne: "Bien concerné", urgence: "Urgence", enveloppe: "Enveloppe", pays: "Pays", calendrier: "Calendrier",
   besoins: "Besoins", zone: "Zone", consentement: "Accord pour être contacté" };
 /* Lignes « libellé, valeur » d'une sortie du bot : pour l'action du CRM et pour le message aux équipes. */
@@ -161,7 +171,7 @@ const lignes = (d = {}) => {
   const branche = (o) => Object.entries(o || {}).filter(([, v]) => v !== "" && v != null && typeof v !== "object")
     .map(([k, v]) => `${LIBELLES_BRANCHE[k] || k} : ${v === true ? "oui" : v === false ? "non" : v}`).join(" ; ");
   return [
-    ["Demande", [DEMANDES[d.code] || d.code, d.motif].filter(Boolean).join(" · ")],
+    ["Demande", [titreSortie(d), d.motif].filter(Boolean).join(" · ")],
     ["Créneau souhaité", [d.creneau, d.fuseau].filter(Boolean).join(" · ")],
     ["Délai du projet", DELAIS[d.temperature]],
     ["Score", texteScores(d.scores)],
@@ -220,7 +230,7 @@ const plan = (evenements, R = {}, { vendeur: dejaVendeur = false } = {}) => {
         if (q.zone) criteres.localisation = String(q.zone).slice(0, 80);
         if (!out.crm.some((x) => x.op === "creerRecherche")) out.crm.push({ op: "creerRecherche", une_fois: "recherche", criteres });
       }
-      if (d.code !== "OUT-6") out.avis.push({ titre: DEMANDES[d.code] || "Demande", qualifie: d.code !== "OUT-5", prioritaire: !!d.lead_prioritaire, donnees: d, referents: [d.lead_financement && "f", d.lead_travaux && "w", d.lead_relocation && "i"].filter(Boolean) });
+      if (d.code !== "OUT-6") out.avis.push({ titre: titreSortie(d), qualifie: d.code !== "OUT-5" && !RENVOIS[d.renvoi], prioritaire: !!d.lead_prioritaire, donnees: d, referents: [d.lead_financement && "f", d.lead_travaux && "w", d.lead_relocation && "i"].filter(Boolean) });
     } else if (AVIS[e.type] && !(sortie && e.type === "prioritaire_vendeur"))
       out.avis.push({ titre: AVIS[e.type], type: e.type, prioritaire: e.type === "prioritaire_vendeur", donnees: d, referents: [] });
     /* la sortie du même tour porte déjà tout : ni l'intention ni le détail d'une branche ne partent à part */
@@ -274,29 +284,73 @@ ${aurait_recu ? `<p style="color:#b45309;font-size:12px">Essai : en service, ce 
   return { objet: objet.slice(0, 300), html };
 };
 
-/* Fiche du bien, en blocs pour ecrirePdf : page blanche, champs publics seulement, aucune marque. */
-/* Fiche annonce PDF (slides 04 à 22, R09 ; parcours page 15) : page blanche, sans marque ni nom d'agence, dans la langue du lead.
-   photos : adresses des photos autorisées DÉJÀ téléchargées par l'appelant (une photo absente n'apparaît pas, jamais d'erreur imprimée). */
-const blocsFiche = (bien, quand = new Date(), langue = "fr", photos = []) => {
+/* Fiche du bien en PDF, dans la langue du lead (R09) : même mise en page que la fiche commerciale Immofacile que les assistantes
+   de SH envoient aux clients (demande de SH, 06/11/2026), SANS logo (Sidy, 09/11 : le lead a pu répondre à une annonce de l'une ou
+   l'autre enseigne). Photo principale, titre, lieu, prix, contact ; description ; caractéristiques par rubrique ; DPE et GES ; photos.
+   Contenu : les seuls champs publics et le contenu public de l'annonce (annonce()), jamais les informations réservées (slide 07) ni
+   la référence interne du bien (le modèle des assistantes montre le n° de mandat : à ajouter seulement si Sidy le décide).
+   photos : adresses des photos autorisées DÉJÀ téléchargées par l'appelant (une photo absente n'apparaît pas, jamais d'erreur imprimée).
+   contact : { nom } de la personne qui s'occupe de la demande ; standard : numéro du standard. */
+const MARINE = "#23395b", OR = "#b8975a";
+const RUBRIQUES = [["loc", /vue|exposition|[ée]tages?|niveau|environnement|proximit|situation|quartier/i], ["surf", /^surface|surface /i],
+  ["terrain", /terrain|jardin|parc|cl[oô]tur|arbor|potager|verger|am[ée]nagement ext/i],
+  ["int", /chambre|salle|cuisine|chauffage|chemin[ée]e|insert|s[ée]jour|salon|\bwc\b|cave|grenier|comble|buanderie|dressing|meubl|[ée]quip|pi[eè]ce|bureau|mezzanine|cellier/i],
+  ["ext", /construction|ann[ée]e|toiture|fen[êe]tre|menuiser|vitrage|isolation|fa[çc]ade|mitoyen|terrasse|balcon|piscine|garage|stationnement|parking|d[ée]pendance|grange|hangar|abri|assainissement/i]];
+const NOMS_RUBRIQUES = { fr: { loc: "Localisation", surf: "Surfaces", int: "Intérieur", ext: "Extérieur", terrain: "Terrain", autres: "Autres", fin: "Aspects financiers" },
+  en: { loc: "Location", surf: "Areas", int: "Interior", ext: "Exterior", terrain: "Grounds", autres: "Other", fin: "Financial" } };
+const blocsFiche = (bien, quand = new Date(), langue = "fr", photos = [], contact = {}, standard = "") => {
   const b = bienPublic(bien);
   if (!b || !(b.type || b.ville)) return null;
-  const en = langue === "en", T = require("./traduction"), an = annonce(bien && bien.annonce);
-  const lieu = [b.ville, b.code_postal && `(${b.code_postal})`].filter(Boolean).join(" ");
+  const en = langue === "en", T = require("./traduction"), an = annonce(bien && bien.annonce), N = NOMS_RUBRIQUES[en ? "en" : "fr"];
   const typeAff = en ? (T.typeEn(b.type) || "Property") : majuscule(b.type) || "Bien";
-  const titre = en ? [typeAff, b.pieces && `${b.pieces} rooms`, b.ville].filter(Boolean).join(", ")
-    : [typeAff, b.pieces && `${b.pieces} pièces`, b.ville && `à ${b.ville}`].filter(Boolean).join(" ");
-  const L = en ? ["Feature", "Details", "Type", "Rooms", "Bedrooms", "Living area", "Location", "Price"] : ["Caractéristique", "Détail", "Type", "Pièces", "Chambres", "Surface", "Localisation", "Prix"];
-  const details = en ? Object.entries(an.details_en || {}).map(([k, v]) => [T.traduireNom(k), v]).filter(([k]) => k) : Object.entries(an.details || {});
-  const tableau = [[L[0], L[1]], [L[2], typeAff], [L[3], b.pieces], [L[4], b.chambres], [L[5], b.surface && `${b.surface} m²`], [L[6], lieu],
-    [L[7], b.prix && (en ? `€${String(b.prix).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}` : `${milliers(b.prix)} €`)], ...details.slice(0, 14)].filter(([, v]) => v).map(([l, v]) => [l, String(v)]);
+  const prix = b.prix && (en ? `€${String(b.prix).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}` : `${milliers(b.prix)} €`);
   const dans = (o) => (o && (o[en ? "en" : "fr"] || (!en && o.en) || "")) || "";
-  const accroche = dans(an.titre_annonce), description = String(dans(an.description_annonce)).slice(0, 1800);
-  const ph = (photos || []).filter((u) => /^https:\/\//.test(u)).slice(0, 4);
+  const SIGNE = /agence|hamilton|s[ée]lection (habitat|ocean|med|immobilier|senegal|groupe)|groupe s[ée]lection|arieg.?immo|toit ?2 ?r[êe]ve|bliss|van den berg|we also speak|we spreken|wir sprechen/i;
+  const titreAnnonce = dans(an.titre_annonce);
+  const titre = (titreAnnonce && !SIGNE.test(titreAnnonce) ? titreAnnonce : "") || (en ? [typeAff, b.pieces && `${b.pieces} rooms`, b.ville].filter(Boolean).join(", ") : [typeAff, b.pieces && `${b.pieces} pièces`, b.ville && `à ${b.ville}`].filter(Boolean).join(" "));
+  /* jamais un nom d'agence ni d'enseigne sur un document (règle du 13/10, et Sidy 09/11 : on ne sait pas sous quelle enseigne le lead a vu
+     l'annonce) : une phrase de la description qui signe l'annonce est retirée entière (24 descriptions sur 99 en ont une, mesuré le 09/11) */
+  const description = String(dans(an.description_annonce)).split(/(?<=[.!?\n])\s+/).filter((x) => !SIGNE.test(x)).join(" ").replace(/\s+/g, " ").trim().slice(0, 3500);
+  const ph = (photos || []).filter((u) => /^https:\/\//.test(u)).slice(0, 13);
   const jour = quand.toLocaleDateString("fr-FR", { timeZone: "Europe/Paris", day: "2-digit", month: "2-digit", year: "numeric" });
-  return [{ titre }, ...(accroche ? [{ t2: accroche }] : []), ...(ph[0] ? [{ image: ph[0] }] : []),
-    { tableau, taille: 10.5, chiffres_a_droite: false }, ...(description ? [{ texte: description }] : []),
-    ...ph.slice(1).map((u) => ({ image: u, largeur: 380 })),
-    { petit: en ? `Listing information as of ${jour}. Not a contractual document.` : `Informations de l'annonce au ${jour}. Document non contractuel.` }];
+  /* caractéristiques : champs principaux, puis celles de l'annonce rangées par rubrique (en anglais, seulement celles qui se traduisent) */
+  const r = { loc: [[en ? "Country" : "Pays", "France"], ...(b.code_postal ? [[en ? "Postcode" : "Code postal", String(b.code_postal)]] : []), ...(b.ville ? [[en ? "Town" : "Ville", b.ville]] : [])],
+    surf: b.surface ? [[en ? "Living area" : "Surface habitable", `${b.surface} m²`]] : [], terrain: [], ext: [], autres: [],
+    int: [...(b.pieces ? [[en ? "Rooms" : "Pièces", String(b.pieces)]] : []), ...(b.chambres ? [[en ? "Bedrooms" : "Chambres", String(b.chambres)]] : [])],
+    fin: prix ? [[en ? "Price" : "Prix", prix]] : [] };
+  const details = en ? Object.entries(an.details_en || {}).map(([k, v]) => [T.traduireNom(k), v, k]).filter(([k]) => k) : Object.entries(an.details || {}).map(([k, v]) => [k, v, k]);
+  let dpe = "", ges = "", dpeVal = "", gesVal = "";
+  for (const [nom, v, brut] of details) {
+    const lettre = /^[A-G]$/i.test(String(v).trim()) ? String(v).trim().toUpperCase() : "";
+    if (/^valeur consommation .nergie/i.test(brut)) { dpeVal = String(v); continue; }
+    if (/^valeur gaz effet de serre/i.test(brut)) { gesVal = String(v); continue; }
+    if (/consommation .nergie/i.test(brut)) { dpe = lettre; continue; }
+    if (/gaz effet de serre/i.test(brut)) { ges = lettre; continue; }
+    if (/^(pays|country)$|trajet|distance|affichage du dpe/i.test(brut)) continue;   // déjà dit, ou sans unité
+    const k = (RUBRIQUES.find(([, re]) => re.test(brut)) || ["autres"])[0];
+    const val = String(v).replace(/^[-–\s]+/, "").replace(/(\d)\.(\d)/g, en ? "$1.$2" : "$1,$2").replace(/^./, (c) => c.toUpperCase());
+    if (r[k].length < 12) r[k].push([nom, val]);
+  }
+  /* pièces de l'annonce : « Séjour · 27 m² · Rez-de-chaussée » → libellé, puis le reste (en français seulement : pas de traduction) */
+  const pieces = en ? [] : (an.pieces_detail || []).slice(0, 25).map((x) => { const [a, ...b] = String(x).split(" · "); return [a, b.join(" · ").replace(/(\d)\.(\d)/g, "$1,$2") || "—"]; });
+  const cles = [...["loc", "surf", "int", "ext", "terrain", "autres", "fin"].map((k) => [N[k], r[k]]), ["Pièces", pieces]].filter(([, l]) => l.length);
+  const out = [
+    ...(ph[0] ? [{ image: ph[0], hauteur: 330 }] : []),
+    { centre: titre, taille: 14, gras: true, majuscules: true, couleur: MARINE, espace: 6 },
+    ...(b.ville ? [{ centre: (en ? "Location: " : "Localisation : ") + [b.ville, b.code_postal && `(${b.code_postal})`].filter(Boolean).join(" "), taille: 10, majuscules: true, couleur: "#374151" }] : []),
+    ...(prix ? [{ centre: prix, taille: 22, gras: true, couleur: MARINE, espace: 12 }] : []),
+    { centre: en ? "Contact" : "Contact", taille: 8.5, gras: true, majuscules: true, couleur: OR, espace: 2 },
+    ...(contact && contact.nom ? [{ centre: contact.nom, taille: 10, majuscules: true, couleur: "#374151", espace: 2 }] : []),
+    ...(standard ? [{ centre: (en ? "Switchboard: " : "Standard : ") + standard + (en ? " (9am to 7pm)" : " (9h à 19h)"), taille: 9, couleur: "#374151" }] : []),
+    { petit: en ? `Listing information as of ${jour}. Not a contractual document.` : `Informations de l'annonce au ${jour}. Document non contractuel.` },
+  ];
+  if (description) out.push({ saut: true }, { bandeau: "Description", couleur: MARINE }, { texte: description, taille: 10.5 });
+  out.push({ saut: true }, { bandeau: en ? "Features" : "Caractéristiques", couleur: MARINE }, { cles, couleur: MARINE, couleur_rubrique: OR });
+  if (/^[A-G]$/.test(dpe) || /^[A-G]$/.test(ges)) out.push({ bandeau: en ? "Energy performance" : "Diagnostics", couleur: MARINE, garder: 150 },
+    { dpe: { dpe, ges, dpe_titre: en ? "Energy performance (DPE)" : "Consommation énergétique (DPE)", ges_titre: en ? "Greenhouse gas emissions (GES)" : "Émissions de gaz à effet de serre (GES)",
+      dpe_valeur: dpeVal && `${dpeVal} kWh/m²/${en ? "year" : "an"}`, ges_valeur: gesVal && `${gesVal} kg CO2/m²/${en ? "year" : "an"}` } });
+  if (ph.length > 1) out.push({ saut: true }, { bandeau: en ? "Property photos" : "Photos du bien", couleur: MARINE }, { grille: ph.slice(1), hauteur: 165 });
+  return out;
 };
 
-module.exports = { CHAMPS_PUBLICS, cartesPourBot, enVente, bienPublic, annonce, dejaConnu, nettoyer, tel9, quiRecoit, contexte, plan, lignes, texteScores, mailEquipe, alerteNego, blocsFiche, majuscule, nomVille };
+module.exports = { RENVOIS, CHAMPS_PUBLICS, cartesPourBot, enVente, bienPublic, annonce, dejaConnu, nettoyer, tel9, quiRecoit, contexte, plan, lignes, texteScores, mailEquipe, alerteNego, blocsFiche, majuscule, nomVille };

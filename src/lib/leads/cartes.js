@@ -31,7 +31,7 @@ const photosACommenter = (photos) => (Array.isArray(photos) ? photos : []).filte
 
 /* La consigne et les photos, dans un seul message : « Photo 1 », image, « Photo 2 », image… */
 const consignesPhotos = (donnees, n) => `Tu écris le texte de chaque carte d'un carrousel WhatsApp qui présente un bien immobilier à un acheteur qui a déjà répondu à son annonce.
-Agence : Sélection Habitat - Agence Hamilton (maisons de caractère, une expérience immobilière à hautes valeurs humaines).
+Agence : Selection Habitat - Agence Hamilton (maisons de caractère, une expérience immobilière à hautes valeurs humaines).
 Chaque carte montre une photo du bien ; sous la photo, ton texte doit donner envie d'acheter en mettant en valeur ce que montre CETTE photo.
 L'acheteur achète une vie (le calme, la place, la pierre, la vue, recevoir), pas une fiche technique.
 

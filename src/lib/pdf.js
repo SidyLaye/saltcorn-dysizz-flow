@@ -56,7 +56,7 @@ const imageObj = (buf) => {
 
 const hexColor = (c, dflt = "0 0 0") => { const m = String(c || "").match(/^#?([0-9a-f]{6})$/i); if (!m) return dflt; const n = parseInt(m[1], 16); return `${((n >> 16) / 255).toFixed(3)} ${(((n >> 8) & 255) / 255).toFixed(3)} ${((n & 255) / 255).toFixed(3)}`; };
 
-/* blocs : [{titre|t2|texte|liste|tableau|image|saut|ligne|petit}] ; opts : { titre, auteur, couleur, pied } */
+/* blocs : [{titre|t2|texte|liste|tableau|image|saut|ligne|petit|bandeau|centre|cles|dpe|grille}] ; opts : { titre, auteur, couleur, pied } */
 const ecrirePdf = async (blocs, opts = {}, loadImage) => {
   const W = 595.28, H = 841.89, M = 56, CW = W - 2 * M;
   const pages = []; let ops = [], y = H - M;
@@ -89,10 +89,64 @@ const ecrirePdf = async (blocs, opts = {}, loadImage) => {
         y = y0 - h;
       });
       y -= 10;
+    } else if (b.bandeau !== undefined) {   // barre de titre de rubrique, pleine largeur (fiche commerciale du bien)
+      need(34 + (+b.garder || 0)); y -= 8; const h = 20, c = hexColor(b.couleur, accent);   // garder : place réservée au bloc qui suit (pas de titre seul en bas de page)
+      ops.push(`${c} rg ${M} ${(y - h).toFixed(2)} ${CW} ${h} re f`); y -= 14; text(String(b.bandeau).toUpperCase(), M + 10, 10, true, "1 1 1"); y -= 14;
+    } else if (b.centre !== undefined) {   // texte centré (titre, lieu, prix, contact)
+      const size = +b.taille || 10.5, bold = !!b.gras, col = b.couleur ? hexColor(b.couleur) : undefined, lh = size * 1.3;
+      for (const l of wrap(b.majuscules ? String(b.centre).toUpperCase() : b.centre, size, bold, CW - 20)) { need(lh); y -= lh; text(l, M + (CW - width(l, size, bold)) / 2, size, bold, col); }
+      y -= +b.espace || 4;
+    } else if (b.cles) {   // rubriques « libellé … valeur » : titre de rubrique en couleur, libellé à gauche, valeur à droite
+      for (const [rubrique, lignes] of b.cles) {
+        if (!lignes.length) continue;
+        need(36); y -= 22; text(String(rubrique).toUpperCase(), M, 9.5, false, hexColor(b.couleur_rubrique, "0.722 0.592 0.353")); y -= 6;
+        for (const [l, v] of lignes) {
+          const vs = wrap(String(v), 8.5, false, CW * 0.55);
+          need(vs.length * 11.5 + 2); y -= 11.5; text(String(l).toUpperCase(), M, 8, true, hexColor(b.couleur, accent));
+          vs.forEach((x, i) => { if (i) y -= 11.5; text(x, W - M - width(x, 8.5), 8.5, false, "0.35 0.35 0.35"); });
+        }
+      }
+      y -= 6;
+    } else if (b.dpe) {   // étiquettes énergie (DPE) et climat (GES), lettre du bien marquée
+      const ECH = { dpe: ["0.000 0.612 0.427", "0.322 0.694 0.325", "0.647 0.800 0.455", "0.957 0.906 0.059", "0.941 0.706 0.059", "0.922 0.510 0.208", "0.843 0.133 0.122"],
+        ges: ["0.643 0.859 0.973", "0.549 0.706 0.827", "0.467 0.573 0.694", "0.376 0.435 0.561", "0.302 0.322 0.447", "0.224 0.208 0.318", "0.157 0.106 0.208"] };
+      const cols = ["dpe", "ges"].filter((k) => /^[A-G]$/i.test(String(b.dpe[k] || ""))); if (!cols.length) continue;
+      const bw = (CW - 30) / 2, hb = 13; need(7 * (hb + 3) + 28); const y0 = y - 8;
+      cols.forEach((k, ci) => {
+        const x0 = M + ci * (bw + 30); y = y0; text(b.dpe[k + "_titre"] || (k === "dpe" ? "DPE" : "GES"), x0, 9, true, "0.2 0.2 0.2"); y -= 6;
+        "ABCDEFG".split("").forEach((L, i) => {
+          const w = bw * (0.3 + 0.1 * i), yb = y - (i + 1) * (hb + 3), moi = L === String(b.dpe[k]).toUpperCase();
+          ops.push(`${ECH[k][i]} rg ${x0} ${yb.toFixed(2)} ${w.toFixed(2)} ${hb} re f`);
+          if (moi) ops.push(`0.1 0.1 0.1 RG 1.6 w ${(x0 - 1.5).toFixed(2)} ${(yb - 1.5).toFixed(2)} ${(w + 3).toFixed(2)} ${hb + 3} re S`);
+          const yy = y; y = yb + 3.5; text(L, x0 + 4, 9, true, i > 3 || k === "ges" && i > 2 ? "1 1 1" : "0.1 0.1 0.1"); y = yy;
+          if (moi) { const tx = x0 + w + 5, ty = yb + hb / 2; ops.push(`0.1 0.1 0.1 rg ${tx.toFixed(2)} ${ty.toFixed(2)} m ${(tx + 8).toFixed(2)} ${(ty + 5).toFixed(2)} l ${(tx + 8).toFixed(2)} ${(ty - 5).toFixed(2)} l f`); }
+        });
+      });
+      y = y0 - 7 * (hb + 3) - 22;
+      cols.forEach((k, ci) => { if (b.dpe[k + "_valeur"]) { const yy = y; text(b.dpe[k + "_valeur"], M + ci * (bw + 30), 8.5, false, "0.3 0.3 0.3"); y = yy; } });
+      y -= 12;
+    } else if (b.grille) {   // photos en grille de 2 colonnes, recadrées à la même hauteur
+      const gap = 8, cw2 = (CW - gap) / 2, hh = +b.hauteur || 170;
+      for (let i = 0; i < b.grille.length; i += 2) {
+        need(hh + gap);
+        for (let j = 0; j < 2 && i + j < b.grille.length; j++) {
+          try {
+            const img = imageObj(await loadImage(b.grille[i + j])), id = images.push(img), x = M + j * (cw2 + gap);
+            const k = Math.max(cw2 / img.w, hh / img.h), w = img.w * k, h = img.h * k;
+            ops.push(`q ${x.toFixed(2)} ${(y - hh).toFixed(2)} ${cw2.toFixed(2)} ${hh} re W n ${w.toFixed(2)} 0 0 ${h.toFixed(2)} ${(x + (cw2 - w) / 2).toFixed(2)} ${(y - hh + (hh - h) / 2).toFixed(2)} cm /Im${id} Do Q`);
+          } catch (e) { /* photo illisible : la case reste vide */ }
+        }
+        y -= hh + gap;
+      }
     } else if (b.image) {
       try {
         const buf = await loadImage(b.image);
         const img = imageObj(buf); const id = images.push(img);
+        if (b.hauteur) {   // recadrée à la largeur de la page et à cette hauteur (photo principale)
+          const hh = +b.hauteur, k = Math.max(CW / img.w, hh / img.h), w = img.w * k, h = img.h * k; need(hh + 6); y -= hh;
+          ops.push(`q ${M} ${y.toFixed(2)} ${CW} ${hh} re W n ${w.toFixed(2)} 0 0 ${h.toFixed(2)} ${(M + (CW - w) / 2).toFixed(2)} ${(y + (hh - h) / 2).toFixed(2)} cm /Im${id} Do Q`);
+          y -= 10; continue;
+        }
         let w = Math.min(CW, +b.largeur || img.w * 0.75), h = (w * img.h) / img.w;
         if (h > H - 2 * M - 40) { h = H - 2 * M - 40; w = (h * img.w) / img.h; }
         need(h + 6); y -= h;

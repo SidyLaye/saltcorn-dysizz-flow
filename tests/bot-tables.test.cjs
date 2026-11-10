@@ -217,6 +217,14 @@ const sortie = (code, plus = {}) => ({ type: "sortie", noeud: "TB3", quand: "202
       { type: "intention", donnees: { demande: "rappel" } }, { type: "branche_f", donnees: { lead_financement: true } }] });
     await repondre("evenement", { telephone: "33611111111", dossier_id: 7, event_id: "ev22c", evenements: [sortie("OUT-2")] });
     assert.deepStrictEqual(miens(await recapituler({ maintenant: t0 + 200 * min })), []);
+    /* CR du 03/11 : une question transmise au négociateur (renvoi) ne clôt pas la visite en préparation ; son mail dit ce qu'il faut reprendre */
+    mails.length = 0;
+    await repondre("evenement", { telephone: "33611111111", dossier_id: 7, event_id: "ev22d", evenements: [{ type: "inbound", quand: new Date(t0 + 300 * min).toISOString(), donnees: { texte: "Je veux visiter" } },
+      { type: "intention", donnees: { demande: "visite" } }] });
+    await repondre("evenement", { telephone: "33611111111", dossier_id: 7, event_id: "ev22e", evenements: [{ type: "inbound", quand: new Date(t0 + 301 * min).toISOString(), donnees: { texte: "Et la taxe foncière ?" } },
+      { ...sortie("OUT-4"), donnees: { ...sortie("OUT-4").donnees, renvoi: "question", motif: "information absente ou hors base : la taxe foncière" } }] });
+    assert.ok(mails.some((m) => /Question du prospect à reprendre/.test(m.sujet) && !/Lead qualifié/.test(m.sujet)), "renvoi : titre propre, pas « lead qualifié »");
+    assert.deepStrictEqual(miens(await recapituler({ maintenant: t0 + 340 * min })).map((x) => x.demandes), [["visite"]], "la visite en préparation est récapitulée malgré le renvoi");
     delete martin.telephone; delete marie.telephone; BOT = BOTi; meta.length = 0; mails.length = 0;
   }
 
@@ -418,7 +426,7 @@ const sortie = (code, plus = {}) => ({ type: "sortie", noeud: "TB3", quand: "202
   /* lead d'essai : projet et message fournis par le réglage, repris dans le contexte */
   BOT = { ...BOT, numeros_essai: { 221700000001: { bien: "AMBS-TEST-1", prenom: "Awa", projet: { budget_max: 300000, delai: "dans 2 mois", revente: false }, message: "Je souhaite visiter" } } };
   c = await repondre("contexte", { telephone: "221700000001" });
-  assert.strictEqual(c.deja_connu.budget, 300000); assert.strictEqual(c.deja_connu.delai, "dans 2 mois"); assert.strictEqual(c.deja_connu.bien_a_vendre, false); assert.strictEqual(c.demande.message, "Je souhaite visiter");
+  assert.strictEqual(c.deja_connu.budget, null, "Sidy, 09/11 : un projet du CRM ne donne jamais de budget"); assert.strictEqual(c.deja_connu.delai, "dans 2 mois"); assert.strictEqual(c.deja_connu.bien_a_vendre, false); assert.strictEqual(c.demande.message, "Je souhaite visiter");
   /* « avez-vous d'autres biens ? » : biens en vente du même secteur, sans le bien de départ, champs publics seulement ;
      visite demandée sur l'un d'eux : le négociateur du bien d'origine ET celui du nouveau bien sont prévenus */
   BOT = { ...BOT, numeros_essai: {}, notifications: "reel", essai_routage: false };

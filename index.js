@@ -1,4 +1,4 @@
-/* dysizz-flow 2.27.4 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.28.0 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.27.4" : "dev";
+    var VERSION2 = true ? "2.28.0" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -84142,11 +84142,106 @@ var require_pdf = __commonJS({
             y = y0 - h;
           });
           y -= 10;
+        } else if (b.bandeau !== void 0) {
+          need(34 + (+b.garder || 0));
+          y -= 8;
+          const h = 20, c = hexColor(b.couleur, accent);
+          ops.push(`${c} rg ${M} ${(y - h).toFixed(2)} ${CW} ${h} re f`);
+          y -= 14;
+          text(String(b.bandeau).toUpperCase(), M + 10, 10, true, "1 1 1");
+          y -= 14;
+        } else if (b.centre !== void 0) {
+          const size = +b.taille || 10.5, bold = !!b.gras, col = b.couleur ? hexColor(b.couleur) : void 0, lh = size * 1.3;
+          for (const l of wrap(b.majuscules ? String(b.centre).toUpperCase() : b.centre, size, bold, CW - 20)) {
+            need(lh);
+            y -= lh;
+            text(l, M + (CW - width(l, size, bold)) / 2, size, bold, col);
+          }
+          y -= +b.espace || 4;
+        } else if (b.cles) {
+          for (const [rubrique, lignes] of b.cles) {
+            if (!lignes.length) continue;
+            need(36);
+            y -= 22;
+            text(String(rubrique).toUpperCase(), M, 9.5, false, hexColor(b.couleur_rubrique, "0.722 0.592 0.353"));
+            y -= 6;
+            for (const [l, v] of lignes) {
+              const vs = wrap(String(v), 8.5, false, CW * 0.55);
+              need(vs.length * 11.5 + 2);
+              y -= 11.5;
+              text(String(l).toUpperCase(), M, 8, true, hexColor(b.couleur, accent));
+              vs.forEach((x, i) => {
+                if (i) y -= 11.5;
+                text(x, W - M - width(x, 8.5), 8.5, false, "0.35 0.35 0.35");
+              });
+            }
+          }
+          y -= 6;
+        } else if (b.dpe) {
+          const ECH = {
+            dpe: ["0.000 0.612 0.427", "0.322 0.694 0.325", "0.647 0.800 0.455", "0.957 0.906 0.059", "0.941 0.706 0.059", "0.922 0.510 0.208", "0.843 0.133 0.122"],
+            ges: ["0.643 0.859 0.973", "0.549 0.706 0.827", "0.467 0.573 0.694", "0.376 0.435 0.561", "0.302 0.322 0.447", "0.224 0.208 0.318", "0.157 0.106 0.208"]
+          };
+          const cols = ["dpe", "ges"].filter((k) => /^[A-G]$/i.test(String(b.dpe[k] || "")));
+          if (!cols.length) continue;
+          const bw = (CW - 30) / 2, hb = 13;
+          need(7 * (hb + 3) + 28);
+          const y0 = y - 8;
+          cols.forEach((k, ci) => {
+            const x0 = M + ci * (bw + 30);
+            y = y0;
+            text(b.dpe[k + "_titre"] || (k === "dpe" ? "DPE" : "GES"), x0, 9, true, "0.2 0.2 0.2");
+            y -= 6;
+            "ABCDEFG".split("").forEach((L, i) => {
+              const w = bw * (0.3 + 0.1 * i), yb = y - (i + 1) * (hb + 3), moi = L === String(b.dpe[k]).toUpperCase();
+              ops.push(`${ECH[k][i]} rg ${x0} ${yb.toFixed(2)} ${w.toFixed(2)} ${hb} re f`);
+              if (moi) ops.push(`0.1 0.1 0.1 RG 1.6 w ${(x0 - 1.5).toFixed(2)} ${(yb - 1.5).toFixed(2)} ${(w + 3).toFixed(2)} ${hb + 3} re S`);
+              const yy = y;
+              y = yb + 3.5;
+              text(L, x0 + 4, 9, true, i > 3 || k === "ges" && i > 2 ? "1 1 1" : "0.1 0.1 0.1");
+              y = yy;
+              if (moi) {
+                const tx = x0 + w + 5, ty = yb + hb / 2;
+                ops.push(`0.1 0.1 0.1 rg ${tx.toFixed(2)} ${ty.toFixed(2)} m ${(tx + 8).toFixed(2)} ${(ty + 5).toFixed(2)} l ${(tx + 8).toFixed(2)} ${(ty - 5).toFixed(2)} l f`);
+              }
+            });
+          });
+          y = y0 - 7 * (hb + 3) - 22;
+          cols.forEach((k, ci) => {
+            if (b.dpe[k + "_valeur"]) {
+              const yy = y;
+              text(b.dpe[k + "_valeur"], M + ci * (bw + 30), 8.5, false, "0.3 0.3 0.3");
+              y = yy;
+            }
+          });
+          y -= 12;
+        } else if (b.grille) {
+          const gap = 8, cw2 = (CW - gap) / 2, hh = +b.hauteur || 170;
+          for (let i = 0; i < b.grille.length; i += 2) {
+            need(hh + gap);
+            for (let j = 0; j < 2 && i + j < b.grille.length; j++) {
+              try {
+                const img = imageObj(await loadImage(b.grille[i + j])), id = images.push(img), x = M + j * (cw2 + gap);
+                const k = Math.max(cw2 / img.w, hh / img.h), w = img.w * k, h = img.h * k;
+                ops.push(`q ${x.toFixed(2)} ${(y - hh).toFixed(2)} ${cw2.toFixed(2)} ${hh} re W n ${w.toFixed(2)} 0 0 ${h.toFixed(2)} ${(x + (cw2 - w) / 2).toFixed(2)} ${(y - hh + (hh - h) / 2).toFixed(2)} cm /Im${id} Do Q`);
+              } catch (e) {
+              }
+            }
+            y -= hh + gap;
+          }
         } else if (b.image) {
           try {
             const buf = await loadImage(b.image);
             const img = imageObj(buf);
             const id = images.push(img);
+            if (b.hauteur) {
+              const hh = +b.hauteur, k = Math.max(CW / img.w, hh / img.h), w2 = img.w * k, h2 = img.h * k;
+              need(hh + 6);
+              y -= hh;
+              ops.push(`q ${M} ${y.toFixed(2)} ${CW} ${hh} re W n ${w2.toFixed(2)} 0 0 ${h2.toFixed(2)} ${(M + (CW - w2) / 2).toFixed(2)} ${(y + (hh - h2) / 2).toFixed(2)} cm /Im${id} Do Q`);
+              y -= 10;
+              continue;
+            }
             let w = Math.min(CW, +b.largeur || img.w * 0.75), h = w * img.h / img.w;
             if (h > H - 2 * M - 40) {
               h = H - 2 * M - 40;
@@ -98861,12 +98956,14 @@ var require_bot = __commonJS({
       if (pieces.length) out.pieces_detail = pieces;
       return out;
     };
-    var dejaConnu = (x = {}, contact = null) => {
+    var dejaConnu = (x = {}, contact = null, bien = null) => {
       const r = x.recherche || {}, projets = contact && contact.projets || [];
       const p = projets.find((o2) => o2.budget_max || o2.zone || o2.delai) || projets[0] || {};
+      const prix = +(bien && bien.prix) || 0, b = +r.budget_max || 0;
+      const budget = b && !(prix && Math.abs(b - prix) <= prix * 0.02) ? r.budget_max : null;
       const o = {
-        budget: r.budget_max || p.budget_max || null,
-        budget_min: p.budget_min || null,
+        budget,
+        budget_min: null,
         zone: r.localisation || p.zone || null,
         rayon_km: p.rayon_km || null,
         surface_min: r.surface_min || p.surface_min || null,
@@ -98911,7 +99008,7 @@ var require_bot = __commonJS({
         /* numéro direct de la personne qui reprend : seulement si le client l'a accepté */
         liens_whatsapp: R.liens_directs === true && tel ? { negociateur: "https://wa.me/" + tel } : {},
         langue_ouverture: "fr",
-        deja_connu: dejaConnu(x, contact),
+        deja_connu: dejaConnu(x, contact, bien),
         /* la demande du lead telle qu'il l'a écrite au portail : le bot s'en sert pour comprendre, sans la redemander */
         demande: { message: String(x.message || "").slice(0, 1500), nature: x.nature || "", portail: dossier.portail || "" },
         ouverture_envoyee: !!etat.ouverture,
@@ -98928,6 +99025,13 @@ var require_bot = __commonJS({
       "OUT-5": "Le prospect n'est plus int\xE9ress\xE9",
       "OUT-6": "D\xE9sinscription"
     };
+    var RENVOIS = {
+      question: "Question du prospect \xE0 reprendre",
+      reclamation: "R\xE9clamation ou insatisfaction du prospect",
+      recherche: "Recherche d'autres biens \xE0 proposer",
+      vendu: "Bien plus en vente : biens proches \xE0 proposer"
+    };
+    var titreSortie = (d = {}) => d.code === "OUT-4" && RENVOIS[d.renvoi] || DEMANDES[d.code] || "Demande";
     var DELAIS = { HOT: "moins de 3 mois", WARM: "3 \xE0 12 mois", COLD: "plus de 12 mois" };
     var NOMS_SCORES = { bien: "bien", financement: "financement", travaux: "travaux", international: "relocation" };
     var texteScores = (sc) => {
@@ -98952,6 +99056,9 @@ var require_bot = __commonJS({
     };
     var INTERNES = ["lead_financement", "lead_travaux", "lead_relocation", "tache", "score", "dossier_id", "langue", "tag", "elys_fx"];
     var LIBELLES_BRANCHE = {
+      paiement: "Achat",
+      mise_en_relation: "Mise en relation avec le r\xE9f\xE9rent financement",
+      // CR du 03/11 : deux questions
       apport: "Apport",
       budget_global: "Budget global",
       accord_bancaire: "Banque ou courtier",
@@ -98970,7 +99077,7 @@ var require_bot = __commonJS({
       const q = d.qualification || {}, etiquettes = [d.lead_prioritaire && "bien \xE0 vendre (prioritaire)", d.lead_financement && "financement", d.lead_travaux && "travaux", d.lead_relocation && "relocation"].filter(Boolean);
       const branche = (o) => Object.entries(o || {}).filter(([, v]) => v !== "" && v != null && typeof v !== "object").map(([k, v]) => `${LIBELLES_BRANCHE[k] || k} : ${v === true ? "oui" : v === false ? "non" : v}`).join(" ; ");
       return [
-        ["Demande", [DEMANDES[d.code] || d.code, d.motif].filter(Boolean).join(" \xB7 ")],
+        ["Demande", [titreSortie(d), d.motif].filter(Boolean).join(" \xB7 ")],
         ["Cr\xE9neau souhait\xE9", [d.creneau, d.fuseau].filter(Boolean).join(" \xB7 ")],
         ["D\xE9lai du projet", DELAIS[d.temperature]],
         ["Score", texteScores(d.scores)],
@@ -99028,7 +99135,7 @@ Son message : ${String(mot).slice(0, 500)}` : "") });
             if (q.zone) criteres.localisation = String(q.zone).slice(0, 80);
             if (!out.crm.some((x) => x.op === "creerRecherche")) out.crm.push({ op: "creerRecherche", une_fois: "recherche", criteres });
           }
-          if (d.code !== "OUT-6") out.avis.push({ titre: DEMANDES[d.code] || "Demande", qualifie: d.code !== "OUT-5", prioritaire: !!d.lead_prioritaire, donnees: d, referents: [d.lead_financement && "f", d.lead_travaux && "w", d.lead_relocation && "i"].filter(Boolean) });
+          if (d.code !== "OUT-6") out.avis.push({ titre: titreSortie(d), qualifie: d.code !== "OUT-5" && !RENVOIS[d.renvoi], prioritaire: !!d.lead_prioritaire, donnees: d, referents: [d.lead_financement && "f", d.lead_travaux && "w", d.lead_relocation && "i"].filter(Boolean) });
         } else if (AVIS[e.type] && !(sortie && e.type === "prioritaire_vendeur"))
           out.avis.push({ titre: AVIS[e.type], type: e.type, prioritaire: e.type === "prioritaire_vendeur", donnees: d, referents: [] });
         else if (e.type === "intention" && INTENTIONS[d.demande] && !sortie)
@@ -99079,40 +99186,98 @@ ${fil.length ? `<p style="margin:14px 0 4px;color:#667">L'\xE9change</p><div sty
 ${aurait_recu ? `<p style="color:#b45309;font-size:12px">Essai : en service, ce message irait \xE0 ${esc(aurait_recu.join(", ") || "personne")}.</p>` : ""}</div>`;
       return { objet: objet.slice(0, 300), html };
     };
-    var blocsFiche = (bien, quand = /* @__PURE__ */ new Date(), langue = "fr", photos = []) => {
+    var MARINE = "#23395b";
+    var OR = "#b8975a";
+    var RUBRIQUES = [
+      ["loc", /vue|exposition|[ée]tages?|niveau|environnement|proximit|situation|quartier/i],
+      ["surf", /^surface|surface /i],
+      ["terrain", /terrain|jardin|parc|cl[oô]tur|arbor|potager|verger|am[ée]nagement ext/i],
+      ["int", /chambre|salle|cuisine|chauffage|chemin[ée]e|insert|s[ée]jour|salon|\bwc\b|cave|grenier|comble|buanderie|dressing|meubl|[ée]quip|pi[eè]ce|bureau|mezzanine|cellier/i],
+      ["ext", /construction|ann[ée]e|toiture|fen[êe]tre|menuiser|vitrage|isolation|fa[çc]ade|mitoyen|terrasse|balcon|piscine|garage|stationnement|parking|d[ée]pendance|grange|hangar|abri|assainissement/i]
+    ];
+    var NOMS_RUBRIQUES = {
+      fr: { loc: "Localisation", surf: "Surfaces", int: "Int\xE9rieur", ext: "Ext\xE9rieur", terrain: "Terrain", autres: "Autres", fin: "Aspects financiers" },
+      en: { loc: "Location", surf: "Areas", int: "Interior", ext: "Exterior", terrain: "Grounds", autres: "Other", fin: "Financial" }
+    };
+    var blocsFiche = (bien, quand = /* @__PURE__ */ new Date(), langue = "fr", photos = [], contact = {}, standard = "") => {
       const b = bienPublic(bien);
       if (!b || !(b.type || b.ville)) return null;
-      const en = langue === "en", T = require_traduction(), an = annonce(bien && bien.annonce);
-      const lieu = [b.ville, b.code_postal && `(${b.code_postal})`].filter(Boolean).join(" ");
+      const en = langue === "en", T = require_traduction(), an = annonce(bien && bien.annonce), N = NOMS_RUBRIQUES[en ? "en" : "fr"];
       const typeAff = en ? T.typeEn(b.type) || "Property" : majuscule(b.type) || "Bien";
-      const titre = en ? [typeAff, b.pieces && `${b.pieces} rooms`, b.ville].filter(Boolean).join(", ") : [typeAff, b.pieces && `${b.pieces} pi\xE8ces`, b.ville && `\xE0 ${b.ville}`].filter(Boolean).join(" ");
-      const L = en ? ["Feature", "Details", "Type", "Rooms", "Bedrooms", "Living area", "Location", "Price"] : ["Caract\xE9ristique", "D\xE9tail", "Type", "Pi\xE8ces", "Chambres", "Surface", "Localisation", "Prix"];
-      const details = en ? Object.entries(an.details_en || {}).map(([k, v]) => [T.traduireNom(k), v]).filter(([k]) => k) : Object.entries(an.details || {});
-      const tableau = [
-        [L[0], L[1]],
-        [L[2], typeAff],
-        [L[3], b.pieces],
-        [L[4], b.chambres],
-        [L[5], b.surface && `${b.surface} m\xB2`],
-        [L[6], lieu],
-        [L[7], b.prix && (en ? `\u20AC${String(b.prix).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}` : `${milliers(b.prix)} \u20AC`)],
-        ...details.slice(0, 14)
-      ].filter(([, v]) => v).map(([l, v]) => [l, String(v)]);
+      const prix = b.prix && (en ? `\u20AC${String(b.prix).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}` : `${milliers(b.prix)} \u20AC`);
       const dans = (o) => o && (o[en ? "en" : "fr"] || !en && o.en || "") || "";
-      const accroche = dans(an.titre_annonce), description = String(dans(an.description_annonce)).slice(0, 1800);
-      const ph = (photos || []).filter((u) => /^https:\/\//.test(u)).slice(0, 4);
+      const SIGNE = /agence|hamilton|s[ée]lection (habitat|ocean|med|immobilier|senegal|groupe)|groupe s[ée]lection|arieg.?immo|toit ?2 ?r[êe]ve|bliss|van den berg|we also speak|we spreken|wir sprechen/i;
+      const titreAnnonce = dans(an.titre_annonce);
+      const titre = (titreAnnonce && !SIGNE.test(titreAnnonce) ? titreAnnonce : "") || (en ? [typeAff, b.pieces && `${b.pieces} rooms`, b.ville].filter(Boolean).join(", ") : [typeAff, b.pieces && `${b.pieces} pi\xE8ces`, b.ville && `\xE0 ${b.ville}`].filter(Boolean).join(" "));
+      const description = String(dans(an.description_annonce)).split(/(?<=[.!?\n])\s+/).filter((x) => !SIGNE.test(x)).join(" ").replace(/\s+/g, " ").trim().slice(0, 3500);
+      const ph = (photos || []).filter((u) => /^https:\/\//.test(u)).slice(0, 13);
       const jour = quand.toLocaleDateString("fr-FR", { timeZone: "Europe/Paris", day: "2-digit", month: "2-digit", year: "numeric" });
-      return [
-        { titre },
-        ...accroche ? [{ t2: accroche }] : [],
-        ...ph[0] ? [{ image: ph[0] }] : [],
-        { tableau, taille: 10.5, chiffres_a_droite: false },
-        ...description ? [{ texte: description }] : [],
-        ...ph.slice(1).map((u) => ({ image: u, largeur: 380 })),
+      const r = {
+        loc: [[en ? "Country" : "Pays", "France"], ...b.code_postal ? [[en ? "Postcode" : "Code postal", String(b.code_postal)]] : [], ...b.ville ? [[en ? "Town" : "Ville", b.ville]] : []],
+        surf: b.surface ? [[en ? "Living area" : "Surface habitable", `${b.surface} m\xB2`]] : [],
+        terrain: [],
+        ext: [],
+        autres: [],
+        int: [...b.pieces ? [[en ? "Rooms" : "Pi\xE8ces", String(b.pieces)]] : [], ...b.chambres ? [[en ? "Bedrooms" : "Chambres", String(b.chambres)]] : []],
+        fin: prix ? [[en ? "Price" : "Prix", prix]] : []
+      };
+      const details = en ? Object.entries(an.details_en || {}).map(([k, v]) => [T.traduireNom(k), v, k]).filter(([k]) => k) : Object.entries(an.details || {}).map(([k, v]) => [k, v, k]);
+      let dpe = "", ges = "", dpeVal = "", gesVal = "";
+      for (const [nom, v, brut] of details) {
+        const lettre = /^[A-G]$/i.test(String(v).trim()) ? String(v).trim().toUpperCase() : "";
+        if (/^valeur consommation .nergie/i.test(brut)) {
+          dpeVal = String(v);
+          continue;
+        }
+        if (/^valeur gaz effet de serre/i.test(brut)) {
+          gesVal = String(v);
+          continue;
+        }
+        if (/consommation .nergie/i.test(brut)) {
+          dpe = lettre;
+          continue;
+        }
+        if (/gaz effet de serre/i.test(brut)) {
+          ges = lettre;
+          continue;
+        }
+        if (/^(pays|country)$|trajet|distance|affichage du dpe/i.test(brut)) continue;
+        const k = (RUBRIQUES.find(([, re]) => re.test(brut)) || ["autres"])[0];
+        const val = String(v).replace(/^[-–\s]+/, "").replace(/(\d)\.(\d)/g, en ? "$1.$2" : "$1,$2").replace(/^./, (c) => c.toUpperCase());
+        if (r[k].length < 12) r[k].push([nom, val]);
+      }
+      const pieces = en ? [] : (an.pieces_detail || []).slice(0, 25).map((x) => {
+        const [a, ...b2] = String(x).split(" \xB7 ");
+        return [a, b2.join(" \xB7 ").replace(/(\d)\.(\d)/g, "$1,$2") || "\u2014"];
+      });
+      const cles = [...["loc", "surf", "int", "ext", "terrain", "autres", "fin"].map((k) => [N[k], r[k]]), ["Pi\xE8ces", pieces]].filter(([, l]) => l.length);
+      const out = [
+        ...ph[0] ? [{ image: ph[0], hauteur: 330 }] : [],
+        { centre: titre, taille: 14, gras: true, majuscules: true, couleur: MARINE, espace: 6 },
+        ...b.ville ? [{ centre: (en ? "Location: " : "Localisation : ") + [b.ville, b.code_postal && `(${b.code_postal})`].filter(Boolean).join(" "), taille: 10, majuscules: true, couleur: "#374151" }] : [],
+        ...prix ? [{ centre: prix, taille: 22, gras: true, couleur: MARINE, espace: 12 }] : [],
+        { centre: en ? "Contact" : "Contact", taille: 8.5, gras: true, majuscules: true, couleur: OR, espace: 2 },
+        ...contact && contact.nom ? [{ centre: contact.nom, taille: 10, majuscules: true, couleur: "#374151", espace: 2 }] : [],
+        ...standard ? [{ centre: (en ? "Switchboard: " : "Standard : ") + standard + (en ? " (9am to 7pm)" : " (9h \xE0 19h)"), taille: 9, couleur: "#374151" }] : [],
         { petit: en ? `Listing information as of ${jour}. Not a contractual document.` : `Informations de l'annonce au ${jour}. Document non contractuel.` }
       ];
+      if (description) out.push({ saut: true }, { bandeau: "Description", couleur: MARINE }, { texte: description, taille: 10.5 });
+      out.push({ saut: true }, { bandeau: en ? "Features" : "Caract\xE9ristiques", couleur: MARINE }, { cles, couleur: MARINE, couleur_rubrique: OR });
+      if (/^[A-G]$/.test(dpe) || /^[A-G]$/.test(ges)) out.push(
+        { bandeau: en ? "Energy performance" : "Diagnostics", couleur: MARINE, garder: 150 },
+        { dpe: {
+          dpe,
+          ges,
+          dpe_titre: en ? "Energy performance (DPE)" : "Consommation \xE9nerg\xE9tique (DPE)",
+          ges_titre: en ? "Greenhouse gas emissions (GES)" : "\xC9missions de gaz \xE0 effet de serre (GES)",
+          dpe_valeur: dpeVal && `${dpeVal} kWh/m\xB2/${en ? "year" : "an"}`,
+          ges_valeur: gesVal && `${gesVal} kg CO2/m\xB2/${en ? "year" : "an"}`
+        } }
+      );
+      if (ph.length > 1) out.push({ saut: true }, { bandeau: en ? "Property photos" : "Photos du bien", couleur: MARINE }, { grille: ph.slice(1), hauteur: 165 });
+      return out;
     };
-    module2.exports = { CHAMPS_PUBLICS, cartesPourBot, enVente, bienPublic, annonce, dejaConnu, nettoyer, tel9, quiRecoit, contexte, plan, lignes, texteScores, mailEquipe, alerteNego, blocsFiche, majuscule, nomVille };
+    module2.exports = { RENVOIS, CHAMPS_PUBLICS, cartesPourBot, enVente, bienPublic, annonce, dejaConnu, nettoyer, tel9, quiRecoit, contexte, plan, lignes, texteScores, mailEquipe, alerteNego, blocsFiche, majuscule, nomVille };
   }
 });
 
@@ -99153,7 +99318,7 @@ var require_cartes = __commonJS({
     var empreinte = (bien) => crypto.createHash("sha1").update(JSON.stringify([VERSION2, donneesPourCartes(bien), bien && bien.photos || []])).digest("hex");
     var photosACommenter = (photos) => (Array.isArray(photos) ? photos : []).filter((u) => /^https:\/\//.test(String(u))).slice(0, 10).slice(0, -1).slice(0, 9);
     var consignesPhotos = (donnees, n) => `Tu \xE9cris le texte de chaque carte d'un carrousel WhatsApp qui pr\xE9sente un bien immobilier \xE0 un acheteur qui a d\xE9j\xE0 r\xE9pondu \xE0 son annonce.
-Agence : S\xE9lection Habitat - Agence Hamilton (maisons de caract\xE8re, une exp\xE9rience immobili\xE8re \xE0 hautes valeurs humaines).
+Agence : Selection Habitat - Agence Hamilton (maisons de caract\xE8re, une exp\xE9rience immobili\xE8re \xE0 hautes valeurs humaines).
 Chaque carte montre une photo du bien ; sous la photo, ton texte doit donner envie d'acheter en mettant en valeur ce que montre CETTE photo.
 L'acheteur ach\xE8te une vie (le calme, la place, la pierre, la vue, recevoir), pas une fiche technique.
 
@@ -99655,13 +99820,15 @@ var require_bot2 = __commonJS({
         const W = R.whatsapp || {};
         const jeton = W.variable_jeton ? await require_garde().lireSecret(W.variable_jeton) : null;
         if (!W.phone_number_id || !jeton) return echec("WhatsApp non r\xE9gl\xE9");
-        const bien = await lireBien((await charger()).crm, dossier, R), en = corps.langue === "en";
+        const { crm, conf } = await charger();
+        const bien = await lireBien(crm, dossier, R), en = corps.langue === "en";
         if (bien && B.enVente(bien).en_vente === false) return echec("plus en vente");
         const urls = R.photos && bien && Array.isArray(bien.photos) ? bien.photos : [];
         const ph = await telechargerPhotos(urls);
-        const blocs = B.blocsFiche(bien, /* @__PURE__ */ new Date(), en ? "en" : "fr", urls.filter((u) => ph.has(u)));
+        const { personne } = B.quiRecoit(dossier.negociateur || bien && bien.negociateur_id, conf, bien, /* @__PURE__ */ new Date());
+        const blocs = B.blocsFiche(bien, /* @__PURE__ */ new Date(), en ? "en" : "fr", urls.filter((u) => ph.has(u)), { nom: personne && personne.nom }, R.standard || "05 65 70 10 49");
         if (!blocs) return echec("bien illisible dans le CRM");
-        const buf = await require_pdf().ecrirePdf(blocs, { titre: en ? "Property sheet" : "Fiche annonce", pied: false, producteur: "", couleur: "#374151" }, async (u) => ph.get(u));
+        const buf = await require_pdf().ecrirePdf(blocs, { titre: en ? "Property sheet" : "Fiche du bien", pied: false, producteur: "", couleur: "#23395b" }, async (u) => ph.get(u));
         let identifiant;
         const numero = numeroEnvoi(W, corps.numero_bot), nomPdf = en ? "property-sheet.pdf" : "fiche-annonce.pdf";
         try {
@@ -99866,7 +100033,8 @@ var require_bot2 = __commonJS({
         const recents = (await tb.getRows({ type: { in: Object.keys(OUVRE) } }, { orderBy: "id", orderDesc: true, limit: 500 })).filter((e) => maintenant - new Date(e.quand) < 2 * 864e5);
         for (const tel9 of [...new Set(recents.map((e) => e.tel9))]) {
           const hist = (await tb.getRows({ tel9 }, { orderBy: "id", orderDesc: true, limit: 400 })).reverse().map((e) => ({ ...e, donnees: json(e.donnees, {}) }));
-          const apres = hist.slice(hist.map((e) => e.type === "sortie" || e.type === "recap_inacheve" || e.type === "ouverture" && e.noeud === "N0").lastIndexOf(true) + 1);
+          const clot = (e) => e.type === "sortie" && !B.RENVOIS[(e.donnees || {}).renvoi] || e.type === "recap_inacheve" || e.type === "ouverture" && e.noeud === "N0";
+          const apres = hist.slice(hist.map(clot).lastIndexOf(true) + 1);
           const ouvertes = /* @__PURE__ */ new Map();
           for (const e of apres) {
             const q = OUVRE[e.type] && OUVRE[e.type](e.donnees);

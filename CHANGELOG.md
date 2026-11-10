@@ -1,5 +1,29 @@
 # Journal des versions
 
+## 2.28.0
+
+### Corrigé
+- Bot WhatsApp SH : « Lors de votre demande, vous aviez indiqué un budget de … » ne reprend plus que le budget écrit par le lead
+  dans sa demande. Les recherches du CRM, que l'application crée à partir du bien cliqué, donnaient le prix de l'annonce comme
+  budget du lead (Sidy, 09/11). Un montant égal au prix de l'annonce n'est jamais présenté comme son budget.
+- Bot WhatsApp SH : une question transmise au négociateur (renvoi, la conversation continue) a son propre titre de mail
+  (« Question du prospect à reprendre », « Réclamation… », « Recherche d'autres biens à proposer »), n'est plus présentée comme
+  un « Lead qualifié », et ne clôt plus la conversation pour le récapitulatif « Demande inachevée » (revue du conseil, 09/11).
+- Fiche du bien, aucune marque (Sidy, 09/11 : ni Hamilton ni SH ; le filigrane des photos d'Immofacile est accepté) : un titre
+  d'annonce qui cite une enseigne est remplacé par un titre neutre ; les phrases de la description qui signent l'annonce sont retirées (24 descriptions
+  sur 99) ; liste des pièces ajoutée ; décimales à la française ; valeurs avec majuscule.
+
+### Modifié
+- Fiche du bien en PDF (bot WhatsApp SH) : même mise en page que la fiche commerciale que les assistantes de SH envoient
+  (demande de SH du 06/11/2026), sans logo : grande photo, référence, titre, lieu, prix et contact (la personne qui s'occupe
+  de la demande et le standard), description, caractéristiques par rubrique, DPE et GES, photos en grille. En français et
+  en anglais. Toujours les seuls champs publics de l'annonce.
+- Moteur PDF : barres de rubrique, texte centré, rubriques « libellé … valeur », étiquettes DPE et GES, grille de photos,
+  photo recadrée à une hauteur donnée.
+- Mails aux équipes : libellés des deux réponses du nouveau financement (« Achat », « Mise en relation avec le référent
+  financement »).
+- Cartes du bien : le nom « Selection Habitat » s'écrit sans accent (demande de SH).
+
 ## 2.27.4
 
 ### Ajouté

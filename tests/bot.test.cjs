@@ -117,19 +117,26 @@ const QUAND = new Date("2026-10-13T10:00:00Z");
   assert.deepStrictEqual(B.annonce(null), {});
   /* projet connu du lead : mail de la phase 1 d'abord, puis recherches du CRM (sans commentaire) */
   assert.deepStrictEqual(B.dejaConnu({ recherche: { budget_max: 200000 } }, { projets: [{ budget_min: 85000, budget_max: 160000, zone: "09000 FOIX", rayon_km: 20, terrain_min: 500, delai: "3 à 6 mois", revente: true }] }),
-    { budget: 200000, budget_min: 85000, zone: "09000 FOIX", rayon_km: 20, surface_min: null, terrain_min: 500, pieces_min: null, delai: "3 à 6 mois", bien_a_vendre: true, usage: null, motif: null });
+    { budget: 200000, budget_min: null, zone: "09000 FOIX", rayon_km: 20, surface_min: null, terrain_min: 500, pieces_min: null, delai: "3 à 6 mois", bien_a_vendre: true, usage: null, motif: null });
+  /* Sidy, 09/11 : jamais le prix de l'annonce présenté comme le budget du lead ; jamais un budget lu dans une recherche du CRM */
+  assert.strictEqual(B.dejaConnu({}, { projets: [{ budget_max: 245000 }] }, { prix: 245000 }).budget, null, "recherche du CRM créée depuis le bien : pas un budget du lead");
+  assert.strictEqual(B.dejaConnu({ recherche: { budget_max: 245000 } }, null, { prix: 245000 }).budget, null, "montant égal au prix de l'annonce : pas un budget du lead");
+  assert.strictEqual(B.dejaConnu({ recherche: { budget_max: 300000 } }, null, { prix: 245000 }).budget, 300000, "budget écrit par le lead dans sa demande");
   const cx = B.contexte({ dossier, bien: { ...BIEN, annonce: brute }, conf: CONF, quand: QUAND, lead: { extraction: { message: "Je voudrais visiter samedi", nature: "lead" } } });
   assert.strictEqual(cx.bien_public.details["Surface terrain"], "5505 m²"); assert.strictEqual(cx.demande.message, "Je voudrais visiter samedi");
   assert.ok(!/99001|Essais|23000/.test(JSON.stringify(cx)), "rien de réservé dans le contexte");
-  assert.ok(B.blocsFiche({ ...BIEN, annonce: brute }).some((x) => x.tableau && x.tableau.some(([l, v]) => l === "Surface terrain" && v === "5505 m²")), "la fiche PDF reprend les caractéristiques publiques");
+  assert.ok(B.blocsFiche({ ...BIEN, annonce: brute }).some((x) => x.cles && x.cles.some(([, l]) => l.some(([k, v]) => k === "Surface terrain" && v === "5505 m²"))), "la fiche PDF reprend les caractéristiques publiques");
 
-  /* fiche PDF : champs publics, aucune marque */
+  /* fiche PDF (modèle de la fiche commerciale de SH, 06/11 ; sans logo, Sidy 09/11) : champs publics, aucune marque */
   assert.strictEqual(B.blocsFiche(null), null);
-  const blocs = B.blocsFiche(BIEN, QUAND);
-  const buf = await ecrirePdf(blocs, { titre: "Fiche annonce", pied: false, producteur: "", couleur: "#374151" });
+  const blocs = B.blocsFiche(BIEN, QUAND, "fr", [], { nom: "Paul Durand" }, "05 65 70 10 49");
+  const buf = await ecrirePdf(blocs, { titre: "Fiche du bien", pied: false, producteur: "", couleur: "#23395b" });
   const texte = lireTextePdf(buf) + buf.toString("latin1");
-  assert.ok(/Maison 5 pi.ces . Cahors/.test(texte) && texte.includes("1 245 000") && texte.includes("13/10/2026"), "contenu de la fiche");
-  assert.ok(!/Pradines|46090|rue du Test|dysizz|agence/i.test(texte), "ni adresse réelle ni marque dans la fiche");
+  assert.ok(/maison 5 pi.ces . cahors/i.test(texte) && texte.includes("1 245 000") && texte.includes("13/10/2026"), "contenu de la fiche");
+  assert.ok(/PAUL DURAND/.test(texte) && /Standard : 05 65 70 10 49/.test(texte) && !/30123/.test(texte), "contact et standard comme la fiche des assistantes ; jamais la référence interne");
+  assert.ok(!/Pradines|46090|rue du Test|dysizz|agence|hamilton|logo/i.test(texte), "ni adresse réelle ni marque dans la fiche");
+  const en = lireTextePdf(await ecrirePdf(B.blocsFiche({ ...BIEN, annonce: brute }, QUAND, "en", [], { nom: "Paul Durand" }, "05 65 70 10 49"), { pied: false }));
+  assert.ok(/FEATURES/.test(en) && /Switchboard/.test(en) && !/Caract|Pi.ces|Surface habitable/.test(en), "fiche anglaise : aucun libellé français");
 
   /* la couleur est une écriture : notée en mode ombre, jamais envoyée */
   const o = ombre(M.creer({}));

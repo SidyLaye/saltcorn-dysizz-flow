@@ -337,14 +337,17 @@ const fiche = async (corps, R) => {
     const W = R.whatsapp || {};
     const jeton = W.variable_jeton ? await require("../../../garde").lireSecret(W.variable_jeton) : null;
     if (!W.phone_number_id || !jeton) return echec("WhatsApp non réglé");
-    const bien = await lireBien((await charger()).crm, dossier, R), en = corps.langue === "en";
+    const { crm, conf } = await charger();
+    const bien = await lireBien(crm, dossier, R), en = corps.langue === "en";
     if (bien && B.enVente(bien).en_vente === false) return echec("plus en vente");   // jamais la fiche d'un bien vendu ou retiré
     /* photos autorisées (dossier public du réglage « photos ») téléchargées d'abord : une photo qui échoue n'apparaît pas */
     const urls = R.photos && bien && Array.isArray(bien.photos) ? bien.photos : [];
     const ph = await telechargerPhotos(urls);
-    const blocs = B.blocsFiche(bien, new Date(), en ? "en" : "fr", urls.filter((u) => ph.has(u)));
+    /* contact de la fiche : la personne qui s'occupe de la demande (son nom) et le standard, comme dans la conversation */
+    const { personne } = B.quiRecoit(dossier.negociateur || (bien && bien.negociateur_id), conf, bien, new Date());
+    const blocs = B.blocsFiche(bien, new Date(), en ? "en" : "fr", urls.filter((u) => ph.has(u)), { nom: personne && personne.nom }, R.standard || "05 65 70 10 49");
     if (!blocs) return echec("bien illisible dans le CRM");
-    const buf = await require("../../pdf").ecrirePdf(blocs, { titre: en ? "Property sheet" : "Fiche annonce", pied: false, producteur: "", couleur: "#374151" }, async (u) => ph.get(u));
+    const buf = await require("../../pdf").ecrirePdf(blocs, { titre: en ? "Property sheet" : "Fiche du bien", pied: false, producteur: "", couleur: "#23395b" }, async (u) => ph.get(u));
     let identifiant;
     const numero = numeroEnvoi(W, corps.numero_bot), nomPdf = en ? "property-sheet.pdf" : "fiche-annonce.pdf";
     try { identifiant = await envoyerDocument({ phone_number_id: numero, jeton, a: tel, buf, nom: nomPdf }); }
@@ -491,7 +494,9 @@ const recapituler = async ({ maintenant = Date.now(), silence = 30 * 60000 } = {
     for (const tel9 of [...new Set(recents.map((e) => e.tel9))]) {
       const hist = (await tb.getRows({ tel9 }, { orderBy: "id", orderDesc: true, limit: 400 })).reverse().map((e) => ({ ...e, donnees: json(e.donnees, {}) }));
       /* depuis la dernière clôture : sortie, récapitulatif déjà parti ou nouvel accueil */
-      const apres = hist.slice(hist.map((e) => e.type === "sortie" || e.type === "recap_inacheve" || (e.type === "ouverture" && e.noeud === "N0")).lastIndexOf(true) + 1);
+      /* un renvoi d'une question (la conversation continue, CR du 03/11) ne clôt rien : une visite en préparation reste à récapituler */
+      const clot = (e) => (e.type === "sortie" && !B.RENVOIS[(e.donnees || {}).renvoi]) || e.type === "recap_inacheve" || (e.type === "ouverture" && e.noeud === "N0");
+      const apres = hist.slice(hist.map(clot).lastIndexOf(true) + 1);
       const ouvertes = new Map();
       for (const e of apres) {
         const q = OUVRE[e.type] && OUVRE[e.type](e.donnees);
