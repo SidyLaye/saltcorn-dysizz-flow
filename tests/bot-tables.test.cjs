@@ -55,7 +55,9 @@ Module._load = function (req, parent, ...rest) {
   return orig.call(this, req, parent, ...rest);
 };
 let JOURNAL_PANNE = false;
-global.fetch = async (url, o) => { const corpsMeta = typeof o.body === "string" ? JSON.parse(o.body) : {};
+let GOTENBERG = 0;   // fiche sur le modèle de Sidy (12/11) : Gotenberg imprime la page HTML (simulé : un petit PDF), hors des appels à Meta
+global.fetch = async (url, o) => { if (/gotenberg/.test(url)) { GOTENBERG++; return { ok: true, arrayBuffer: async () => Buffer.from("%PDF-1.7 essai") }; }
+  const corpsMeta = typeof o.body === "string" ? JSON.parse(o.body) : {};
   meta.push({ url, to: corpsMeta.to || null, modele: corpsMeta.template ? corpsMeta.template.name : null, langue: corpsMeta.template ? corpsMeta.template.language.code : null, corps: corpsMeta, entetes: o.headers || {} });
   if (/wa-bot-events$/.test(url) && JOURNAL_PANNE) throw new Error("journal indisponible");
   return { ok: true, json: async () => (/media$/.test(url) ? { id: "m1" } : { messages: [{ id: "wamid.1" }] }) }; };
@@ -243,6 +245,7 @@ const sortie = (code, plus = {}) => ({ type: "sortie", noeud: "TB3", quand: "202
     assert.equal(JSON.parse(T.bot.L.filter((l) => l.tel9 === "633333333" && l.type === "inbound").pop().donnees).numero_bot, "456", "numéro de la conversation gardé avec le message");
     await repondre("fiche", { telephone: "33633333333", numero_bot: "456" });
     assert.ok(meta.slice(n0).some((m) => /\/456\/media$/.test(m.url)) && meta.slice(n0).some((m) => /\/456\/messages$/.test(m.url)), "fiche envoyée depuis le numéro de la conversation");
+    assert.ok(GOTENBERG > 0, "fiche imprimée par Gotenberg sur le modèle de l'agence");
     const n1 = meta.length;
     await repondre("fiche", { telephone: "33633334444", numero_bot: "789" });
     assert.ok(meta.slice(n1).length && meta.slice(n1).every((m) => /\/123\//.test(m.url)), "numéro inconnu du bot : numéro principal, jamais un numéro étranger");

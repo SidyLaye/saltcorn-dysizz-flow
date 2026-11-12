@@ -310,6 +310,32 @@ const envoyerDocument = async ({ phone_number_id, jeton, a, buf, nom }) => {
   return j.messages && j.messages[0] && j.messages[0].id;
 };
 
+/* photos de la fiche réduites (couverture 1 400 px, galerie 700 px, JPEG) et intégrées à la page : 18 photos d'Immofacile en pleine taille
+   faisaient une fiche de 7,4 Mo (essai du 12/11) ; une photo qui ne se télécharge pas est absente ; sans sharp, son adresse (plus lourd) */
+const photosFiche = async (urls) => {
+  const S = require("../photo").outil(), ph = await telechargerPhotos(urls, globalThis.fetch, { max: 37, octets: 8e6, delai: 8000 });
+  const out = await Promise.all([...ph.entries()].map(async ([u, b], i) => {
+    if (!S) return u;
+    try { return "data:image/jpeg;base64," + (await S(b).rotate().resize({ width: i === 0 ? 1400 : 700, withoutEnlargement: true }).jpeg({ quality: 72, mozjpeg: true }).toBuffer()).toString("base64"); }
+    catch (e) { return u; }
+  }));
+  return out.filter(Boolean);
+};
+
+/* page HTML → PDF par Gotenberg (Chromium) : taille et marges de la page données par le CSS (@page), photos lues par Chromium.
+   Adresse : réglage bot.gotenberg, sinon GOTENBERG_URL du serveur, sinon le service « gotenberg » du réseau Docker. */
+const imprimerHtml = async (html, adresse) => {
+  const base = String(adresse || process.env.GOTENBERG_URL || "http://gotenberg:3000").replace(/\/$/, "");
+  const fd = new FormData();
+  fd.append("files", new Blob([html], { type: "text/html" }), "index.html");
+  for (const [k, v] of [["preferCssPageSize", "true"], ["printBackground", "true"], ["waitDelay", "1s"], ["marginTop", "0"], ["marginBottom", "0"], ["marginLeft", "0"], ["marginRight", "0"]]) fd.append(k, v);
+  const r = await fetch(base + "/forms/chromium/convert/html", { method: "POST", body: fd, signal: AbortSignal.timeout(45000) });
+  if (!r.ok) throw new Error(`Gotenberg : HTTP ${r.status} ${(await r.text().catch(() => "")).slice(0, 200)}`);
+  const buf = Buffer.from(await r.arrayBuffer());
+  if (buf.slice(0, 5).toString() !== "%PDF-") throw new Error("Gotenberg : réponse qui n'est pas un PDF");
+  return buf;
+};
+
 /* photos de la fiche : https, JPEG ou PNG, 3 Mo au plus chacune, 4 au plus, 6 s au plus ; une erreur = photo absente */
 const telechargerPhotos = async (urls, f = globalThis.fetch, { max = 4, octets = 3e6, delai = 6000 } = {}) => {
   const out = new Map();
@@ -340,14 +366,23 @@ const fiche = async (corps, R) => {
     const { crm, conf } = await charger();
     const bien = await lireBien(crm, dossier, R), en = corps.langue === "en";
     if (bien && B.enVente(bien).en_vente === false) return echec("plus en vente");   // jamais la fiche d'un bien vendu ou retiré
-    /* photos autorisées (dossier public du réglage « photos ») téléchargées d'abord : une photo qui échoue n'apparaît pas */
     const urls = R.photos && bien && Array.isArray(bien.photos) ? bien.photos : [];
-    const ph = await telechargerPhotos(urls);
-    /* contact de la fiche : la personne qui s'occupe de la demande (son nom) et le standard, comme dans la conversation */
     const { personne } = B.quiRecoit(dossier.negociateur || (bien && bien.negociateur_id), conf, bien, new Date());
-    const blocs = B.blocsFiche(bien, new Date(), en ? "en" : "fr", urls.filter((u) => ph.has(u)), { nom: personne && personne.nom }, R.standard || "05 65 70 10 49");
-    if (!blocs) return echec("bien illisible dans le CRM");
-    const buf = await require("../../pdf").ecrirePdf(blocs, { titre: en ? "Property sheet" : "Fiche du bien", pied: false, producteur: "", couleur: "#23395b" }, async (u) => ph.get(u));
+    /* Sidy, 12/11 : modèle « Selection Habitat » quand le nom de l'agence du bien contient « selection », sinon « Agence Hamilton » ;
+       page HTML imprimée par Gotenberg (Chromium). Gotenberg absent ou en erreur : la fiche précédente, pour ne jamais priver le lead de sa fiche */
+    let buf = null;
+    try {
+      const F = require("../fiche-modele"), agence = (conf.agences || []).find((a) => bien && String(a.id) === String(bien.agence_id));
+      const d = F.donneesFiche(bien, { langue: en ? "en" : "fr", photos: urls, agence, contact: { nom: personne && personne.nom, telephone: personne && personne.telephone, email: personne && personne.email } });
+      if (d) { d.photos = await photosFiche(d.photos); buf = await imprimerHtml(F.htmlFiche(d), R.gotenberg); }
+    } catch (e) { await tb.insertRow({ dossier: dossier.id || null, tel9: B.tel9(tel), type: "fiche_modele_echec", quand: new Date(), texte: court(e.message, 500) }).catch(() => {}); }
+    if (!buf) {
+      /* photos autorisées (dossier public du réglage « photos ») téléchargées d'abord : une photo qui échoue n'apparaît pas */
+      const ph = await telechargerPhotos(urls);
+      const blocs = B.blocsFiche(bien, new Date(), en ? "en" : "fr", urls.filter((u) => ph.has(u)), { nom: personne && personne.nom }, R.standard || "05 65 70 10 49");
+      if (!blocs) return echec("bien illisible dans le CRM");
+      buf = await require("../../pdf").ecrirePdf(blocs, { titre: en ? "Property sheet" : "Fiche du bien", pied: false, producteur: "", couleur: "#23395b" }, async (u) => ph.get(u));
+    }
     let identifiant;
     const numero = numeroEnvoi(W, corps.numero_bot), nomPdf = en ? "property-sheet.pdf" : "fiche-annonce.pdf";
     try { identifiant = await envoyerDocument({ phone_number_id: numero, jeton, a: tel, buf, nom: nomPdf }); }
@@ -544,4 +579,4 @@ const repondre = async (action, corps) => {
   return ACTIONS[k](corps && typeof corps === "object" ? corps : {}, R && typeof R === "object" ? R : {});
 };
 
-module.exports = { repondre, contexte, evenement, fiche, telechargerPhotos, relancer, recapituler, envoyerModele };
+module.exports = { repondre, contexte, evenement, fiche, telechargerPhotos, photosFiche, imprimerHtml, relancer, recapituler, envoyerModele };

@@ -1,5 +1,16 @@
 # Journal des versions
 
+## 2.29.0
+
+### Modifié
+- Fiche PDF du bien envoyée par le bot SH : modèles de Sidy du 12/11 (« fiche-bien-selection-habitat-v2 » quand le nom de l'agence
+  du bien contient « selection », sinon « fiche-bien-agence-hamilton-v1 »). Couverture (logo, lieu, titre de l'annonce, photo, prix,
+  chiffres clés), le bien (description, atouts), caractéristiques et DPE, liste des pièces par niveau, galerie (9 photos par page),
+  contact (négociateur, téléphone, e-mail, agence), pied de page avec le numéro de mandat. Tout vient de l'annonce et du CRM.
+  Remplace la règle « aucune marque sur la fiche » (09/11). Page HTML (police Lato, logos intégrés) imprimée par Gotenberg
+  (`bot.gotenberg`, sinon `GOTENBERG_URL`, sinon `http://gotenberg:3000`) ; photos réduites par sharp (1,1 Mo au lieu de 7,4 Mo).
+  Sans Gotenberg, la fiche précédente est envoyée et l'échec est noté (`fiche_modele_echec`).
+
 ## 2.28.0
 
 ### Corrigé
