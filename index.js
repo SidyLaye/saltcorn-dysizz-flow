@@ -1,4 +1,4 @@
-/* dysizz-flow 2.30.0 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.30.1 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.30.0" : "dev";
+    var VERSION2 = true ? "2.30.1" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -100045,7 +100045,8 @@ var require_bot2 = __commonJS({
       const sortie = miens.find((r) => r.type === "sortie");
       const dernier = (await tb.getRows({ tel9: B.tel9(tel), type: { in: ["inbound", "relance"] } }, { orderBy: "id", orderDesc: true, limit: 10 })).find((r) => r.type === "inbound" || !json(r.donnees, {}).saute && json(r.donnees, {}).code !== "cloture");
       const statut = dernier && dernier.type === "relance" ? "relance" : sortie ? json(sortie.donnees, {}).statut || "" : "";
-      return { optout: rows.some((r) => r.type === "optout"), fiche: miens.some((r) => r.type === "fiche_envoyee"), ouverture: miens.some((r) => r.type === "ouverture"), statut };
+      const ficheLangues = miens.filter((r) => r.type === "fiche_envoyee").map((r) => json(r.donnees, {}).langue === "en" ? "en" : "fr");
+      return { optout: rows.some((r) => r.type === "optout"), fiche: ficheLangues.length > 0, ficheLangues, ouverture: miens.some((r) => r.type === "ouverture"), statut };
     };
     var contexte = async (corps, R, { travail = true } = {}) => {
       const t = await S.tables(), tb = await tableBot(t);
@@ -100283,7 +100284,7 @@ var require_bot2 = __commonJS({
       return require_verrou().sous(`bot-fiche:${B.tel9(tel)}:${dossier.id || 0}`, async () => {
         const etat = await etatDe(tb, tel, dossier);
         if (etat.optout) return echec("d\xE9sinscrit");
-        if (etat.fiche) return { deja_envoyee: true };
+        if (etat.fiche && !(corps.autre_langue && !etat.ficheLangues.includes(corps.langue === "en" ? "en" : "fr"))) return { deja_envoyee: true };
         const W = R.whatsapp || {};
         const jeton = W.variable_jeton ? await require_garde().lireSecret(W.variable_jeton) : null;
         if (!W.phone_number_id || !jeton) return echec("WhatsApp non r\xE9gl\xE9");
@@ -100319,7 +100320,7 @@ var require_bot2 = __commonJS({
           return echec("envoi WhatsApp refus\xE9");
         }
         const horaire = /* @__PURE__ */ new Date();
-        await tb.insertRow({ dossier: dossier.id || null, tel9: B.tel9(tel), type: "fiche_envoyee", quand: horaire, donnees: JSON.stringify({ identifiant }) });
+        await tb.insertRow({ dossier: dossier.id || null, tel9: B.tel9(tel), type: "fiche_envoyee", quand: horaire, donnees: JSON.stringify({ identifiant, langue: en ? "en" : "fr" }) });
         const doc = { messaging_product: "whatsapp", to: tel, type: "document", document: { filename: nomPdf } };
         await journaliser(R.journal, {
           tracking_id: `sh|${horaire.getTime()}|fiche|${B.tel9(tel)}`,

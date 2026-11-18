@@ -265,6 +265,13 @@ const sortie = (code, plus = {}) => ({ type: "sortie", noeud: "TB3", quand: "202
   r = await repondre("sh_pdf_fiche", { telephone: "33699999999" });
   assert.strictEqual(r.envoyee, true); assert.strictEqual(r.identifiant, "wamid.1"); assert.deepStrictEqual(meta.map((m) => m.to), [null, "33699999999"]);
   assert.deepStrictEqual(await repondre("fiche", { telephone: "33699999999" }), { deja_envoyee: true }); assert.strictEqual(meta.length, 2);
+  /* rejeu du 18/11 : la même fiche en anglais, seulement si le bot la demande dans l'autre langue ; une seule fois par langue */
+  assert.deepStrictEqual(await repondre("fiche", { telephone: "33699999999", langue: "en" }), { deja_envoyee: true }, "anglais sans demande du bot : rien");
+  assert.deepStrictEqual(await repondre("fiche", { telephone: "33699999999", langue: "fr", autre_langue: true }), { deja_envoyee: true }, "déjà envoyée en français");
+  const ren = await repondre("fiche", { telephone: "33699999999", langue: "en", autre_langue: true }); assert.strictEqual(ren.envoyee, true, JSON.stringify(ren));
+  assert.strictEqual(meta.filter((m) => m.to === "33699999999").length, 2, "fiche anglaise envoyée");
+  assert.deepStrictEqual(await repondre("fiche", { telephone: "33699999999", langue: "en", autre_langue: true }), { deja_envoyee: true }, "anglaise déjà envoyée");
+  meta.length = 2;
   assert.strictEqual((await repondre("contexte", { telephone: "33699999999" })).fiche_annonce_envoyee, true);
   await repondre("evenement", { telephone: "33611111111", event_id: "ev5", evenements: [sortie("OUT-6", { temperature: "" }), { type: "optout", donnees: { mot_cle: "STOP" } }] });
   assert.deepStrictEqual(await repondre("fiche", { telephone: "33611111111" }), { echec: true, raison: "désinscrit" });

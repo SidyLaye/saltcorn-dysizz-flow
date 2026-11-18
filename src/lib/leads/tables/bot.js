@@ -119,7 +119,9 @@ const etatDe = async (tb, tel, dossier) => {
   const dernier = (await tb.getRows({ tel9: B.tel9(tel), type: { in: ["inbound", "relance"] } }, { orderBy: "id", orderDesc: true, limit: 10 }))
     .find((r) => r.type === "inbound" || (!json(r.donnees, {}).saute && json(r.donnees, {}).code !== "cloture"));
   const statut = dernier && dernier.type === "relance" ? "relance" : sortie ? json(sortie.donnees, {}).statut || "" : "";
-  return { optout: rows.some((r) => r.type === "optout"), fiche: miens.some((r) => r.type === "fiche_envoyee"), ouverture: miens.some((r) => r.type === "ouverture"), statut };
+  /* langues des fiches déjà envoyées (rejeu Test_Agent du 18/11 : fiche française envoyée, puis redemandée en anglais) ; une fiche d'avant le 18/11 est en français */
+  const ficheLangues = miens.filter((r) => r.type === "fiche_envoyee").map((r) => (json(r.donnees, {}).langue === "en" ? "en" : "fr"));
+  return { optout: rows.some((r) => r.type === "optout"), fiche: ficheLangues.length > 0, ficheLangues, ouverture: miens.some((r) => r.type === "ouverture"), statut };
 };
 
 const contexte = async (corps, R, { travail = true } = {}) => {   // travail : confier la rédaction des cartes au bot (pas pour les relances)
@@ -359,7 +361,8 @@ const fiche = async (corps, R) => {
   return require("../../verrou").sous(`bot-fiche:${B.tel9(tel)}:${dossier.id || 0}`, async () => {
     const etat = await etatDe(tb, tel, dossier);
     if (etat.optout) return echec("désinscrit");
-    if (etat.fiche) return { deja_envoyee: true };
+    /* une fiche par dossier ; la même dans l'autre langue seulement si le bot la demande (le prospect l'a redemandée en anglais ou en français) */
+    if (etat.fiche && !(corps.autre_langue && !etat.ficheLangues.includes(corps.langue === "en" ? "en" : "fr"))) return { deja_envoyee: true };
     const W = R.whatsapp || {};
     const jeton = W.variable_jeton ? await require("../../../garde").lireSecret(W.variable_jeton) : null;
     if (!W.phone_number_id || !jeton) return echec("WhatsApp non réglé");
@@ -390,7 +393,7 @@ const fiche = async (corps, R) => {
     try { identifiant = await envoyerDocument({ phone_number_id: numero, jeton, a: tel, buf, nom: nomPdf }); }
     catch (e) { await tb.insertRow({ dossier: dossier.id || null, tel9: B.tel9(tel), type: "fiche_echec", quand: new Date(), texte: court(e.message, 500) }); return echec("envoi WhatsApp refusé"); }
     const horaire = new Date();
-    await tb.insertRow({ dossier: dossier.id || null, tel9: B.tel9(tel), type: "fiche_envoyee", quand: horaire, donnees: JSON.stringify({ identifiant }) });
+    await tb.insertRow({ dossier: dossier.id || null, tel9: B.tel9(tel), type: "fiche_envoyee", quand: horaire, donnees: JSON.stringify({ identifiant, langue: en ? "en" : "fr" }) });
     /* la fiche va au journal des conversations, comme les messages du bot : la vue WhatsApp des testeurs la montre (Sidy, 21/10) */
     const doc = { messaging_product: "whatsapp", to: tel, type: "document", document: { filename: nomPdf } };
     await journaliser(R.journal, { tracking_id: `sh|${horaire.getTime()}|fiche|${B.tel9(tel)}`, marque: "SH", direction: "outbound", conversation_id: `fiche-${B.tel9(tel)}`, phone_number_id: String(numero), telephone: tel,

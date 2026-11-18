@@ -1,5 +1,12 @@
 # Journal des versions
 
+## 2.30.1
+
+### Modifié
+- Fiche PDF du bot SH : déjà envoyée dans une langue, elle part une fois dans l'autre langue quand le bot le demande (`autre_langue`),
+  parce que le prospect l'a redemandée en anglais ou en français (rejeu des essais Test_Agent du 18/11 : un prospect anglophone l'a
+  redemandée quatre fois). Chaque fiche envoyée garde sa langue ; une fiche d'avant cette version compte comme française.
+
 ## 2.30.0
 
 ### Modifié
