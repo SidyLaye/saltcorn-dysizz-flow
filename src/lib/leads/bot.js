@@ -154,7 +154,9 @@ const DEMANDES = { "OUT-1": "Demande de visite", "OUT-2": "Demande de rappel", "
 /* renvoi vers un humain sans fin de conversation (CR du 03/11) : le bot marque la sortie OUT-4 de son genre ; le titre dit ce qu'il faut reprendre */
 const RENVOIS = { question: "Question du prospect à reprendre", reclamation: "Réclamation ou insatisfaction du prospect", recherche: "Recherche d'autres biens à proposer",
   vendu: "Bien plus en vente : biens proches à proposer" };
-const titreSortie = (d = {}) => (d.code === "OUT-4" && RENVOIS[d.renvoi]) || DEMANDES[d.code] || "Demande";
+/* Sidy, 18/11 : « dès le moment où il veut une visite rapide il faut lui mettre en place une visite rapide sans demander trop de détails, le mettre en rouge,
+   dire demande de visite rapide, c'est urgent » : titre, objet du mail « [URGENT] », couleur rouge, alerte « urgent » */
+const titreSortie = (d = {}) => (d.code === "OUT-1" && d.urgent && "Demande de visite rapide (urgent)") || (d.code === "OUT-4" && RENVOIS[d.renvoi]) || DEMANDES[d.code] || "Demande";
 const DELAIS = { HOT: "moins de 3 mois", WARM: "3 à 12 mois", COLD: "plus de 12 mois" };
 /* Scores /100 produits par la conversation (provisoires tant que le client n'a pas validé les poids) : « bien 75/100 · financement 50/100 » */
 const NOMS_SCORES = { bien: "bien", financement: "financement", travaux: "travaux", international: "relocation" };
@@ -231,7 +233,8 @@ const plan = (evenements, R = {}, { vendeur: dejaVendeur = false } = {}) => {
     /* la couleur suit le délai dès qu'il est connu ou qu'il change, sans attendre une sortie : le lead peut s'arrêter à tout moment */
     else if (e.type === "temperature") poserCouleur(couleurDe(d.temperature));
     else if (e.type === "sortie") {
-      if (d.temperature || vendeur) poserCouleur(couleurDe(d.temperature));
+      if (d.urgent) poserCouleur((R.couleurs || {}).HOT);   // visite rapide : rouge, quel que soit le délai
+      else if (d.temperature || vendeur) poserCouleur(couleurDe(d.temperature));
       const action = (R.actions || {})[d.code] || (R.actions || {}).defaut;
       if (action) out.crm.push({ op: "ajouterAction", action_id: action, texte: "WhatsApp. " + lignes(d).map(([l, v]) => `${l} : ${v}`).join("\n") });
       if (R.recherches === true && ["OUT-1", "OUT-2", "OUT-3"].includes(d.code)) {
@@ -241,7 +244,7 @@ const plan = (evenements, R = {}, { vendeur: dejaVendeur = false } = {}) => {
         if (q.zone) criteres.localisation = String(q.zone).slice(0, 80);
         if (!out.crm.some((x) => x.op === "creerRecherche")) out.crm.push({ op: "creerRecherche", une_fois: "recherche", criteres });
       }
-      if (d.code !== "OUT-6") out.avis.push({ titre: titreSortie(d), qualifie: d.code !== "OUT-5" && !RENVOIS[d.renvoi], prioritaire: !!d.lead_prioritaire, donnees: d, referents: [d.lead_financement && "f", d.lead_travaux && "w", d.lead_relocation && "i"].filter(Boolean) });
+      if (d.code !== "OUT-6") out.avis.push({ titre: titreSortie(d), qualifie: d.code !== "OUT-5" && !RENVOIS[d.renvoi], prioritaire: !!d.lead_prioritaire, urgent: !!d.urgent, donnees: d, referents: [d.lead_financement && "f", d.lead_travaux && "w", d.lead_relocation && "i"].filter(Boolean) });
     } else if (AVIS[e.type] && !(sortie && e.type === "prioritaire_vendeur"))
       out.avis.push({ titre: AVIS[e.type], type: e.type, prioritaire: e.type === "prioritaire_vendeur", donnees: d, referents: [] });
     /* la sortie du même tour porte déjà tout : ni l'intention ni le détail d'une branche ne partent à part */
@@ -270,8 +273,9 @@ const alerteNego = ({ avis, dossier = {}, bien, telephone }) => {
   const b = bien || {}, t = String(telephone || "").replace(/\D/g, "");
   const demande = enCours ? ["visite en cours de préparation"] : inacheve ? [...inacheve, "le prospect ne répond plus"]
     : vendeur ? ["bien à vendre déclaré"] : annule ? ["visite annulée"] : modif ? ["nouveau créneau de visite : " + String(d.creneau || "à préciser").replace(/\s+/g, " ").trim().slice(0, 60)]
+    : d.urgent ? ["visite rapide demandée, c'est urgent", d.lead_prioritaire && "bien à vendre"]
     : ["visite", d.lead_prioritaire && "bien à vendre", PROJET[d.temperature]];   // « Demande : visite, projet à moins de 3 mois »
-  return [enCours ? "en cours" : inacheve ? "inachevé" : vendeur || d.lead_prioritaire ? "prioritaire" : "qualifié", String(dossier.nom || "Un prospect").slice(0, 60),
+  return [enCours ? "en cours" : inacheve ? "inachevé" : visite && d.urgent ? "urgent" : vendeur || d.lead_prioritaire ? "prioritaire" : "qualifié", String(dossier.nom || "Un prospect").slice(0, 60),
     [b.reference && "réf. " + b.reference, b.ville && "à " + b.ville].filter(Boolean).join(" ") || "de l'annonce", demande.filter(Boolean).join(", "),
     /^33\d{9}$/.test(t) ? "+33 " + t.slice(2).replace(/(\d)(\d{2})(\d{2})(\d{2})(\d{2})/, "$1 $2 $3 $4 $5") : "+" + t];
 };
@@ -281,7 +285,7 @@ const alerteNego = ({ avis, dossier = {}, bien, telephone }) => {
    pour agir sans ouvrir le système. */
 const mailEquipe = ({ avis, dossier = {}, bien, bien_initial = null, telephone, fil = [], aurait_recu }) => {
   const b = bien || {}, nom = dossier.nom || "Prospect";
-  const objet = `${aurait_recu ? "[ESSAI] " : ""}${avis.prioritaire ? "[PRIORITAIRE] " : ""}${avis.qualifie ? "Lead qualifié WhatsApp" : "WhatsApp"} · ${avis.titre}${b.reference ? " · réf. " + b.reference : ""} · ${nom}`;
+  const objet = `${aurait_recu ? "[ESSAI] " : ""}${avis.urgent ? "[URGENT] " : ""}${avis.prioritaire ? "[PRIORITAIRE] " : ""}${avis.qualifie ? "Lead qualifié WhatsApp" : "WhatsApp"} · ${avis.titre}${b.reference ? " · réf. " + b.reference : ""} · ${nom}`;
   const ligne = (l, v) => (v ? `<tr><td style="color:#667;padding:2px 12px 2px 0;vertical-align:top">${esc(l)}</td><td><b>${esc(v)}</b></td></tr>` : "");
   const html = `<div style="font-family:Arial,sans-serif;font-size:14px;color:#1f2937">
 <p>${avis.qualifie ? "Lead qualifié à l'issue de la conversation avec l'assistant WhatsApp : " : ""}<b>${esc(avis.titre)}</b>${avis.qualifie ? "." : ", reçu par l'assistant WhatsApp."}</p>

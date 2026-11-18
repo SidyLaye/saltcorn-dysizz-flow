@@ -61,6 +61,14 @@ const QUAND = new Date("2026-10-13T10:00:00Z");
   assert.deepStrictEqual(B.plan([{ type: "sortie", donnees: { code: "OUT-2", temperature: "COLD", lead_prioritaire: true } }], RV).crm.filter((a) => a.op === "couleurContact"), [{ op: "couleurContact", couleur: 5 }], "vendeur à plus de 12 mois : rouge quand même");
   assert.deepStrictEqual(B.plan([{ type: "temperature", donnees: { temperature: "WARM" } }], RV, { vendeur: true }).crm, [{ op: "couleurContact", couleur: 5 }], "délai donné après coup : le vendeur reste rouge");
   assert.deepStrictEqual(B.plan([{ type: "temperature", donnees: { temperature: "WARM" } }], RV).crm, [{ op: "couleurContact", couleur: 8 }], "acheteur seul : la couleur suit le délai");
+  /* Sidy, 18/11 : visite rapide = urgent, rouge, « Demande de visite rapide », alerte « urgent » */
+  const vr = B.plan([{ type: "sortie", donnees: { code: "OUT-1", urgent: true, temperature: "WARM", creneau: "Dès que possible" } }], RV);
+  assert.deepStrictEqual(vr.crm.filter((a) => a.op === "couleurContact"), [{ op: "couleurContact", couleur: 5 }], "visite rapide : rouge même à 3-12 mois");
+  assert.strictEqual(vr.avis[0].titre, "Demande de visite rapide (urgent)"); assert.strictEqual(vr.avis[0].urgent, true);
+  const alr = B.alerteNego({ avis: vr.avis[0], dossier: { nom: "Marie Test" }, bien: { reference: "30123", ville: "Cahors" }, telephone: "33611111111" });
+  assert.strictEqual(alr[0], "urgent"); assert.strictEqual(alr[3], "visite rapide demandée, c'est urgent");
+  const mr = B.mailEquipe({ avis: vr.avis[0], dossier: { nom: "Marie Test" }, bien: { reference: "30123" }, telephone: "33611111111" });
+  assert.ok(mr.objet.startsWith("[URGENT] Lead qualifié WhatsApp · Demande de visite rapide (urgent)"), mr.objet);
   const plusInteresse = B.plan([{ type: "sortie", donnees: { code: "OUT-5", motif: "le prospect n'est plus intéressé : déjà acheté" } }], R).avis[0];
   assert.deepStrictEqual([plusInteresse.titre, plusInteresse.qualifie], ["Le prospect n'est plus intéressé", false], "OUT-5 : information, pas un lead qualifié");
   assert.deepStrictEqual(B.plan([sortie], {}).crm, [], "sans identifiants réglés, rien n'est écrit dans le CRM");

@@ -1,4 +1,4 @@
-/* dysizz-flow 2.30.2 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.30.3 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.30.2" : "dev";
+    var VERSION2 = true ? "2.30.3" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -99051,7 +99051,7 @@ var require_bot = __commonJS({
       recherche: "Recherche d'autres biens \xE0 proposer",
       vendu: "Bien plus en vente : biens proches \xE0 proposer"
     };
-    var titreSortie = (d = {}) => d.code === "OUT-4" && RENVOIS[d.renvoi] || DEMANDES[d.code] || "Demande";
+    var titreSortie = (d = {}) => d.code === "OUT-1" && d.urgent && "Demande de visite rapide (urgent)" || d.code === "OUT-4" && RENVOIS[d.renvoi] || DEMANDES[d.code] || "Demande";
     var DELAIS = { HOT: "moins de 3 mois", WARM: "3 \xE0 12 mois", COLD: "plus de 12 mois" };
     var NOMS_SCORES = { bien: "bien", financement: "financement", travaux: "travaux", international: "relocation" };
     var texteScores = (sc) => {
@@ -99145,7 +99145,8 @@ Son message : ${String(mot).slice(0, 500)}` : "") });
         if (e.type === "optout") out.optout = true;
         else if (e.type === "temperature") poserCouleur(couleurDe(d.temperature));
         else if (e.type === "sortie") {
-          if (d.temperature || vendeur) poserCouleur(couleurDe(d.temperature));
+          if (d.urgent) poserCouleur((R.couleurs || {}).HOT);
+          else if (d.temperature || vendeur) poserCouleur(couleurDe(d.temperature));
           const action = (R.actions || {})[d.code] || (R.actions || {}).defaut;
           if (action) out.crm.push({ op: "ajouterAction", action_id: action, texte: "WhatsApp. " + lignes(d).map(([l, v]) => `${l} : ${v}`).join("\n") });
           if (R.recherches === true && ["OUT-1", "OUT-2", "OUT-3"].includes(d.code)) {
@@ -99155,7 +99156,7 @@ Son message : ${String(mot).slice(0, 500)}` : "") });
             if (q.zone) criteres.localisation = String(q.zone).slice(0, 80);
             if (!out.crm.some((x) => x.op === "creerRecherche")) out.crm.push({ op: "creerRecherche", une_fois: "recherche", criteres });
           }
-          if (d.code !== "OUT-6") out.avis.push({ titre: titreSortie(d), qualifie: d.code !== "OUT-5" && !RENVOIS[d.renvoi], prioritaire: !!d.lead_prioritaire, donnees: d, referents: [d.lead_financement && "f", d.lead_travaux && "w", d.lead_relocation && "i"].filter(Boolean) });
+          if (d.code !== "OUT-6") out.avis.push({ titre: titreSortie(d), qualifie: d.code !== "OUT-5" && !RENVOIS[d.renvoi], prioritaire: !!d.lead_prioritaire, urgent: !!d.urgent, donnees: d, referents: [d.lead_financement && "f", d.lead_travaux && "w", d.lead_relocation && "i"].filter(Boolean) });
         } else if (AVIS[e.type] && !(sortie && e.type === "prioritaire_vendeur"))
           out.avis.push({ titre: AVIS[e.type], type: e.type, prioritaire: e.type === "prioritaire_vendeur", donnees: d, referents: [] });
         else if (e.type === "intention" && INTENTIONS[d.demande] && !sortie)
@@ -99182,9 +99183,9 @@ Son message : ${String(mot).slice(0, 500)}` : "") });
       const inacheve = avis.type === "recap_inacheve" && (d.demandes || []).filter((x) => x === "visite" || x === "bien \xE0 vendre");
       if (!visite && !vendeur && !modif && !annule && !enCours && !(inacheve && inacheve.length)) return null;
       const b = bien || {}, t = String(telephone || "").replace(/\D/g, "");
-      const demande = enCours ? ["visite en cours de pr\xE9paration"] : inacheve ? [...inacheve, "le prospect ne r\xE9pond plus"] : vendeur ? ["bien \xE0 vendre d\xE9clar\xE9"] : annule ? ["visite annul\xE9e"] : modif ? ["nouveau cr\xE9neau de visite : " + String(d.creneau || "\xE0 pr\xE9ciser").replace(/\s+/g, " ").trim().slice(0, 60)] : ["visite", d.lead_prioritaire && "bien \xE0 vendre", PROJET[d.temperature]];
+      const demande = enCours ? ["visite en cours de pr\xE9paration"] : inacheve ? [...inacheve, "le prospect ne r\xE9pond plus"] : vendeur ? ["bien \xE0 vendre d\xE9clar\xE9"] : annule ? ["visite annul\xE9e"] : modif ? ["nouveau cr\xE9neau de visite : " + String(d.creneau || "\xE0 pr\xE9ciser").replace(/\s+/g, " ").trim().slice(0, 60)] : d.urgent ? ["visite rapide demand\xE9e, c'est urgent", d.lead_prioritaire && "bien \xE0 vendre"] : ["visite", d.lead_prioritaire && "bien \xE0 vendre", PROJET[d.temperature]];
       return [
-        enCours ? "en cours" : inacheve ? "inachev\xE9" : vendeur || d.lead_prioritaire ? "prioritaire" : "qualifi\xE9",
+        enCours ? "en cours" : inacheve ? "inachev\xE9" : visite && d.urgent ? "urgent" : vendeur || d.lead_prioritaire ? "prioritaire" : "qualifi\xE9",
         String(dossier.nom || "Un prospect").slice(0, 60),
         [b.reference && "r\xE9f. " + b.reference, b.ville && "\xE0 " + b.ville].filter(Boolean).join(" ") || "de l'annonce",
         demande.filter(Boolean).join(", "),
@@ -99193,7 +99194,7 @@ Son message : ${String(mot).slice(0, 500)}` : "") });
     };
     var mailEquipe = ({ avis, dossier = {}, bien, bien_initial = null, telephone, fil = [], aurait_recu }) => {
       const b = bien || {}, nom = dossier.nom || "Prospect";
-      const objet = `${aurait_recu ? "[ESSAI] " : ""}${avis.prioritaire ? "[PRIORITAIRE] " : ""}${avis.qualifie ? "Lead qualifi\xE9 WhatsApp" : "WhatsApp"} \xB7 ${avis.titre}${b.reference ? " \xB7 r\xE9f. " + b.reference : ""} \xB7 ${nom}`;
+      const objet = `${aurait_recu ? "[ESSAI] " : ""}${avis.urgent ? "[URGENT] " : ""}${avis.prioritaire ? "[PRIORITAIRE] " : ""}${avis.qualifie ? "Lead qualifi\xE9 WhatsApp" : "WhatsApp"} \xB7 ${avis.titre}${b.reference ? " \xB7 r\xE9f. " + b.reference : ""} \xB7 ${nom}`;
       const ligne = (l, v) => v ? `<tr><td style="color:#667;padding:2px 12px 2px 0;vertical-align:top">${esc(l)}</td><td><b>${esc(v)}</b></td></tr>` : "";
       const html = `<div style="font-family:Arial,sans-serif;font-size:14px;color:#1f2937">
 <p>${avis.qualifie ? "Lead qualifi\xE9 \xE0 l'issue de la conversation avec l'assistant WhatsApp : " : ""}<b>${esc(avis.titre)}</b>${avis.qualifie ? "." : ", re\xE7u par l'assistant WhatsApp."}</p>

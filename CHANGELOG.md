@@ -1,5 +1,13 @@
 # Journal des versions
 
+## 2.30.3
+
+### Ajouté
+- Bot SH, visite rapide (Sidy, 18/11 : « dès le moment où il veut une visite rapide il faut lui mettre en place une visite rapide sans
+  demander trop de détails, le mettre en rouge, dire demande de visite rapide, c'est urgent ») : une sortie de visite marquée `urgent`
+  est titrée « Demande de visite rapide (urgent) » (mail, action CRM), l'objet du mail commence par « [URGENT] », le contact passe en
+  rouge quel que soit son délai, et l'alerte WhatsApp au négociateur dit « urgent » et « visite rapide demandée, c'est urgent ».
+
 ## 2.30.2
 
 ### Ajouté
