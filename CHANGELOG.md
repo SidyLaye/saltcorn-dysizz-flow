@@ -1,5 +1,33 @@
 # Journal des versions
 
+## 2.30.0
+
+### Modifié
+- Fiche PDF du bien envoyée par le bot SH : un seul modèle pour tous les biens, quelle que soit l'agence, celui de Sidy du 13/11
+  (« fiche-bien-agence-unifiée_retour SH », feu vert le 17/11). Il remplace les deux modèles du 12/11 (Selection Habitat si le nom de
+  l'agence contenait « selection », sinon Agence Hamilton). Les deux marques ensemble : en bas de la couverture et de la dernière page,
+  bloc doré Agence Hamilton et bloc vert Selection Habitat (logos blancs tirés du modèle) avec leurs deux sites ; bandeau doré et vert en
+  haut des autres pages. Couverture centrée (titre de l'annonce en deux lignes coupé à un mot de liaison, lieu, première phrase de la
+  description), « Résumé du bien », caractéristiques et DPE (dépenses d'énergie et date du diagnostic), pièces (bandeau doré pour les
+  dépendances), galerie de 18 photos par page, carte du négociateur (marque de son agence, nom, agence), mention « Agence Hamilton —
+  Selection Habitat - Entités de Selection Groupe ». L'agence du bien ne donne plus que le nom d'agence de la carte. Polices Lato,
+  Jost Light (grand titre, à la place de Brown, police payante du modèle) et Bodoni Moda italique (accroche), toutes sous licence
+  SIL OFL 1.1, intégrées à la page. Retirés comme dans le modèle : marque et mandat en pied de page (seul le numéro de page reste),
+  ligne des langues parlées, icônes des réseaux sociaux, phrase de relais de l'assistant sous la galerie.
+- Fiche du bien, Sidy le 17/11 : ni numéro de mandat (couverture, mention finale), ni téléphone ni e-mail du négociateur (son nom seul,
+  règle du 23/10), ni honoraires (ni qui les paie, ni leur montant : encart du prix, ligne « Prix », mention finale), en français comme en
+  anglais, alors que le modèle les montre. Annule leur ajout de la 2.29.0. Le bot ne transmet plus que le nom du négociateur à la fiche.
+- Fiche du bien : le texte libre « Informations complémentaires » du CRM n'est plus lu (texte interne, 03/11) ; seuls les critères de
+  l'annonce remplissent les caractéristiques.
+
+### Corrigé
+- Fiche du bien en anglais : « Price: » au lieu de « Price : » dans la mention finale.
+- Bot WhatsApp SH : « Lors de votre demande, vous aviez indiqué ce délai … » ne reprend plus que le délai écrit par le lead dans
+  sa demande. Le délai d'une recherche du CRM, ou d'un dossier d'essai, était présenté comme dit par le lead (Sidy, 09/11 : « délai …
+  à revoir » ; essai de Mokhtar du 12/11 : « dans les 3 mois », qu'il n'avait jamais écrit).
+- Mails aux équipes et actions du CRM : « Demande de visite » au lieu de « Demande de visite ou de rendez-vous » (Sidy, 09/11 et 12/11 :
+  ce bot ne prend pas de rendez-vous).
+
 ## 2.29.0
 
 ### Modifié

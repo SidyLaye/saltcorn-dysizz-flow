@@ -368,12 +368,14 @@ const fiche = async (corps, R) => {
     if (bien && B.enVente(bien).en_vente === false) return echec("plus en vente");   // jamais la fiche d'un bien vendu ou retiré
     const urls = R.photos && bien && Array.isArray(bien.photos) ? bien.photos : [];
     const { personne } = B.quiRecoit(dossier.negociateur || (bien && bien.negociateur_id), conf, bien, new Date());
-    /* Sidy, 12/11 : modèle « Selection Habitat » quand le nom de l'agence du bien contient « selection », sinon « Agence Hamilton » ;
-       page HTML imprimée par Gotenberg (Chromium). Gotenberg absent ou en erreur : la fiche précédente, pour ne jamais priver le lead de sa fiche */
+    /* Sidy, 13/11 (feu vert le 17/11) : un seul modèle, aux deux marques, pour tous les biens ; l'agence du bien ne donne plus que le nom
+       d'agence de la carte du négociateur ; ni mandat, ni honoraires, ni téléphone ni e-mail du négociateur (17/11). Page HTML imprimée par
+       Gotenberg (Chromium). Gotenberg absent ou en erreur : la fiche précédente, pour ne jamais priver le lead de sa fiche */
     let buf = null;
     try {
       const F = require("../fiche-modele"), agence = (conf.agences || []).find((a) => bien && String(a.id) === String(bien.agence_id));
-      const d = F.donneesFiche(bien, { langue: en ? "en" : "fr", photos: urls, agence, contact: { nom: personne && personne.nom, telephone: personne && personne.telephone, email: personne && personne.email } });
+      /* négociateur : son nom seul, ni téléphone ni e-mail (Sidy, 17/11 ; règle de Pascal du 23/10) */
+      const d = F.donneesFiche(bien, { langue: en ? "en" : "fr", photos: urls, agence, contact: { nom: personne && personne.nom } });
       if (d) { d.photos = await photosFiche(d.photos); buf = await imprimerHtml(F.htmlFiche(d), R.gotenberg); }
     } catch (e) { await tb.insertRow({ dossier: dossier.id || null, tel9: B.tel9(tel), type: "fiche_modele_echec", quand: new Date(), texte: court(e.message, 500) }).catch(() => {}); }
     if (!buf) {

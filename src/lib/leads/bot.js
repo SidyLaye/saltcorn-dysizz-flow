@@ -92,7 +92,10 @@ const dejaConnu = (x = {}, contact = null, bien = null) => {
   const budget = b && !(prix && Math.abs(b - prix) <= prix * 0.02) ? r.budget_max : null;
   const o = { budget, budget_min: null, zone: r.localisation || p.zone || null, rayon_km: p.rayon_km || null,
     surface_min: r.surface_min || p.surface_min || null, terrain_min: p.terrain_min || null, pieces_min: r.pieces_min || p.pieces_min || null,
-    delai: p.delai || null, bien_a_vendre: p.revente != null ? p.revente : null, usage: p.usage || null, motif: p.motif || null };
+    /* délai : seulement celui que le lead a écrit dans sa demande (x.delai, lu dans son mail), jamais le délai d'une recherche du CRM ou d'un
+       dossier d'essai : le bot dit « Lors de votre demande, vous aviez indiqué ce délai » (Sidy, 09/11 : « délai … c'est à revoir » ; captures
+       de Mokhtar du 12/11 : « dans les 3 mois », qu'il n'avait jamais écrit, venait de son dossier d'essai) */
+    delai: x.delai || null, bien_a_vendre: p.revente != null ? p.revente : null, usage: p.usage || null, motif: p.motif || null };
   return o;
 };
 
@@ -138,7 +141,8 @@ const contexte = ({ dossier, lead, bien, photos = [], contact = null, conf, regl
   };
 };
 
-const DEMANDES = { "OUT-1": "Demande de visite ou de rendez-vous", "OUT-2": "Demande de rappel", "OUT-3": "Projet à plus long terme, à recontacter",
+/* Sidy, 09/11 et 12/11 : « il y a pas de demande de prise de rdv ça existe pas pour ce bot » : une demande de visite, jamais un rendez-vous */
+const DEMANDES = { "OUT-1": "Demande de visite", "OUT-2": "Demande de rappel", "OUT-3": "Projet à plus long terme, à recontacter",
   "OUT-4": "Demande à parler à un conseiller", "OUT-5": "Le prospect n'est plus intéressé", "OUT-6": "Désinscription" };
 /* renvoi vers un humain sans fin de conversation (CR du 03/11) : le bot marque la sortie OUT-4 de son genre ; le titre dit ce qu'il faut reprendre */
 const RENVOIS = { question: "Question du prospect à reprendre", reclamation: "Réclamation ou insatisfaction du prospect", recherche: "Recherche d'autres biens à proposer",

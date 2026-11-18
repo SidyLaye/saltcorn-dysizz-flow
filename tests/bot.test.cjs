@@ -117,7 +117,10 @@ const QUAND = new Date("2026-10-13T10:00:00Z");
   assert.deepStrictEqual(B.annonce(null), {});
   /* projet connu du lead : mail de la phase 1 d'abord, puis recherches du CRM (sans commentaire) */
   assert.deepStrictEqual(B.dejaConnu({ recherche: { budget_max: 200000 } }, { projets: [{ budget_min: 85000, budget_max: 160000, zone: "09000 FOIX", rayon_km: 20, terrain_min: 500, delai: "3 à 6 mois", revente: true }] }),
-    { budget: 200000, budget_min: null, zone: "09000 FOIX", rayon_km: 20, surface_min: null, terrain_min: 500, pieces_min: null, delai: "3 à 6 mois", bien_a_vendre: true, usage: null, motif: null });
+    { budget: 200000, budget_min: null, zone: "09000 FOIX", rayon_km: 20, surface_min: null, terrain_min: 500, pieces_min: null, delai: null, bien_a_vendre: true, usage: null, motif: null });
+  /* délai : seulement celui écrit par le lead dans sa demande (Sidy, 09/11 ; captures de Mokhtar du 12/11 : « dans les 3 mois » venait de son dossier d'essai) */
+  assert.strictEqual(B.dejaConnu({}, { projets: [{ delai: "Achat dans les 3 mois" }] }).delai, null, "délai d'une recherche du CRM : jamais présenté comme dit par le lead");
+  assert.strictEqual(B.dejaConnu({ delai: "dans les 3 mois" }, null).delai, "dans les 3 mois", "délai écrit par le lead dans sa demande");
   /* Sidy, 09/11 : jamais le prix de l'annonce présenté comme le budget du lead ; jamais un budget lu dans une recherche du CRM */
   assert.strictEqual(B.dejaConnu({}, { projets: [{ budget_max: 245000 }] }, { prix: 245000 }).budget, null, "recherche du CRM créée depuis le bien : pas un budget du lead");
   assert.strictEqual(B.dejaConnu({ recherche: { budget_max: 245000 } }, null, { prix: 245000 }).budget, null, "montant égal au prix de l'annonce : pas un budget du lead");
@@ -154,7 +157,7 @@ const QUAND = new Date("2026-10-13T10:00:00Z");
     const avis = (evts) => B.plan(evts, {}).avis.map((a) => [a.titre, a.referents.join(""), !!a.suite]);
     assert.deepStrictEqual(avis([{ type: "intention", donnees: { demande: "visite" } }]), [["Demande de visite en cours", "", true]]);
     assert.deepStrictEqual(avis([{ type: "intention", donnees: { demande: "rappel" } }]), [["Demande de rappel en cours", "", true]]);
-    assert.deepStrictEqual(avis([{ type: "intention", donnees: { demande: "visite" } }, { type: "sortie", donnees: { code: "OUT-1" } }]).map((a) => a[0]), ["Demande de visite ou de rendez-vous"], "créneau déjà connu : la demande part entière, une fois");
+    assert.deepStrictEqual(avis([{ type: "intention", donnees: { demande: "visite" } }, { type: "sortie", donnees: { code: "OUT-1" } }]).map((a) => a[0]), ["Demande de visite"], "créneau déjà connu : la demande part entière, une fois");
     assert.deepStrictEqual(avis([{ type: "branche_f", donnees: { tag: "intérêt financement", lead_financement: true } }]), [["Intérêt pour un accompagnement au financement", "f", true]]);
     const fin = B.plan([{ type: "branche_f", donnees: { lead_financement: true, tache: "rappel", score: 50, apport: "50 000 €", horizon: "3 mois" } }], {}).avis;
     assert.deepStrictEqual(fin.map((a) => [a.titre, a.referents.join(""), !!a.suite]), [["Financement : les réponses du prospect", "f", false]]);
@@ -162,7 +165,7 @@ const QUAND = new Date("2026-10-13T10:00:00Z");
     assert.deepStrictEqual(avis([{ type: "branche_f", donnees: { lead_financement: true } }, { type: "branche_f", donnees: { lead_financement: true, tache: "x", apport: "1" } }]).map((a) => a[0]), ["Financement : les réponses du prospect"], "branche finie dans le même tour : un seul message");
     assert.deepStrictEqual(avis([{ type: "branche_w", donnees: { lead_travaux: false } }, { type: "branche_i", donnees: { lead_relocation: false } }]), [], "pas d'intérêt : rien");
     assert.deepStrictEqual(avis([{ type: "branche_i", donnees: { lead_relocation: true, tache: "", consentement: false, pays: "Royaume-Uni" } }]), [["Installation : les réponses du prospect", "i", false]]);
-    assert.deepStrictEqual(avis([{ type: "branche_w", donnees: { lead_travaux: true, tache: "rappel", nature: "toiture" } }, { type: "sortie", donnees: { code: "OUT-1" } }]).map((a) => a[0]), ["Demande de visite ou de rendez-vous"], "la sortie du même tour porte déjà le détail");
+    assert.deepStrictEqual(avis([{ type: "branche_w", donnees: { lead_travaux: true, tache: "rappel", nature: "toiture" } }, { type: "sortie", donnees: { code: "OUT-1" } }]).map((a) => a[0]), ["Demande de visite"], "la sortie du même tour porte déjà le détail");
     const rc = B.plan([{ type: "recap_inacheve", donnees: { demandes: ["visite", "financement"], referents: ["f"], qualification: { budget: "300 000 €" } } }], {}).avis;
     assert.deepStrictEqual(rc.map((a) => [a.titre, a.referents.join("")]), [["Demande inachevée, le prospect ne répond plus : visite, financement", "f"]]);
     assert.ok(B.lignes(rc[0].donnees).some(([l, v]) => l === "Budget" && v === "300 000 €"));

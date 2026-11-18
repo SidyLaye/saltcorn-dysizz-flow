@@ -429,7 +429,7 @@ const sortie = (code, plus = {}) => ({ type: "sortie", noeud: "TB3", quand: "202
   /* lead d'essai : projet et message fournis par le réglage, repris dans le contexte */
   BOT = { ...BOT, numeros_essai: { 221700000001: { bien: "AMBS-TEST-1", prenom: "Awa", projet: { budget_max: 300000, delai: "dans 2 mois", revente: false }, message: "Je souhaite visiter" } } };
   c = await repondre("contexte", { telephone: "221700000001" });
-  assert.strictEqual(c.deja_connu.budget, null, "Sidy, 09/11 : un projet du CRM ne donne jamais de budget"); assert.strictEqual(c.deja_connu.delai, "dans 2 mois"); assert.strictEqual(c.deja_connu.bien_a_vendre, false); assert.strictEqual(c.demande.message, "Je souhaite visiter");
+  assert.strictEqual(c.deja_connu.budget, null, "Sidy, 09/11 : un projet du CRM ne donne jamais de budget"); assert.strictEqual(c.deja_connu.delai, null, "projet d'un dossier d'essai : jamais présenté comme le délai dit par le lead (captures de Mokhtar, 12/11)"); assert.strictEqual(c.deja_connu.bien_a_vendre, false); assert.strictEqual(c.demande.message, "Je souhaite visiter");
   /* « avez-vous d'autres biens ? » : biens en vente du même secteur, sans le bien de départ, champs publics seulement ;
      visite demandée sur l'un d'eux : le négociateur du bien d'origine ET celui du nouveau bien sont prévenus */
   BOT = { ...BOT, numeros_essai: {}, notifications: "reel", essai_routage: false };
