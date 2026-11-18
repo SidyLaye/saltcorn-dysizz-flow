@@ -1,4 +1,4 @@
-/* dysizz-flow 2.30.1 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
+/* dysizz-flow 2.30.2 — FICHIER GÉNÉRÉ par tools/build.mjs depuis src/. Ne pas modifier à la main. */
 "use strict";
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __commonJS = (cb, mod) => function __require() {
@@ -10,7 +10,7 @@ var require_core = __commonJS({
   "src/core.js"(exports2, module2) {
     "use strict";
     var PLUGIN2 = "dysizz-flow";
-    var VERSION2 = true ? "2.30.1" : "dev";
+    var VERSION2 = true ? "2.30.2" : "dev";
     var isAdmin = (req) => !!(req && req.user && req.user.role_id === 1);
     var esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     var denied = (res) => res.status(403).send("R\xE9serv\xE9 aux administrateurs");
@@ -98994,6 +98994,22 @@ var require_bot = __commonJS({
       const personne = nego && (R.personnes || []).find((p) => String(p.email || "").trim().toLowerCase() === nego.email) || null;
       return { liste: r.liste, personne };
     };
+    var ENSEIGNES = [
+      [/van\s*den\s*berg/i, "Van Den Berg Immobilier"],
+      [/toit\s*2\s*r[eê]ve/i, "Toit 2 R\xEAve"],
+      [/ari[eè]g.?\s*immo/i, "Arieg'Immo"],
+      [/hamilton/i, "Agence Hamilton"],
+      [/s[eé]lection\s+habitat/i, "Selection Habitat"],
+      [/s[eé]lection\s+immobilier/i, "Selection Immobilier"],
+      [/s[eé]lection\s+oc[eé]an/i, "Selection Ocean"],
+      [/s[eé]lection\s+med|mvp\s+transactions/i, "Selection Med"],
+      [/s[eé]lection\s+s[eé]n[eé]gal/i, "Selection Senegal"]
+    ];
+    var enseigneDe = (nom) => {
+      const t = String(nom || "");
+      const e = ENSEIGNES.find(([re]) => re.test(t));
+      return e ? e[1] : "";
+    };
     var contexte = ({ dossier, lead, bien, photos = [], contact = null, conf, reglages: R = {}, etat = {}, quand }) => {
       if (!dossier) return { inconnu: true, optout: !!etat.optout };
       const x = lead && lead.extraction || {}, c = x.contact || {}, r = x.recherche || {};
@@ -99003,6 +99019,7 @@ var require_bot = __commonJS({
         dossier_id: dossier.id || null,
         prenom: majuscule(c.prenom || dossier.prenom || contact && contact.prenom),
         entite: R.entite || "",
+        enseigne_bien: enseigneDe((conf && conf.agences || []).find((a) => bien && String(a.id) === String(bien.agence_id))?.nom),
         source: dossier.portail || "",
         negociateur: personne ? { prenom: "", nom: personne.nom } : null,
         /* photos : seulement celles du dossier d'images choisi par le client (réglage « photos »), 10 au plus (un carrousel WhatsApp) */
@@ -99280,7 +99297,7 @@ ${aurait_recu ? `<p style="color:#b45309;font-size:12px">Essai : en service, ce 
       if (ph.length > 1) out.push({ saut: true }, { bandeau: en ? "Property photos" : "Photos du bien", couleur: MARINE }, { grille: ph.slice(1), hauteur: 165 });
       return out;
     };
-    module2.exports = { RENVOIS, CHAMPS_PUBLICS, cartesPourBot, enVente, bienPublic, annonce, dejaConnu, nettoyer, tel9, quiRecoit, contexte, plan, lignes, texteScores, mailEquipe, alerteNego, blocsFiche, majuscule, nomVille };
+    module2.exports = { enseigneDe, RENVOIS, CHAMPS_PUBLICS, cartesPourBot, enVente, bienPublic, annonce, dejaConnu, nettoyer, tel9, quiRecoit, contexte, plan, lignes, texteScores, mailEquipe, alerteNego, blocsFiche, majuscule, nomVille };
   }
 });
 

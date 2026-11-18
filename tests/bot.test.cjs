@@ -28,6 +28,12 @@ const QUAND = new Date("2026-10-13T10:00:00Z");
   assert.deepStrictEqual(c.negociateur, { prenom: "", nom: "Martin Durand" });
   assert.deepStrictEqual(c.liens_whatsapp, {}, "pas de numéro direct sans accord du client");
   assert.strictEqual(c.fiche_annonce_envoyee, true);
+  /* Sidy, 18/11 : l'enseigne de l'agence du bien, pour « vous êtes bien Ariègimmo ? » (jamais « non ») ; rien d'autre de l'agence */
+  assert.strictEqual(c.enseigne_bien, "", "agence inconnue : pas d'enseigne");
+  const cEns = B.contexte({ dossier, bien: { ...BIEN, agence_id: 7 }, conf: { ...CONF, agences: [{ id: 7, nom: "ARIEG’IMMO FOIX" }] }, quand: QUAND });
+  assert.strictEqual(cEns.enseigne_bien, "Arieg'Immo"); assert.ok(!/FOIX/i.test(JSON.stringify(cEns)), "ni la ville ni le nom complet de l'agence");
+  assert.deepStrictEqual(["VAN DEN BERG IMMOBILIER BY AGENCE HAMILTON", "SELECTION TOIT2REVE CAMBO LES BAINS", "AGENCE HAMILTON PARIS", "SELECTION HABITAT FIGEAC", "MVP TRANSACTIONS BY SELECTION MED", "SELECTION OCEAN BIARRITZ", "Agence Exemple"].map(B.enseigneDe),
+    ["Van Den Berg Immobilier", "Toit 2 Rêve", "Agence Hamilton", "Selection Habitat", "Selection Med", "Selection Ocean", ""]);
   assert.ok(!/Pradines|46090|rue du Test|777|honoraires/.test(JSON.stringify(c)), "rien de privé dans le contexte");
   assert.strictEqual(B.contexte({ dossier, bien: BIEN, conf: CONF, reglages: { liens_directs: true }, quand: QUAND }).liens_whatsapp.negociateur, "https://wa.me/33600000001");
   /* négociateur absent : le nom donné est celui du remplaçant, qui reçoit vraiment */

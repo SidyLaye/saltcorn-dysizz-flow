@@ -116,6 +116,12 @@ const quiRecoit = (negoId, conf = {}, bien, quand = new Date()) => {
   return { liste: r.liste, personne };
 };
 
+/* enseigne de Selection Groupe d'une agence (Sidy, 18/11 : « vous êtes bien Ariègimmo ? » : jamais « non » ; l'enseigne du bien = oui) ; sans accent sur Selection (CR du 03/11) */
+const ENSEIGNES = [[/van\s*den\s*berg/i, "Van Den Berg Immobilier"], [/toit\s*2\s*r[eê]ve/i, "Toit 2 Rêve"], [/ari[eè]g.?\s*immo/i, "Arieg'Immo"], [/hamilton/i, "Agence Hamilton"],
+  [/s[eé]lection\s+habitat/i, "Selection Habitat"], [/s[eé]lection\s+immobilier/i, "Selection Immobilier"], [/s[eé]lection\s+oc[eé]an/i, "Selection Ocean"],
+  [/s[eé]lection\s+med|mvp\s+transactions/i, "Selection Med"], [/s[eé]lection\s+s[eé]n[eé]gal/i, "Selection Senegal"]];
+const enseigneDe = (nom) => { const t = String(nom || ""); const e = ENSEIGNES.find(([re]) => re.test(t)); return e ? e[1] : ""; };
+
 /* Réponse au bot quand une conversation commence. etat = { optout, fiche, ouverture, statut } */
 const contexte = ({ dossier, lead, bien, photos = [], contact = null, conf, reglages: R = {}, etat = {}, quand }) => {
   if (!dossier) return { inconnu: true, optout: !!etat.optout };
@@ -126,6 +132,7 @@ const contexte = ({ dossier, lead, bien, photos = [], contact = null, conf, regl
     dossier_id: dossier.id || null,
     prenom: majuscule(c.prenom || dossier.prenom || (contact && contact.prenom)),
     entite: R.entite || "",
+    enseigne_bien: enseigneDe(((conf && conf.agences) || []).find((a) => bien && String(a.id) === String(bien.agence_id))?.nom),
     source: dossier.portail || "",
     negociateur: personne ? { prenom: "", nom: personne.nom } : null,
     /* photos : seulement celles du dossier d'images choisi par le client (réglage « photos »), 10 au plus (un carrousel WhatsApp) */
@@ -357,4 +364,4 @@ const blocsFiche = (bien, quand = new Date(), langue = "fr", photos = [], contac
   return out;
 };
 
-module.exports = { RENVOIS, CHAMPS_PUBLICS, cartesPourBot, enVente, bienPublic, annonce, dejaConnu, nettoyer, tel9, quiRecoit, contexte, plan, lignes, texteScores, mailEquipe, alerteNego, blocsFiche, majuscule, nomVille };
+module.exports = { enseigneDe, RENVOIS, CHAMPS_PUBLICS, cartesPourBot, enVente, bienPublic, annonce, dejaConnu, nettoyer, tel9, quiRecoit, contexte, plan, lignes, texteScores, mailEquipe, alerteNego, blocsFiche, majuscule, nomVille };

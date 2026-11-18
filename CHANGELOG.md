@@ -1,5 +1,13 @@
 # Journal des versions
 
+## 2.30.2
+
+### Ajouté
+- Contexte du bot SH : `enseigne_bien`, l'enseigne de Selection Groupe de l'agence du bien (Selection Habitat, Agence Hamilton,
+  Arieg'Immo, Van Den Berg Immobilier, Toit 2 Rêve, Selection Immobilier, Selection Ocean, Selection Med, Selection Senegal), jamais
+  la ville ni le nom complet de l'agence. Sidy, 18/11 : à « vous êtes bien Ariègimmo ? », l'agent ne dit jamais « non » ; si c'est
+  l'enseigne du bien, il dit oui, sinon il explique que l'enseigne fait partie du groupe (retour n° 14 de Test_Agent).
+
 ## 2.30.1
 
 ### Modifié
